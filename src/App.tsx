@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Boxes, Clapperboard, Gamepad2, Home, Layers3, ScanLine, Settings, Sparkles, UserRoundCog } from 'lucide-react'
+import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Home, Layers3, ScanLine, Settings, Sparkles, UserRoundCog } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
@@ -8,14 +8,16 @@ import AnimationStudio from './pages/AnimationStudio'
 import AssetLibrary from './pages/AssetLibrary'
 import TextureLab from './pages/TextureLab'
 import GamePreview from './pages/GamePreview'
+import AudioStudio from './pages/AudioStudio'
 import Capture from './pages/Capture'
+import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { FORGE_VERSION } from './version'
 import './styles.css'
 import './retarget.css'
 import './texture-v071.css'
 import './character.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'characters' | 'animations' | 'textures' | 'preview' | 'assets'
+type Page = 'home' | 'mocap' | 'models' | 'characters' | 'animations' | 'textures' | 'audio' | 'preview' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
@@ -24,6 +26,7 @@ const nav = [
   { id: 'characters' as const, label: 'Characters', icon: UserRoundCog },
   { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
   { id: 'textures' as const, label: 'Textures', icon: Layers3 },
+  { id: 'audio' as const, label: 'Voice & Audio', icon: AudioLines },
   { id: 'preview' as const, label: 'Game Preview', icon: Gamepad2 },
   { id: 'assets' as const, label: 'Asset Library', icon: Boxes },
 ]
@@ -38,6 +41,7 @@ export default function App() {
   })
 
   useEffect(() => { window.location.hash = `/${page}` }, [page])
+  useEffect(() => installHistoryShortcuts(), [])
 
   return (
     <div className="studio-shell">
@@ -70,6 +74,7 @@ export default function App() {
           {page === 'characters' && <CharacterStudio />}
           {page === 'animations' && <AnimationStudio />}
           {page === 'textures' && <TextureLab />}
+          {page === 'audio' && <AudioStudio />}
           {page === 'preview' && <GamePreview />}
           {page === 'assets' && <AssetLibrary />}
         </div>
