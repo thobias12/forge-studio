@@ -1,5 +1,6 @@
 import { characterPackageDataToBlob, characterSlug, parseCharacterPackage } from './characterPackage'
 import { dataUrlToBlob, materialSlug, parseMaterialPackage } from './materialPackage'
+import { parseVfxPackage } from './vfxPackage'
 
 export type AssetCategory = 'characters' | 'animations' | 'props' | 'materials' | 'textures' | 'environment' | 'audio' | 'vfx'
 export type AssetKind = 'glb' | 'motion' | 'image' | 'audio' | 'file'
@@ -165,7 +166,10 @@ export async function sendAssetToProject(asset: LibraryAsset, project: ProjectPr
   const materialPackage = asset.category === 'materials' ? await parseMaterialPackage(asset.blob) : undefined
   if (materialPackage) return sendMaterialPackageToProject(asset, project, materialPackage)
 
-  const filename = asset.category === 'vfx' ? `${slugName(asset.name)}.forge-vfx.json` : safeAssetFilename(asset.name, asset.kind, asset.mime)
+  const vfxPackage = asset.category === 'vfx' ? await parseVfxPackage(asset.blob) : undefined
+  if (vfxPackage) return sendVfxPackageToProject(asset, project, vfxPackage)
+
+  const filename = safeAssetFilename(asset.name, asset.kind, asset.mime)
   const manifest = buildAssetManifest(asset, project, filename)
   const handle = project.directoryHandle as any
   if (handle && typeof handle.getDirectoryHandle === 'function') {
@@ -267,6 +271,31 @@ async function sendMaterialPackageToProject(asset: LibraryAsset, project: Projec
   download(asset.blob, packageFilename)
   const manifest = buildAssetManifest(asset, project, packageFilename)
   download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), `${packageFilename}.forge-asset.json`)
+  return { mode: 'download' as const, filename: packageFilename }
+}
+
+async function sendVfxPackageToProject(asset: LibraryAsset, project: ProjectProfile, vfx: Awaited<ReturnType<typeof parseVfxPackage>> & {}) {
+  const slug = slugName(vfx.name || asset.name)
+  const handle = project.directoryHandle as any
+  const packageFilename = `${slug}.forge-vfx.json`
+  const runtimeManifest = {
+    ...vfx,
+    format: 'forge-vfx-runtime',
+    version: 1,
+    forge: { assetId: asset.id, source: asset.source, exportedAt: new Date().toISOString() },
+  }
+  const runtimeBlob = new Blob([JSON.stringify(runtimeManifest, null, 2)], { type: 'application/json' })
+
+  if (handle && typeof handle.getDirectoryHandle === 'function') {
+    const baseDirectory = await getProjectAssetDirectory(handle, project.assetPath)
+    const vfxDirectory = await baseDirectory.getDirectoryHandle(slug, { create: true })
+    await writeFile(vfxDirectory, 'vfx.forge.json', runtimeBlob)
+    await writeFile(vfxDirectory, packageFilename, asset.blob)
+    return { mode: 'folder' as const, filename: `${slug}/vfx.forge.json` }
+  }
+
+  download(asset.blob, packageFilename)
+  download(runtimeBlob, `${slug}.vfx.forge.json`)
   return { mode: 'download' as const, filename: packageFilename }
 }
 
