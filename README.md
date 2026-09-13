@@ -1,8 +1,8 @@
 # Forge Studio
 
-Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping and live character retargeting.
+Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping, live character retargeting and game-ready animation export.
 
-## v0.2.1
+## v0.3.0
 
 - Built-in rigged Forge Mannequin, so Mocap works immediately without importing a character
 - Desktop mocap receiver with QR pairing
@@ -12,8 +12,11 @@ Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, hum
 - Optional custom rigged GLB/GLTF import directly inside Mocap Studio
 - Live body retargeting from the phone onto the built-in or imported character
 - Smoothing, X mirroring and skeleton-helper controls
-- Record and export `.forge-motion.json`
+- Record and export raw `.forge-motion.json`
 - Replay recorded Forge motion on the character
+- Bake recorded retargeted bone rotations into a real Three.js `AnimationClip`
+- Export the character plus baked animation as a binary `.glb`
+- Preserve existing animation clips when exporting an imported character
 
 Forge deliberately targets a **single-phone** mocap workflow. Multi-camera capture is not part of the plan.
 
@@ -28,6 +31,6 @@ Phone camera access requires HTTPS outside localhost. The repository deploys aut
 
 ## Current pipeline
 
-`Phone -> MediaPipe pose -> WebRTC landmarks -> smoothing -> humanoid bone mapper -> Forge Mannequin / custom GLB rig -> live preview / recording`
+`Phone -> MediaPipe pose -> WebRTC landmarks -> smoothing -> humanoid bone mapper -> Forge Mannequin / custom GLB rig -> live preview -> record -> bake bone keyframes -> animated GLB export`
 
-The next animation milestone is baking the retargeted bone rotations into a real reusable glTF/GLB animation clip, followed by foot locking and motion cleanup.
+The next animation milestone is foot locking, ground alignment, missing-frame cleanup and a dedicated Animation Studio for trimming, loops and clip management.
