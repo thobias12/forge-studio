@@ -9,11 +9,15 @@ export type PoseFrame = {
   t: number
   landmarks: PosePoint[]
   worldLandmarks?: PosePoint[]
+  leftHandLandmarks?: PosePoint[]
+  rightHandLandmarks?: PosePoint[]
+  leftHandWorldLandmarks?: PosePoint[]
+  rightHandWorldLandmarks?: PosePoint[]
 }
 
 export type ForgeMotion = {
   format: 'forge-motion'
-  version: 1
+  version: 1 | 2
   name: string
   createdAt: string
   fps: number

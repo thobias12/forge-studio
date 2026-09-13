@@ -31,17 +31,13 @@ async function loadCharacter(src?: string) {
   return { root: gltf.scene, animations: gltf.animations }
 }
 
-function smoothPose(source: PosePoint[], previous: PosePoint[] | undefined, smoothing: number) {
+function smoothPose(source: PosePoint[] | undefined, previous: PosePoint[] | undefined, smoothing: number) {
+  if (!source?.length) return undefined
   const alpha = THREE.MathUtils.clamp(1 - smoothing, 0.08, 1)
   if (!previous || previous.length !== source.length) return source.map((point) => ({ ...point }))
   return source.map((point, index) => {
     const before = previous[index]
-    return {
-      x: THREE.MathUtils.lerp(before.x, point.x, alpha),
-      y: THREE.MathUtils.lerp(before.y, point.y, alpha),
-      z: THREE.MathUtils.lerp(before.z, point.z, alpha),
-      visibility: point.visibility,
-    }
+    return { x: THREE.MathUtils.lerp(before.x, point.x, alpha), y: THREE.MathUtils.lerp(before.y, point.y, alpha), z: THREE.MathUtils.lerp(before.z, point.z, alpha), visibility: point.visibility }
   })
 }
 
@@ -59,14 +55,13 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   const cleaned = cleanupMotion(motion, cleanup)
   const { root, animations: sourceAnimations } = await loadCharacter(characterSrc)
   const runtime = createRetargetRuntime(root)
-  if (runtime.info.mappedCount < 8) throw new Error('The character does not have enough mapped humanoid bones to bake this motion.')
+  if (runtime.info.coreMappedCount < 8) throw new Error('The character does not have enough mapped humanoid bones to bake this motion.')
 
   const animatedKeys = HUMANOID_BONE_KEYS.filter((key) => runtime.rig[key])
   const restQuaternions = new Map<THREE.Bone, THREE.Quaternion>()
   const values = new Map<HumanoidBoneKey, number[]>()
   const previousQuaternions = new Map<HumanoidBoneKey, THREE.Quaternion>()
   const times: number[] = []
-
   animatedKeys.forEach((key) => {
     const bone = runtime.rig[key]!
     restQuaternions.set(bone, bone.quaternion.clone())
@@ -74,52 +69,42 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   })
 
   let smoothed: PosePoint[] | undefined
+  let leftHand: PosePoint[] | undefined
+  let rightHand: PosePoint[] | undefined
   let lastTime = -1
   const blend = THREE.MathUtils.lerp(0.9, 0.48, THREE.MathUtils.clamp(smoothing, 0, 0.9))
 
   for (const frame of cleaned.motion.frames) {
     const raw = frame.worldLandmarks?.length === 33 ? frame.worldLandmarks : frame.landmarks
     if (!raw || raw.length !== 33) continue
-
     smoothed = smoothPose(raw, smoothed, smoothing)
-    applyPoseToRig(runtime, smoothed, { mirrorX, blend })
+    leftHand = smoothPose(frame.leftHandWorldLandmarks?.length === 21 ? frame.leftHandWorldLandmarks : frame.leftHandLandmarks, leftHand, smoothing)
+    rightHand = smoothPose(frame.rightHandWorldLandmarks?.length === 21 ? frame.rightHandWorldLandmarks : frame.rightHandLandmarks, rightHand, smoothing)
+    if (!smoothed) continue
+
+    applyPoseToRig(runtime, smoothed, { mirrorX, blend, leftHand, rightHand })
     root.updateMatrixWorld(true)
 
     let time = Math.max(0, frame.t / 1000)
     if (time <= lastTime) time = lastTime + 0.001
     lastTime = time
     times.push(time)
-
     animatedKeys.forEach((key) => {
       const bone = runtime.rig[key]!
-      const list = values.get(key)!
-      const previous = previousQuaternions.get(key)
-      const stored = pushQuaternion(list, bone.quaternion, previous)
+      const stored = pushQuaternion(values.get(key)!, bone.quaternion, previousQuaternions.get(key))
       previousQuaternions.set(key, stored)
     })
   }
 
   if (times.length < 2) throw new Error('The recording does not contain enough valid pose frames to bake.')
-
-  const tracks = animatedKeys.map((key) => {
-    const bone = runtime.rig[key]!
-    return new THREE.QuaternionKeyframeTrack(`${bone.uuid}.quaternion`, times, values.get(key)!)
-  })
+  const tracks = animatedKeys.map((key) => new THREE.QuaternionKeyframeTrack(`${runtime.rig[key]!.uuid}.quaternion`, times, values.get(key)!))
   const bakedClip = new THREE.AnimationClip(clipName || 'Forge Mocap', -1, tracks)
   bakedClip.optimize()
 
   restQuaternions.forEach((quaternion, bone) => bone.quaternion.copy(quaternion))
   root.updateMatrixWorld(true)
-
   const preservedAnimations = sourceAnimations.filter((animation) => animation.name !== bakedClip.name)
-  const exporter = new GLTFExporter()
-  const result = await exporter.parseAsync(root, {
-    binary: true,
-    trs: true,
-    onlyVisible: false,
-    animations: [...preservedAnimations, bakedClip],
-  })
-
+  const result = await new GLTFExporter().parseAsync(root, { binary: true, trs: true, onlyVisible: false, animations: [...preservedAnimations, bakedClip] })
   if (!(result instanceof ArrayBuffer)) throw new Error('Forge expected a binary GLB export but received text glTF data.')
 
   return {

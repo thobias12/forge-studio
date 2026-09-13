@@ -15,7 +15,7 @@ function bone(name: string, x: number, y: number, z: number) {
 function segment(parent: THREE.Bone, childOffset: THREE.Vector3, radius: number, material: THREE.Material) {
   const length = childOffset.length()
   if (length < 0.001) return
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.88, radius, length, 12), material)
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.88, radius, length, 10), material)
   mesh.position.copy(childOffset).multiplyScalar(0.5)
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), childOffset.clone().normalize())
   mesh.castShadow = true
@@ -24,15 +24,34 @@ function segment(parent: THREE.Bone, childOffset: THREE.Vector3, radius: number,
 }
 
 function box(parent: THREE.Object3D, size: THREE.Vector3, position: THREE.Vector3, material: THREE.Material, radius = 0) {
-  const geometry = radius > 0
-    ? new THREE.CapsuleGeometry(radius, Math.max(0.01, size.y - radius * 2), 5, 10)
-    : new THREE.BoxGeometry(size.x, size.y, size.z)
+  const geometry = radius > 0 ? new THREE.CapsuleGeometry(radius, Math.max(0.01, size.y - radius * 2), 5, 10) : new THREE.BoxGeometry(size.x, size.y, size.z)
   const mesh = new THREE.Mesh(geometry, material)
   mesh.position.copy(position)
   mesh.castShadow = true
   mesh.receiveShadow = true
   parent.add(mesh)
   return mesh
+}
+
+function addFinger(hand: THREE.Bone, side: 'Left' | 'Right', finger: string, sign: number, z: number, y = 0, length = 0.055) {
+  const first = bone(`${side}Hand${finger}1`, sign * 0.045, y, z)
+  const second = bone(`${side}Hand${finger}2`, sign * length, 0, 0)
+  const third = bone(`${side}Hand${finger}3`, sign * length * 0.82, 0, 0)
+  hand.add(first)
+  first.add(second)
+  second.add(third)
+  segment(hand, first.position, 0.014, skin)
+  segment(first, second.position, 0.013, skin)
+  segment(second, third.position, 0.011, skin)
+  return { first, second, third }
+}
+
+function addHandRig(hand: THREE.Bone, side: 'Left' | 'Right', sign: number) {
+  addFinger(hand, side, 'Thumb', sign, 0.065, -0.035, 0.045)
+  addFinger(hand, side, 'Index', sign, 0.052, 0.025, 0.060)
+  addFinger(hand, side, 'Middle', sign, 0.017, 0.032, 0.065)
+  addFinger(hand, side, 'Ring', sign, -0.020, 0.025, 0.060)
+  addFinger(hand, side, 'Pinky', sign, -0.052, 0.010, 0.052)
 }
 
 export function createForgeMannequin() {
@@ -55,9 +74,11 @@ export function createForgeMannequin() {
   const leftUpperLeg = bone('LeftUpperLeg', -0.13, -0.08, 0)
   const leftLowerLeg = bone('LeftLowerLeg', 0, -0.48, 0)
   const leftFoot = bone('LeftFoot', 0, -0.46, 0)
+  const leftToes = bone('LeftToeBase', 0, -0.015, 0.27)
   const rightUpperLeg = bone('RightUpperLeg', 0.13, -0.08, 0)
   const rightLowerLeg = bone('RightLowerLeg', 0, -0.48, 0)
   const rightFoot = bone('RightFoot', 0, -0.46, 0)
+  const rightToes = bone('RightToeBase', 0, -0.015, 0.27)
 
   root.add(hips)
   hips.add(spine, leftUpperLeg, rightUpperLeg)
@@ -70,8 +91,13 @@ export function createForgeMannequin() {
   rightLowerArm.add(rightHand)
   leftUpperLeg.add(leftLowerLeg)
   leftLowerLeg.add(leftFoot)
+  leftFoot.add(leftToes)
   rightUpperLeg.add(rightLowerLeg)
   rightLowerLeg.add(rightFoot)
+  rightFoot.add(rightToes)
+
+  addHandRig(leftHand, 'Left', -1)
+  addHandRig(rightHand, 'Right', 1)
 
   box(hips, new THREE.Vector3(0.34, 0.18, 0.24), new THREE.Vector3(0, 0.03, 0), dark)
   segment(spine, chest.position, 0.17, suit)
@@ -90,12 +116,13 @@ export function createForgeMannequin() {
   segment(rightUpperArm, rightLowerArm.position, 0.085, suit)
   segment(rightLowerArm, rightHand.position, 0.072, suit)
 
-  const handGeometry = new THREE.SphereGeometry(0.09, 14, 10)
+  const handGeometry = new THREE.BoxGeometry(0.13, 0.11, 0.16)
   const leftHandMesh = new THREE.Mesh(handGeometry, skin)
-  leftHandMesh.scale.set(1.1, 0.8, 0.8)
+  leftHandMesh.position.x = -0.015
   leftHandMesh.castShadow = true
   leftHand.add(leftHandMesh)
   const rightHandMesh = leftHandMesh.clone()
+  rightHandMesh.position.x = 0.015
   rightHand.add(rightHandMesh)
 
   segment(leftUpperLeg, leftLowerLeg.position, 0.105, dark)
