@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createForgeMannequin } from '../lib/mannequin'
+import { createMocapPolishState, polishPoseFrame, type MocapPolishQuality } from '../lib/mocapPolish'
 import { hasStableFootContact, prepareRetargetPose } from '../lib/poseInput'
 import { applyPoseToRig, createRetargetRuntime, type RigInfo, type RetargetRuntime } from '../lib/retarget'
 import type { PosePoint } from '../types'
@@ -21,6 +22,7 @@ export type RetargetDiagnosticsSnapshot = {
   supportDelta?: number
   modelPosition?: [number, number, number]
   modelQuaternion?: [number, number, number, number]
+  polish?: MocapPolishQuality
   bones: Record<string, {
     name: string
     localPosition: [number, number, number]
@@ -62,6 +64,7 @@ export default function RetargetViewport({
   onDiagnostics,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
+  const [quality, setQuality] = useState<MocapPolishQuality>()
   const poseRef = useRef({ landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig })
   const infoCallbackRef = useRef(onRigInfo)
   const diagnosticsCallbackRef = useRef(onDiagnostics)
@@ -117,8 +120,10 @@ export default function RetargetViewport({
     let skeletonHelper: THREE.SkeletonHelper | undefined
     let supportReferenceY: number | undefined
     let lastDiagnosticsAt = 0
+    let lastQualityAt = 0
     let disposed = false
     const smoothState: Record<string, { input?: PosePoint[]; points?: PosePoint[] }> = {}
+    const polishState = createMocapPolishState()
 
     const getSupportY = (target: RetargetRuntime) => {
       const supportBones = [target.rig.leftToes ?? target.rig.leftFoot, target.rig.rightToes ?? target.rig.rightFoot]
@@ -152,8 +157,6 @@ export default function RetargetViewport({
       model.updateMatrixWorld(true)
 
       runtime = createRetargetRuntime(model)
-      // v0.6.4 uses a fixed camera-to-avatar coordinate convention. A one-frame
-      // 3D basis calibration was the source of the sideways pelvis/body flip.
       runtime.targetBodyBasis = undefined
       runtime.sourceAlignment = undefined
       runtime.calibrationMirrorX = undefined
@@ -202,7 +205,7 @@ export default function RetargetViewport({
       return state.points
     }
 
-    const emitDiagnostics = (bodySource: 'world' | 'image', points: PosePoint[] | undefined, currentSupportY: number | undefined) => {
+    const emitDiagnostics = (bodySource: 'world' | 'image', points: PosePoint[] | undefined, currentSupportY: number | undefined, polish?: MocapPolishQuality) => {
       if (!runtime || !model || !diagnosticsCallbackRef.current) return
       const now = performance.now()
       if (now - lastDiagnosticsAt < 250) return
@@ -234,49 +237,73 @@ export default function RetargetViewport({
         supportDelta: supportReferenceY !== undefined && currentSupportY !== undefined ? roundNumber(supportReferenceY - currentSupportY) : undefined,
         modelPosition: vector3Tuple(model.position),
         modelQuaternion: quaternionTuple(model.quaternion),
+        polish,
         bones,
       })
     }
 
     let animationFrame = 0
     const render = () => {
-      const worldBodyRaw = poseRef.current.worldLandmarks?.length === 33 ? poseRef.current.worldLandmarks : undefined
-      const imageBodyRaw = poseRef.current.landmarks
-      const bodyRaw = worldBodyRaw ?? imageBodyRaw
-      const bodySource: 'world' | 'image' = worldBodyRaw ? 'world' : 'image'
       let preparedPoints: PosePoint[] | undefined
       let currentSupportY: number | undefined
+      let currentQuality: MocapPolishQuality | undefined
+      let bodySource: 'world' | 'image' = poseRef.current.worldLandmarks?.length === 33 ? 'world' : 'image'
 
-      if (runtime && model && bodyRaw?.length === 33) {
-        const smoothedBody = smooth(`body-${bodySource}`, bodyRaw)
-        preparedPoints = prepareRetargetPose(smoothedBody, bodySource)
-        if (preparedPoints) {
-          const leftHand = smooth('leftHandWorld', poseRef.current.leftHandWorldLandmarks, true)
-            ?? smooth('leftHandImage', poseRef.current.leftHandLandmarks, true)
-          const rightHand = smooth('rightHandWorld', poseRef.current.rightHandWorldLandmarks, true)
-            ?? smooth('rightHandImage', poseRef.current.rightHandLandmarks, true)
+      if (runtime && model && (poseRef.current.worldLandmarks?.length === 33 || poseRef.current.landmarks?.length === 33)) {
+        const polished = polishPoseFrame({
+          t: performance.now(),
+          landmarks: poseRef.current.landmarks ?? [],
+          worldLandmarks: poseRef.current.worldLandmarks,
+          leftHandLandmarks: poseRef.current.leftHandLandmarks,
+          rightHandLandmarks: poseRef.current.rightHandLandmarks,
+          leftHandWorldLandmarks: poseRef.current.leftHandWorldLandmarks,
+          rightHandWorldLandmarks: poseRef.current.rightHandWorldLandmarks,
+        }, polishState, {
+          calibrationFrames: 36,
+          dropoutHoldMs: 220,
+          jointStability: 0.78,
+          handStability: 0.72,
+          footLock: true,
+          footLockStrength: 0.9,
+        })
 
-          applyPoseToRig(runtime, preparedPoints, {
-            mirrorX: !poseRef.current.mirrorX,
-            blend: THREE.MathUtils.lerp(0.9, 0.5, poseRef.current.smoothing),
-            bodySpace: bodySource,
-            leftHand,
-            rightHand,
-            handPointsIgnoreVisibility: true,
-          })
+        if (polished) {
+          currentQuality = polished.quality
+          bodySource = polished.bodySpace
+          const smoothedBody = smooth(`body-${bodySource}`, polished.body)
+          preparedPoints = prepareRetargetPose(smoothedBody, bodySource)
+          if (preparedPoints) {
+            const leftHand = smooth('leftHandPolished', polished.leftHand, true)
+            const rightHand = smooth('rightHandPolished', polished.rightHand, true)
 
-          runtime.root.updateMatrixWorld(true)
-          currentSupportY = getSupportY(runtime)
-          if (supportReferenceY !== undefined && currentSupportY !== undefined && hasStableFootContact(preparedPoints, bodySource)) {
-            const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.12, 0.12)
-            model.position.y += delta * 0.72
-            model.updateMatrixWorld(true)
+            applyPoseToRig(runtime, preparedPoints, {
+              mirrorX: !poseRef.current.mirrorX,
+              blend: THREE.MathUtils.lerp(0.9, 0.5, poseRef.current.smoothing),
+              bodySpace,
+              leftHand,
+              rightHand,
+              handPointsIgnoreVisibility: true,
+            })
+
+            runtime.root.updateMatrixWorld(true)
             currentSupportY = getSupportY(runtime)
+            if (supportReferenceY !== undefined && currentSupportY !== undefined && hasStableFootContact(preparedPoints, bodySource)) {
+              const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.12, 0.12)
+              const lockBoost = currentQuality.leftFootLocked || currentQuality.rightFootLocked ? 0.84 : 0.68
+              model.position.y += delta * lockBoost
+              model.updateMatrixWorld(true)
+              currentSupportY = getSupportY(runtime)
+            }
           }
         }
       }
 
-      emitDiagnostics(bodySource, preparedPoints, currentSupportY)
+      const now = performance.now()
+      if (currentQuality && now - lastQualityAt >= 220) {
+        lastQualityAt = now
+        setQuality({ ...currentQuality, weakJoints: [...currentQuality.weakJoints] })
+      }
+      emitDiagnostics(bodySource, preparedPoints, currentSupportY, currentQuality)
       if (skeletonHelper) skeletonHelper.visible = poseRef.current.showRig
       controls.update()
       renderer.render(scene, camera)
@@ -307,7 +334,27 @@ export default function RetargetViewport({
     }
   }, [src])
 
-  return <div className={className} ref={mountRef} />
+  return (
+    <div className={className} style={{ position: 'relative', overflow: 'hidden' }}>
+      <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+      {quality && (
+        <div style={{ position: 'absolute', left: 14, bottom: 14, zIndex: 4, minWidth: 210, padding: '10px 12px', borderRadius: 10, background: 'rgba(8,12,18,.82)', border: '1px solid rgba(126,174,232,.18)', backdropFilter: 'blur(8px)', pointerEvents: 'none', fontSize: 11, lineHeight: 1.35 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+            <strong style={{ color: '#dbeaff' }}>{quality.calibrated ? 'MOCAP CALIBRATED' : `CALIBRATING ${quality.calibrationProgress}%`}</strong>
+            <span style={{ color: quality.bodyScore >= 75 ? '#83e6b4' : '#ffd27a' }}>{quality.bodyScore}%</span>
+          </div>
+          <div style={{ display: 'flex', gap: 12, color: '#9db0c8' }}>
+            <span>Hands {quality.handCount}/2</span><span>Feet {quality.footCount}/2</span><span>{quality.bodySpace.toUpperCase()}</span>
+          </div>
+          <div style={{ marginTop: 4, color: quality.leftFootLocked || quality.rightFootLocked ? '#83e6b4' : '#76879c' }}>
+            Foot lock {quality.leftFootLocked ? 'L' : '—'} / {quality.rightFootLocked ? 'R' : '—'}
+            {quality.recoveredPoints > 0 ? ` · recovered ${quality.recoveredPoints}` : ''}
+          </div>
+          {quality.weakJoints.length > 0 && <div style={{ marginTop: 4, color: '#e8b67c' }}>Weak: {quality.weakJoints.slice(0, 3).join(', ')}{quality.weakJoints.length > 3 ? '…' : ''}</div>}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function roundNumber(value: number) {
