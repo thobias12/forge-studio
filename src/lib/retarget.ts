@@ -66,6 +66,8 @@ export type RetargetRuntime = {
   info: RigInfo
   aims: Partial<Record<HumanoidBoneKey, BoneAimState>>
   bases: Partial<Record<'hips' | 'spine' | 'chest' | 'leftHand' | 'rightHand', BoneBasisState>>
+  // Kept for compatibility with older callers. v0.6.4 intentionally does not use
+  // single-frame source-basis calibration because it could rotate the pelvis sideways.
   targetBodyBasis?: THREE.Quaternion
   sourceAlignment?: THREE.Quaternion
   calibrationMirrorX?: boolean
@@ -218,8 +220,7 @@ function captureTerminalAimState(bone: THREE.Bone): BoneAimState | undefined {
   if (child) return captureAimState(bone, child)
   if (!bone.parent || bone.position.lengthSq() < 1e-8) return undefined
   const restLocalQuaternion = bone.quaternion.clone()
-  const directionParent = bone.position.clone().normalize()
-  const axisLocal = directionParent.applyQuaternion(restLocalQuaternion.clone().invert()).normalize()
+  const axisLocal = bone.position.clone().normalize().applyQuaternion(restLocalQuaternion.clone().invert()).normalize()
   return { bone, restLocalQuaternion, axisLocal }
 }
 
@@ -231,18 +232,6 @@ function captureBasisState(bone: THREE.Bone, upTarget?: THREE.Bone, leftTarget?:
   if (up.lengthSq() < 1e-8 || right.lengthSq() < 1e-8) return undefined
   const sourceBasisQuaternion = makeBasisQuaternion(localDirectionFromWorld(bone, right), localDirectionFromWorld(bone, up))
   return sourceBasisQuaternion ? { bone, sourceBasisQuaternion } : undefined
-}
-
-function captureTargetBodyBasis(rig: HumanoidRig) {
-  const hips = rig.hips
-  const upTarget = rig.chest ?? rig.spine ?? rig.neck
-  const left = rig.leftUpperLeg ?? rig.leftUpperArm
-  const right = rig.rightUpperLeg ?? rig.rightUpperArm
-  if (!hips || !upTarget || !left || !right) return undefined
-  const origin = hips.getWorldPosition(new THREE.Vector3())
-  const up = upTarget.getWorldPosition(new THREE.Vector3()).sub(origin)
-  const rightVector = right.getWorldPosition(new THREE.Vector3()).sub(left.getWorldPosition(new THREE.Vector3()))
-  return makeBasisQuaternion(rightVector, up)
 }
 
 export function createRetargetRuntime(root: THREE.Object3D): RetargetRuntime {
@@ -264,91 +253,87 @@ export function createRetargetRuntime(root: THREE.Object3D): RetargetRuntime {
   if (rig.chest) bases.chest = captureBasisState(rig.chest, rig.neck ?? rig.head, rig.leftUpperArm, rig.rightUpperArm)
   if (rig.leftHand) bases.leftHand = captureBasisState(rig.leftHand, rig.leftMiddle1, rig.leftPinky1, rig.leftIndex1)
   if (rig.rightHand) bases.rightHand = captureBasisState(rig.rightHand, rig.rightMiddle1, rig.rightPinky1, rig.rightIndex1)
-
-  return { root, rig, info, aims, bases, targetBodyBasis: captureTargetBodyBasis(rig) }
+  return { root, rig, info, aims, bases }
 }
 
-function rawPoseVector(point: PosePoint, mirrorX: boolean) {
+function finite(point: PosePoint | undefined, threshold = 0.2, ignoreVisibility = false) {
+  return !!point
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y)
+    && Number.isFinite(point.z)
+    && (ignoreVisibility || (point.visibility ?? 1) >= threshold)
+}
+
+function cameraVector(point: PosePoint, mirrorX: boolean) {
   return new THREE.Vector3(mirrorX ? -point.x : point.x, -point.y, -point.z)
 }
 
-function visible(point: PosePoint | undefined, threshold = 0.24) {
-  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z) && (point.visibility ?? 1) >= threshold
+function pointsToVectors(points: PosePoint[], mirrorX: boolean) {
+  return points.map((point) => cameraVector(point, mirrorX))
 }
 
-function midpoint(a: THREE.Vector3, b: THREE.Vector3) { return a.clone().add(b).multiplyScalar(0.5) }
-
-function ensureSourceAlignment(runtime: RetargetRuntime, landmarks: PosePoint[], mirrorX: boolean) {
-  if (runtime.sourceAlignment && runtime.calibrationMirrorX === mirrorX) return runtime.sourceAlignment
-  if (!runtime.targetBodyBasis) return undefined
-  if (!visible(landmarks[11], 0.4) || !visible(landmarks[12], 0.4)) return undefined
-
-  const p11 = rawPoseVector(landmarks[11], mirrorX)
-  const p12 = rawPoseVector(landmarks[12], mirrorX)
-  const shoulderCenter = midpoint(p11, p12)
-  const sourceRight = p12.clone().sub(p11)
-  let sourceUp: THREE.Vector3 | undefined
-
-  if (visible(landmarks[23], 0.4) && visible(landmarks[24], 0.4)) {
-    const p23 = rawPoseVector(landmarks[23], mirrorX)
-    const p24 = rawPoseVector(landmarks[24], mirrorX)
-    sourceUp = shoulderCenter.clone().sub(midpoint(p23, p24))
-  } else if (visible(landmarks[7], 0.35) && visible(landmarks[8], 0.35)) {
-    sourceUp = midpoint(rawPoseVector(landmarks[7], mirrorX), rawPoseVector(landmarks[8], mirrorX)).sub(shoulderCenter)
-  } else if (visible(landmarks[0], 0.35)) {
-    sourceUp = rawPoseVector(landmarks[0], mirrorX).sub(shoulderCenter)
-  }
-
-  if (!sourceUp || sourceUp.lengthSq() < 1e-8) return undefined
-  const sourceBasis = makeBasisQuaternion(sourceRight, sourceUp)
-  if (!sourceBasis) return undefined
-
-  runtime.sourceAlignment = runtime.targetBodyBasis.clone().multiply(sourceBasis.clone().invert()).normalize()
-  runtime.calibrationMirrorX = mirrorX
-  return runtime.sourceAlignment
-}
-
-function alignedPoints(runtime: RetargetRuntime, points: PosePoint[], mirrorX: boolean) {
-  const alignment = runtime.sourceAlignment
-  return points.map((point) => {
-    const vector = rawPoseVector(point, mirrorX)
-    return alignment ? vector.applyQuaternion(alignment) : vector
-  })
+function midpoint(a: THREE.Vector3, b: THREE.Vector3) {
+  return a.clone().add(b).multiplyScalar(0.5)
 }
 
 function orientBasis(runtime: RetargetRuntime, state: BoneBasisState | undefined, rightWorld: THREE.Vector3, upWorld: THREE.Vector3, blend: number) {
   if (!state || rightWorld.lengthSq() < 1e-8 || upWorld.lengthSq() < 1e-8) return
   const parentQuaternion = state.bone.parent?.getWorldQuaternion(new THREE.Quaternion()) ?? new THREE.Quaternion()
-  const targetBasis = makeBasisQuaternion(rightWorld.clone().applyQuaternion(parentQuaternion.clone().invert()), upWorld.clone().applyQuaternion(parentQuaternion.clone().invert()))
+  const inverseParent = parentQuaternion.clone().invert()
+  const targetBasis = makeBasisQuaternion(
+    rightWorld.clone().applyQuaternion(inverseParent),
+    upWorld.clone().applyQuaternion(inverseParent),
+  )
   if (!targetBasis) return
-  state.bone.quaternion.slerp(targetBasis.multiply(state.sourceBasisQuaternion.clone().invert()), blend)
+  const desired = targetBasis.multiply(state.sourceBasisQuaternion.clone().invert())
+  state.bone.quaternion.slerp(desired, THREE.MathUtils.clamp(blend, 0.02, 1))
   runtime.root.updateMatrixWorld(true)
 }
 
-function aimBone(runtime: RetargetRuntime, state: BoneAimState | undefined, directionWorld: THREE.Vector3, blend: number, maxAngle = Math.PI) {
+function aimBone(runtime: RetargetRuntime, key: HumanoidBoneKey, directionWorld: THREE.Vector3, blend: number, maxAngleDegrees = 180) {
+  const state = runtime.aims[key]
   if (!state || directionWorld.lengthSq() < 1e-8) return
   const parentQuaternion = state.bone.parent?.getWorldQuaternion(new THREE.Quaternion()) ?? new THREE.Quaternion()
   const directionParent = directionWorld.clone().normalize().applyQuaternion(parentQuaternion.clone().invert())
   const restDirectionParent = state.axisLocal.clone().applyQuaternion(state.restLocalQuaternion).normalize()
   const delta = new THREE.Quaternion().setFromUnitVectors(restDirectionParent, directionParent)
-  if (maxAngle < Math.PI) {
-    const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(delta.w), -1, 1))
-    if (angle > maxAngle && angle > 1e-5) delta.slerp(new THREE.Quaternion(), 1 - maxAngle / angle)
-  }
+  const maxAngle = THREE.MathUtils.degToRad(maxAngleDegrees)
+  const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(delta.w), -1, 1))
+  if (angle > maxAngle && angle > 1e-5) delta.slerp(new THREE.Quaternion(), 1 - maxAngle / angle)
   const desired = delta.multiply(state.restLocalQuaternion)
-  state.bone.quaternion.slerp(desired, blend)
+  state.bone.quaternion.slerp(desired, THREE.MathUtils.clamp(blend, 0.02, 1))
   runtime.root.updateMatrixWorld(true)
+}
+
+function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
+  if (source.lengthSq() < 1e-8) return new THREE.Vector3(0, 1, 0)
+  const up = source.clone().normalize()
+  if (up.y < 0) up.multiplyScalar(-1)
+  return new THREE.Vector3(0, 1, 0).lerp(up, THREE.MathUtils.clamp(leanAmount, 0, 1)).normalize()
+}
+
+function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
+  const direction = toe.clone().sub(heel)
+  direction.x *= 0.72
+  direction.y *= 0.24
+  return direction.lengthSq() < 1e-8 ? direction : direction.normalize()
+}
+
+function dampYawDepth(right: THREE.Vector3, bodySpace: 'world' | 'image') {
+  const result = right.clone()
+  result.y = 0
+  result.z *= bodySpace === 'world' ? 0.18 : 0.08
+  return result
 }
 
 function applyHand(runtime: RetargetRuntime, side: 'left' | 'right', points: PosePoint[] | undefined, mirrorX: boolean, blend: number) {
   if (!points || points.length < 21) return
-  const p = alignedPoints(runtime, points, mirrorX)
-  const handKey = side === 'left' ? 'leftHand' : 'rightHand'
-
-  if (visible(points[0]) && visible(points[5]) && visible(points[9]) && visible(points[17])) {
-    const acrossPalm = p[5].clone().sub(p[17])
-    const alongPalm = p[9].clone().sub(p[0])
-    orientBasis(runtime, runtime.bases[handKey], acrossPalm, alongPalm, Math.min(0.72, blend * 0.82))
+  // Holistic hand landmarks often carry visibility=0 even when all 21 points are valid.
+  // The existence of the 21-point hand result is the presence signal.
+  const p = pointsToVectors(points, mirrorX)
+  const basis = runtime.bases[side === 'left' ? 'leftHand' : 'rightHand']
+  if (finite(points[0], 0, true) && finite(points[5], 0, true) && finite(points[9], 0, true) && finite(points[17], 0, true)) {
+    orientBasis(runtime, basis, p[5].clone().sub(p[17]), p[9].clone().sub(p[0]), Math.min(0.6, blend * 0.72))
   }
 
   const prefix = side === 'left' ? 'left' : 'right'
@@ -361,52 +346,72 @@ function applyHand(runtime: RetargetRuntime, side: 'left' | 'right', points: Pos
   ]
 
   for (const [name, a1, b1, a2, b2, a3, b3] of fingers) {
+    const fingerBlend = name === 'Thumb' ? Math.min(0.56, blend * 0.66) : Math.min(0.68, blend * 0.8)
     const key1 = `${prefix}${name}1` as HumanoidBoneKey
     const key2 = `${prefix}${name}2` as HumanoidBoneKey
     const key3 = `${prefix}${name}3` as HumanoidBoneKey
-    const fingerBlend = name === 'Thumb' ? Math.min(0.62, blend * 0.72) : Math.min(0.68, blend * 0.78)
-    if (visible(points[a1]) && visible(points[b1])) aimBone(runtime, runtime.aims[key1], p[b1].clone().sub(p[a1]), fingerBlend, THREE.MathUtils.degToRad(name === 'Thumb' ? 95 : 105))
-    if (visible(points[a2]) && visible(points[b2])) aimBone(runtime, runtime.aims[key2], p[b2].clone().sub(p[a2]), fingerBlend, THREE.MathUtils.degToRad(125))
-    if (visible(points[a3]) && visible(points[b3])) aimBone(runtime, runtime.aims[key3], p[b3].clone().sub(p[a3]), fingerBlend, THREE.MathUtils.degToRad(135))
+    if (finite(points[a1], 0, true) && finite(points[b1], 0, true)) aimBone(runtime, key1, p[b1].clone().sub(p[a1]), fingerBlend, name === 'Thumb' ? 90 : 105)
+    if (finite(points[a2], 0, true) && finite(points[b2], 0, true)) aimBone(runtime, key2, p[b2].clone().sub(p[a2]), fingerBlend, 120)
+    if (finite(points[a3], 0, true) && finite(points[b3], 0, true)) aimBone(runtime, key3, p[b3].clone().sub(p[a3]), fingerBlend, 130)
   }
 }
 
 export function applyPoseToRig(
   runtime: RetargetRuntime,
   landmarks: PosePoint[],
-  options?: { mirrorX?: boolean; blend?: number; leftHand?: PosePoint[]; rightHand?: PosePoint[] },
+  options?: {
+    mirrorX?: boolean
+    blend?: number
+    bodySpace?: 'world' | 'image'
+    leftHand?: PosePoint[]
+    rightHand?: PosePoint[]
+    handPointsIgnoreVisibility?: boolean
+  },
 ) {
   if (landmarks.length < 33) return
   const mirrorX = options?.mirrorX ?? false
   const blend = THREE.MathUtils.clamp(options?.blend ?? 0.72, 0.05, 1)
-  ensureSourceAlignment(runtime, landmarks, mirrorX)
-  const p = alignedPoints(runtime, landmarks, mirrorX)
+  const bodySpace = options?.bodySpace ?? 'image'
+  const p = pointsToVectors(landmarks, mirrorX)
+  const shouldersVisible = finite(landmarks[11], 0.3) && finite(landmarks[12], 0.3)
+  const hipsVisible = finite(landmarks[23], 0.3) && finite(landmarks[24], 0.3)
 
-  const shouldersVisible = visible(landmarks[11], 0.35) && visible(landmarks[12], 0.35)
-  const hipsVisible = visible(landmarks[23], 0.35) && visible(landmarks[24], 0.35)
-  if (shouldersVisible && hipsVisible) {
-    const torsoUp = midpoint(p[11], p[12]).sub(midpoint(p[23], p[24]))
-    orientBasis(runtime, runtime.bases.hips, p[24].clone().sub(p[23]), torsoUp, blend)
-    orientBasis(runtime, runtime.bases.spine, p[12].clone().sub(p[11]), torsoUp, blend)
-    orientBasis(runtime, runtime.bases.chest, p[12].clone().sub(p[11]), torsoUp, blend)
+  if (hipsVisible) {
+    // Pelvis receives yaw only. Camera depth is not allowed to roll/pitch the entire
+    // character, which was the main source of the sideways v0.6.3 pose.
+    const hipRight = dampYawDepth(p[24].clone().sub(p[23]), bodySpace)
+    if (hipRight.lengthSq() > 1e-6) orientBasis(runtime, runtime.bases.hips, hipRight, new THREE.Vector3(0, 1, 0), Math.min(blend, 0.7))
   }
 
-  if (visible(landmarks[11]) && visible(landmarks[13])) aimBone(runtime, runtime.aims.leftUpperArm, p[13].clone().sub(p[11]), blend, THREE.MathUtils.degToRad(165))
-  if (visible(landmarks[13]) && visible(landmarks[15])) aimBone(runtime, runtime.aims.leftLowerArm, p[15].clone().sub(p[13]), blend, THREE.MathUtils.degToRad(170))
-  if (visible(landmarks[12]) && visible(landmarks[14])) aimBone(runtime, runtime.aims.rightUpperArm, p[14].clone().sub(p[12]), blend, THREE.MathUtils.degToRad(165))
-  if (visible(landmarks[14]) && visible(landmarks[16])) aimBone(runtime, runtime.aims.rightLowerArm, p[16].clone().sub(p[14]), blend, THREE.MathUtils.degToRad(170))
-  if (visible(landmarks[23]) && visible(landmarks[25])) aimBone(runtime, runtime.aims.leftUpperLeg, p[25].clone().sub(p[23]), blend, THREE.MathUtils.degToRad(145))
-  if (visible(landmarks[25]) && visible(landmarks[27])) aimBone(runtime, runtime.aims.leftLowerLeg, p[27].clone().sub(p[25]), blend, THREE.MathUtils.degToRad(155))
-  if (visible(landmarks[24]) && visible(landmarks[26])) aimBone(runtime, runtime.aims.rightUpperLeg, p[26].clone().sub(p[24]), blend, THREE.MathUtils.degToRad(145))
-  if (visible(landmarks[26]) && visible(landmarks[28])) aimBone(runtime, runtime.aims.rightLowerLeg, p[28].clone().sub(p[26]), blend, THREE.MathUtils.degToRad(155))
+  if (shouldersVisible && hipsVisible) {
+    const shoulderCenter = midpoint(p[11], p[12])
+    const hipCenter = midpoint(p[23], p[24])
+    const torsoUp = shoulderCenter.clone().sub(hipCenter)
+    const shoulderRight = dampYawDepth(p[12].clone().sub(p[11]), bodySpace)
+    const spineUp = stabilizedUp(torsoUp, bodySpace === 'world' ? 0.66 : 0.38)
+    orientBasis(runtime, runtime.bases.spine, shoulderRight, spineUp, Math.min(blend, 0.62))
+    orientBasis(runtime, runtime.bases.chest, shoulderRight, spineUp, Math.min(blend, 0.68))
+  }
 
-  if (visible(landmarks[27]) && visible(landmarks[31])) aimBone(runtime, runtime.aims.leftFoot, p[31].clone().sub(p[27]), Math.min(blend, 0.65), THREE.MathUtils.degToRad(80))
-  if (visible(landmarks[28]) && visible(landmarks[32])) aimBone(runtime, runtime.aims.rightFoot, p[32].clone().sub(p[28]), Math.min(blend, 0.65), THREE.MathUtils.degToRad(80))
+  if (finite(landmarks[11]) && finite(landmarks[13])) aimBone(runtime, 'leftUpperArm', p[13].clone().sub(p[11]), blend, 160)
+  if (finite(landmarks[13]) && finite(landmarks[15])) aimBone(runtime, 'leftLowerArm', p[15].clone().sub(p[13]), blend, 165)
+  if (finite(landmarks[12]) && finite(landmarks[14])) aimBone(runtime, 'rightUpperArm', p[14].clone().sub(p[12]), blend, 160)
+  if (finite(landmarks[14]) && finite(landmarks[16])) aimBone(runtime, 'rightLowerArm', p[16].clone().sub(p[14]), blend, 165)
+
+  if (finite(landmarks[23]) && finite(landmarks[25])) aimBone(runtime, 'leftUpperLeg', p[25].clone().sub(p[23]), Math.min(blend, 0.78), 112)
+  if (finite(landmarks[25]) && finite(landmarks[27])) aimBone(runtime, 'leftLowerLeg', p[27].clone().sub(p[25]), Math.min(blend, 0.8), 135)
+  if (finite(landmarks[24]) && finite(landmarks[26])) aimBone(runtime, 'rightUpperLeg', p[26].clone().sub(p[24]), Math.min(blend, 0.78), 112)
+  if (finite(landmarks[26]) && finite(landmarks[28])) aimBone(runtime, 'rightLowerLeg', p[28].clone().sub(p[26]), Math.min(blend, 0.8), 135)
+
+  if (finite(landmarks[29]) && finite(landmarks[31])) aimBone(runtime, 'leftFoot', stableFootDirection(p[29], p[31]), Math.min(blend, 0.56), 55)
+  if (finite(landmarks[30]) && finite(landmarks[32])) aimBone(runtime, 'rightFoot', stableFootDirection(p[30], p[32]), Math.min(blend, 0.56), 55)
 
   if (shouldersVisible) {
     const shoulderCenter = midpoint(p[11], p[12])
-    const headTarget = visible(landmarks[7]) && visible(landmarks[8]) ? midpoint(p[7], p[8]) : p[0]
-    aimBone(runtime, runtime.aims.neck, headTarget.sub(shoulderCenter), Math.min(blend, 0.64), THREE.MathUtils.degToRad(75))
+    let headTarget: THREE.Vector3 | undefined
+    if (finite(landmarks[7], 0.25) && finite(landmarks[8], 0.25)) headTarget = midpoint(p[7], p[8])
+    else if (finite(landmarks[0], 0.25)) headTarget = p[0]
+    if (headTarget) aimBone(runtime, 'neck', headTarget.clone().sub(shoulderCenter), Math.min(blend, 0.52), 45)
   }
 
   applyHand(runtime, 'left', options?.leftHand, mirrorX, blend)

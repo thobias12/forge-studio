@@ -32,13 +32,13 @@ async function loadCharacter(src?: string) {
   return { root: gltf.scene, animations: gltf.animations }
 }
 
-function smoothPose(source: PosePoint[] | undefined, previous: PosePoint[] | undefined, smoothing: number) {
+function smoothPose(source: PosePoint[] | undefined, previous: PosePoint[] | undefined, smoothing: number, ignoreVisibility = false) {
   if (!source?.length) return undefined
   const alpha = THREE.MathUtils.clamp(1 - smoothing, 0.08, 1)
   if (!previous || previous.length !== source.length) return source.map((point) => ({ ...point }))
   return source.map((point, index) => {
     const before = previous[index]
-    if ((point.visibility ?? 1) < 0.22) return { ...before, visibility: point.visibility }
+    if (!ignoreVisibility && (point.visibility ?? 1) < 0.22) return { ...before, visibility: point.visibility }
     return {
       x: THREE.MathUtils.lerp(before.x, point.x, alpha),
       y: THREE.MathUtils.lerp(before.y, point.y, alpha),
@@ -71,8 +71,6 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   const runtime = createRetargetRuntime(root)
   if (runtime.info.coreMappedCount < 8) throw new Error('The character does not have enough mapped humanoid bones to bake this motion.')
 
-  // Keep the bake path identical to the live preview. We explicitly reflect image X
-  // instead of using the old quaternion basis alignment that could rotate the avatar 180°.
   runtime.targetBodyBasis = undefined
   runtime.sourceAlignment = undefined
   runtime.calibrationMirrorX = undefined
@@ -92,35 +90,39 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
     values.set(key, [])
   })
 
-  let smoothed: PosePoint[] | undefined
+  let smoothedBody: PosePoint[] | undefined
   let leftHand: PosePoint[] | undefined
   let rightHand: PosePoint[] | undefined
   let lastTime = -1
-  const blend = THREE.MathUtils.lerp(0.88, 0.46, THREE.MathUtils.clamp(smoothing, 0, 0.9))
+  const blend = THREE.MathUtils.lerp(0.9, 0.5, THREE.MathUtils.clamp(smoothing, 0, 0.9))
 
   for (const frame of cleaned.motion.frames) {
-    const raw = frame.landmarks
-    if (!raw || raw.length !== 33) continue
+    const worldBody = frame.worldLandmarks?.length === 33 ? frame.worldLandmarks : undefined
+    const rawBody = worldBody ?? frame.landmarks
+    const bodySpace: 'world' | 'image' = worldBody ? 'world' : 'image'
+    if (!rawBody || rawBody.length !== 33) continue
 
-    smoothed = smoothPose(raw, smoothed, smoothing)
-    leftHand = smoothPose(frame.leftHandLandmarks, leftHand, smoothing)
-    rightHand = smoothPose(frame.rightHandLandmarks, rightHand, smoothing)
-    const prepared = prepareRetargetPose(smoothed)
+    smoothedBody = smoothPose(rawBody, smoothedBody, smoothing)
+    leftHand = smoothPose(frame.leftHandWorldLandmarks ?? frame.leftHandLandmarks, leftHand, smoothing, true)
+    rightHand = smoothPose(frame.rightHandWorldLandmarks ?? frame.rightHandLandmarks, rightHand, smoothing, true)
+    const prepared = prepareRetargetPose(smoothedBody, bodySpace)
     if (!prepared) continue
 
     applyPoseToRig(runtime, prepared, {
       mirrorX: !mirrorX,
       blend,
+      bodySpace,
       leftHand,
       rightHand,
+      handPointsIgnoreVisibility: true,
     })
     root.updateMatrixWorld(true)
 
-    if (supportReferenceY !== undefined && hasStableFootContact(prepared)) {
+    if (supportReferenceY !== undefined && hasStableFootContact(prepared, bodySpace)) {
       const currentSupportY = getSupportY(runtime)
       if (currentSupportY !== undefined) {
-        const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.09, 0.09)
-        root.position.y += delta * 0.58
+        const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.12, 0.12)
+        root.position.y += delta * 0.72
         root.updateMatrixWorld(true)
       }
     }
