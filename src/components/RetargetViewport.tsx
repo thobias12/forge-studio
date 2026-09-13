@@ -7,6 +7,28 @@ import { hasStableFootContact, prepareRetargetPose } from '../lib/poseInput'
 import { applyPoseToRig, createRetargetRuntime, type RigInfo, type RetargetRuntime } from '../lib/retarget'
 import type { PosePoint } from '../types'
 
+export type RetargetDiagnosticsSnapshot = {
+  capturedAt: number
+  smoothing: number
+  mirrorX: boolean
+  bodyPointCount: number
+  leftHandPointCount: number
+  rightHandPointCount: number
+  stableFootContact: boolean
+  supportReferenceY?: number
+  currentSupportY?: number
+  supportDelta?: number
+  modelPosition?: [number, number, number]
+  modelQuaternion?: [number, number, number, number]
+  bones: Record<string, {
+    name: string
+    localPosition: [number, number, number]
+    worldPosition: [number, number, number]
+    localQuaternion: [number, number, number, number]
+    worldQuaternion: [number, number, number, number]
+  }>
+}
+
 type Props = {
   src?: string
   landmarks?: PosePoint[]
@@ -20,6 +42,7 @@ type Props = {
   mirrorX?: boolean
   showRig?: boolean
   onRigInfo?: (info?: RigInfo) => void
+  onDiagnostics?: (snapshot: RetargetDiagnosticsSnapshot) => void
 }
 
 export default function RetargetViewport({
@@ -35,12 +58,15 @@ export default function RetargetViewport({
   mirrorX = false,
   showRig = false,
   onRigInfo,
+  onDiagnostics,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const poseRef = useRef({ landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig })
   const infoCallbackRef = useRef(onRigInfo)
+  const diagnosticsCallbackRef = useRef(onDiagnostics)
   poseRef.current = { landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig }
   infoCallbackRef.current = onRigInfo
+  diagnosticsCallbackRef.current = onDiagnostics
 
   useEffect(() => {
     const mount = mountRef.current
@@ -89,6 +115,7 @@ export default function RetargetViewport({
     let runtime: RetargetRuntime | undefined
     let skeletonHelper: THREE.SkeletonHelper | undefined
     let supportReferenceY: number | undefined
+    let lastDiagnosticsAt = 0
     let disposed = false
     const smoothState: Record<string, { input?: PosePoint[]; points?: PosePoint[] }> = {}
 
@@ -124,9 +151,6 @@ export default function RetargetViewport({
       model.updateMatrixWorld(true)
 
       runtime = createRetargetRuntime(model)
-      // MediaPipe image X is mirrored relative to anatomical left/right. A quaternion cannot
-      // represent that reflection without also turning the avatar around, so use an explicit
-      // X reflection at the input instead of the old automatic 3D basis alignment.
       runtime.targetBodyBasis = undefined
       runtime.sourceAlignment = undefined
       runtime.calibrationMirrorX = undefined
@@ -175,38 +199,72 @@ export default function RetargetViewport({
       return state.points
     }
 
+    const emitDiagnostics = (points: PosePoint[] | undefined, currentSupportY: number | undefined) => {
+      if (!runtime || !model || !diagnosticsCallbackRef.current) return
+      const now = performance.now()
+      if (now - lastDiagnosticsAt < 250) return
+      lastDiagnosticsAt = now
+
+      const bones: RetargetDiagnosticsSnapshot['bones'] = {}
+      for (const [keyName, bone] of Object.entries(runtime.rig)) {
+        if (!bone) continue
+        bones[keyName] = {
+          name: bone.name || keyName,
+          localPosition: vector3Tuple(bone.position),
+          worldPosition: vector3Tuple(bone.getWorldPosition(new THREE.Vector3())),
+          localQuaternion: quaternionTuple(bone.quaternion),
+          worldQuaternion: quaternionTuple(bone.getWorldQuaternion(new THREE.Quaternion())),
+        }
+      }
+
+      diagnosticsCallbackRef.current({
+        capturedAt: Date.now(),
+        smoothing: poseRef.current.smoothing,
+        mirrorX: poseRef.current.mirrorX,
+        bodyPointCount: poseRef.current.landmarks?.length ?? 0,
+        leftHandPointCount: poseRef.current.leftHandLandmarks?.length ?? 0,
+        rightHandPointCount: poseRef.current.rightHandLandmarks?.length ?? 0,
+        stableFootContact: !!points && hasStableFootContact(points),
+        supportReferenceY,
+        currentSupportY,
+        supportDelta: supportReferenceY !== undefined && currentSupportY !== undefined ? roundNumber(supportReferenceY - currentSupportY) : undefined,
+        modelPosition: vector3Tuple(model.position),
+        modelQuaternion: quaternionTuple(model.quaternion),
+        bones,
+      })
+    }
+
     let animationFrame = 0
     const render = () => {
-      // Use normalized image landmarks for retargeting. They share one camera coordinate
-      // system for body and hands; mixing Pose/Hand world spaces caused the previous flips.
       const bodyRaw = poseRef.current.landmarks
       const leftRaw = poseRef.current.leftHandLandmarks
       const rightRaw = poseRef.current.rightHandLandmarks
+      let preparedPoints: PosePoint[] | undefined
+      let currentSupportY: number | undefined
 
       if (runtime && model && bodyRaw?.length === 33) {
         const smoothedBody = smooth('body', bodyRaw)
-        const points = prepareRetargetPose(smoothedBody)
-        if (points) {
-          applyPoseToRig(runtime, points, {
-            // Default false in the UI means anatomical left/right is corrected here.
+        preparedPoints = prepareRetargetPose(smoothedBody)
+        if (preparedPoints) {
+          applyPoseToRig(runtime, preparedPoints, {
             mirrorX: !poseRef.current.mirrorX,
             blend: THREE.MathUtils.lerp(0.88, 0.46, poseRef.current.smoothing),
             leftHand: smooth('leftHand', leftRaw),
             rightHand: smooth('rightHand', rightRaw),
           })
 
-          if (supportReferenceY !== undefined && hasStableFootContact(points)) {
-            runtime.root.updateMatrixWorld(true)
-            const currentSupportY = getSupportY(runtime)
-            if (currentSupportY !== undefined) {
-              const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.09, 0.09)
-              model.position.y += delta * 0.58
-              model.updateMatrixWorld(true)
-            }
+          runtime.root.updateMatrixWorld(true)
+          currentSupportY = getSupportY(runtime)
+          if (supportReferenceY !== undefined && currentSupportY !== undefined && hasStableFootContact(preparedPoints)) {
+            const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.09, 0.09)
+            model.position.y += delta * 0.58
+            model.updateMatrixWorld(true)
+            currentSupportY = getSupportY(runtime)
           }
         }
       }
 
+      emitDiagnostics(preparedPoints, currentSupportY)
       if (skeletonHelper) skeletonHelper.visible = poseRef.current.showRig
       controls.update()
       renderer.render(scene, camera)
@@ -238,4 +296,16 @@ export default function RetargetViewport({
   }, [src])
 
   return <div className={className} ref={mountRef} />
+}
+
+function roundNumber(value: number) {
+  return Number(value.toFixed(5))
+}
+
+function vector3Tuple(value: THREE.Vector3): [number, number, number] {
+  return [roundNumber(value.x), roundNumber(value.y), roundNumber(value.z)]
+}
+
+function quaternionTuple(value: THREE.Quaternion): [number, number, number, number] {
+  return [roundNumber(value.x), roundNumber(value.y), roundNumber(value.z), roundNumber(value.w)]
 }
