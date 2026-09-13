@@ -11,6 +11,7 @@ export type RetargetDiagnosticsSnapshot = {
   capturedAt: number
   smoothing: number
   mirrorX: boolean
+  bodySource: 'world' | 'image'
   bodyPointCount: number
   leftHandPointCount: number
   rightHandPointCount: number
@@ -151,6 +152,8 @@ export default function RetargetViewport({
       model.updateMatrixWorld(true)
 
       runtime = createRetargetRuntime(model)
+      // v0.6.4 uses a fixed camera-to-avatar coordinate convention. A one-frame
+      // 3D basis calibration was the source of the sideways pelvis/body flip.
       runtime.targetBodyBasis = undefined
       runtime.sourceAlignment = undefined
       runtime.calibrationMirrorX = undefined
@@ -175,7 +178,7 @@ export default function RetargetViewport({
     if (src) new GLTFLoader().load(src, (gltf) => prepareModel(gltf.scene), undefined, () => infoCallbackRef.current?.(undefined))
     else prepareModel(createForgeMannequin())
 
-    const smooth = (keyName: string, source?: PosePoint[]) => {
+    const smooth = (keyName: string, source?: PosePoint[], ignoreVisibility = false) => {
       if (!source?.length) return undefined
       const state = smoothState[keyName] ?? (smoothState[keyName] = {})
       if (source !== state.input) {
@@ -185,7 +188,7 @@ export default function RetargetViewport({
         } else {
           state.points = source.map((point, index) => {
             const previous = state.points![index]
-            if ((point.visibility ?? 1) < 0.22) return { ...previous, visibility: point.visibility }
+            if (!ignoreVisibility && (point.visibility ?? 1) < 0.22) return { ...previous, visibility: point.visibility }
             return {
               x: THREE.MathUtils.lerp(previous.x, point.x, amount),
               y: THREE.MathUtils.lerp(previous.y, point.y, amount),
@@ -199,7 +202,7 @@ export default function RetargetViewport({
       return state.points
     }
 
-    const emitDiagnostics = (points: PosePoint[] | undefined, currentSupportY: number | undefined) => {
+    const emitDiagnostics = (bodySource: 'world' | 'image', points: PosePoint[] | undefined, currentSupportY: number | undefined) => {
       if (!runtime || !model || !diagnosticsCallbackRef.current) return
       const now = performance.now()
       if (now - lastDiagnosticsAt < 250) return
@@ -221,10 +224,11 @@ export default function RetargetViewport({
         capturedAt: Date.now(),
         smoothing: poseRef.current.smoothing,
         mirrorX: poseRef.current.mirrorX,
-        bodyPointCount: poseRef.current.landmarks?.length ?? 0,
+        bodySource,
+        bodyPointCount: points?.length ?? 0,
         leftHandPointCount: poseRef.current.leftHandLandmarks?.length ?? 0,
         rightHandPointCount: poseRef.current.rightHandLandmarks?.length ?? 0,
-        stableFootContact: !!points && hasStableFootContact(points),
+        stableFootContact: !!points && hasStableFootContact(points, bodySource),
         supportReferenceY,
         currentSupportY,
         supportDelta: supportReferenceY !== undefined && currentSupportY !== undefined ? roundNumber(supportReferenceY - currentSupportY) : undefined,
@@ -236,35 +240,43 @@ export default function RetargetViewport({
 
     let animationFrame = 0
     const render = () => {
-      const bodyRaw = poseRef.current.landmarks
-      const leftRaw = poseRef.current.leftHandLandmarks
-      const rightRaw = poseRef.current.rightHandLandmarks
+      const worldBodyRaw = poseRef.current.worldLandmarks?.length === 33 ? poseRef.current.worldLandmarks : undefined
+      const imageBodyRaw = poseRef.current.landmarks
+      const bodyRaw = worldBodyRaw ?? imageBodyRaw
+      const bodySource: 'world' | 'image' = worldBodyRaw ? 'world' : 'image'
       let preparedPoints: PosePoint[] | undefined
       let currentSupportY: number | undefined
 
       if (runtime && model && bodyRaw?.length === 33) {
-        const smoothedBody = smooth('body', bodyRaw)
-        preparedPoints = prepareRetargetPose(smoothedBody)
+        const smoothedBody = smooth(`body-${bodySource}`, bodyRaw)
+        preparedPoints = prepareRetargetPose(smoothedBody, bodySource)
         if (preparedPoints) {
+          const leftHand = smooth('leftHandWorld', poseRef.current.leftHandWorldLandmarks, true)
+            ?? smooth('leftHandImage', poseRef.current.leftHandLandmarks, true)
+          const rightHand = smooth('rightHandWorld', poseRef.current.rightHandWorldLandmarks, true)
+            ?? smooth('rightHandImage', poseRef.current.rightHandLandmarks, true)
+
           applyPoseToRig(runtime, preparedPoints, {
             mirrorX: !poseRef.current.mirrorX,
-            blend: THREE.MathUtils.lerp(0.88, 0.46, poseRef.current.smoothing),
-            leftHand: smooth('leftHand', leftRaw),
-            rightHand: smooth('rightHand', rightRaw),
+            blend: THREE.MathUtils.lerp(0.9, 0.5, poseRef.current.smoothing),
+            bodySpace: bodySource,
+            leftHand,
+            rightHand,
+            handPointsIgnoreVisibility: true,
           })
 
           runtime.root.updateMatrixWorld(true)
           currentSupportY = getSupportY(runtime)
-          if (supportReferenceY !== undefined && currentSupportY !== undefined && hasStableFootContact(preparedPoints)) {
-            const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.09, 0.09)
-            model.position.y += delta * 0.58
+          if (supportReferenceY !== undefined && currentSupportY !== undefined && hasStableFootContact(preparedPoints, bodySource)) {
+            const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.12, 0.12)
+            model.position.y += delta * 0.72
             model.updateMatrixWorld(true)
             currentSupportY = getSupportY(runtime)
           }
         }
       }
 
-      emitDiagnostics(preparedPoints, currentSupportY)
+      emitDiagnostics(bodySource, preparedPoints, currentSupportY)
       if (skeletonHelper) skeletonHelper.visible = poseRef.current.showRig
       controls.update()
       renderer.render(scene, camera)
