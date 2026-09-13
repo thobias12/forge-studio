@@ -1,7 +1,7 @@
 import { characterPackageDataToBlob, characterSlug, parseCharacterPackage } from './characterPackage'
 import { dataUrlToBlob, materialSlug, parseMaterialPackage } from './materialPackage'
 
-export type AssetCategory = 'characters' | 'animations' | 'props' | 'materials' | 'textures' | 'environment' | 'audio'
+export type AssetCategory = 'characters' | 'animations' | 'props' | 'materials' | 'textures' | 'environment' | 'audio' | 'vfx'
 export type AssetKind = 'glb' | 'motion' | 'image' | 'audio' | 'file'
 
 export type LibraryAsset = {
@@ -126,6 +126,7 @@ export function detectAssetCategory(file: File): AssetCategory {
   if (name.endsWith('.forge-motion.json')) return 'animations'
   if (name.endsWith('.forge-material.json')) return 'materials'
   if (name.endsWith('.forge-character.json')) return 'characters'
+  if (name.endsWith('.forge-vfx.json')) return 'vfx'
   if (name.endsWith('.glb') || name.endsWith('.gltf')) return 'props'
   if (/\.(png|jpe?g|webp|ktx2|hdr)$/i.test(name)) return 'textures'
   if (/\.(mp3|wav|ogg|m4a)$/i.test(name)) return 'audio'
@@ -164,7 +165,7 @@ export async function sendAssetToProject(asset: LibraryAsset, project: ProjectPr
   const materialPackage = asset.category === 'materials' ? await parseMaterialPackage(asset.blob) : undefined
   if (materialPackage) return sendMaterialPackageToProject(asset, project, materialPackage)
 
-  const filename = safeAssetFilename(asset.name, asset.kind, asset.mime)
+  const filename = asset.category === 'vfx' ? `${slugName(asset.name)}.forge-vfx.json` : safeAssetFilename(asset.name, asset.kind, asset.mime)
   const manifest = buildAssetManifest(asset, project, filename)
   const handle = project.directoryHandle as any
   if (handle && typeof handle.getDirectoryHandle === 'function') {
@@ -295,6 +296,10 @@ async function writeFile(directory: any, filename: string, blob: Blob) {
   const writer = await fileHandle.createWritable()
   await writer.write(blob)
   await writer.close()
+}
+
+function slugName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'forge-vfx'
 }
 
 function download(blob: Blob, filename: string) {
