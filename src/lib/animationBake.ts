@@ -3,6 +3,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createForgeMannequin } from './mannequin'
 import { cleanupMotion, type MotionCleanupOptions, type MotionCleanupReport } from './motionCleanup'
+import { createMocapPolishState, polishPoseFrame, resetDynamicPolishState } from './mocapPolish'
 import { hasStableFootContact, prepareRetargetPose } from './poseInput'
 import { applyPoseToRig, createRetargetRuntime, HUMANOID_BONE_KEYS, type HumanoidBoneKey, type RetargetRuntime } from './retarget'
 import type { ForgeMotion, PosePoint } from '../types'
@@ -90,6 +91,22 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
     values.set(key, [])
   })
 
+  const polishState = createMocapPolishState()
+  const polishOptions = {
+    calibrationFrames: Math.min(36, Math.max(12, Math.floor(cleaned.motion.frames.length * 0.2))),
+    dropoutHoldMs: cleanup.repairGaps ? 220 : 0,
+    jointStability: 0.78,
+    handStability: 0.72,
+    footLock: cleanup.footLock,
+    footLockStrength: cleanup.footLock ? 0.9 : 0,
+  }
+
+  // Prime body proportions and floor from a short run of the clip. The calibration
+  // uses medians, so walking frames still produce useful limb lengths and floor data.
+  const primeCount = Math.min(cleaned.motion.frames.length, Math.max(18, polishOptions.calibrationFrames + 6))
+  for (let index = 0; index < primeCount; index += 1) polishPoseFrame(cleaned.motion.frames[index], polishState, polishOptions)
+  resetDynamicPolishState(polishState)
+
   let smoothedBody: PosePoint[] | undefined
   let leftHand: PosePoint[] | undefined
   let rightHand: PosePoint[] | undefined
@@ -97,14 +114,13 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   const blend = THREE.MathUtils.lerp(0.9, 0.5, THREE.MathUtils.clamp(smoothing, 0, 0.9))
 
   for (const frame of cleaned.motion.frames) {
-    const worldBody = frame.worldLandmarks?.length === 33 ? frame.worldLandmarks : undefined
-    const rawBody = worldBody ?? frame.landmarks
-    const bodySpace: 'world' | 'image' = worldBody ? 'world' : 'image'
-    if (!rawBody || rawBody.length !== 33) continue
+    const polished = polishPoseFrame(frame, polishState, polishOptions)
+    if (!polished || polished.body.length !== 33) continue
 
-    smoothedBody = smoothPose(rawBody, smoothedBody, smoothing)
-    leftHand = smoothPose(frame.leftHandWorldLandmarks ?? frame.leftHandLandmarks, leftHand, smoothing, true)
-    rightHand = smoothPose(frame.rightHandWorldLandmarks ?? frame.rightHandLandmarks, rightHand, smoothing, true)
+    const bodySpace = polished.bodySpace
+    smoothedBody = smoothPose(polished.body, smoothedBody, smoothing)
+    leftHand = smoothPose(polished.leftHand, leftHand, smoothing, true)
+    rightHand = smoothPose(polished.rightHand, rightHand, smoothing, true)
     const prepared = prepareRetargetPose(smoothedBody, bodySpace)
     if (!prepared) continue
 
@@ -122,7 +138,8 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
       const currentSupportY = getSupportY(runtime)
       if (currentSupportY !== undefined) {
         const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.12, 0.12)
-        root.position.y += delta * 0.72
+        const lockBoost = polished.quality.leftFootLocked || polished.quality.rightFootLocked ? 0.84 : 0.68
+        root.position.y += delta * lockBoost
         root.updateMatrixWorld(true)
       }
     }
