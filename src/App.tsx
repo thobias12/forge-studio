@@ -51,7 +51,7 @@ export default function App() {
           <div><span>Workspace</span><strong>Shared Library</strong></div>
         </div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.2.0</div>
+        <div className="build-tag">FORGE v0.2.1</div>
       </aside>
 
       <div className="studio-body">
