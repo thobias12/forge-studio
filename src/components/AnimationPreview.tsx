@@ -173,7 +173,9 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
     actionRef.current = action
     mixer.setTime(0)
     onTimeRef.current?.(0)
-    return () => action.stop()
+    return () => {
+      action.stop()
+    }
   }, [clip, loop])
 
   useEffect(() => {
