@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Box, Boxes, Clapperboard, Home, Layers3, ScanLine, Settings, Sparkles } from 'lucide-react'
+import { Box, Boxes, Clapperboard, Home, Layers3, ScanLine, Settings, Sparkles, UserRoundCog } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
+import CharacterStudio from './pages/CharacterStudio'
 import AnimationStudio from './pages/AnimationStudio'
 import AssetLibrary from './pages/AssetLibrary'
 import TextureLab from './pages/TextureLab'
@@ -11,13 +12,15 @@ import { FORGE_VERSION } from './version'
 import './styles.css'
 import './retarget.css'
 import './texture-v071.css'
+import './character.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'animations' | 'textures' | 'assets'
+type Page = 'home' | 'mocap' | 'models' | 'characters' | 'animations' | 'textures' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
   { id: 'mocap' as const, label: 'Mocap', icon: ScanLine },
   { id: 'models' as const, label: 'Models', icon: Box },
+  { id: 'characters' as const, label: 'Characters', icon: UserRoundCog },
   { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
   { id: 'textures' as const, label: 'Textures', icon: Layers3 },
   { id: 'assets' as const, label: 'Asset Library', icon: Boxes },
@@ -62,6 +65,7 @@ export default function App() {
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
+          {page === 'characters' && <CharacterStudio />}
           {page === 'animations' && <AnimationStudio />}
           {page === 'textures' && <TextureLab />}
           {page === 'assets' && <AssetLibrary />}
