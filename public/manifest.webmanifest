@@ -1,0 +1,9 @@
+{
+  "name": "Forge Studio",
+  "short_name": "Forge",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1016",
+  "theme_color": "#0d1016",
+  "description": "A shared asset, model, animation and phone mocap studio for Three.js games."
+}
