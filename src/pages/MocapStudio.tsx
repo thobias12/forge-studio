@@ -3,6 +3,7 @@ import { Download, FileUp, Pause, Play, QrCode, Radio, RotateCcw, Smartphone, Tr
 import Peer, { type DataConnection } from 'peerjs'
 import { QRCodeSVG } from 'qrcode.react'
 import RetargetViewport from '../components/RetargetViewport'
+import { bakeMotionToGlb, downloadBlob } from '../lib/animationBake'
 import { averageVisibility, downloadJson, formatDuration } from '../lib/pose'
 import type { RigInfo } from '../lib/retarget'
 import type { ForgeMotion, PeerMessage, PoseFrame } from '../types'
@@ -26,6 +27,8 @@ export default function MocapStudio() {
   const [smoothing, setSmoothing] = useState(0.48)
   const [mirrorX, setMirrorX] = useState(false)
   const [showRig, setShowRig] = useState(false)
+  const [exportingGlb, setExportingGlb] = useState(false)
+  const [bakeStatus, setBakeStatus] = useState('')
   const connectionRef = useRef<DataConnection | null>(null)
   const recordFramesRef = useRef<PoseFrame[]>([])
   const recordingRef = useRef(false)
@@ -56,6 +59,7 @@ export default function MocapStudio() {
           setFrames([])
           setRecording(true)
           setClip(undefined)
+          setBakeStatus('')
         }
         if (message.type === 'recording-stop') {
           recordingRef.current = false
@@ -131,6 +135,7 @@ export default function MocapStudio() {
   }, [clip, playhead, lastFrame])
 
   const visibility = Math.round(averageVisibility(activeFrame?.landmarks) * 100)
+  const canBake = !!clip && !recording && !exportingGlb && !!rigInfo && rigInfo.mappedCount >= 8
 
   const importMotion = async (file?: File) => {
     if (!file) return
@@ -141,6 +146,7 @@ export default function MocapStudio() {
       setFrames(parsed.frames)
       setPlayhead(0)
       setPlaying(false)
+      setBakeStatus('')
     } catch {
       alert('That file is not a valid Forge motion capture.')
     }
@@ -153,6 +159,7 @@ export default function MocapStudio() {
     setCharacterName(file.name)
     setRigInfo(undefined)
     setShowRig(false)
+    setBakeStatus('')
   }
 
   const useBuiltinCharacter = () => {
@@ -160,6 +167,30 @@ export default function MocapStudio() {
     setCharacterName(BUILTIN_CHARACTER)
     setRigInfo(undefined)
     setShowRig(false)
+    setBakeStatus('')
+  }
+
+  const exportAnimatedGlb = async () => {
+    if (!clip || !canBake) return
+    setExportingGlb(true)
+    setBakeStatus('Baking retargeted bone animation…')
+    try {
+      const result = await bakeMotionToGlb({
+        motion: clip,
+        characterSrc: characterUrl,
+        clipName: clip.name,
+        smoothing,
+        mirrorX,
+      })
+      downloadBlob(`${safeName(characterName)}-${safeName(clip.name)}.glb`, result.blob)
+      setBakeStatus(`${result.mappedBones} bones · ${result.sampleCount} samples · ${result.preservedAnimations} existing clips preserved`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown export error'
+      setBakeStatus(`Export failed: ${message}`)
+      alert(`Animated GLB export failed: ${message}`)
+    } finally {
+      setExportingGlb(false)
+    }
   }
 
   const togglePlayback = () => {
@@ -189,7 +220,8 @@ export default function MocapStudio() {
           <div className="toolbar-actions">
             <label className="secondary-button file-button"><FileUp size={16} /> Replace character<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
             <label className="secondary-button file-button"><FileUp size={16} /> Import motion<input type="file" accept=".json,.forge-motion.json" onChange={(e) => importMotion(e.target.files?.[0])} /></label>
-            {clip && <button className="secondary-button" onClick={() => downloadJson(`${safeName(clip.name)}.forge-motion.json`, clip)}><Download size={16} /> Export</button>}
+            {clip && <button className="secondary-button" onClick={() => downloadJson(`${safeName(clip.name)}.forge-motion.json`, clip)}><Download size={16} /> Raw JSON</button>}
+            {clip && <button className="primary-button bake-toolbar-button" disabled={!canBake} onClick={exportAnimatedGlb}><Download size={16} /> {exportingGlb ? 'Baking…' : 'Export animated GLB'}</button>}
           </div>
         </div>
 
@@ -224,7 +256,7 @@ export default function MocapStudio() {
             <button className="play-button" disabled={!clip} onClick={togglePlayback}>{playing ? <Pause size={17} /> : <Play size={17} />}</button>
             <span className="timecode">{formatDuration(playhead)} / {formatDuration(clip?.durationMs ?? 0)}</span>
             <div className="timeline-spacer" />
-            {clip && <button className="icon-button danger-hover" title="Clear clip" onClick={() => { setClip(undefined); setFrames([]); setPlayhead(0); setPlaying(false) }}><Trash2 size={16} /></button>}
+            {clip && <button className="icon-button danger-hover" title="Clear clip" onClick={() => { setClip(undefined); setFrames([]); setPlayhead(0); setPlaying(false); setBakeStatus('') }}><Trash2 size={16} /></button>}
           </div>
           <input className="timeline-range" type="range" min={0} max={Math.max(1, clip?.durationMs ?? 1)} value={Math.min(playhead, clip?.durationMs ?? 0)} disabled={!clip} onChange={(e) => { const value = Number(e.target.value); setPlayhead(value); playbackOffsetRef.current = value; setPlaying(false) }} />
           <div className="timeline-track"><div className="track-label">PHONE BODY</div><div className={`track-clip ${clip ? 'has-clip' : ''}`}>{clip ? `${clip.frames.length} pose frames` : 'Record on your phone to create a clip'}</div></div>
@@ -273,13 +305,26 @@ export default function MocapStudio() {
 
         <div className="inspector-block retarget-settings">
           <span className="property-label">Retarget settings</span>
-          <label className="range-setting"><span><b>Smoothing</b><em>{Math.round(smoothing * 100)}%</em></span><input type="range" min="0" max="0.9" step="0.05" value={smoothing} onChange={(e) => setSmoothing(Number(e.target.value))} /></label>
-          <label className="toggle-setting"><span><b>Mirror X</b><small>Use if left/right movement is reversed</small></span><input type="checkbox" checked={mirrorX} onChange={(e) => setMirrorX(e.target.checked)} /></label>
+          <label className="range-setting"><span><b>Smoothing</b><em>{Math.round(smoothing * 100)}%</em></span><input type="range" min="0" max="0.9" step="0.05" value={smoothing} onChange={(e) => { setSmoothing(Number(e.target.value)); setBakeStatus('') }} /></label>
+          <label className="toggle-setting"><span><b>Mirror X</b><small>Use if left/right movement is reversed</small></span><input type="checkbox" checked={mirrorX} onChange={(e) => { setMirrorX(e.target.checked); setBakeStatus('') }} /></label>
           <label className="toggle-setting"><span><b>Show rig</b><small>Overlay detected skeleton bones</small></span><input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} /></label>
         </div>
 
+        {clip && (
+          <div className="inspector-block bake-card">
+            <span className="property-label">Game-ready export</span>
+            <div className="mini-row"><span>Clip</span><strong>{clip.name}</strong></div>
+            <div className="mini-row"><span>Duration</span><span>{formatDuration(clip.durationMs)}</span></div>
+            <div className="mini-row"><span>Samples</span><span>{clip.frames.length}</span></div>
+            <div className="mini-row"><span>Output</span><span className="status-good">GLB + AnimationClip</span></div>
+            <button className="primary-button bake-button" disabled={!canBake} onClick={exportAnimatedGlb}><Download size={15} /> {exportingGlb ? 'Baking animation…' : 'Export animated GLB'}</button>
+            <p className="bake-copy">Forge bakes the current smoothing and mirror settings into bone quaternion tracks, restores the character rest pose, then packages everything into one binary GLB.</p>
+            {bakeStatus && <div className={`bake-status ${bakeStatus.startsWith('Export failed') ? 'error' : ''}`}>{bakeStatus}</div>}
+          </div>
+        )}
+
         <div className="inspector-block info-block"><span className="property-label">Capture quality</span><p>Place your single phone so your full body, hands and feet stay visible. More light and a clear background improve tracking.</p></div>
-        <div className="inspector-block"><span className="property-label">v0.2.1 pipeline</span><div className="mini-row"><span>Built-in rigged mannequin</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Phone pose tracking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Humanoid bone mapper</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Live character retargeting</span><span className="status-good">Ready</span></div><div className="mini-row"><span>GLB animation baking</span><span className="status-warn">Next</span></div></div>
+        <div className="inspector-block"><span className="property-label">v0.3 pipeline</span><div className="mini-row"><span>Built-in rigged mannequin</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Phone pose tracking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Live character retargeting</span><span className="status-good">Ready</span></div><div className="mini-row"><span>GLB animation baking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Foot locking + cleanup</span><span className="status-warn">Next</span></div></div>
       </aside>
     </div>
   )
