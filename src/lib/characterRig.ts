@@ -4,6 +4,7 @@ import {
   FINGER_BONE_KEYS,
   HUMANOID_BONE_KEYS,
   mapHumanoidRig,
+  type CoreHumanoidBoneKey,
   type HumanoidBoneKey,
   type RigInfo,
 } from './retarget'
@@ -15,6 +16,11 @@ export type CharacterRigResult = {
   info: RigInfo
   fallbackMappedCount: number
 }
+
+// Toe helpers are useful for gait/foot-roll animation, but they are not required
+// for a Character Studio assembly to be considered a complete humanoid body rig.
+const OPTIONAL_CHARACTER_CORE_BONES = new Set<CoreHumanoidBoneKey>(['leftToes', 'rightToes'])
+const REQUIRED_CHARACTER_CORE_BONES = CORE_BONE_KEYS.filter((key) => !OPTIONAL_CHARACTER_CORE_BONES.has(key))
 
 export function mapCharacterRig(root: THREE.Object3D): CharacterRigResult {
   const boneMapped = mapHumanoidRig(root)
@@ -36,16 +42,16 @@ export function mapCharacterRig(root: THREE.Object3D): CharacterRigResult {
     if (node) mapped[key] = node.name || key
   }
 
-  const coreMappedCount = CORE_BONE_KEYS.filter((key) => rig[key]).length
+  const coreMappedCount = REQUIRED_CHARACTER_CORE_BONES.filter((key) => rig[key]).length
   const fingerMappedCount = FINGER_BONE_KEYS.filter((key) => rig[key]).length
   const info: RigInfo = {
     totalBones: Math.max(boneMapped.info.totalBones, Object.keys(mapped).length),
     mappedCount: Object.keys(mapped).length,
     coreMappedCount,
     fingerMappedCount,
-    coreTotal: CORE_BONE_KEYS.length,
+    coreTotal: REQUIRED_CHARACTER_CORE_BONES.length,
     mapped,
-    missing: CORE_BONE_KEYS.filter((key) => !rig[key]),
+    missing: REQUIRED_CHARACTER_CORE_BONES.filter((key) => !rig[key]),
   }
 
   return { rig, info, fallbackMappedCount }
