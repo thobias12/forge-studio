@@ -161,8 +161,7 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
       fitCharacter(root, state)
       if (showRig) {
         state.skeleton = new THREE.SkeletonHelper(root)
-        state.skeleton.material.transparent = true
-        state.skeleton.material.opacity = 0.8
+        styleSkeleton(state.skeleton)
         state.scene.add(state.skeleton)
       }
     }).catch(() => callbackRef.current?.(undefined))
@@ -175,8 +174,7 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
     if (!state?.characterRoot) return
     if (showRig && !state.skeleton) {
       state.skeleton = new THREE.SkeletonHelper(state.characterRoot)
-      state.skeleton.material.transparent = true
-      state.skeleton.material.opacity = 0.8
+      styleSkeleton(state.skeleton)
       state.scene.add(state.skeleton)
     } else if (!showRig && state.skeleton) {
       state.scene.remove(state.skeleton)
@@ -235,6 +233,14 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
   }, [attachments])
 
   return <div className="character-preview" ref={mountRef} />
+}
+
+function styleSkeleton(helper: THREE.SkeletonHelper) {
+  const materials = Array.isArray(helper.material) ? helper.material : [helper.material]
+  for (const material of materials) {
+    material.transparent = true
+    material.opacity = 0.8
+  }
 }
 
 function applyTransform(group: THREE.Group, transform: CharacterTransform) {
