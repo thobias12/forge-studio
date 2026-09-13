@@ -16,7 +16,7 @@ import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import type { HumanoidBoneKey, RigInfo } from '../lib/retarget'
 import '../character.css'
 
-type LocalFile = { blob: Blob; filename: string; url: string }
+type LocalFile = { blob: Blob; filename: string; url: string; assetId?: string }
 type Attachment = {
   id: string
   name: string
@@ -55,6 +55,10 @@ export default function CharacterStudio() {
 
   const selected = attachments.find((item) => item.id === selectedId)
   const libraryModels = useMemo(() => library.filter((item) => item.kind === 'glb'), [library])
+  const equipmentModels = useMemo(
+    () => library.filter((item) => item.kind === 'glb' && item.category === 'props' && item.id !== base?.assetId),
+    [library, base?.assetId],
+  )
   const characterPresets = useMemo(() => library.filter((item) => item.category === 'characters' && item.mime.includes('forge-character')), [library])
   const previewAttachments: CharacterPreviewAttachment[] = attachments.map((item) => ({
     id: item.id,
@@ -64,10 +68,10 @@ export default function CharacterStudio() {
     visible: item.visible,
   }))
 
-  const setBaseBlob = (blob: Blob, filename: string) => {
+  const setBaseBlob = (blob: Blob, filename: string, assetId?: string) => {
     if (base?.url) URL.revokeObjectURL(base.url)
     const url = URL.createObjectURL(blob)
-    setBase({ blob, filename, url })
+    setBase({ blob, filename, url, assetId })
     setRigInfo(undefined)
     setStatus(`Loaded ${filename}. Forge is mapping the humanoid skeleton…`)
   }
@@ -81,7 +85,7 @@ export default function CharacterStudio() {
   const loadBaseFromLibrary = () => {
     const asset = libraryModels.find((item) => item.id === libraryId)
     if (!asset) return
-    setBaseBlob(asset.blob, `${safeName(asset.name)}.glb`)
+    setBaseBlob(asset.blob, `${safeName(asset.name)}.glb`, asset.id)
     setName(asset.name)
     setStatus(`${asset.name} loaded from Shared Asset Library.`)
   }
@@ -107,8 +111,16 @@ export default function CharacterStudio() {
   }
 
   const loadAttachmentFromLibrary = (slot: CharacterSlot, assetId: string) => {
-    const asset = libraryModels.find((item) => item.id === assetId)
-    if (!asset) return
+    if (!assetId) return
+    if (assetId === base?.assetId) {
+      setStatus('The active base character cannot also be equipped as an armor piece.')
+      return
+    }
+    const asset = equipmentModels.find((item) => item.id === assetId)
+    if (!asset) {
+      setStatus('Only GLB assets stored as Props can be equipped from the Shared Library. Import other armor directly if needed.')
+      return
+    }
     const file = new File([asset.blob], `${safeName(asset.name)}.glb`, { type: asset.mime || 'model/gltf-binary' })
     attachFile(slot, file)
   }
@@ -233,7 +245,9 @@ export default function CharacterStudio() {
               </button>
               <div className="character-slot-actions">
                 <label title="Import GLB"><FileUp size={12} /><input type="file" accept=".glb,.gltf,model/gltf-binary" onChange={(event) => attachFile(slot, event.target.files?.[0])} /></label>
-                {libraryModels.length > 0 && <select value="" title="Attach model from library" onChange={(event) => loadAttachmentFromLibrary(slot, event.target.value)}><option value="">Library</option>{libraryModels.map((asset) => <option value={asset.id} key={asset.id}>{asset.name}</option>)}</select>}
+                {equipmentModels.length > 0
+                  ? <select value="" title="Attach prop GLB from library" onChange={(event) => loadAttachmentFromLibrary(slot, event.target.value)}><option value="">Library props</option>{equipmentModels.map((asset) => <option value={asset.id} key={asset.id}>{asset.name}</option>)}</select>
+                  : <select value="" disabled title="Save armor/equipment GLBs as Props in the Asset Library"><option value="">No prop GLBs</option></select>}
                 {item && <button title="Remove" onClick={() => removeAttachment(item.id)}><Trash2 size={12} /></button>}
               </div>
             </div>
@@ -252,7 +266,7 @@ export default function CharacterStudio() {
         <div className="character-preview-wrap">
           <CharacterPreview baseUrl={base?.url} attachments={previewAttachments} showRig={showRig} onRigInfo={setRigInfo} />
           {!base && <div className="character-empty"><div><UserRoundCog size={36} /></div><span className="eyebrow">HUMANOID ASSEMBLY</span><h2>Build a game-ready character</h2><p>Load a rigged GLB, then attach armor, clothing and equipment directly to detected humanoid bones.</p><label className="primary-button file-button"><FileUp size={15} /> Load character<input type="file" accept=".glb,.gltf,model/gltf-binary" onChange={(event) => importBase(event.target.files?.[0])} /></label></div>}
-          {base && <div className="character-rig-status"><span className={rigInfo ? 'good' : ''} />{rigInfo ? `${rigInfo.coreMappedCount}/${rigInfo.coreTotal} core bones · ${rigInfo.fingerMappedCount} finger bones` : 'Mapping skeleton…'}</div>}
+          {base && <div className="character-rig-status"><span className={rigInfo && rigInfo.coreMappedCount > 0 ? 'good' : ''} />{rigInfo ? `${rigInfo.coreMappedCount}/${rigInfo.coreTotal} core bones · ${rigInfo.fingerMappedCount} finger bones` : 'Mapping skeleton…'}</div>}
         </div>
       </main>
 
