@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, Boxes, Download, FileUp, FolderGit2, FolderOpen, Heart, Plus, Search, Send, Trash2 } from 'lucide-react'
+import { ArrowUpDown, Box, Boxes, Check, Download, FileUp, FolderGit2, FolderOpen, Heart, Plus, Search, Send, Trash2, X } from 'lucide-react'
 import ModelViewer from '../components/ModelViewer'
 import {
   deleteAsset,
@@ -16,6 +16,7 @@ import {
   type ProjectProfile,
 } from '../lib/library'
 import '../library.css'
+import '../library-v084.css'
 
 const categories: { id: 'all' | AssetCategory; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -28,21 +29,28 @@ const categories: { id: 'all' | AssetCategory; label: string }[] = [
   { id: 'audio', label: 'Audio' },
 ]
 
+type SortMode = 'updated' | 'name' | 'size'
+
 export default function AssetLibrary() {
   const [assets, setAssets] = useState<LibraryAsset[]>([])
   const [projects, setProjects] = useState<ProjectProfile[]>([])
   const [selectedId, setSelectedId] = useState('')
+  const [batchIds, setBatchIds] = useState<string[]>([])
   const [projectId, setProjectId] = useState('')
   const [category, setCategory] = useState<'all' | AssetCategory>('all')
   const [query, setQuery] = useState('')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const [sortMode, setSortMode] = useState<SortMode>('updated')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
 
   const refresh = async () => {
     const [nextAssets, nextProjects] = await Promise.all([listAssets(), listProjects()])
     setAssets(nextAssets)
     setProjects(nextProjects)
+    setBatchIds((ids) => ids.filter((id) => nextAssets.some((asset) => asset.id === id)))
     if (!selectedId && nextAssets[0]) setSelectedId(nextAssets[0].id)
     if (!projectId && nextProjects[0]) setProjectId(nextProjects[0].id)
   }
@@ -51,26 +59,44 @@ export default function AssetLibrary() {
 
   const selected = assets.find((asset) => asset.id === selectedId)
   const project = projects.find((item) => item.id === projectId)
+  const batchedAssets = assets.filter((asset) => batchIds.includes(asset.id))
+  const sendTargets = batchedAssets.length ? batchedAssets : selected ? [selected] : []
 
   useEffect(() => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl)
-    if (selected?.kind === 'glb') {
-      const url = URL.createObjectURL(selected.blob)
-      setPreviewUrl(url)
-      return () => URL.revokeObjectURL(url)
+    if (!selected || !['glb', 'image', 'audio'].includes(selected.kind)) {
+      setPreviewUrl('')
+      return undefined
     }
-    setPreviewUrl('')
-    return undefined
-  }, [selected?.id])
+    const url = URL.createObjectURL(selected.blob)
+    setPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [selected?.id, selected?.updatedAt])
+
+  useEffect(() => {
+    const urls: Record<string, string> = {}
+    for (const asset of assets) {
+      if (asset.kind !== 'image') continue
+      urls[asset.id] = URL.createObjectURL(asset.blob)
+    }
+    setThumbnailUrls(urls)
+    return () => Object.values(urls).forEach((url) => URL.revokeObjectURL(url))
+  }, [assets])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return assets.filter((asset) => {
+    const result = assets.filter((asset) => {
       if (category !== 'all' && asset.category !== category) return false
+      if (favoritesOnly && !asset.favorite) return false
       if (!needle) return true
-      return `${asset.name} ${asset.category} ${asset.tags.join(' ')}`.toLowerCase().includes(needle)
+      return `${asset.name} ${asset.category} ${asset.tags.join(' ')} ${asset.source ?? ''}`.toLowerCase().includes(needle)
     })
-  }, [assets, category, query])
+
+    return [...result].sort((a, b) => {
+      if (sortMode === 'name') return a.name.localeCompare(b.name)
+      if (sortMode === 'size') return b.size - a.size
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
+  }, [assets, category, favoritesOnly, query, sortMode])
 
   const importFiles = async (files?: FileList | null) => {
     if (!files?.length) return
@@ -107,6 +133,7 @@ export default function AssetLibrary() {
     await deleteAsset(selected.id)
     const remaining = assets.filter((asset) => asset.id !== selected.id)
     setAssets(remaining)
+    setBatchIds((ids) => ids.filter((id) => id !== selected.id))
     setSelectedId(remaining[0]?.id ?? '')
     setStatus(`${selected.name} removed from Forge Library.`)
   }
@@ -147,15 +174,34 @@ export default function AssetLibrary() {
     setStatus(`${name} added as a Forge project.`)
   }
 
+  const toggleBatch = (id: string) => {
+    setBatchIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])
+  }
+
+  const selectAllFiltered = () => {
+    setBatchIds((ids) => [...new Set([...ids, ...filtered.map((asset) => asset.id)])])
+  }
+
   const sendSelected = async () => {
-    if (!selected || !project) return
+    if (!sendTargets.length || !project) return
     setBusy(true)
-    setStatus(`Sending ${selected.name} to ${project.name}…`)
+    const names = sendTargets.map((asset) => asset.name)
+    setStatus(`Sending ${sendTargets.length === 1 ? names[0] : `${sendTargets.length} assets`} to ${project.name}…`)
     try {
-      const result = await sendAssetToProject(selected, project)
-      setStatus(result.mode === 'folder'
-        ? `${selected.name} written directly to ${project.name}/${project.assetPath}.`
-        : `${selected.name} exported with a Forge manifest. Connect a local repo folder for direct writes.`)
+      let folderWrites = 0
+      let downloads = 0
+      for (const asset of sendTargets) {
+        const result = await sendAssetToProject(asset, project)
+        if (result.mode === 'folder') folderWrites += 1
+        else downloads += 1
+      }
+      if (folderWrites === sendTargets.length) {
+        setStatus(`${sendTargets.length} asset${sendTargets.length === 1 ? '' : 's'} written directly to ${project.name}/${project.assetPath}.`)
+      } else if (downloads === sendTargets.length) {
+        setStatus(`${sendTargets.length} asset${sendTargets.length === 1 ? '' : 's'} exported with Forge manifests. Connect a local repo folder for direct writes.`)
+      } else {
+        setStatus(`${folderWrites} direct write${folderWrites === 1 ? '' : 's'} and ${downloads} download export${downloads === 1 ? '' : 's'} completed.`)
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Send to Game failed.')
     } finally {
@@ -168,6 +214,7 @@ export default function AssetLibrary() {
       <header className="library-toolbar">
         <div><span className="eyebrow">SHARED ASSET LIBRARY</span><h1>Forge Library</h1></div>
         <div className="library-toolbar-actions">
+          {batchIds.length > 0 && <span className="library-selection-count">{batchIds.length} selected</span>}
           <label className="secondary-button file-button"><FileUp size={16} /> Import assets<input multiple type="file" onChange={(event) => void importFiles(event.target.files)} /></label>
         </div>
       </header>
@@ -175,6 +222,7 @@ export default function AssetLibrary() {
       <div className="library-layout">
         <aside className="library-left">
           <div className="library-search"><Search size={15} /><input placeholder="Search assets…" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
+          <button className={`library-favorites-filter ${favoritesOnly ? 'active' : ''}`} onClick={() => setFavoritesOnly((value) => !value)}><Heart size={13} fill={favoritesOnly ? 'currentColor' : 'none'} /><span>Favorites only</span><b>{assets.filter((asset) => asset.favorite).length}</b></button>
           <div className="library-categories">
             {categories.map((item) => (
               <button key={item.id} className={category === item.id ? 'active' : ''} onClick={() => setCategory(item.id)}>
@@ -189,18 +237,39 @@ export default function AssetLibrary() {
         </aside>
 
         <main className="library-main">
-          <div className="library-grid-heading"><span>{category === 'all' ? 'ALL ASSETS' : category.toUpperCase()}</span><b>{filtered.length} items</b></div>
+          <div className="library-grid-heading library-grid-toolbar">
+            <div><span>{category === 'all' ? 'ALL ASSETS' : category.toUpperCase()}</span><b>{filtered.length} items</b></div>
+            <div className="library-grid-actions">
+              <button disabled={!filtered.length} onClick={selectAllFiltered}><Check size={12} /> Select visible</button>
+              {batchIds.length > 0 && <button onClick={() => setBatchIds([])}><X size={12} /> Clear</button>}
+              <label><ArrowUpDown size={12} /><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="updated">Recently updated</option><option value="name">Name A-Z</option><option value="size">Largest first</option></select></label>
+            </div>
+          </div>
+          {batchIds.length > 0 && (
+            <div className="library-batch-bar">
+              <span><strong>{batchIds.length}</strong> asset{batchIds.length === 1 ? '' : 's'} selected</span>
+              <button className="primary-button" disabled={busy || !project} onClick={sendSelected}><Send size={14} /> {busy ? 'Working…' : `Send batch to ${project?.name ?? 'game'}`}</button>
+            </div>
+          )}
           {filtered.length ? (
             <div className="library-grid">
-              {filtered.map((asset) => (
-                <button key={asset.id} className={`library-card ${selectedId === asset.id ? 'active' : ''}`} onClick={() => setSelectedId(asset.id)}>
-                  <div className={`library-card-art kind-${asset.kind}`}><AssetGlyph kind={asset.kind} /><span>{asset.kind.toUpperCase()}</span>{asset.favorite && <Heart size={13} fill="currentColor" />}</div>
-                  <div className="library-card-copy"><strong>{asset.name}</strong><span>{asset.category} · {formatBytes(asset.size)}</span></div>
-                </button>
-              ))}
+              {filtered.map((asset) => {
+                const checked = batchIds.includes(asset.id)
+                return (
+                  <div key={asset.id} role="button" tabIndex={0} className={`library-card ${selectedId === asset.id ? 'active' : ''} ${checked ? 'batch-selected' : ''}`} onClick={() => setSelectedId(asset.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedId(asset.id) }}>
+                    <button className={`library-card-check ${checked ? 'active' : ''}`} title={checked ? 'Remove from batch' : 'Add to batch'} onClick={(event) => { event.stopPropagation(); toggleBatch(asset.id) }}>{checked ? <Check size={12} /> : null}</button>
+                    <div className={`library-card-art kind-${asset.kind}`}>
+                      {asset.kind === 'image' && thumbnailUrls[asset.id] ? <img className="library-card-image" src={thumbnailUrls[asset.id]} alt="" /> : <AssetGlyph kind={asset.kind} />}
+                      <span>{asset.kind.toUpperCase()}</span>
+                      {asset.favorite && <Heart size={13} fill="currentColor" />}
+                    </div>
+                    <div className="library-card-copy"><strong>{asset.name}</strong><span>{asset.category} · {formatBytes(asset.size)}</span></div>
+                  </div>
+                )
+              })}
             </div>
           ) : (
-            <div className="library-empty"><Boxes size={34} /><h3>No assets here yet</h3><p>Import a file or save a mocap animation directly from Mocap Studio.</p></div>
+            <div className="library-empty"><Boxes size={34} /><h3>No assets here</h3><p>{favoritesOnly ? 'No favorites match the current filters.' : 'Import a file or save something from another Forge studio.'}</p></div>
           )}
         </main>
 
@@ -208,8 +277,11 @@ export default function AssetLibrary() {
           <div className="panel-heading"><span>ASSET INSPECTOR</span></div>
           {selected ? (
             <>
-              <div className="library-preview">
-                {previewUrl ? <ModelViewer src={previewUrl} /> : <div className="library-preview-placeholder"><AssetGlyph kind={selected.kind} /><span>{selected.kind.toUpperCase()}</span></div>}
+              <div className={`library-preview preview-${selected.kind}`}>
+                {selected.kind === 'glb' && previewUrl ? <ModelViewer src={previewUrl} /> : null}
+                {selected.kind === 'image' && previewUrl ? <img className="library-image-preview" src={previewUrl} alt={selected.name} /> : null}
+                {selected.kind === 'audio' && previewUrl ? <div className="library-audio-preview"><AssetGlyph kind="audio" /><audio controls src={previewUrl} /></div> : null}
+                {!['glb', 'image', 'audio'].includes(selected.kind) && <div className="library-preview-placeholder"><AssetGlyph kind={selected.kind} /><span>{selected.kind.toUpperCase()}</span></div>}
               </div>
               <div className="library-property"><label>Name</label><input value={selected.name} onChange={(event) => void patchSelected({ name: event.target.value })} /></div>
               <div className="library-property"><label>Category</label><select value={selected.category} onChange={(event) => void patchSelected({ category: event.target.value as AssetCategory })}>{categories.filter((item) => item.id !== 'all').map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
@@ -218,11 +290,12 @@ export default function AssetLibrary() {
 
               <div className="send-panel">
                 <div className="property-title"><span>SEND TO GAME</span><em>{project?.connectedFolderName ? 'DIRECT' : 'EXPORT'}</em></div>
+                {batchIds.length > 0 && <div className="library-batch-note">Batch mode: {batchIds.length} selected asset{batchIds.length === 1 ? '' : 's'} will be sent.</div>}
                 <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
                 {project && <input value={project.assetPath} onChange={(event) => void updateProjectPath(event.target.value)} placeholder="public/assets/forge" />}
                 <button className="secondary-button connect-project" onClick={connectProjectFolder}><FolderOpen size={15} /> {project?.connectedFolderName ? `Connected: ${project.connectedFolderName}` : 'Connect local game repo'}</button>
-                <button className="primary-button send-game-button" disabled={busy || !project} onClick={sendSelected}><Send size={15} /> {busy ? 'Working…' : `Send to ${project?.name ?? 'game'}`}</button>
-                <p>Connected projects are written directly into the selected asset path. Without a folder connection Forge downloads the asset plus its game manifest.</p>
+                <button className="primary-button send-game-button" disabled={busy || !project || !sendTargets.length} onClick={sendSelected}><Send size={15} /> {busy ? 'Working…' : batchIds.length ? `Send ${batchIds.length} to ${project?.name ?? 'game'}` : `Send to ${project?.name ?? 'game'}`}</button>
+                <p>Connected projects are written directly into the selected asset path. Without a folder connection Forge downloads each asset plus its game manifest.</p>
               </div>
 
               <button className="library-delete" onClick={() => void removeSelected()}><Trash2 size={14} /> Remove from library</button>
