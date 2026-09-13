@@ -3,7 +3,8 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createForgeMannequin } from './mannequin'
 import { cleanupMotion, type MotionCleanupOptions, type MotionCleanupReport } from './motionCleanup'
-import { applyPoseToRig, createRetargetRuntime, HUMANOID_BONE_KEYS, type HumanoidBoneKey } from './retarget'
+import { hasStableFootContact, prepareRetargetPose } from './poseInput'
+import { applyPoseToRig, createRetargetRuntime, HUMANOID_BONE_KEYS, type HumanoidBoneKey, type RetargetRuntime } from './retarget'
 import type { ForgeMotion, PosePoint } from '../types'
 
 export type BakeMotionOptions = {
@@ -37,7 +38,13 @@ function smoothPose(source: PosePoint[] | undefined, previous: PosePoint[] | und
   if (!previous || previous.length !== source.length) return source.map((point) => ({ ...point }))
   return source.map((point, index) => {
     const before = previous[index]
-    return { x: THREE.MathUtils.lerp(before.x, point.x, alpha), y: THREE.MathUtils.lerp(before.y, point.y, alpha), z: THREE.MathUtils.lerp(before.z, point.z, alpha), visibility: point.visibility }
+    if ((point.visibility ?? 1) < 0.22) return { ...before, visibility: point.visibility }
+    return {
+      x: THREE.MathUtils.lerp(before.x, point.x, alpha),
+      y: THREE.MathUtils.lerp(before.y, point.y, alpha),
+      z: THREE.MathUtils.lerp(before.z, point.z, alpha),
+      visibility: point.visibility,
+    }
   })
 }
 
@@ -46,6 +53,13 @@ function pushQuaternion(values: number[], quaternion: THREE.Quaternion, previous
   if (previous && previous.dot(next) < 0) next.set(-next.x, -next.y, -next.z, -next.w)
   values.push(next.x, next.y, next.z, next.w)
   return next
+}
+
+function getSupportY(runtime: RetargetRuntime) {
+  const supportBones = [runtime.rig.leftToes ?? runtime.rig.leftFoot, runtime.rig.rightToes ?? runtime.rig.rightFoot]
+    .filter((bone): bone is THREE.Bone => !!bone)
+  if (!supportBones.length) return undefined
+  return Math.min(...supportBones.map((bone) => bone.getWorldPosition(new THREE.Vector3()).y))
 }
 
 export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeMotionResult> {
@@ -57,11 +71,21 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   const runtime = createRetargetRuntime(root)
   if (runtime.info.coreMappedCount < 8) throw new Error('The character does not have enough mapped humanoid bones to bake this motion.')
 
+  // Keep the bake path identical to the live preview. We explicitly reflect image X
+  // instead of using the old quaternion basis alignment that could rotate the avatar 180°.
+  runtime.targetBodyBasis = undefined
+  runtime.sourceAlignment = undefined
+  runtime.calibrationMirrorX = undefined
+
   const animatedKeys = HUMANOID_BONE_KEYS.filter((key) => runtime.rig[key])
   const restQuaternions = new Map<THREE.Bone, THREE.Quaternion>()
   const values = new Map<HumanoidBoneKey, number[]>()
   const previousQuaternions = new Map<HumanoidBoneKey, THREE.Quaternion>()
+  const restRootPosition = root.position.clone()
+  const supportReferenceY = getSupportY(runtime)
+  const rootValues: number[] = []
   const times: number[] = []
+
   animatedKeys.forEach((key) => {
     const bone = runtime.rig[key]!
     restQuaternions.set(bone, bone.quaternion.clone())
@@ -72,23 +96,41 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   let leftHand: PosePoint[] | undefined
   let rightHand: PosePoint[] | undefined
   let lastTime = -1
-  const blend = THREE.MathUtils.lerp(0.9, 0.48, THREE.MathUtils.clamp(smoothing, 0, 0.9))
+  const blend = THREE.MathUtils.lerp(0.88, 0.46, THREE.MathUtils.clamp(smoothing, 0, 0.9))
 
   for (const frame of cleaned.motion.frames) {
-    const raw = frame.worldLandmarks?.length === 33 ? frame.worldLandmarks : frame.landmarks
+    const raw = frame.landmarks
     if (!raw || raw.length !== 33) continue
-    smoothed = smoothPose(raw, smoothed, smoothing)
-    leftHand = smoothPose(frame.leftHandWorldLandmarks?.length === 21 ? frame.leftHandWorldLandmarks : frame.leftHandLandmarks, leftHand, smoothing)
-    rightHand = smoothPose(frame.rightHandWorldLandmarks?.length === 21 ? frame.rightHandWorldLandmarks : frame.rightHandLandmarks, rightHand, smoothing)
-    if (!smoothed) continue
 
-    applyPoseToRig(runtime, smoothed, { mirrorX, blend, leftHand, rightHand })
+    smoothed = smoothPose(raw, smoothed, smoothing)
+    leftHand = smoothPose(frame.leftHandLandmarks, leftHand, smoothing)
+    rightHand = smoothPose(frame.rightHandLandmarks, rightHand, smoothing)
+    const prepared = prepareRetargetPose(smoothed)
+    if (!prepared) continue
+
+    applyPoseToRig(runtime, prepared, {
+      mirrorX: !mirrorX,
+      blend,
+      leftHand,
+      rightHand,
+    })
     root.updateMatrixWorld(true)
+
+    if (supportReferenceY !== undefined && hasStableFootContact(prepared)) {
+      const currentSupportY = getSupportY(runtime)
+      if (currentSupportY !== undefined) {
+        const delta = THREE.MathUtils.clamp(supportReferenceY - currentSupportY, -0.09, 0.09)
+        root.position.y += delta * 0.58
+        root.updateMatrixWorld(true)
+      }
+    }
 
     let time = Math.max(0, frame.t / 1000)
     if (time <= lastTime) time = lastTime + 0.001
     lastTime = time
     times.push(time)
+    rootValues.push(root.position.x, root.position.y, root.position.z)
+
     animatedKeys.forEach((key) => {
       const bone = runtime.rig[key]!
       const stored = pushQuaternion(values.get(key)!, bone.quaternion, previousQuaternions.get(key))
@@ -97,14 +139,26 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   }
 
   if (times.length < 2) throw new Error('The recording does not contain enough valid pose frames to bake.')
-  const tracks = animatedKeys.map((key) => new THREE.QuaternionKeyframeTrack(`${runtime.rig[key]!.uuid}.quaternion`, times, values.get(key)!))
+
+  const tracks: THREE.KeyframeTrack[] = animatedKeys.map((key) =>
+    new THREE.QuaternionKeyframeTrack(`${runtime.rig[key]!.uuid}.quaternion`, times, values.get(key)!),
+  )
+  tracks.push(new THREE.VectorKeyframeTrack(`${root.uuid}.position`, times, rootValues))
+
   const bakedClip = new THREE.AnimationClip(clipName || 'Forge Mocap', -1, tracks)
   bakedClip.optimize()
 
   restQuaternions.forEach((quaternion, bone) => bone.quaternion.copy(quaternion))
+  root.position.copy(restRootPosition)
   root.updateMatrixWorld(true)
+
   const preservedAnimations = sourceAnimations.filter((animation) => animation.name !== bakedClip.name)
-  const result = await new GLTFExporter().parseAsync(root, { binary: true, trs: true, onlyVisible: false, animations: [...preservedAnimations, bakedClip] })
+  const result = await new GLTFExporter().parseAsync(root, {
+    binary: true,
+    trs: true,
+    onlyVisible: false,
+    animations: [...preservedAnimations, bakedClip],
+  })
   if (!(result instanceof ArrayBuffer)) throw new Error('Forge expected a binary GLB export but received text glTF data.')
 
   return {
