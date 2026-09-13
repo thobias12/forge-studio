@@ -279,7 +279,7 @@ export default function RetargetViewport({
             applyPoseToRig(runtime, preparedPoints, {
               mirrorX: !poseRef.current.mirrorX,
               blend: THREE.MathUtils.lerp(0.9, 0.5, poseRef.current.smoothing),
-              bodySpace,
+              bodySpace: polished.bodySpace,
               leftHand,
               rightHand,
               handPointsIgnoreVisibility: true,
