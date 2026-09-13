@@ -8,7 +8,7 @@ import type { ForgeMotion, PeerMessage, PoseFrame, PosePoint, TrackingQuality } 
 const WASM_ROOT = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
 const HOLISTIC_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task'
 const INFERENCE_INTERVAL_MS = 42
-const HAND_HOLD_MS = 260
+const HAND_HOLD_MS = 300
 
 const HAND_CONNECTIONS: Array<[number, number]> = [
   [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8], [5,9],[9,10],[10,11],[11,12],
@@ -84,7 +84,8 @@ export default function Capture() {
   }, [recording])
 
   useEffect(() => () => {
-    stopCameraInternal()
+    cancelAnimationFrame(rafRef.current)
+    streamRef.current?.getTracks().forEach((track) => track.stop())
     holisticRef.current?.close()
     holisticRef.current = null
   }, [])
@@ -100,11 +101,10 @@ export default function Capture() {
       minPoseDetectionConfidence: 0.42,
       minPosePresenceConfidence: 0.42,
       minPoseSuppressionThreshold: 0.3,
-      minHandLandmarksConfidence: 0.34,
+      minHandLandmarksConfidence: 0.3,
       outputFaceBlendshapes: false,
       outputPoseSegmentationMasks: false,
     }
-
     try {
       holisticRef.current = await HolisticLandmarker.createFromOptions(vision, {
         ...options,
@@ -116,6 +116,13 @@ export default function Capture() {
         baseOptions: { modelAssetPath: HOLISTIC_MODEL_URL, delegate: 'CPU' },
       })
     }
+  }
+
+  const stopCameraInternal = () => {
+    cancelAnimationFrame(rafRef.current)
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    setCameraActive(false)
   }
 
   const startCamera = async (mode = facingMode) => {
@@ -171,14 +178,7 @@ export default function Capture() {
             const tracking = evaluateTracking(landmarks, currentHandCount)
             readyStreakRef.current = tracking.bodyReady ? Math.min(8, readyStreakRef.current + 1) : 0
             tracking.bodyReady = readyStreakRef.current >= 4
-
-            const frame: PoseFrame = {
-              t: now,
-              landmarks,
-              worldLandmarks,
-              ...hands,
-              tracking,
-            }
+            const frame: PoseFrame = { t: now, landmarks, worldLandmarks, ...hands, tracking }
 
             setBodyScore(tracking.bodyScore)
             setBodyReady(tracking.bodyReady)
@@ -207,7 +207,6 @@ export default function Capture() {
             fpsStarted = now
           }
         }
-
         rafRef.current = requestAnimationFrame(loop)
       }
       rafRef.current = requestAnimationFrame(loop)
@@ -217,13 +216,6 @@ export default function Capture() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const stopCameraInternal = () => {
-    cancelAnimationFrame(rafRef.current)
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    setCameraActive(false)
   }
 
   const toggleFacing = async () => {
@@ -255,14 +247,11 @@ export default function Capture() {
     const frames = framesRef.current.map((frame) => ({ ...frame, t: frame.t - first }))
     const durationMs = frames.at(-1)?.t ?? 0
     const clip: ForgeMotion = {
-      format: 'forge-motion',
-      version: 2,
+      format: 'forge-motion', version: 2,
       name: `Phone Mocap ${new Date().toLocaleTimeString()}`,
       createdAt: new Date().toISOString(),
       fps: durationMs ? Math.round((frames.length / durationMs) * 1000) : 0,
-      durationMs,
-      frames,
-      source: 'phone',
+      durationMs, frames, source: 'phone',
     }
     downloadJson(`phone-mocap-${Date.now()}.forge-motion.json`, clip)
   }
@@ -338,7 +327,7 @@ export default function Capture() {
               ? `Forge needs stable shoulders, hips, knees, ankles and both feet.${missingBody.length ? ` Missing/weak: ${missingBody.join(', ')}.` : ''}`
               : 'Place the phone around waist/chest height and step back until your entire body, including both feet, remains in frame.'}
         </div>
-        <div className="capture-tip">Engine: MediaPipe Holistic · one coordinated pose + hands pipeline · processing stays on the phone.</div>
+        <div className="capture-tip">Engine: MediaPipe Holistic · world-space body solver · detailed hand landmarks · processing stays on the phone.</div>
         {framesRef.current.length > 0 && !recording && <button className="capture-export" onClick={exportLocal}><RotateCcw size={15} /> Save local backup</button>}
       </section>
     </main>
@@ -389,11 +378,7 @@ function evaluateTracking(points: PosePoint[], handCount: number): TrackingQuali
 }
 
 function pointUsable(point: PosePoint | undefined, threshold: number) {
-  return !!point
-    && Number.isFinite(point.x)
-    && Number.isFinite(point.y)
-    && Number.isFinite(point.z)
-    && (point.visibility ?? 1) >= threshold
+  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z) && (point.visibility ?? 1) >= threshold
 }
 
 function copyPoints(points: Array<{ x: number; y: number; z: number; visibility?: number }> | undefined): PosePoint[] | undefined {
@@ -403,23 +388,22 @@ function copyPoints(points: Array<{ x: number; y: number; z: number; visibility?
 
 function drawDetailedHands(ctx: CanvasRenderingContext2D, frame: HandSnapshot, width: number, height: number) {
   if (frame.leftHandLandmarks) {
-    drawConnections(ctx, frame.leftHandLandmarks, HAND_CONNECTIONS, width, height, 'rgba(83, 238, 166, .98)', 3)
-    drawPoints(ctx, frame.leftHandLandmarks, width, height, '#a9f4d2', 2.7)
+    drawConnections(ctx, frame.leftHandLandmarks, HAND_CONNECTIONS, width, height, 'rgba(83, 238, 166, .98)', 3, true)
+    drawPoints(ctx, frame.leftHandLandmarks, width, height, '#a9f4d2', 2.7, true)
   }
   if (frame.rightHandLandmarks) {
-    drawConnections(ctx, frame.rightHandLandmarks, HAND_CONNECTIONS, width, height, 'rgba(255, 164, 83, .98)', 3)
-    drawPoints(ctx, frame.rightHandLandmarks, width, height, '#ffd0a4', 2.7)
+    drawConnections(ctx, frame.rightHandLandmarks, HAND_CONNECTIONS, width, height, 'rgba(255, 164, 83, .98)', 3, true)
+    drawPoints(ctx, frame.rightHandLandmarks, width, height, '#ffd0a4', 2.7, true)
   }
 }
 
-function drawConnections(ctx: CanvasRenderingContext2D, points: PosePoint[], connections: Array<[number, number]>, width: number, height: number, color: string, lineWidth: number) {
+function drawConnections(ctx: CanvasRenderingContext2D, points: PosePoint[], connections: Array<[number, number]>, width: number, height: number, color: string, lineWidth: number, ignoreVisibility = false) {
   ctx.strokeStyle = color
   ctx.lineWidth = lineWidth
   ctx.lineCap = 'round'
   for (const [a, b] of connections) {
-    const pa = points[a]
-    const pb = points[b]
-    if (!pa || !pb || (pa.visibility ?? 1) < 0.3 || (pb.visibility ?? 1) < 0.3) continue
+    const pa = points[a], pb = points[b]
+    if (!pa || !pb || (!ignoreVisibility && ((pa.visibility ?? 1) < 0.3 || (pb.visibility ?? 1) < 0.3))) continue
     ctx.beginPath()
     ctx.moveTo(pa.x * width, pa.y * height)
     ctx.lineTo(pb.x * width, pb.y * height)
@@ -427,10 +411,10 @@ function drawConnections(ctx: CanvasRenderingContext2D, points: PosePoint[], con
   }
 }
 
-function drawPoints(ctx: CanvasRenderingContext2D, points: PosePoint[], width: number, height: number, color: string, radius: number) {
+function drawPoints(ctx: CanvasRenderingContext2D, points: PosePoint[], width: number, height: number, color: string, radius: number, ignoreVisibility = false) {
   ctx.fillStyle = color
   for (const point of points) {
-    if ((point.visibility ?? 1) < 0.3) continue
+    if (!ignoreVisibility && (point.visibility ?? 1) < 0.3) continue
     ctx.beginPath()
     ctx.arc(point.x * width, point.y * height, radius, 0, Math.PI * 2)
     ctx.fill()
