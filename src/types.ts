@@ -13,6 +13,14 @@ export type TrackingQuality = {
   missing: string[]
 }
 
+export type CaptureTiming = {
+  videoTimeMs?: number
+  inferenceMs?: number
+  predictionMs?: number
+  producedAt?: number
+  handFallback?: 'left' | 'right' | 'both'
+}
+
 export type PoseFrame = {
   t: number
   landmarks: PosePoint[]
@@ -22,6 +30,7 @@ export type PoseFrame = {
   leftHandWorldLandmarks?: PosePoint[]
   rightHandWorldLandmarks?: PosePoint[]
   tracking?: TrackingQuality
+  capture?: CaptureTiming
 }
 
 export type ForgeMotion = {
