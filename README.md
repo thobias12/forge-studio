@@ -1,8 +1,8 @@
 # Forge Studio
 
-Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping, live character retargeting and game-ready animation export.
+Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping, live character retargeting, motion cleanup and game-ready animation export.
 
-## v0.3.0
+## v0.4.0
 
 - Built-in rigged Forge Mannequin, so Mocap works immediately without importing a character
 - Desktop mocap receiver with QR pairing
@@ -11,10 +11,14 @@ Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, hum
 - Automatic humanoid bone mapping for common Mixamo, Blender and Unity-style rigs
 - Optional custom rigged GLB/GLTF import directly inside Mocap Studio
 - Live body retargeting from the phone onto the built-in or imported character
-- Smoothing, X mirroring and skeleton-helper controls
-- Record and export raw `.forge-motion.json`
-- Replay recorded Forge motion on the character
-- Bake recorded retargeted bone rotations into a real Three.js `AnimationClip`
+- Retarget smoothing, X mirroring and skeleton-helper controls
+- Offline adaptive jitter cleanup for recorded takes
+- Short tracking-gap interpolation up to 180 ms
+- Foot-contact detection and planted-foot locking
+- Support-plane / ground alignment for detected feet
+- Cleaned take preview before export
+- Raw and cleaned `.forge-motion.json` export
+- Bake cleaned retargeted bone rotations into a real Three.js `AnimationClip`
 - Export the character plus baked animation as a binary `.glb`
 - Preserve existing animation clips when exporting an imported character
 
@@ -31,6 +35,6 @@ Phone camera access requires HTTPS outside localhost. The repository deploys aut
 
 ## Current pipeline
 
-`Phone -> MediaPipe pose -> WebRTC landmarks -> smoothing -> humanoid bone mapper -> Forge Mannequin / custom GLB rig -> live preview -> record -> bake bone keyframes -> animated GLB export`
+`Phone -> MediaPipe pose -> WebRTC landmarks -> gap repair -> adaptive cleanup -> foot lock / ground alignment -> humanoid retarget -> cleaned preview -> bake bone keyframes -> animated GLB export`
 
-The next animation milestone is foot locking, ground alignment, missing-frame cleanup and a dedicated Animation Studio for trimming, loops and clip management.
+The next milestone is the dedicated Animation Studio: trim/crop, loop tools, naming, playback speed, clip management and root-motion controls.

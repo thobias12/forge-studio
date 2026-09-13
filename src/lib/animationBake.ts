@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createForgeMannequin } from './mannequin'
+import { cleanupMotion, type MotionCleanupOptions, type MotionCleanupReport } from './motionCleanup'
 import { applyPoseToRig, createRetargetRuntime, HUMANOID_BONE_KEYS, type HumanoidBoneKey } from './retarget'
 import type { ForgeMotion, PosePoint } from '../types'
 
@@ -11,6 +12,7 @@ export type BakeMotionOptions = {
   clipName: string
   smoothing: number
   mirrorX: boolean
+  cleanup: MotionCleanupOptions
 }
 
 export type BakeMotionResult = {
@@ -19,6 +21,7 @@ export type BakeMotionResult = {
   mappedBones: number
   sampleCount: number
   preservedAnimations: number
+  cleanup: MotionCleanupReport
 }
 
 async function loadCharacter(src?: string) {
@@ -50,9 +53,10 @@ function pushQuaternion(values: number[], quaternion: THREE.Quaternion, previous
 }
 
 export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeMotionResult> {
-  const { motion, characterSrc, clipName, smoothing, mirrorX } = options
+  const { motion, characterSrc, clipName, smoothing, mirrorX, cleanup } = options
   if (motion.frames.length < 2) throw new Error('Record at least two mocap frames before exporting an animated GLB.')
 
+  const cleaned = cleanupMotion(motion, cleanup)
   const { root, animations: sourceAnimations } = await loadCharacter(characterSrc)
   const runtime = createRetargetRuntime(root)
   if (runtime.info.mappedCount < 8) throw new Error('The character does not have enough mapped humanoid bones to bake this motion.')
@@ -73,7 +77,7 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
   let lastTime = -1
   const blend = THREE.MathUtils.lerp(0.9, 0.48, THREE.MathUtils.clamp(smoothing, 0, 0.9))
 
-  for (const frame of motion.frames) {
+  for (const frame of cleaned.motion.frames) {
     const raw = frame.worldLandmarks?.length === 33 ? frame.worldLandmarks : frame.landmarks
     if (!raw || raw.length !== 33) continue
 
@@ -124,6 +128,7 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
     mappedBones: animatedKeys.length,
     sampleCount: times.length,
     preservedAnimations: preservedAnimations.length,
+    cleanup: cleaned.report,
   }
 }
 

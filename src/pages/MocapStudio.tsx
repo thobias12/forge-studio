@@ -4,6 +4,7 @@ import Peer, { type DataConnection } from 'peerjs'
 import { QRCodeSVG } from 'qrcode.react'
 import RetargetViewport from '../components/RetargetViewport'
 import { bakeMotionToGlb, downloadBlob } from '../lib/animationBake'
+import { cleanupMotion, type MotionCleanupOptions } from '../lib/motionCleanup'
 import { averageVisibility, downloadJson, formatDuration } from '../lib/pose'
 import type { RigInfo } from '../lib/retarget'
 import type { ForgeMotion, PeerMessage, PoseFrame } from '../types'
@@ -27,6 +28,10 @@ export default function MocapStudio() {
   const [smoothing, setSmoothing] = useState(0.48)
   const [mirrorX, setMirrorX] = useState(false)
   const [showRig, setShowRig] = useState(false)
+  const [cleanupStrength, setCleanupStrength] = useState(0.58)
+  const [repairGaps, setRepairGaps] = useState(true)
+  const [footLock, setFootLock] = useState(true)
+  const [groundAlign, setGroundAlign] = useState(true)
   const [exportingGlb, setExportingGlb] = useState(false)
   const [bakeStatus, setBakeStatus] = useState('')
   const connectionRef = useRef<DataConnection | null>(null)
@@ -35,6 +40,16 @@ export default function MocapStudio() {
   const playbackStartedRef = useRef(0)
   const playbackOffsetRef = useRef(0)
   const usingBuiltin = !characterUrl
+
+  const cleanupOptions = useMemo<MotionCleanupOptions>(() => ({
+    strength: cleanupStrength,
+    repairGaps,
+    footLock,
+    groundAlign,
+    maxGapMs: 180,
+  }), [cleanupStrength, repairGaps, footLock, groundAlign])
+
+  const cleanedPreview = useMemo(() => clip ? cleanupMotion(clip, cleanupOptions) : undefined, [clip, cleanupOptions])
 
   useEffect(() => {
     const peer = new Peer()
@@ -125,14 +140,15 @@ export default function MocapStudio() {
   }, [peerId])
 
   const activeFrame = useMemo(() => {
-    if (!clip?.frames.length) return lastFrame
-    let selected = clip.frames[0]
-    for (const frame of clip.frames) {
+    const previewMotion = cleanedPreview?.motion
+    if (!previewMotion?.frames.length) return lastFrame
+    let selected = previewMotion.frames[0]
+    for (const frame of previewMotion.frames) {
       if (frame.t <= playhead) selected = frame
       else break
     }
     return selected
-  }, [clip, playhead, lastFrame])
+  }, [cleanedPreview, playhead, lastFrame])
 
   const visibility = Math.round(averageVisibility(activeFrame?.landmarks) * 100)
   const canBake = !!clip && !recording && !exportingGlb && !!rigInfo && rigInfo.mappedCount >= 8
@@ -170,10 +186,12 @@ export default function MocapStudio() {
     setBakeStatus('')
   }
 
+  const resetBakeStatus = () => setBakeStatus('')
+
   const exportAnimatedGlb = async () => {
     if (!clip || !canBake) return
     setExportingGlb(true)
-    setBakeStatus('Baking retargeted bone animation…')
+    setBakeStatus('Cleaning motion and baking bone animation…')
     try {
       const result = await bakeMotionToGlb({
         motion: clip,
@@ -181,9 +199,11 @@ export default function MocapStudio() {
         clipName: clip.name,
         smoothing,
         mirrorX,
+        cleanup: cleanupOptions,
       })
       downloadBlob(`${safeName(characterName)}-${safeName(clip.name)}.glb`, result.blob)
-      setBakeStatus(`${result.mappedBones} bones · ${result.sampleCount} samples · ${result.preservedAnimations} existing clips preserved`)
+      const cleanupSummary = `${result.cleanup.footLockedFrames} locked · ${result.cleanup.repairedPoints} repaired · ${result.cleanup.groundAlignedFrames} grounded`
+      setBakeStatus(`${result.mappedBones} bones · ${result.sampleCount} samples · ${cleanupSummary}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown export error'
       setBakeStatus(`Export failed: ${message}`)
@@ -221,6 +241,7 @@ export default function MocapStudio() {
             <label className="secondary-button file-button"><FileUp size={16} /> Replace character<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
             <label className="secondary-button file-button"><FileUp size={16} /> Import motion<input type="file" accept=".json,.forge-motion.json" onChange={(e) => importMotion(e.target.files?.[0])} /></label>
             {clip && <button className="secondary-button" onClick={() => downloadJson(`${safeName(clip.name)}.forge-motion.json`, clip)}><Download size={16} /> Raw JSON</button>}
+            {clip && cleanedPreview && <button className="secondary-button" onClick={() => downloadJson(`${safeName(clip.name)}-clean.forge-motion.json`, cleanedPreview.motion)}><Download size={16} /> Clean JSON</button>}
             {clip && <button className="primary-button bake-toolbar-button" disabled={!canBake} onClick={exportAnimatedGlb}><Download size={16} /> {exportingGlb ? 'Baking…' : 'Export animated GLB'}</button>}
           </div>
         </div>
@@ -242,6 +263,7 @@ export default function MocapStudio() {
           </div>
           <div className="viewport-overlay top-right"><span className="character-dot" /><span>{characterName}{usingBuiltin ? ' · BUILT IN' : ''}</span></div>
           {recording && <div className="recording-pill"><span /> REC</div>}
+          {clip && <div className="cleanup-preview-pill">CLEANUP PREVIEW</div>}
           <div className="viewport-stats">
             <div><span>TRACKING</span><strong>{activeFrame ? `${visibility}%` : '—'}</strong></div>
             <div><span>LATENCY</span><strong>{latency === null ? '—' : `${latency} ms`}</strong></div>
@@ -259,7 +281,7 @@ export default function MocapStudio() {
             {clip && <button className="icon-button danger-hover" title="Clear clip" onClick={() => { setClip(undefined); setFrames([]); setPlayhead(0); setPlaying(false); setBakeStatus('') }}><Trash2 size={16} /></button>}
           </div>
           <input className="timeline-range" type="range" min={0} max={Math.max(1, clip?.durationMs ?? 1)} value={Math.min(playhead, clip?.durationMs ?? 0)} disabled={!clip} onChange={(e) => { const value = Number(e.target.value); setPlayhead(value); playbackOffsetRef.current = value; setPlaying(false) }} />
-          <div className="timeline-track"><div className="track-label">PHONE BODY</div><div className={`track-clip ${clip ? 'has-clip' : ''}`}>{clip ? `${clip.frames.length} pose frames` : 'Record on your phone to create a clip'}</div></div>
+          <div className="timeline-track"><div className="track-label">PHONE BODY</div><div className={`track-clip ${clip ? 'has-clip' : ''}`}>{clip ? `${clip.frames.length} frames · cleaned preview` : 'Record on your phone to create a clip'}</div></div>
           <div className="timeline-track character-track"><div className="track-label">CHARACTER</div><div className="track-clip has-character">Live retarget · {characterName}</div></div>
         </div>
       </section>
@@ -305,9 +327,24 @@ export default function MocapStudio() {
 
         <div className="inspector-block retarget-settings">
           <span className="property-label">Retarget settings</span>
-          <label className="range-setting"><span><b>Smoothing</b><em>{Math.round(smoothing * 100)}%</em></span><input type="range" min="0" max="0.9" step="0.05" value={smoothing} onChange={(e) => { setSmoothing(Number(e.target.value)); setBakeStatus('') }} /></label>
-          <label className="toggle-setting"><span><b>Mirror X</b><small>Use if left/right movement is reversed</small></span><input type="checkbox" checked={mirrorX} onChange={(e) => { setMirrorX(e.target.checked); setBakeStatus('') }} /></label>
+          <label className="range-setting"><span><b>Smoothing</b><em>{Math.round(smoothing * 100)}%</em></span><input type="range" min="0" max="0.9" step="0.05" value={smoothing} onChange={(e) => { setSmoothing(Number(e.target.value)); resetBakeStatus() }} /></label>
+          <label className="toggle-setting"><span><b>Mirror X</b><small>Use if left/right movement is reversed</small></span><input type="checkbox" checked={mirrorX} onChange={(e) => { setMirrorX(e.target.checked); resetBakeStatus() }} /></label>
           <label className="toggle-setting"><span><b>Show rig</b><small>Overlay detected skeleton bones</small></span><input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} /></label>
+        </div>
+
+        <div className="inspector-block cleanup-card">
+          <span className="property-label">Motion cleanup</span>
+          <label className="range-setting"><span><b>Cleanup strength</b><em>{Math.round(cleanupStrength * 100)}%</em></span><input type="range" min="0" max="1" step="0.05" value={cleanupStrength} onChange={(e) => { setCleanupStrength(Number(e.target.value)); resetBakeStatus() }} /></label>
+          <label className="toggle-setting"><span><b>Foot locking</b><small>Holds planted feet during low-speed contact</small></span><input type="checkbox" checked={footLock} onChange={(e) => { setFootLock(e.target.checked); resetBakeStatus() }} /></label>
+          <label className="toggle-setting"><span><b>Ground alignment</b><small>Pulls detected support feet onto a stable floor plane</small></span><input type="checkbox" checked={groundAlign} onChange={(e) => { setGroundAlign(e.target.checked); resetBakeStatus() }} /></label>
+          <label className="toggle-setting"><span><b>Repair short gaps</b><small>Interpolates brief landmark dropouts up to 180 ms</small></span><input type="checkbox" checked={repairGaps} onChange={(e) => { setRepairGaps(e.target.checked); resetBakeStatus() }} /></label>
+          {cleanedPreview && (
+            <div className="cleanup-report">
+              <div><span>Foot-locked frames</span><strong>{cleanedPreview.report.footLockedFrames}</strong></div>
+              <div><span>Grounded frames</span><strong>{cleanedPreview.report.groundAlignedFrames}</strong></div>
+              <div><span>Repaired landmarks</span><strong>{cleanedPreview.report.repairedPoints}</strong></div>
+            </div>
+          )}
         </div>
 
         {clip && (
@@ -316,15 +353,15 @@ export default function MocapStudio() {
             <div className="mini-row"><span>Clip</span><strong>{clip.name}</strong></div>
             <div className="mini-row"><span>Duration</span><span>{formatDuration(clip.durationMs)}</span></div>
             <div className="mini-row"><span>Samples</span><span>{clip.frames.length}</span></div>
-            <div className="mini-row"><span>Output</span><span className="status-good">GLB + AnimationClip</span></div>
-            <button className="primary-button bake-button" disabled={!canBake} onClick={exportAnimatedGlb}><Download size={15} /> {exportingGlb ? 'Baking animation…' : 'Export animated GLB'}</button>
-            <p className="bake-copy">Forge bakes the current smoothing and mirror settings into bone quaternion tracks, restores the character rest pose, then packages everything into one binary GLB.</p>
+            <div className="mini-row"><span>Output</span><span className="status-good">Clean GLB + AnimationClip</span></div>
+            <button className="primary-button bake-button" disabled={!canBake} onClick={exportAnimatedGlb}><Download size={15} /> {exportingGlb ? 'Cleaning + baking…' : 'Export cleaned GLB'}</button>
+            <p className="bake-copy">The exact cleanup settings shown above are applied before Forge retargets the take and bakes quaternion tracks into the GLB.</p>
             {bakeStatus && <div className={`bake-status ${bakeStatus.startsWith('Export failed') ? 'error' : ''}`}>{bakeStatus}</div>}
           </div>
         )}
 
-        <div className="inspector-block info-block"><span className="property-label">Capture quality</span><p>Place your single phone so your full body, hands and feet stay visible. More light and a clear background improve tracking.</p></div>
-        <div className="inspector-block"><span className="property-label">v0.3 pipeline</span><div className="mini-row"><span>Built-in rigged mannequin</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Phone pose tracking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Live character retargeting</span><span className="status-good">Ready</span></div><div className="mini-row"><span>GLB animation baking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Foot locking + cleanup</span><span className="status-warn">Next</span></div></div>
+        <div className="inspector-block info-block"><span className="property-label">Capture quality</span><p>Keep both feet visible when possible. Foot locking works best when the phone is fixed in place and can see your full body.</p></div>
+        <div className="inspector-block"><span className="property-label">v0.4 pipeline</span><div className="mini-row"><span>Built-in rigged mannequin</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Phone pose tracking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Gap repair + jitter cleanup</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Foot lock + ground alignment</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Clean animated GLB export</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Animation Studio editor</span><span className="status-warn">Next</span></div></div>
       </aside>
     </div>
   )

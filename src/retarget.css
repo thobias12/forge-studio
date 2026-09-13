@@ -1,4 +1,4 @@
-/* Forge v0.3 — live retargeting + baked GLB export */
+/* Forge v0.4 — live retargeting + mocap cleanup + baked GLB export */
 .top-right { top: 13px; right: 13px; left: auto; max-width: min(42vw, 360px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .character-dot { width: 7px; height: 7px; border-radius: 50%; background: #89bdff; box-shadow: 0 0 9px rgba(122, 184, 255, .55); flex: 0 0 auto; }
 .character-track { margin-top: 5px; }
@@ -7,7 +7,7 @@
 .rig-note { padding: 8px 9px; border-radius: 6px; background: #0b1017; border: 1px solid #1d2733; color: #667589 !important; }
 .inspector-action { width: 100%; min-height: 32px; margin-top: 9px; border: 1px solid #293747; border-radius: 7px; background: #141c26; color: #9fb0c3; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 10px; font-weight: 650; }
 .inspector-action:hover { background: #182331; border-color: #40536b; color: #d5e4f4; }
-.retarget-settings { display: flex; flex-direction: column; gap: 11px; }
+.retarget-settings, .cleanup-card { display: flex; flex-direction: column; gap: 11px; }
 .range-setting { display: flex; flex-direction: column; gap: 7px; }
 .range-setting > span, .toggle-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .range-setting b, .toggle-setting b { font-size: 10px; color: #9ba9ba; font-weight: 600; }
@@ -18,6 +18,11 @@
 .toggle-setting small { font-size: 8px; color: #536173; line-height: 1.35; }
 .toggle-setting input[type="checkbox"] { width: 15px; height: 15px; accent-color: #75b4f5; cursor: pointer; }
 .compact-connected-card { padding-bottom: 13px; }
+.cleanup-card { background: linear-gradient(180deg, rgba(94, 162, 209, .055), rgba(14, 20, 28, 0)); }
+.cleanup-report { display: grid; grid-template-columns: 1fr; gap: 5px; padding-top: 4px; border-top: 1px solid #202a36; }
+.cleanup-report > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 9px; color: #657486; }
+.cleanup-report strong { color: #8dc4ab; font-size: 10px; }
+.cleanup-preview-pill { position: absolute; left: 13px; bottom: 58px; z-index: 4; padding: 5px 8px; border-radius: 999px; border: 1px solid rgba(111, 174, 255, .22); background: rgba(21, 38, 59, .74); color: #8ebbe9; font-size: 8px; font-weight: 750; letter-spacing: .09em; backdrop-filter: blur(8px); }
 .bake-toolbar-button:disabled, .bake-button:disabled { opacity: .42; cursor: not-allowed; filter: saturate(.55); }
 .bake-card { background: linear-gradient(180deg, rgba(77, 133, 194, .06), rgba(14, 20, 28, 0)); }
 .bake-card .mini-row strong { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aebdcd; font-size: 10px; }
