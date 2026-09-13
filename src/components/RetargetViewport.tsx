@@ -335,7 +335,7 @@ export default function RetargetViewport({
   }, [src])
 
   return (
-    <div className={className} style={{ position: 'relative', overflow: 'hidden' }}>
+    <div className={className} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
       <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
       {quality && (
         <div style={{ position: 'absolute', left: 14, bottom: 14, zIndex: 4, minWidth: 210, padding: '10px 12px', borderRadius: 10, background: 'rgba(8,12,18,.82)', border: '1px solid rgba(126,174,232,.18)', backdropFilter: 'blur(8px)', pointerEvents: 'none', fontSize: 11, lineHeight: 1.35 }}>
