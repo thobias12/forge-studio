@@ -11,7 +11,12 @@ type EmitterRuntime = { emitter: ForgeVfxEmitter; points: THREE.Points; particle
 
 const VfxPreview = forwardRef<VfxPreviewHandle, Props>(function VfxPreview({ value, playing, showGrid, background }, ref) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const playingRef = useRef(playing)
+  const valueRef = useRef(value)
   const state = useRef<{ renderer?:THREE.WebGLRenderer; scene?:THREE.Scene; camera?:THREE.PerspectiveCamera; orbit?:OrbitControls; grid?:THREE.GridHelper; floor?:THREE.Mesh; runtimes:EmitterRuntime[]; last:number; elapsed:number }>({ runtimes:[], last:0, elapsed:0 })
+
+  useEffect(() => { playingRef.current = playing }, [playing])
+  useEffect(() => { valueRef.current = value }, [value])
 
   const resetRuntimes = () => {
     const s = state.current
@@ -45,7 +50,7 @@ const VfxPreview = forwardRef<VfxPreviewHandle, Props>(function VfxPreview({ val
     const resize = () => { const rect=host.getBoundingClientRect(); if(!rect.width||!rect.height)return; renderer.setSize(rect.width,rect.height,false); camera.aspect=rect.width/rect.height; camera.updateProjectionMatrix() }
     resize(); const ro=new ResizeObserver(resize); ro.observe(host)
     let raf=0
-    const tick=(now:number)=>{ const dt=s.last?Math.min(.05,(now-s.last)/1000):0; s.last=now; orbit.update(); if(playing) updateSimulation(s,dt,value); renderer.render(scene,camera); raf=requestAnimationFrame(tick) }
+    const tick=(now:number)=>{ const dt=s.last?Math.min(.05,(now-s.last)/1000):0; s.last=now; orbit.update(); if(playingRef.current) updateSimulation(s,dt,valueRef.current); renderer.render(scene,camera); raf=requestAnimationFrame(tick) }
     raf=requestAnimationFrame(tick)
     return()=>{ cancelAnimationFrame(raf); ro.disconnect(); disposeRuntimes(s); orbit.dispose(); renderer.dispose(); renderer.domElement.remove(); s.last=0 }
   }, [])
@@ -88,7 +93,7 @@ function updateSimulation(s:{runtimes:EmitterRuntime[];elapsed:number},dt:number
 function spawn(runtime:EmitterRuntime){const e=runtime.emitter,max=(runtime.positions.length/3)|0;if(runtime.particles.length>=max)runtime.particles.shift();const p=new THREE.Vector3(...e.position);if(e.shape==='sphere'){const r=Math.cbrt(Math.random())*.45;p.add(randomUnit().multiplyScalar(r))}else if(e.shape==='box'){p.x+=(Math.random()-.5)*e.boxSize[0];p.y+=(Math.random()-.5)*e.boxSize[1];p.z+=(Math.random()-.5)*e.boxSize[2]}
   const direction=new THREE.Vector3(...e.direction);if(direction.lengthSq()<.0001)direction.set(0,1,0);direction.normalize();const spread=Math.sin(THREE.MathUtils.degToRad(e.spreadDeg*.5));direction.addScaledVector(randomUnit(),spread*Math.random()).normalize();const speed=e.speed*(1+(Math.random()*2-1)*e.speedRandom);runtime.particles.push({position:p,velocity:direction.multiplyScalar(speed),age:0,life:Math.max(.04,e.lifetime*(1+(Math.random()*2-1)*e.lifetimeRandom)),spin:Math.random()*Math.PI*2})}
 
-function writeAttributes(r:EmitterRuntime){const e=r.emitter,start=new THREE.Color(e.startColor),end=new THREE.Color(e.endColor),temp=new THREE.Color();const count=Math.min(r.particles.length,r.positions.length/3);for(let i=0;i<count;i++){const p=r.particles[i],t=Math.min(1,p.age/p.life),idx=i*3;r.positions[idx]=p.position.x;r.positions[idx+1]=p.position.y;r.positions[idx+2]=p.position.z;temp.copy(start).lerp(end,t);r.colors[idx]=temp.r;r.colors[idx+1]=temp.g;r.colors[idx+2]=temp.b;r.sizes[i]=THREE.MathUtils.lerp(e.startSize,e.endSize,t)*100;r.alphas[i]=THREE.MathUtils.lerp(e.startAlpha,e.endAlpha,t)}r.points.geometry.setDrawRange(0,count);for(const key of ['position','aColor','aSize','aAlpha']){const attr=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;attr.needsUpdate=true}}
+function writeAttributes(r:EmitterRuntime){const e=r.emitter,start=new THREE.Color(e.startColor),end=new THREE.Color(e.endColor),temp=new THREE.Color();const count=Math.min(r.particles.length,r.positions.length/3);for(let i=0;i<count;i++){const p=r.particles[i],t=Math.min(1,p.age/p.life),idx=i*3;r.positions[idx]=p.position.x;r.positions[idx+1]=p.position.y;r.positions[idx+2]=p.position.z;temp.copy(start).lerp(end,t);r.colors[idx]=temp.r;r.colors[idx+1]=temp.g;r.colors[idx+2]=temp.b;r.sizes[i]=THREE.MathUtils.lerp(e.startSize,e.endSize,t);r.alphas[i]=THREE.MathUtils.lerp(e.startAlpha,e.endAlpha,t)}r.points.geometry.setDrawRange(0,count);for(const key of ['position','aColor','aSize','aAlpha']){const attr=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;attr.needsUpdate=true}}
 function clearAttributes(r:EmitterRuntime){r.points.geometry.setDrawRange(0,0);for(const key of ['position','aColor','aSize','aAlpha']){const attr=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;attr.needsUpdate=true}}
 function randomUnit(){const z=Math.random()*2-1,a=Math.random()*Math.PI*2,r=Math.sqrt(Math.max(0,1-z*z));return new THREE.Vector3(r*Math.cos(a),z,r*Math.sin(a))}
 function disposeRuntimes(s:{scene?:THREE.Scene;runtimes:EmitterRuntime[]}){for(const r of s.runtimes){s.scene?.remove(r.points);r.points.geometry.dispose();(r.points.material as THREE.Material).dispose()}s.runtimes=[]}

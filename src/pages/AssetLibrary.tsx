@@ -27,6 +27,7 @@ const categories: { id: 'all' | AssetCategory; label: string }[] = [
   { id: 'textures', label: 'Textures' },
   { id: 'environment', label: 'Environment' },
   { id: 'audio', label: 'Audio' },
+  { id: 'vfx', label: 'VFX' },
 ]
 
 type SortMode = 'updated' | 'name' | 'size'
