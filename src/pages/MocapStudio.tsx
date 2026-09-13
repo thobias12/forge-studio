@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Archive, Download, FileUp, Pause, Play, QrCode, Radio, RotateCcw, Smartphone, Trash2 } from 'lucide-react'
+import { Archive, Bug, Download, FileUp, Pause, Play, QrCode, Radio, RotateCcw, Smartphone, Trash2 } from 'lucide-react'
 import Peer, { type DataConnection } from 'peerjs'
 import { QRCodeSVG } from 'qrcode.react'
-import RetargetViewport from '../components/RetargetViewport'
+import RetargetViewport, { type RetargetDiagnosticsSnapshot } from '../components/RetargetViewport'
 import { bakeMotionToGlb, downloadBlob } from '../lib/animationBake'
 import { saveAsset } from '../lib/library'
 import { cleanupMotion, type MotionCleanupOptions } from '../lib/motionCleanup'
@@ -11,6 +11,9 @@ import type { RigInfo } from '../lib/retarget'
 import type { ForgeMotion, PeerMessage, PoseFrame } from '../types'
 
 const BUILTIN_CHARACTER = 'Forge Mannequin'
+const FORGE_BUILD = '0.6.3'
+const DIAGNOSTIC_WINDOW_MS = 10_000
+const MAX_DIAGNOSTIC_FRAMES = 360
 
 export default function MocapStudio() {
   const [peerId, setPeerId] = useState('')
@@ -41,6 +44,10 @@ export default function MocapStudio() {
   const recordingRef = useRef(false)
   const playbackStartedRef = useRef(0)
   const playbackOffsetRef = useRef(0)
+  const diagnosticFramesRef = useRef<PoseFrame[]>([])
+  const retargetDiagnosticsRef = useRef<RetargetDiagnosticsSnapshot>()
+  const phoneMetadataRef = useRef<unknown>()
+  const runtimeErrorsRef = useRef<Array<{ at: string; type: string; message: string; source?: string }>>([])
   const usingBuiltin = !characterUrl
 
   const cleanupOptions = useMemo<MotionCleanupOptions>(() => ({ strength: cleanupStrength, repairGaps, footLock, groundAlign, maxGapMs: 180 }), [cleanupStrength, repairGaps, footLock, groundAlign])
@@ -51,12 +58,21 @@ export default function MocapStudio() {
     peer.on('open', (id) => setPeerId(id))
     peer.on('connection', (connection) => {
       connectionRef.current = connection
+      phoneMetadataRef.current = connection.metadata
       connection.on('open', () => setPhoneConnected(true))
       connection.on('close', () => setPhoneConnected(false))
       connection.on('data', (raw) => {
         const message = raw as PeerMessage
         if (message.type === 'hello') { setPhoneName(message.device || 'Phone'); setPhoneConnected(true) }
-        if (message.type === 'pose-frame') { setLastFrame(message.frame); if (recordingRef.current) recordFramesRef.current.push(message.frame) }
+        if (message.type === 'pose-frame') {
+          setLastFrame(message.frame)
+          const diagnostics = diagnosticFramesRef.current
+          diagnostics.push(message.frame)
+          const cutoff = message.frame.t - DIAGNOSTIC_WINDOW_MS
+          while (diagnostics.length && diagnostics[0].t < cutoff) diagnostics.shift()
+          if (diagnostics.length > MAX_DIAGNOSTIC_FRAMES) diagnostics.splice(0, diagnostics.length - MAX_DIAGNOSTIC_FRAMES)
+          if (recordingRef.current) recordFramesRef.current.push(message.frame)
+        }
         if (message.type === 'recording-start') {
           recordingRef.current = true; recordFramesRef.current = []; setFrames([]); setRecording(true); setClip(undefined); setBakeStatus('')
         }
@@ -73,6 +89,30 @@ export default function MocapStudio() {
     peer.on('error', () => setPhoneConnected(false))
     const interval = window.setInterval(() => { const conn = connectionRef.current; if (conn?.open) conn.send({ type: 'ping', sentAt: performance.now() } satisfies PeerMessage) }, 2500)
     return () => { window.clearInterval(interval); connectionRef.current?.close(); peer.destroy() }
+  }, [])
+
+  useEffect(() => {
+    const appendError = (entry: { at: string; type: string; message: string; source?: string }) => {
+      runtimeErrorsRef.current.push(entry)
+      if (runtimeErrorsRef.current.length > 20) runtimeErrorsRef.current.splice(0, runtimeErrorsRef.current.length - 20)
+    }
+    const onError = (event: ErrorEvent) => appendError({
+      at: new Date().toISOString(),
+      type: 'error',
+      message: event.message || String(event.error ?? 'Unknown window error'),
+      source: event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined,
+    })
+    const onUnhandled = (event: PromiseRejectionEvent) => appendError({
+      at: new Date().toISOString(),
+      type: 'unhandledrejection',
+      message: event.reason instanceof Error ? `${event.reason.message}\n${event.reason.stack ?? ''}` : safeString(event.reason),
+    })
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onUnhandled)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onUnhandled)
+    }
   }, [])
 
   useEffect(() => () => { if (characterUrl) URL.revokeObjectURL(characterUrl) }, [characterUrl])
@@ -106,7 +146,7 @@ export default function MocapStudio() {
     return selected
   }, [cleanedPreview, playhead, lastFrame])
 
-  const visibility = Math.round(averageVisibility(activeFrame?.landmarks) * 100)
+  const visibility = activeFrame?.tracking?.bodyScore ?? Math.round(averageVisibility(activeFrame?.landmarks) * 100)
   const handsTracked = (activeFrame?.leftHandLandmarks?.length === 21 ? 1 : 0) + (activeFrame?.rightHandLandmarks?.length === 21 ? 1 : 0)
   const feetTracked = activeFrame ? ([27,29,31].filter((i) => (activeFrame.landmarks[i]?.visibility ?? 0) > .35).length >= 2 ? 1 : 0) + ([28,30,32].filter((i) => (activeFrame.landmarks[i]?.visibility ?? 0) > .35).length >= 2 ? 1 : 0) : 0
   const canBake = !!clip && !recording && !exportingGlb && !savingLibrary && !!rigInfo && rigInfo.coreMappedCount >= 8
@@ -166,6 +206,60 @@ export default function MocapStudio() {
     } finally { setSavingLibrary(false) }
   }
 
+  const saveDiagnostics = () => {
+    const sourceFrames = [...diagnosticFramesRef.current]
+    if (!sourceFrames.length) {
+      alert('No live phone frames are available yet. Connect the phone, reproduce the problem for a few seconds, then try again.')
+      return
+    }
+    const firstT = sourceFrames[0].t
+    const normalizedFrames = sourceFrames.map((frame) => ({ ...frame, t: frame.t - firstT }))
+    const browserNavigator = navigator as Navigator & { deviceMemory?: number }
+    const packet = {
+      format: 'forge-diagnostics',
+      version: 1,
+      forgeBuild: FORGE_BUILD,
+      createdAt: new Date().toISOString(),
+      note: 'Contains tracking coordinates and rig transforms only. No camera image, audio, location, cookies or local asset files are included.',
+      session: {
+        phoneConnected,
+        phoneName,
+        phonePeerMetadata: serializable(phoneMetadataRef.current),
+        latencyMs: latency,
+        recording,
+        previewSource: clip ? 'recorded-cleanup-preview' : 'live-phone',
+      },
+      browser: {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        deviceMemoryGb: browserNavigator.deviceMemory,
+        devicePixelRatio: window.devicePixelRatio,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      },
+      character: {
+        name: characterName,
+        builtIn: usingBuiltin,
+        rigInfo,
+      },
+      settings: {
+        smoothing,
+        mirrorX,
+        showRig,
+        cleanupStrength,
+        repairGaps,
+        footLock,
+        groundAlign,
+      },
+      trackingSummary: summarizeDiagnosticFrames(sourceFrames),
+      retargetSnapshot: retargetDiagnosticsRef.current,
+      runtimeErrors: runtimeErrorsRef.current,
+      frames: normalizedFrames,
+    }
+    downloadJson(`forge-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, packet)
+  }
+
   const togglePlayback = () => {
     if (!clip) return
     if (playing) { playbackOffsetRef.current = playhead; setPlaying(false); return }
@@ -179,6 +273,7 @@ export default function MocapStudio() {
         <div className="viewport-toolbar">
           <div><span className="eyebrow">MOCAP STUDIO</span><strong>{recording ? 'Recording body + hands + feet' : clip ? clip.name : characterName}</strong></div>
           <div className="toolbar-actions">
+            <button className="secondary-button" disabled={!lastFrame} onClick={saveDiagnostics}><Bug size={16} /> Save diagnostics</button>
             <label className="secondary-button file-button"><FileUp size={16} /> Replace character<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
             <label className="secondary-button file-button"><FileUp size={16} /> Import motion<input type="file" accept=".json,.forge-motion.json" onChange={(e) => importMotion(e.target.files?.[0])} /></label>
             {clip && <button className="secondary-button" onClick={() => downloadJson(`${safeName(clip.name)}.forge-motion.json`, clip)}><Download size={16} /> Raw JSON</button>}
@@ -192,7 +287,8 @@ export default function MocapStudio() {
           <RetargetViewport className="mocap-viewport" src={characterUrl} landmarks={activeFrame?.landmarks} worldLandmarks={activeFrame?.worldLandmarks}
             leftHandLandmarks={activeFrame?.leftHandLandmarks} rightHandLandmarks={activeFrame?.rightHandLandmarks}
             leftHandWorldLandmarks={activeFrame?.leftHandWorldLandmarks} rightHandWorldLandmarks={activeFrame?.rightHandWorldLandmarks}
-            smoothing={smoothing} mirrorX={mirrorX} showRig={showRig} onRigInfo={setRigInfo} />
+            smoothing={smoothing} mirrorX={mirrorX} showRig={showRig} onRigInfo={setRigInfo}
+            onDiagnostics={(snapshot) => { retargetDiagnosticsRef.current = snapshot }} />
           <div className="viewport-overlay top-left"><span className={`live-dot ${phoneConnected ? 'connected' : ''}`} /><span>{phoneConnected ? `${phoneName} connected` : 'Waiting for phone'}</span></div>
           <div className="viewport-overlay top-right"><span className="character-dot" /><span>{characterName}{usingBuiltin ? ' · BUILT IN' : ''}</span></div>
           {recording && <div className="recording-pill"><span /> REC</div>}
@@ -226,6 +322,13 @@ export default function MocapStudio() {
         ) : (
           <div className="connected-card compact-connected-card"><div className="phone-illustration"><Smartphone size={42} /><span className="signal-ring" /></div><span className="connected-label"><Radio size={14} /> LIVE CONNECTION</span><h3>{phoneName}</h3><p>Single-phone body, hand and foot landmarks are streaming directly to Forge over WebRTC.</p><div className="connection-grid"><div><span>Hands</span><strong>{handsTracked}/2</strong></div><div><span>Latency</span><strong>{latency === null ? '—' : `${latency} ms`}</strong></div></div></div>
         )}
+
+        <div className="inspector-block info-block">
+          <span className="property-label">Tracking diagnostics</span>
+          <p>Reproduce the bad pose for about 5–10 seconds, then press Save diagnostics. Forge saves the recent raw landmarks, tracking confidence, rig map and live bone transforms into one JSON file.</p>
+          <button className="inspector-action" disabled={!lastFrame} onClick={saveDiagnostics}><Bug size={15} /> Save last 10 seconds</button>
+          <p className="rig-note">No camera image, microphone audio or location data is saved.</p>
+        </div>
 
         <div className="inspector-block character-inspector">
           <span className="property-label">Live character</span><strong className="character-name">{characterName}</strong>
@@ -268,6 +371,51 @@ function buildClip(frames: PoseFrame[], name: string): ForgeMotion {
   const durationMs = normalized.at(-1)?.t ?? 0
   const fps = durationMs > 0 ? Math.round((normalized.length / durationMs) * 1000) : 0
   return { format: 'forge-motion', version: 2, name, createdAt: new Date().toISOString(), fps, durationMs, frames: normalized, source: 'phone' }
+}
+
+function summarizeDiagnosticFrames(frames: PoseFrame[]) {
+  const durationMs = frames.length > 1 ? Math.max(0, frames.at(-1)!.t - frames[0].t) : 0
+  const bodyScores = frames.map((frame) => frame.tracking?.bodyScore).filter((value): value is number => typeof value === 'number')
+  const bodyReadyFrames = frames.filter((frame) => frame.tracking?.bodyReady).length
+  const leftHandFrames = frames.filter((frame) => frame.leftHandLandmarks?.length === 21).length
+  const rightHandFrames = frames.filter((frame) => frame.rightHandLandmarks?.length === 21).length
+  const bothHandFrames = frames.filter((frame) => frame.leftHandLandmarks?.length === 21 && frame.rightHandLandmarks?.length === 21).length
+  const footHistogram = { zero: 0, one: 0, two: 0 }
+  const missingCounts: Record<string, number> = {}
+
+  for (const frame of frames) {
+    const footCount = frame.tracking?.footCount ?? 0
+    if (footCount >= 2) footHistogram.two += 1
+    else if (footCount === 1) footHistogram.one += 1
+    else footHistogram.zero += 1
+    for (const missing of frame.tracking?.missing ?? []) missingCounts[missing] = (missingCounts[missing] ?? 0) + 1
+  }
+
+  const percent = (count: number) => frames.length ? Math.round((count / frames.length) * 1000) / 10 : 0
+  return {
+    frameCount: frames.length,
+    durationMs: Math.round(durationMs),
+    estimatedFps: durationMs > 0 ? Math.round((frames.length / durationMs) * 1000 * 10) / 10 : 0,
+    averageBodyScore: bodyScores.length ? Math.round(bodyScores.reduce((sum, value) => sum + value, 0) / bodyScores.length * 10) / 10 : null,
+    minimumBodyScore: bodyScores.length ? Math.min(...bodyScores) : null,
+    maximumBodyScore: bodyScores.length ? Math.max(...bodyScores) : null,
+    bodyReadyPercent: percent(bodyReadyFrames),
+    leftHandDetectionPercent: percent(leftHandFrames),
+    rightHandDetectionPercent: percent(rightHandFrames),
+    bothHandsDetectionPercent: percent(bothHandFrames),
+    feet: { ...footHistogram, twoFeetPercent: percent(footHistogram.two) },
+    missingCounts,
+  }
+}
+
+function serializable(value: unknown): unknown {
+  try { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)) }
+  catch { return safeString(value) }
+}
+
+function safeString(value: unknown) {
+  try { return typeof value === 'string' ? value : JSON.stringify(value) }
+  catch { return String(value) }
 }
 
 function safeName(value: string) { return value.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'mocap' }
