@@ -47,7 +47,7 @@ export default function App() {
         <div className="sidebar-spacer" />
         <div className="project-card"><div className="project-icon"><Sparkles size={16} /></div><div><span>Workspace</span><strong>Shared Library</strong></div></div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.6.2</div>
+        <div className="build-tag">FORGE v0.6.3</div>
       </aside>
 
       <div className="studio-body">
