@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -27,13 +27,29 @@ type PreviewState = {
   rig?: CharacterRig
   skeleton?: THREE.SkeletonHelper
   attachments: Map<string, { wrapper: THREE.Group; scene: THREE.Object3D }>
+  mixer?: THREE.AnimationMixer
+  animations: THREE.AnimationClip[]
+  action?: THREE.AnimationAction
 }
+
+type ClipInfo = { name: string; duration: number }
 
 export default function CharacterPreview({ baseUrl, attachments, showRig, onRigInfo }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const stateRef = useRef<PreviewState>()
   const callbackRef = useRef(onRigInfo)
+  const [clips, setClips] = useState<ClipInfo[]>([])
+  const [selectedClip, setSelectedClip] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [loop, setLoop] = useState(true)
+  const [speed, setSpeed] = useState(1)
+  const [currentTime, setCurrentTime] = useState(0)
+  const selectedClipRef = useRef(0)
+  const playbackRef = useRef({ playing: false, loop: true, speed: 1 })
+
   callbackRef.current = onRigInfo
+  selectedClipRef.current = selectedClip
+  playbackRef.current = { playing, loop, speed }
 
   useEffect(() => {
     const mount = mountRef.current
@@ -80,7 +96,7 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
     grid.position.y = 0.002
     scene.add(grid)
 
-    const state: PreviewState = { scene, attachments: new Map() }
+    const state: PreviewState = { scene, attachments: new Map(), animations: [] }
     stateRef.current = state
 
     const resize = () => {
@@ -95,12 +111,27 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
     resize()
 
     let raf = 0
-    const render = () => {
+    let previousFrame = performance.now()
+    let lastUiUpdate = 0
+    const render = (now: number) => {
+      const delta = Math.min(Math.max((now - previousFrame) / 1000, 0), 0.05)
+      previousFrame = now
+      state.mixer?.update(delta)
       controls.update()
       renderer.render(scene, camera)
+
+      if (state.action && now - lastUiUpdate > 80) {
+        lastUiUpdate = now
+        const duration = state.animations[selectedClipRef.current]?.duration ?? 0
+        setCurrentTime(Math.min(state.action.time, duration))
+        if (!playbackRef.current.loop && duration > 0 && state.action.time >= duration - 0.002 && playbackRef.current.playing) {
+          setPlaying(false)
+        }
+      }
+
       raf = requestAnimationFrame(render)
     }
-    render()
+    raf = requestAnimationFrame(render)
 
     ;(state as PreviewState & { camera?: THREE.PerspectiveCamera; controls?: OrbitControls }).camera = camera
     ;(state as PreviewState & { camera?: THREE.PerspectiveCamera; controls?: OrbitControls }).controls = controls
@@ -108,6 +139,7 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
     return () => {
       cancelAnimationFrame(raf)
       observer.disconnect()
+      state.mixer?.stopAllAction()
       controls.dispose()
       disposeObject(state.characterRoot)
       state.attachments.forEach((item) => disposeObject(item.scene))
@@ -122,6 +154,15 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
     if (!state) return
     let cancelled = false
     const loader = new GLTFLoader()
+
+    state.mixer?.stopAllAction()
+    state.mixer = undefined
+    state.action = undefined
+    state.animations = []
+    setClips([])
+    setSelectedClip(0)
+    setCurrentTime(0)
+    setPlaying(false)
 
     if (state.skeleton) {
       state.scene.remove(state.skeleton)
@@ -160,6 +201,20 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
       state.rig = mapped.rig
       callbackRef.current?.(mapped.info)
       fitCharacter(root, state)
+
+      state.animations = gltf.animations
+      setClips(gltf.animations.map((clip, index) => ({ name: clip.name || `Clip ${index + 1}`, duration: clip.duration })))
+      if (gltf.animations.length > 0) {
+        state.mixer = new THREE.AnimationMixer(root)
+        const action = state.mixer.clipAction(gltf.animations[0])
+        configureAction(action, true, true, speed)
+        action.play()
+        state.action = action
+        setSelectedClip(0)
+        setCurrentTime(0)
+        setPlaying(true)
+      }
+
       if (showRig) {
         state.skeleton = new THREE.SkeletonHelper(root)
         styleSkeleton(state.skeleton)
@@ -169,6 +224,26 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
 
     return () => { cancelled = true }
   }, [baseUrl])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state?.mixer || !state.animations[selectedClip]) return
+    const clip = state.animations[selectedClip]
+    state.action?.stop()
+    const action = state.mixer.clipAction(clip)
+    action.reset()
+    configureAction(action, playing, loop, speed)
+    action.play()
+    action.paused = !playing
+    state.action = action
+    setCurrentTime(0)
+  }, [selectedClip])
+
+  useEffect(() => {
+    const action = stateRef.current?.action
+    if (!action) return
+    configureAction(action, playing, loop, speed)
+  }, [playing, loop, speed])
 
   useEffect(() => {
     const state = stateRef.current
@@ -233,7 +308,72 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
     return () => { cancelled = true }
   }, [attachments])
 
-  return <div className="character-preview" ref={mountRef} />
+  const duration = clips[selectedClip]?.duration ?? 0
+  const seek = (value: number) => {
+    const state = stateRef.current
+    const clamped = THREE.MathUtils.clamp(value, 0, duration)
+    setCurrentTime(clamped)
+    if (!state?.action) return
+    state.action.time = clamped
+    state.mixer?.update(0)
+  }
+
+  const restart = () => {
+    const action = stateRef.current?.action
+    if (!action) return
+    action.reset()
+    configureAction(action, playing, loop, speed)
+    action.play()
+    action.paused = !playing
+    setCurrentTime(0)
+  }
+
+  return (
+    <div className="character-preview-shell">
+      <div className="character-preview" ref={mountRef} />
+      {clips.length > 0 && (
+        <div className="character-animation-dock">
+          <div className="character-animation-controls">
+            <span className="character-animation-label">ANIMATION</span>
+            <select value={selectedClip} onChange={(event) => setSelectedClip(Number(event.target.value))}>
+              {clips.map((clip, index) => <option key={`${clip.name}-${index}`} value={index}>{clip.name}</option>)}
+            </select>
+            <button onClick={() => setPlaying((value) => !value)}>{playing ? 'Pause' : 'Play'}</button>
+            <button onClick={restart}>Restart</button>
+            <button className={loop ? 'active' : ''} onClick={() => setLoop((value) => !value)}>Loop</button>
+            <select className="character-speed-select" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
+              <option value={0.25}>0.25×</option>
+              <option value={0.5}>0.5×</option>
+              <option value={0.75}>0.75×</option>
+              <option value={1}>1×</option>
+              <option value={1.25}>1.25×</option>
+              <option value={1.5}>1.5×</option>
+              <option value={2}>2×</option>
+            </select>
+          </div>
+          <div className="character-animation-timeline">
+            <input type="range" min={0} max={Math.max(duration, 0.001)} step={0.001} value={Math.min(currentTime, duration)} onChange={(event) => seek(Number(event.target.value))} />
+            <span>{formatTime(currentTime)} / {formatTime(duration)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function configureAction(action: THREE.AnimationAction, playing: boolean, loop: boolean, speed: number) {
+  action.enabled = true
+  action.paused = !playing
+  action.clampWhenFinished = !loop
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
+  action.setEffectiveTimeScale(speed)
+}
+
+function formatTime(value: number) {
+  if (!Number.isFinite(value)) return '0:00.0'
+  const minutes = Math.floor(value / 60)
+  const seconds = value - minutes * 60
+  return `${minutes}:${seconds.toFixed(1).padStart(4, '0')}`
 }
 
 function styleSkeleton(helper: THREE.SkeletonHelper) {
