@@ -1,26 +1,25 @@
 # Forge Studio
 
-Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping, live character retargeting, motion cleanup and game-ready animation export.
+Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping, live character retargeting, motion cleanup, game-ready animation export and clip editing.
 
-## v0.4.0
+## v0.5.0
 
-- Built-in rigged Forge Mannequin, so Mocap works immediately without importing a character
-- Desktop mocap receiver with QR pairing
+- Built-in rigged Forge Mannequin for mocap testing
 - Phone browser capture using MediaPipe Pose Landmarker
-- Peer-to-peer live pose streaming with PeerJS/WebRTC
+- Peer-to-peer pose streaming with PeerJS/WebRTC
 - Automatic humanoid bone mapping for common Mixamo, Blender and Unity-style rigs
-- Optional custom rigged GLB/GLTF import directly inside Mocap Studio
-- Live body retargeting from the phone onto the built-in or imported character
-- Retarget smoothing, X mirroring and skeleton-helper controls
-- Offline adaptive jitter cleanup for recorded takes
-- Short tracking-gap interpolation up to 180 ms
-- Foot-contact detection and planted-foot locking
-- Support-plane / ground alignment for detected feet
-- Cleaned take preview before export
+- Live retargeting, smoothing, X mirroring and skeleton preview
+- Adaptive jitter cleanup, short tracking-gap interpolation, foot locking and ground alignment
 - Raw and cleaned `.forge-motion.json` export
-- Bake cleaned retargeted bone rotations into a real Three.js `AnimationClip`
-- Export the character plus baked animation as a binary `.glb`
-- Preserve existing animation clips when exporting an imported character
+- Bake cleaned retargeted bone rotations into Three.js `AnimationClip`s
+- Export character + baked animation as binary GLB
+- Animation Studio with animated GLB import and 3D playback
+- Per-clip trim/crop controls
+- Rename, duplicate and delete clips
+- Playback speed editing from 0.25x to 2.5x
+- Loop preview and optional loop-closing pose match
+- Root-motion controls: keep, remove horizontal X/Z travel, or lock root position
+- Export the full edited animation set back to a binary GLB
 
 Forge deliberately targets a **single-phone** mocap workflow. Multi-camera capture is not part of the plan.
 
@@ -35,6 +34,6 @@ Phone camera access requires HTTPS outside localhost. The repository deploys aut
 
 ## Current pipeline
 
-`Phone -> MediaPipe pose -> WebRTC landmarks -> gap repair -> adaptive cleanup -> foot lock / ground alignment -> humanoid retarget -> cleaned preview -> bake bone keyframes -> animated GLB export`
+`Phone -> MediaPipe pose -> WebRTC landmarks -> gap repair -> adaptive cleanup -> foot lock / ground alignment -> humanoid retarget -> cleaned preview -> bake bone keyframes -> Animation Studio -> trim / speed / loop / root-motion edit -> animated GLB export`
 
-The next milestone is the dedicated Animation Studio: trim/crop, loop tools, naming, playback speed, clip management and root-motion controls.
+The next major content milestone is Texture Lab and the shared Asset Library workflow, followed by one-click Send to Game integration.
