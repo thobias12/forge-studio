@@ -2,11 +2,12 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { createForgeMannequin } from '../lib/mannequin'
 import { applyPoseToRig, createRetargetRuntime, type RigInfo, type RetargetRuntime } from '../lib/retarget'
 import type { PosePoint } from '../types'
 
 type Props = {
-  src: string
+  src?: string
   landmarks?: PosePoint[]
   worldLandmarks?: PosePoint[]
   className?: string
@@ -83,54 +84,55 @@ export default function RetargetViewport({
     let lastInput: PosePoint[] | undefined
     let smoothPoints: PosePoint[] | undefined
 
-    const loader = new GLTFLoader()
-    loader.load(
-      src,
-      (gltf) => {
-        if (disposed) return
-        model = gltf.scene
-        model.traverse((object) => {
-          const mesh = object as THREE.Mesh
-          if (mesh.isMesh) {
-            mesh.castShadow = true
-            mesh.receiveShadow = true
-          }
-        })
-        scene.add(model)
+    const prepareModel = (nextModel: THREE.Object3D) => {
+      if (disposed) return
+      model = nextModel
+      model.traverse((object) => {
+        const mesh = object as THREE.Mesh
+        if (mesh.isMesh) {
+          mesh.castShadow = true
+          mesh.receiveShadow = true
+        }
+      })
+      scene.add(model)
 
-        const initialBox = new THREE.Box3().setFromObject(model)
-        const initialSize = initialBox.getSize(new THREE.Vector3())
-        const scale = initialSize.y > 0.001 ? 2 / initialSize.y : 1
-        model.scale.multiplyScalar(scale)
-        model.updateMatrixWorld(true)
+      const initialBox = new THREE.Box3().setFromObject(model)
+      const initialSize = initialBox.getSize(new THREE.Vector3())
+      const scale = initialSize.y > 0.001 ? 2 / initialSize.y : 1
+      model.scale.multiplyScalar(scale)
+      model.updateMatrixWorld(true)
 
-        const box = new THREE.Box3().setFromObject(model)
-        const center = box.getCenter(new THREE.Vector3())
-        model.position.x -= center.x
-        model.position.z -= center.z
-        model.position.y -= box.min.y
-        model.updateMatrixWorld(true)
+      const box = new THREE.Box3().setFromObject(model)
+      const center = box.getCenter(new THREE.Vector3())
+      model.position.x -= center.x
+      model.position.z -= center.z
+      model.position.y -= box.min.y
+      model.updateMatrixWorld(true)
 
-        runtime = createRetargetRuntime(model)
-        infoCallbackRef.current?.(runtime.info)
+      runtime = createRetargetRuntime(model)
+      infoCallbackRef.current?.(runtime.info)
 
-        skeletonHelper = new THREE.SkeletonHelper(model)
-        skeletonHelper.visible = poseRef.current.showRig
-        const helperMaterial = skeletonHelper.material as THREE.LineBasicMaterial
-        helperMaterial.color.set(0x75b7ff)
-        helperMaterial.transparent = true
-        helperMaterial.opacity = 0.72
-        scene.add(skeletonHelper)
+      skeletonHelper = new THREE.SkeletonHelper(model)
+      skeletonHelper.visible = poseRef.current.showRig
+      const helperMaterial = skeletonHelper.material as THREE.LineBasicMaterial
+      helperMaterial.color.set(0x75b7ff)
+      helperMaterial.transparent = true
+      helperMaterial.opacity = 0.72
+      scene.add(skeletonHelper)
 
-        const fittedBox = new THREE.Box3().setFromObject(model)
-        const fittedSize = fittedBox.getSize(new THREE.Vector3())
-        const maxSize = Math.max(fittedSize.x, fittedSize.y, fittedSize.z, 1)
-        camera.position.set(maxSize * 1.4, fittedSize.y * 0.65, maxSize * 2.2)
-        controls.target.set(0, Math.max(0.8, fittedSize.y * 0.48), 0)
-      },
-      undefined,
-      () => infoCallbackRef.current?.(undefined),
-    )
+      const fittedBox = new THREE.Box3().setFromObject(model)
+      const fittedSize = fittedBox.getSize(new THREE.Vector3())
+      const maxSize = Math.max(fittedSize.x, fittedSize.y, fittedSize.z, 1)
+      camera.position.set(maxSize * 1.4, fittedSize.y * 0.65, maxSize * 2.2)
+      controls.target.set(0, Math.max(0.8, fittedSize.y * 0.48), 0)
+    }
+
+    if (src) {
+      const loader = new GLTFLoader()
+      loader.load(src, (gltf) => prepareModel(gltf.scene), undefined, () => infoCallbackRef.current?.(undefined))
+    } else {
+      prepareModel(createForgeMannequin())
+    }
 
     const smooth = (source: PosePoint[]) => {
       if (source !== lastInput) {

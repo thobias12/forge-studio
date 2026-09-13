@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, FileUp, Pause, Play, QrCode, Radio, RotateCcw, Smartphone, Trash2 } from 'lucide-react'
 import Peer, { type DataConnection } from 'peerjs'
 import { QRCodeSVG } from 'qrcode.react'
-import PoseViewport from '../components/PoseViewport'
 import RetargetViewport from '../components/RetargetViewport'
 import { averageVisibility, downloadJson, formatDuration } from '../lib/pose'
 import type { RigInfo } from '../lib/retarget'
 import type { ForgeMotion, PeerMessage, PoseFrame } from '../types'
+
+const BUILTIN_CHARACTER = 'Forge Mannequin'
 
 export default function MocapStudio() {
   const [peerId, setPeerId] = useState('')
@@ -20,7 +21,7 @@ export default function MocapStudio() {
   const [playing, setPlaying] = useState(false)
   const [latency, setLatency] = useState<number | null>(null)
   const [characterUrl, setCharacterUrl] = useState<string>()
-  const [characterName, setCharacterName] = useState('')
+  const [characterName, setCharacterName] = useState(BUILTIN_CHARACTER)
   const [rigInfo, setRigInfo] = useState<RigInfo>()
   const [smoothing, setSmoothing] = useState(0.48)
   const [mirrorX, setMirrorX] = useState(false)
@@ -30,6 +31,7 @@ export default function MocapStudio() {
   const recordingRef = useRef(false)
   const playbackStartedRef = useRef(0)
   const playbackOffsetRef = useRef(0)
+  const usingBuiltin = !characterUrl
 
   useEffect(() => {
     const peer = new Peer()
@@ -60,7 +62,9 @@ export default function MocapStudio() {
           const captured = [...recordFramesRef.current]
           setFrames(captured)
           setRecording(false)
-          if (captured.length) setClip(buildClip(captured, `Mocap ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`))
+          if (captured.length) {
+            setClip(buildClip(captured, `Mocap ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`))
+          }
         }
         if (message.type === 'ping') connection.send({ type: 'pong', sentAt: message.sentAt } satisfies PeerMessage)
         if (message.type === 'pong') setLatency(Math.max(0, Math.round((performance.now() - message.sentAt) / 2)))
@@ -118,10 +122,9 @@ export default function MocapStudio() {
 
   const activeFrame = useMemo(() => {
     if (!clip?.frames.length) return lastFrame
-    const target = playhead
     let selected = clip.frames[0]
     for (const frame of clip.frames) {
-      if (frame.t <= target) selected = frame
+      if (frame.t <= playhead) selected = frame
       else break
     }
     return selected
@@ -152,9 +155,9 @@ export default function MocapStudio() {
     setShowRig(false)
   }
 
-  const clearCharacter = () => {
+  const useBuiltinCharacter = () => {
     setCharacterUrl(undefined)
-    setCharacterName('')
+    setCharacterName(BUILTIN_CHARACTER)
     setRigInfo(undefined)
     setShowRig(false)
   }
@@ -164,13 +167,15 @@ export default function MocapStudio() {
     if (playing) {
       playbackOffsetRef.current = playhead
       setPlaying(false)
-    } else {
-      if (playhead >= clip.durationMs) {
-        setPlayhead(0)
-        playbackOffsetRef.current = 0
-      } else playbackOffsetRef.current = playhead
-      setPlaying(true)
+      return
     }
+    if (playhead >= clip.durationMs) {
+      setPlayhead(0)
+      playbackOffsetRef.current = 0
+    } else {
+      playbackOffsetRef.current = playhead
+    }
+    setPlaying(true)
   }
 
   return (
@@ -179,40 +184,36 @@ export default function MocapStudio() {
         <div className="viewport-toolbar">
           <div>
             <span className="eyebrow">MOCAP STUDIO</span>
-            <strong>{recording ? 'Recording live movement' : clip ? clip.name : characterName || 'Live phone capture'}</strong>
+            <strong>{recording ? 'Recording live movement' : clip ? clip.name : characterName}</strong>
           </div>
           <div className="toolbar-actions">
-            <label className="secondary-button file-button"><FileUp size={16} /> Character GLB<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
+            <label className="secondary-button file-button"><FileUp size={16} /> Replace character<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
             <label className="secondary-button file-button"><FileUp size={16} /> Import motion<input type="file" accept=".json,.forge-motion.json" onChange={(e) => importMotion(e.target.files?.[0])} /></label>
             {clip && <button className="secondary-button" onClick={() => downloadJson(`${safeName(clip.name)}.forge-motion.json`, clip)}><Download size={16} /> Export</button>}
           </div>
         </div>
 
         <div className="mocap-viewport-wrap">
-          {characterUrl ? (
-            <RetargetViewport
-              className="mocap-viewport"
-              src={characterUrl}
-              landmarks={activeFrame?.landmarks}
-              worldLandmarks={activeFrame?.worldLandmarks}
-              smoothing={smoothing}
-              mirrorX={mirrorX}
-              showRig={showRig}
-              onRigInfo={setRigInfo}
-            />
-          ) : (
-            <PoseViewport className="mocap-viewport" landmarks={activeFrame?.landmarks} worldLandmarks={activeFrame?.worldLandmarks} />
-          )}
+          <RetargetViewport
+            className="mocap-viewport"
+            src={characterUrl}
+            landmarks={activeFrame?.landmarks}
+            worldLandmarks={activeFrame?.worldLandmarks}
+            smoothing={smoothing}
+            mirrorX={mirrorX}
+            showRig={showRig}
+            onRigInfo={setRigInfo}
+          />
           <div className="viewport-overlay top-left">
             <span className={`live-dot ${phoneConnected ? 'connected' : ''}`} />
             <span>{phoneConnected ? `${phoneName} connected` : 'Waiting for phone'}</span>
           </div>
-          {characterName && <div className="viewport-overlay top-right"><span className="character-dot" /><span>{characterName}</span></div>}
+          <div className="viewport-overlay top-right"><span className="character-dot" /><span>{characterName}{usingBuiltin ? ' · BUILT IN' : ''}</span></div>
           {recording && <div className="recording-pill"><span /> REC</div>}
           <div className="viewport-stats">
             <div><span>TRACKING</span><strong>{activeFrame ? `${visibility}%` : '—'}</strong></div>
             <div><span>LATENCY</span><strong>{latency === null ? '—' : `${latency} ms`}</strong></div>
-            <div><span>RIG</span><strong>{rigInfo ? `${rigInfo.mappedCount}/${rigInfo.mappedCount + rigInfo.missing.length}` : characterUrl ? '…' : 'POSE'}</strong></div>
+            <div><span>RIG</span><strong>{rigInfo ? `${rigInfo.mappedCount}/${rigInfo.mappedCount + rigInfo.missing.length}` : '…'}</strong></div>
             <div><span>FRAMES</span><strong>{recording ? recordFramesRef.current.length : frames.length || '—'}</strong></div>
           </div>
         </div>
@@ -227,7 +228,7 @@ export default function MocapStudio() {
           </div>
           <input className="timeline-range" type="range" min={0} max={Math.max(1, clip?.durationMs ?? 1)} value={Math.min(playhead, clip?.durationMs ?? 0)} disabled={!clip} onChange={(e) => { const value = Number(e.target.value); setPlayhead(value); playbackOffsetRef.current = value; setPlaying(false) }} />
           <div className="timeline-track"><div className="track-label">PHONE BODY</div><div className={`track-clip ${clip ? 'has-clip' : ''}`}>{clip ? `${clip.frames.length} pose frames` : 'Record on your phone to create a clip'}</div></div>
-          {characterName && <div className="timeline-track character-track"><div className="track-label">CHARACTER</div><div className="track-clip has-character">Live retarget · {characterName}</div></div>}
+          <div className="timeline-track character-track"><div className="track-label">CHARACTER</div><div className="track-clip has-character">Live retarget · {characterName}</div></div>
         </div>
       </section>
 
@@ -239,11 +240,11 @@ export default function MocapStudio() {
               {captureUrl ? <QRCodeSVG value={captureUrl} size={184} bgColor="#ffffff" fgColor="#0d1016" level="M" marginSize={2} /> : <div className="qr-loading"><QrCode size={36} /><span>Creating session…</span></div>}
             </div>
             <h3>Scan with your phone</h3>
-            <p className="pair-copy">Open the QR code in your phone camera. Forge Capture will connect directly to this studio session.</p>
+            <p className="pair-copy">The Forge Mannequin is already loaded. Scan the QR, allow the camera, and start moving.</p>
             <div className="pair-steps">
               <div><span>1</span><p>Scan QR</p></div>
               <div><span>2</span><p>Allow camera</p></div>
-              <div><span>3</span><p>Start capture</p></div>
+              <div><span>3</span><p>Move mannequin</p></div>
             </div>
           </>
         ) : (
@@ -258,33 +259,27 @@ export default function MocapStudio() {
 
         <div className="inspector-block character-inspector">
           <span className="property-label">Live character</span>
-          {characterName ? (
-            <>
-              <strong className="character-name">{characterName}</strong>
-              <div className="mini-row"><span>Humanoid bones</span><span className={rigInfo && rigInfo.mappedCount >= 10 ? 'status-good' : 'status-warn'}>{rigInfo ? `${rigInfo.mappedCount} mapped` : 'Scanning…'}</span></div>
-              <div className="mini-row"><span>Total skeleton bones</span><span>{rigInfo?.totalBones ?? '—'}</span></div>
-              {rigInfo && rigInfo.missing.length > 0 && <p className="rig-note">Missing optional/unknown: {rigInfo.missing.slice(0, 5).join(', ')}{rigInfo.missing.length > 5 ? '…' : ''}</p>}
-              <button className="inspector-action" onClick={clearCharacter}>Remove character</button>
-            </>
+          <strong className="character-name">{characterName}</strong>
+          <div className="mini-row"><span>Source</span><span className="status-good">{usingBuiltin ? 'Built in' : 'Imported'}</span></div>
+          <div className="mini-row"><span>Humanoid bones</span><span className={rigInfo && rigInfo.mappedCount >= 10 ? 'status-good' : 'status-warn'}>{rigInfo ? `${rigInfo.mappedCount} mapped` : 'Scanning…'}</span></div>
+          <div className="mini-row"><span>Total skeleton bones</span><span>{rigInfo?.totalBones ?? '—'}</span></div>
+          {rigInfo && rigInfo.missing.length > 0 && <p className="rig-note">Missing: {rigInfo.missing.slice(0, 5).join(', ')}{rigInfo.missing.length > 5 ? '…' : ''}</p>}
+          {usingBuiltin ? (
+            <label className="inspector-action file-button">Replace with your GLB<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
           ) : (
-            <>
-              <p>Import a rigged humanoid GLB to replace the stick-figure preview with your actual game character.</p>
-              <label className="inspector-action file-button">Import rigged GLB<input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" onChange={(e) => importCharacter(e.target.files?.[0])} /></label>
-            </>
+            <button className="inspector-action" onClick={useBuiltinCharacter}>Use Forge Mannequin</button>
           )}
         </div>
 
-        {characterName && (
-          <div className="inspector-block retarget-settings">
-            <span className="property-label">Retarget settings</span>
-            <label className="range-setting"><span><b>Smoothing</b><em>{Math.round(smoothing * 100)}%</em></span><input type="range" min="0" max="0.9" step="0.05" value={smoothing} onChange={(e) => setSmoothing(Number(e.target.value))} /></label>
-            <label className="toggle-setting"><span><b>Mirror X</b><small>Use if left/right movement is reversed</small></span><input type="checkbox" checked={mirrorX} onChange={(e) => setMirrorX(e.target.checked)} /></label>
-            <label className="toggle-setting"><span><b>Show rig</b><small>Overlay detected skeleton bones</small></span><input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} /></label>
-          </div>
-        )}
+        <div className="inspector-block retarget-settings">
+          <span className="property-label">Retarget settings</span>
+          <label className="range-setting"><span><b>Smoothing</b><em>{Math.round(smoothing * 100)}%</em></span><input type="range" min="0" max="0.9" step="0.05" value={smoothing} onChange={(e) => setSmoothing(Number(e.target.value))} /></label>
+          <label className="toggle-setting"><span><b>Mirror X</b><small>Use if left/right movement is reversed</small></span><input type="checkbox" checked={mirrorX} onChange={(e) => setMirrorX(e.target.checked)} /></label>
+          <label className="toggle-setting"><span><b>Show rig</b><small>Overlay detected skeleton bones</small></span><input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} /></label>
+        </div>
 
         <div className="inspector-block info-block"><span className="property-label">Capture quality</span><p>Place your single phone so your full body, hands and feet stay visible. More light and a clear background improve tracking.</p></div>
-        <div className="inspector-block"><span className="property-label">v0.2 pipeline</span><div className="mini-row"><span>Phone pose tracking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Humanoid bone mapper</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Live GLB retargeting</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Playback on character</span><span className="status-good">Ready</span></div><div className="mini-row"><span>GLB animation baking</span><span className="status-warn">Next</span></div></div>
+        <div className="inspector-block"><span className="property-label">v0.2.1 pipeline</span><div className="mini-row"><span>Built-in rigged mannequin</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Phone pose tracking</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Humanoid bone mapper</span><span className="status-good">Ready</span></div><div className="mini-row"><span>Live character retargeting</span><span className="status-good">Ready</span></div><div className="mini-row"><span>GLB animation baking</span><span className="status-warn">Next</span></div></div>
       </aside>
     </div>
   )
