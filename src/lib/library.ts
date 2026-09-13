@@ -1,3 +1,5 @@
+import { dataUrlToBlob, materialSlug, parseMaterialPackage } from './materialPackage'
+
 export type AssetCategory = 'characters' | 'animations' | 'props' | 'materials' | 'textures' | 'environment' | 'audio'
 export type AssetKind = 'glb' | 'motion' | 'image' | 'audio' | 'file'
 
@@ -63,7 +65,6 @@ function withStore<T>(storeName: string, mode: IDBTransactionMode, work: (store:
   }))
 }
 
-
 export async function listAssets() {
   const items = await withStore(ASSETS, 'readonly', (store) => store.getAll()) as LibraryAsset[]
   return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -122,6 +123,7 @@ export async function deleteProject(id: string) {
 export function detectAssetCategory(file: File): AssetCategory {
   const name = file.name.toLowerCase()
   if (name.endsWith('.forge-motion.json')) return 'animations'
+  if (name.endsWith('.forge-material.json')) return 'materials'
   if (name.endsWith('.glb') || name.endsWith('.gltf')) return 'props'
   if (/\.(png|jpe?g|webp|ktx2|hdr)$/i.test(name)) return 'textures'
   if (/\.(mp3|wav|ogg|m4a)$/i.test(name)) return 'audio'
@@ -137,56 +139,110 @@ export function detectAssetKind(file: File): AssetKind {
   return 'file'
 }
 
-export function safeAssetFilename(name: string, kind: AssetKind) {
+export function safeAssetFilename(name: string, kind: AssetKind, mime = '') {
   const base = name.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'forge-asset'
   if (kind === 'glb' && !base.toLowerCase().endsWith('.glb')) return `${base}.glb`
   if (kind === 'motion' && !base.toLowerCase().endsWith('.json')) return `${base}.forge-motion.json`
+  if (kind === 'image' && !/\.(png|jpe?g|webp|ktx2|hdr)$/i.test(base)) {
+    const extension = mime.includes('jpeg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png'
+    return `${base}.${extension}`
+  }
+  if (kind === 'audio' && !/\.(mp3|wav|ogg|m4a)$/i.test(base)) {
+    const extension = mime.includes('mpeg') ? 'mp3' : mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'wav'
+    return `${base}.${extension}`
+  }
+  if (kind === 'file' && mime.includes('json') && !base.toLowerCase().endsWith('.json')) return `${base}.json`
   return base
 }
 
 export async function sendAssetToProject(asset: LibraryAsset, project: ProjectProfile) {
-  const filename = safeAssetFilename(asset.name, asset.kind)
-  const manifest = {
-    format: 'forge-game-asset',
-    version: 1,
-    asset: {
-      id: asset.id,
-      name: asset.name,
-      category: asset.category,
-      kind: asset.kind,
-      file: filename,
-      tags: asset.tags,
-      source: asset.source,
-    },
-    project: { id: project.id, name: project.name, repo: project.repo, assetPath: project.assetPath },
-    exportedAt: new Date().toISOString(),
-  }
+  const materialPackage = asset.category === 'materials' ? await parseMaterialPackage(asset.blob) : undefined
+  if (materialPackage) return sendMaterialPackageToProject(asset, project, materialPackage)
 
+  const filename = safeAssetFilename(asset.name, asset.kind, asset.mime)
+  const manifest = buildAssetManifest(asset, project, filename)
   const handle = project.directoryHandle as any
   if (handle && typeof handle.getDirectoryHandle === 'function') {
-    const permission = typeof handle.queryPermission === 'function' ? await handle.queryPermission({ mode: 'readwrite' }) : 'granted'
-    const granted = permission === 'granted' || (typeof handle.requestPermission === 'function' && await handle.requestPermission({ mode: 'readwrite' }) === 'granted')
-    if (!granted) throw new Error('Forge needs write permission for the connected game folder.')
-
-    let directory = handle
-    const segments = project.assetPath.split('/').map((part) => part.trim()).filter(Boolean)
-    for (const segment of segments) directory = await directory.getDirectoryHandle(segment, { create: true })
-
-    const assetHandle = await directory.getFileHandle(filename, { create: true })
-    const assetWriter = await assetHandle.createWritable()
-    await assetWriter.write(asset.blob)
-    await assetWriter.close()
-
-    const manifestHandle = await directory.getFileHandle(`${filename}.forge-asset.json`, { create: true })
-    const manifestWriter = await manifestHandle.createWritable()
-    await manifestWriter.write(JSON.stringify(manifest, null, 2))
-    await manifestWriter.close()
+    const directory = await getProjectAssetDirectory(handle, project.assetPath)
+    await writeFile(directory, filename, asset.blob)
+    await writeFile(directory, `${filename}.forge-asset.json`, new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }))
     return { mode: 'folder' as const, filename }
   }
 
   download(asset.blob, filename)
   download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), `${filename}.forge-asset.json`)
   return { mode: 'download' as const, filename }
+}
+
+async function sendMaterialPackageToProject(asset: LibraryAsset, project: ProjectProfile, material: Awaited<ReturnType<typeof parseMaterialPackage>> & {}) {
+  const slug = materialSlug(material.name)
+  const handle = project.directoryHandle as any
+  const packageFilename = `${slug}.forge-material.json`
+
+  if (handle && typeof handle.getDirectoryHandle === 'function') {
+    const baseDirectory = await getProjectAssetDirectory(handle, project.assetPath)
+    const materialDirectory = await baseDirectory.getDirectoryHandle(slug, { create: true })
+    const maps: Record<string, string> = {}
+
+    for (const [channel, embedded] of Object.entries(material.channels)) {
+      if (!embedded) continue
+      const blob = dataUrlToBlob(embedded.data)
+      const filename = embedded.file || `${channel}.png`
+      await writeFile(materialDirectory, filename, blob)
+      maps[channel] = filename
+    }
+
+    const runtimeManifest = {
+      format: 'forge-material-runtime',
+      version: 1,
+      name: material.name,
+      parameters: material.parameters,
+      maps,
+      three: {
+        material: 'MeshStandardMaterial',
+        baseColorColorSpace: 'srgb',
+        dataMapColorSpace: 'none',
+        wrap: 'repeat',
+      },
+      forge: { assetId: asset.id, source: asset.source, exportedAt: new Date().toISOString() },
+    }
+    await writeFile(materialDirectory, 'material.forge.json', new Blob([JSON.stringify(runtimeManifest, null, 2)], { type: 'application/json' }))
+    await writeFile(materialDirectory, packageFilename, asset.blob)
+    return { mode: 'folder' as const, filename: `${slug}/material.forge.json` }
+  }
+
+  download(asset.blob, packageFilename)
+  const manifest = buildAssetManifest(asset, project, packageFilename)
+  download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), `${packageFilename}.forge-asset.json`)
+  return { mode: 'download' as const, filename: packageFilename }
+}
+
+function buildAssetManifest(asset: LibraryAsset, project: ProjectProfile, filename: string) {
+  return {
+    format: 'forge-game-asset',
+    version: 1,
+    asset: { id: asset.id, name: asset.name, category: asset.category, kind: asset.kind, file: filename, tags: asset.tags, source: asset.source },
+    project: { id: project.id, name: project.name, repo: project.repo, assetPath: project.assetPath },
+    exportedAt: new Date().toISOString(),
+  }
+}
+
+async function getProjectAssetDirectory(handle: any, assetPath: string) {
+  const permission = typeof handle.queryPermission === 'function' ? await handle.queryPermission({ mode: 'readwrite' }) : 'granted'
+  const granted = permission === 'granted' || (typeof handle.requestPermission === 'function' && await handle.requestPermission({ mode: 'readwrite' }) === 'granted')
+  if (!granted) throw new Error('Forge needs write permission for the connected game folder.')
+
+  let directory = handle
+  const segments = assetPath.split('/').map((part) => part.trim()).filter(Boolean)
+  for (const segment of segments) directory = await directory.getDirectoryHandle(segment, { create: true })
+  return directory
+}
+
+async function writeFile(directory: any, filename: string, blob: Blob) {
+  const fileHandle = await directory.getFileHandle(filename, { create: true })
+  const writer = await fileHandle.createWritable()
+  await writer.write(blob)
+  await writer.close()
 }
 
 function download(blob: Blob, filename: string) {

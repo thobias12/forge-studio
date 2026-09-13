@@ -1,0 +1,6 @@
+.seamless-panel p, .material-package-panel p { margin: 8px 0 0; color: #6f7d90; font-size: 9px; line-height: 1.6; }
+.seamless-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
+.seamless-actions .secondary-button { width: 100%; }
+.material-package-panel { padding-bottom: 17px; }
+.package-export { width: 100%; margin-top: 11px; }
+.texture-meta-row .status-good { color: var(--good); }
