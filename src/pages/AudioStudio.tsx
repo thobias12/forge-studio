@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, Download, FileAudio, FileUp, Library, Mic2, Pause, Play, Redo2, Scissors, Square, Trash2, Undo2, Volume2, WandSparkles } from 'lucide-react'
+import { AudioLines, Download, FileAudio, FileUp, Library, Mic2, Redo2, Scissors, Square, Trash2, Undo2, Volume2, WandSparkles } from 'lucide-react'
 import { decodeAudioBlob, processAudioToWav } from '../lib/audioProcessing'
 import { registerHistoryScope } from '../lib/historyShortcuts'
 import { saveAsset } from '../lib/library'
+import { generateSoundRecipe, mixAudioBlobs, SOUND_RECIPES, type SoundDesignGroup, type SoundDesignSettings, type SoundRecipeId } from '../lib/soundDesigner'
 import '../audio-studio.css'
 
 type ClipType = 'voice' | 'sfx' | 'foley' | 'ambience' | 'music'
@@ -22,10 +23,17 @@ type AudioClip = {
   fadeOut: number
   gainDb: number
   normalize: boolean
+  pitchSemitones: number
+  lowpassHz: number
+  highpassHz: number
+  distortion: number
+  space: number
   createdAt: string
 }
 
 const MAX_HISTORY = 60
+const DEFAULT_FX = { pitchSemitones: 0, lowpassHz: 0, highpassHz: 0, distortion: 0, space: 0 }
+const DEFAULT_DESIGN: SoundDesignSettings = { intensity: 0.72, brightness: 0.55, length: 1, variation: 1, stereo: 0.65 }
 
 export default function AudioStudio() {
   const [clips, setClips] = useState<AudioClip[]>([])
@@ -39,7 +47,10 @@ export default function AudioStudio() {
   const [previewUrl, setPreviewUrl] = useState('')
   const [waveBuffer, setWaveBuffer] = useState<AudioBuffer>()
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState('Record dialogue, foley and game sounds, or import existing audio.')
+  const [status, setStatus] = useState('Record sounds or build them from Forge Sound Designer recipes.')
+  const [designGroup, setDesignGroup] = useState<SoundDesignGroup>('sfx')
+  const [recipeId, setRecipeId] = useState<SoundRecipeId>('heavy-impact')
+  const [design, setDesign] = useState<SoundDesignSettings>(DEFAULT_DESIGN)
 
   const undoStack = useRef<AudioClip[][]>([])
   const redoStack = useRef<AudioClip[][]>([])
@@ -51,6 +62,7 @@ export default function AudioStudio() {
   const meterContextRef = useRef<AudioContext>()
 
   const selected = clips.find((clip) => clip.id === selectedId)
+  const recipe = SOUND_RECIPES.find((item) => item.id === recipeId) ?? SOUND_RECIPES[0]
 
   const cloneClips = (items: AudioClip[]) => items.map((clip) => ({ ...clip, tags: [...clip.tags] }))
 
@@ -120,7 +132,7 @@ export default function AudioStudio() {
       cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
-  }, [selected?.id, selected?.trimStart, selected?.trimEnd, selected?.fadeIn, selected?.fadeOut, selected?.gainDb, selected?.normalize])
+  }, [selected?.id, selected?.trimStart, selected?.trimEnd, selected?.fadeIn, selected?.fadeOut, selected?.gainDb, selected?.normalize, selected?.pitchSemitones, selected?.lowpassHz, selected?.highpassHz, selected?.distortion, selected?.space])
 
   useEffect(() => () => stopCaptureResources(), [])
 
@@ -193,23 +205,13 @@ export default function AudioStudio() {
       const buffer = await decodeAudioBlob(blob)
       const type = newTakeType
       const count = clips.filter((clip) => clip.type === type).length + 1
-      const clip: AudioClip = {
-        id: crypto.randomUUID(),
+      const clip = makeClip({
         name: `${labelForType(type)} Take ${String(count).padStart(2, '0')}`,
         blob,
         mime,
         duration: buffer.duration,
         type,
-        tags: [],
-        notes: '',
-        trimStart: 0,
-        trimEnd: buffer.duration,
-        fadeIn: 0,
-        fadeOut: 0,
-        gainDb: 0,
-        normalize: false,
-        createdAt: new Date().toISOString(),
-      }
+      })
       commitClips([clip, ...clips], `${clip.name} recorded.`)
       setSelectedId(clip.id)
     } catch (error) {
@@ -224,28 +226,50 @@ export default function AudioStudio() {
       const imported: AudioClip[] = []
       for (const file of Array.from(files)) {
         const buffer = await decodeAudioBlob(file)
-        imported.push({
-          id: crypto.randomUUID(),
+        imported.push(makeClip({
           name: file.name.replace(/\.[^.]+$/, ''),
           blob: file,
           mime: file.type || 'audio/*',
           duration: buffer.duration,
           type: newTakeType,
-          tags: [],
-          notes: '',
-          trimStart: 0,
-          trimEnd: buffer.duration,
-          fadeIn: 0,
-          fadeOut: 0,
-          gainDb: 0,
-          normalize: false,
-          createdAt: new Date().toISOString(),
-        })
+        }))
       }
       commitClips([...imported, ...clips], `${imported.length} audio clip${imported.length === 1 ? '' : 's'} imported.`)
       if (imported[0]) setSelectedId(imported[0].id)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not import that audio file.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createDesignedSound = async (layerWithSelected = false, reroll = false) => {
+    setBusy(true)
+    try {
+      const nextDesign = reroll ? { ...design, variation: design.variation + 1 } : design
+      if (reroll) setDesign(nextDesign)
+      const generated = generateSoundRecipe(recipeId, nextDesign)
+      let blob = generated.blob
+      let duration = generated.duration
+      let name = `${generated.recipe.name} ${String(nextDesign.variation).padStart(2, '0')}`
+      let type: ClipType = generated.recipe.group
+      let tags = generated.recipe.tags
+
+      if (layerWithSelected && selected) {
+        const base = await processAudioToWav(selected.blob, selected)
+        const mixed = await mixAudioBlobs(base.blob, generated.blob, -2)
+        blob = mixed.blob
+        duration = mixed.duration
+        name = `${selected.name} + ${generated.recipe.name}`
+        type = selected.type
+        tags = Array.from(new Set([...selected.tags, ...generated.recipe.tags, 'layered']))
+      }
+
+      const clip = makeClip({ name, blob, mime: 'audio/wav', duration, type, tags })
+      commitClips([clip, ...clips], layerWithSelected && selected ? `${generated.recipe.name} layered onto ${selected.name}.` : `${generated.recipe.name} generated.`)
+      setSelectedId(clip.id)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not generate this sound.')
     } finally {
       setBusy(false)
     }
@@ -291,33 +315,58 @@ export default function AudioStudio() {
     }
   }
 
+  const resetFx = () => patchSelected({ ...DEFAULT_FX })
   const trimDuration = selected ? Math.max(0, selected.trimEnd - selected.trimStart) : 0
   const displayClips = useMemo(() => clips, [clips])
 
   return (
     <div className="audio-studio-page">
       <aside className="audio-session-panel">
-        <div className="audio-panel-title"><FileAudio size={15} /><span>SESSION / TAKES</span></div>
+        <div className="audio-panel-title"><FileAudio size={15} /><span>SESSION / SOUNDS</span></div>
         <div className="audio-record-card">
           <label>Recording type<select value={newTakeType} onChange={(event) => setNewTakeType(event.target.value as ClipType)}>{(['voice', 'sfx', 'foley', 'ambience', 'music'] as ClipType[]).map((type) => <option key={type} value={type}>{labelForType(type)}</option>)}</select></label>
           <label>Input<select value={deviceId} onChange={(event) => setDeviceId(event.target.value)}><option value="">Default microphone</option>{devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}</select></label>
           <button className="audio-enable-mic" onClick={() => void enableMicrophone()}><Mic2 size={13} /> Enable / refresh microphones</button>
           <div className="audio-input-meter"><span style={{ width: `${Math.round(inputLevel * 100)}%` }} /></div>
-          <button className={`audio-record-button ${recording ? 'recording' : ''}`} onClick={() => recording ? stopRecording() : void startRecording()}>{recording ? <Square size={14} fill="currentColor" /> : <Mic2 size={15} />}{recording ? `Stop · ${formatTime(recordingMs / 1000)}` : 'Record new take'}</button>
+          <button className={`audio-record-button ${recording ? 'recording' : ''}`} onClick={() => recording ? stopRecording() : void startRecording()}>{recording ? <Square size={14} fill="currentColor" /> : <Mic2 size={15} />}{recording ? `Stop · ${formatTime(recordingMs / 1000)}` : 'Record new sound'}</button>
           <label className="secondary-button audio-import"><FileUp size={13} /> Import audio<input multiple type="file" accept="audio/*,.wav,.mp3,.ogg,.webm,.m4a,.aac,.flac" onChange={(event) => void importFiles(event.target.files)} /></label>
         </div>
         <div className="audio-take-list">
           {displayClips.map((clip) => <button key={clip.id} className={clip.id === selectedId ? 'active' : ''} onClick={() => setSelectedId(clip.id)}><AudioLines size={15} /><span><strong>{clip.name}</strong><em>{labelForType(clip.type)} · {formatTime(clip.trimEnd - clip.trimStart)}</em></span></button>)}
-          {!clips.length && <div className="audio-no-takes"><Mic2 size={25} /><span>Your recordings and imported sounds will appear here.</span></div>}
+          {!clips.length && <div className="audio-no-takes"><WandSparkles size={25} /><span>Generate a sound in Sound Designer or record/import one.</span></div>}
         </div>
       </aside>
 
       <main className="audio-editor-main">
         <header className="audio-editor-toolbar">
-          <div><span className="eyebrow">VOICE & AUDIO STUDIO</span><strong>{selected?.name ?? 'No clip selected'}</strong></div>
+          <div><span className="eyebrow">VOICE & AUDIO STUDIO / SOUND DESIGNER</span><strong>{selected?.name ?? 'Build a game sound'}</strong></div>
           <div className="audio-editor-actions"><button title="Undo · Ctrl+Z" onClick={undo}><Undo2 size={14} /></button><button title="Redo · Ctrl+Y" onClick={redo}><Redo2 size={14} /></button></div>
         </header>
         <div className="audio-editor-stage">
+          <section className="sound-designer-card">
+            <div className="sound-designer-heading"><div><span className="eyebrow">PROCEDURAL SOUND DESIGNER</span><strong>Create SFX, Foley & ambience</strong></div><em>No recording required · reroll for new variations</em></div>
+            <div className="sound-designer-tabs">
+              {(['sfx', 'foley', 'ambience'] as SoundDesignGroup[]).map((group) => <button key={group} className={designGroup === group ? 'active' : ''} onClick={() => { setDesignGroup(group); const first = SOUND_RECIPES.find((item) => item.group === group); if (first) setRecipeId(first.id) }}>{group === 'sfx' ? 'SFX / VFX audio' : group === 'foley' ? 'Foley' : 'Ambience'}</button>)}
+            </div>
+            <div className="sound-designer-body">
+              <div className="sound-recipe-grid">
+                {SOUND_RECIPES.filter((item) => item.group === designGroup).map((item) => <button key={item.id} className={recipeId === item.id ? 'active' : ''} onClick={() => setRecipeId(item.id)}><strong>{item.name}</strong><span>{item.description}</span></button>)}
+              </div>
+              <div className="sound-design-controls">
+                <div className="sound-design-selected"><strong>{recipe.name}</strong><span>{recipe.tags.join(' · ')}</span></div>
+                <DesignSlider label="Intensity" value={design.intensity} min={0} max={1} step={0.01} format={(value) => `${Math.round(value * 100)}%`} onChange={(value) => setDesign((current) => ({ ...current, intensity: value }))} />
+                <DesignSlider label="Brightness" value={design.brightness} min={0} max={1} step={0.01} format={(value) => `${Math.round(value * 100)}%`} onChange={(value) => setDesign((current) => ({ ...current, brightness: value }))} />
+                <DesignSlider label="Length" value={design.length} min={0.4} max={2.2} step={0.05} format={(value) => `${value.toFixed(2)}×`} onChange={(value) => setDesign((current) => ({ ...current, length: value }))} />
+                <DesignSlider label="Stereo" value={design.stereo} min={0} max={1} step={0.01} format={(value) => `${Math.round(value * 100)}%`} onChange={(value) => setDesign((current) => ({ ...current, stereo: value }))} />
+                <div className="sound-design-actions">
+                  <button className="primary-button" disabled={busy} onClick={() => void createDesignedSound(false, false)}><WandSparkles size={13} /> Generate</button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void createDesignedSound(false, true)}>Reroll #{design.variation + 1}</button>
+                  <button className="secondary-button" disabled={busy || !selected} title={selected ? `Mix ${recipe.name} with ${selected.name}` : 'Select a sound first'} onClick={() => void createDesignedSound(true, true)}>Layer with selected</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {selected ? (
             <>
               <div className="audio-wave-card">
@@ -329,27 +378,35 @@ export default function AudioStudio() {
                 </div>
               </div>
               <div className="audio-preview-card">
-                <div><Volume2 size={17} /><span><strong>Processed preview</strong><em>Trim, fades, gain and normalization applied</em></span></div>
+                <div><Volume2 size={17} /><span><strong>Processed preview</strong><em>Trim + FX rack + fades + gain + normalization</em></span></div>
                 {previewUrl ? <audio controls src={previewUrl} /> : <span className="audio-rendering">Rendering preview…</span>}
               </div>
             </>
-          ) : <div className="audio-editor-empty"><Mic2 size={42} /><h2>Record your own game audio</h2><p>Dialogue, creature voices, UI sounds, foley, ambience and anything else you can capture with a microphone.</p></div>}
+          ) : <div className="audio-editor-empty"><WandSparkles size={42} /><h2>Pick a recipe and generate your first sound</h2><p>Create a base sound, then use the FX rack or layer it with something you recorded.</p></div>}
         </div>
         <footer className="audio-status"><span>{status}</span><b>Ctrl+Z undo · Ctrl+Y redo</b></footer>
       </main>
 
       <aside className="audio-inspector">
-        <div className="audio-panel-title"><Scissors size={15} /><span>CLIP INSPECTOR</span></div>
+        <div className="audio-panel-title"><Scissors size={15} /><span>CLIP + FX RACK</span></div>
         {selected ? (
           <>
             <section className="audio-inspector-section">
               <label>Name<input value={selected.name} onChange={(event) => patchSelected({ name: event.target.value }, false)} /></label>
               <label>Type<select value={selected.type} onChange={(event) => patchSelected({ type: event.target.value as ClipType })}>{(['voice', 'sfx', 'foley', 'ambience', 'music'] as ClipType[]).map((type) => <option key={type} value={type}>{labelForType(type)}</option>)}</select></label>
               <label>Tags<input value={selected.tags.join(', ')} placeholder="sword, hit, metal" onChange={(event) => patchSelected({ tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) }, false)} /></label>
-              <label>Script / notes<textarea rows={4} value={selected.notes} placeholder="Line, direction or recording notes…" onChange={(event) => patchSelected({ notes: event.target.value }, false)} /></label>
+              <label>Notes<textarea rows={3} value={selected.notes} placeholder="Recording or sound-design notes…" onChange={(event) => patchSelected({ notes: event.target.value }, false)} /></label>
             </section>
             <section className="audio-inspector-section">
-              <div className="audio-section-title">PROCESSING</div>
+              <div className="audio-section-title audio-title-with-action"><span>FX RACK</span><button onClick={resetFx}>Reset</button></div>
+              <DesignSlider label="Pitch" value={selected.pitchSemitones} min={-12} max={12} step={1} format={(value) => `${value > 0 ? '+' : ''}${value.toFixed(0)} st`} onChange={(value) => patchSelected({ pitchSemitones: value })} />
+              <DesignSlider label="Low-pass" value={selected.lowpassHz} min={0} max={16000} step={100} format={(value) => value < 100 ? 'Off' : `${Math.round(value)} Hz`} onChange={(value) => patchSelected({ lowpassHz: value })} />
+              <DesignSlider label="High-pass" value={selected.highpassHz} min={0} max={2200} step={25} format={(value) => value < 25 ? 'Off' : `${Math.round(value)} Hz`} onChange={(value) => patchSelected({ highpassHz: value })} />
+              <DesignSlider label="Distortion" value={selected.distortion} min={0} max={1} step={0.01} format={(value) => `${Math.round(value * 100)}%`} onChange={(value) => patchSelected({ distortion: value })} />
+              <DesignSlider label="Space" value={selected.space} min={0} max={1} step={0.01} format={(value) => `${Math.round(value * 100)}%`} onChange={(value) => patchSelected({ space: value })} />
+            </section>
+            <section className="audio-inspector-section">
+              <div className="audio-section-title">FINISHING</div>
               <label>Gain <div className="audio-slider-row"><input type="range" min="-18" max="18" step="0.5" value={selected.gainDb} onChange={(event) => patchSelected({ gainDb: Number(event.target.value) })} /><b>{selected.gainDb > 0 ? '+' : ''}{selected.gainDb.toFixed(1)} dB</b></div></label>
               <label>Fade in <div className="audio-slider-row"><input type="range" min="0" max={Math.min(3, trimDuration / 2)} step="0.01" value={Math.min(selected.fadeIn, trimDuration / 2)} onChange={(event) => patchSelected({ fadeIn: Number(event.target.value) })} /><b>{selected.fadeIn.toFixed(2)}s</b></div></label>
               <label>Fade out <div className="audio-slider-row"><input type="range" min="0" max={Math.min(3, trimDuration / 2)} step="0.01" value={Math.min(selected.fadeOut, trimDuration / 2)} onChange={(event) => patchSelected({ fadeOut: Number(event.target.value) })} /><b>{selected.fadeOut.toFixed(2)}s</b></div></label>
@@ -361,10 +418,10 @@ export default function AudioStudio() {
             <section className="audio-inspector-section audio-output-buttons">
               <button className="primary-button" disabled={busy} onClick={() => void saveSelected(false)}><Library size={14} /> Save WAV to Library</button>
               <button className="secondary-button" disabled={busy} onClick={() => void saveSelected(true)}><Download size={14} /> Export WAV</button>
-              <button className="audio-delete" onClick={removeSelected}><Trash2 size={13} /> Remove take</button>
+              <button className="audio-delete" onClick={removeSelected}><Trash2 size={13} /> Remove sound</button>
             </section>
           </>
-        ) : <div className="audio-inspector-empty">Select or record a clip to edit it.</div>}
+        ) : <div className="audio-inspector-empty">Generate, record or import a sound to edit it.</div>}
       </aside>
     </div>
   )
@@ -408,6 +465,31 @@ export default function AudioStudio() {
     streamRef.current = undefined
     stopMeter()
   }
+}
+
+function makeClip(input: { name: string; blob: Blob; mime: string; duration: number; type: ClipType; tags?: string[] }): AudioClip {
+  return {
+    id: crypto.randomUUID(),
+    name: input.name,
+    blob: input.blob,
+    mime: input.mime,
+    duration: input.duration,
+    type: input.type,
+    tags: input.tags ?? [],
+    notes: '',
+    trimStart: 0,
+    trimEnd: input.duration,
+    fadeIn: 0,
+    fadeOut: 0,
+    gainDb: 0,
+    normalize: false,
+    ...DEFAULT_FX,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function DesignSlider({ label, value, min, max, step, format, onChange }: { label: string; value: number; min: number; max: number; step: number; format: (value: number) => string; onChange: (value: number) => void }) {
+  return <label className="sound-design-slider"><span>{label}</span><input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><b>{format(value)}</b></label>
 }
 
 function Waveform({ buffer, trimStart, trimEnd }: { buffer?: AudioBuffer; trimStart: number; trimEnd: number }) {
