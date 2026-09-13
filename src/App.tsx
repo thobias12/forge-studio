@@ -3,6 +3,7 @@ import { Box, Boxes, Clapperboard, Home, Layers3, ScanLine, Settings, Sparkles }
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
+import AnimationStudio from './pages/AnimationStudio'
 import Capture from './pages/Capture'
 import './styles.css'
 import './retarget.css'
@@ -41,7 +42,7 @@ export default function App() {
         <nav className="sidebar-nav">
           {nav.map(({ id, label, icon: Icon }) => (
             <button key={id} className={page === id ? 'active' : ''} onClick={() => setPage(id)}>
-              <Icon size={18} /><span>{label}</span>{(id === 'animations' || id === 'textures') && <small>SOON</small>}
+              <Icon size={18} /><span>{label}</span>{id === 'textures' && <small>SOON</small>}
             </button>
           ))}
         </nav>
@@ -51,7 +52,7 @@ export default function App() {
           <div><span>Workspace</span><strong>Shared Library</strong></div>
         </div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.4.0</div>
+        <div className="build-tag">FORGE v0.5.0</div>
       </aside>
 
       <div className="studio-body">
@@ -63,7 +64,7 @@ export default function App() {
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
-          {page === 'animations' && <ComingSoon icon={<Clapperboard size={30} />} title="Animation Studio" text="The mocap cleanup foundation is now in place. The next stage is a dedicated editor for trimming, looping, naming, clip management and root-motion controls." />}
+          {page === 'animations' && <AnimationStudio />}
           {page === 'textures' && <ComingSoon icon={<Layers3 size={30} />} title="Texture Lab" text="PBR material authoring, texture channel generation and reusable material presets will live here." />}
           {page === 'assets' && <AssetLibrary />}
         </div>
