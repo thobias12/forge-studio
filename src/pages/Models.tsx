@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
-import { Box, Circle, Cylinder, Download, Grid3X3, Library, MousePointer2, Redo2, Save, Scaling, Square, Undo2, Waypoints } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Box, Circle, Cylinder, Download, Grid3X3, Library, MousePointer2, Redo2, Scaling, Square, Undo2, Waypoints } from 'lucide-react'
 import ModelCreatorViewport, { type ModelCreatorHandle, type ModelCreatorStats, type TransformTool } from '../components/ModelCreatorViewport'
+import { registerHistoryScope } from '../lib/historyShortcuts'
 import { saveAsset } from '../lib/library'
 import type { EditMode, PrimitiveKind } from '../lib/modelCreator'
 import '../model-creator.css'
@@ -26,6 +27,12 @@ export default function Models() {
   const [stats, setStats] = useState<ModelCreatorStats>(emptyStats)
   const [status, setStatus] = useState('Create a primitive, then switch between Object, Vertex and Face editing.')
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => registerHistoryScope({
+    undo: () => editor.current?.undo(),
+    redo: () => editor.current?.redo(),
+    label: 'Model Creator',
+  }), [])
 
   const changeMode = (next: EditMode) => {
     setMode(next)
@@ -146,8 +153,8 @@ export default function Models() {
         <header className="model-creator-toolbar">
           <div><span className="eyebrow">MODEL LAB / CREATE</span><input value={name} onChange={(event) => setName(event.target.value)} /></div>
           <div className="model-creator-toolbar-actions">
-            <button title="Undo" onClick={() => editor.current?.undo()}><Undo2 size={15} /></button>
-            <button title="Redo" onClick={() => editor.current?.redo()}><Redo2 size={15} /></button>
+            <button title="Undo · Ctrl+Z" onClick={() => editor.current?.undo()}><Undo2 size={15} /></button>
+            <button title="Redo · Ctrl+Y" onClick={() => editor.current?.redo()}><Redo2 size={15} /></button>
             <label className="creator-snap"><span>Snap</span><select value={snap} onChange={(event) => { const value = Number(event.target.value); setSnap(value); editor.current?.setSnap(value) }}><option value="0">Off</option><option value="0.025">0.025</option><option value="0.05">0.05</option><option value="0.1">0.1</option><option value="0.25">0.25</option><option value="0.5">0.5</option></select></label>
             <button onClick={() => editor.current?.resetView()}>Frame</button>
           </div>
@@ -156,7 +163,7 @@ export default function Models() {
           <ModelCreatorViewport ref={editor} onStats={setStats} onStatus={setStatus} />
           <div className="creator-mode-hud"><b>{mode.toUpperCase()}</b><span>{mode === 'object' ? `${tool} tool` : mode === 'vertex' ? `${stats.selectedVertices} vertices selected` : stats.selectedFace >= 0 ? `face ${stats.selectedFace + 1}` : 'select a face'}</span></div>
         </div>
-        <footer className="model-creator-status"><span>{status}</span><b>{stats.vertices} verts · {Math.round(stats.faces)} tris</b></footer>
+        <footer className="model-creator-status"><span>{status}</span><b>{stats.vertices} verts · {Math.round(stats.faces)} tris · Ctrl+Z / Ctrl+Y</b></footer>
       </main>
 
       <aside className="model-creator-inspector">
