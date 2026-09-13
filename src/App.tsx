@@ -6,6 +6,7 @@ import Models from './pages/Models'
 import AnimationStudio from './pages/AnimationStudio'
 import AssetLibrary from './pages/AssetLibrary'
 import Capture from './pages/Capture'
+import { FORGE_VERSION } from './version'
 import './styles.css'
 import './retarget.css'
 
@@ -47,7 +48,7 @@ export default function App() {
         <div className="sidebar-spacer" />
         <div className="project-card"><div className="project-icon"><Sparkles size={16} /></div><div><span>Workspace</span><strong>Shared Library</strong></div></div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.6.6</div>
+        <div className="build-tag">FORGE v{FORGE_VERSION}</div>
       </aside>
 
       <div className="studio-body">

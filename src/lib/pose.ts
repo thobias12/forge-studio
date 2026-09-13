@@ -1,4 +1,5 @@
 import type { PosePoint } from '../types'
+import { FORGE_VERSION } from '../version'
 
 export const POSE_CONNECTIONS: Array<[number, number]> = [
   [0, 1], [1, 2], [2, 3], [3, 7],
@@ -17,7 +18,11 @@ export function averageVisibility(points?: PosePoint[]) {
 }
 
 export function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  let payload = data
+  if (data && typeof data === 'object' && 'format' in data && (data as { format?: unknown }).format === 'forge-diagnostics') {
+    payload = { ...(data as Record<string, unknown>), forgeBuild: FORGE_VERSION }
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
