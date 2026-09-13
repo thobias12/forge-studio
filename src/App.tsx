@@ -51,7 +51,7 @@ export default function App() {
           <div><span>Workspace</span><strong>Shared Library</strong></div>
         </div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.2.1</div>
+        <div className="build-tag">FORGE v0.3.0</div>
       </aside>
 
       <div className="studio-body">
@@ -63,7 +63,7 @@ export default function App() {
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
-          {page === 'animations' && <ComingSoon icon={<Clapperboard size={30} />} title="Animation Studio" text="Timeline editing, cleanup, loop tools, foot locking and baking live retargeted motion into reusable animation clips are next." />}
+          {page === 'animations' && <ComingSoon icon={<Clapperboard size={30} />} title="Animation Studio" text="Mocap can now bake game-ready GLB animation clips. The dedicated Animation Studio is next for trim, loop, foot locking, cleanup, speed and clip management." />}
           {page === 'textures' && <ComingSoon icon={<Layers3 size={30} />} title="Texture Lab" text="PBR material authoring, texture channel generation and reusable material presets will live here." />}
           {page === 'assets' && <AssetLibrary />}
         </div>
