@@ -5,6 +5,14 @@ export type PosePoint = {
   visibility?: number
 }
 
+export type TrackingQuality = {
+  bodyScore: number
+  bodyReady: boolean
+  handCount: number
+  footCount: number
+  missing: string[]
+}
+
 export type PoseFrame = {
   t: number
   landmarks: PosePoint[]
@@ -13,6 +21,7 @@ export type PoseFrame = {
   rightHandLandmarks?: PosePoint[]
   leftHandWorldLandmarks?: PosePoint[]
   rightHandWorldLandmarks?: PosePoint[]
+  tracking?: TrackingQuality
 }
 
 export type ForgeMotion = {

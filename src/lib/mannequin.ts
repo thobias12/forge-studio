@@ -37,13 +37,16 @@ function addFinger(hand: THREE.Bone, side: 'Left' | 'Right', finger: string, sig
   const first = bone(`${side}Hand${finger}1`, sign * 0.045, y, z)
   const second = bone(`${side}Hand${finger}2`, sign * length, 0, 0)
   const third = bone(`${side}Hand${finger}3`, sign * length * 0.82, 0, 0)
+  const tip = bone(`${side}Hand${finger}Tip`, sign * length * 0.62, 0, 0)
   hand.add(first)
   first.add(second)
   second.add(third)
+  third.add(tip)
   segment(hand, first.position, 0.014, skin)
   segment(first, second.position, 0.013, skin)
   segment(second, third.position, 0.011, skin)
-  return { first, second, third }
+  segment(third, tip.position, 0.009, skin)
+  return { first, second, third, tip }
 }
 
 function addHandRig(hand: THREE.Bone, side: 'Left' | 'Right', sign: number) {
