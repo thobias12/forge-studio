@@ -21,6 +21,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Keep Pages on GitHub Actions
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          status=$(curl -sS -o /tmp/pages-response.json -w "%{http_code}" \
+            -L -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPOSITORY/pages" \
+            -d '{"build_type":"workflow"}')
+          cat /tmp/pages-response.json || true
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::warning::Could not switch Pages build_type automatically (HTTP $status). The Vite deployment will still continue."
+          else
+            echo "GitHub Pages is configured to publish only from Actions."
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
