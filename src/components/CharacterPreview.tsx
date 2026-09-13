@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { mapHumanoidRig, type HumanoidBoneKey, type RigInfo } from '../lib/retarget'
+import type { HumanoidBoneKey, RigInfo } from '../lib/retarget'
+import { mapCharacterRig, type CharacterRig } from '../lib/characterRig'
 import type { CharacterTransform } from '../lib/characterPackage'
 
 export type CharacterPreviewAttachment = {
@@ -23,7 +24,7 @@ type Props = {
 type PreviewState = {
   scene: THREE.Scene
   characterRoot?: THREE.Object3D
-  rig?: ReturnType<typeof mapHumanoidRig>['rig']
+  rig?: CharacterRig
   skeleton?: THREE.SkeletonHelper
   attachments: Map<string, { wrapper: THREE.Group; scene: THREE.Object3D }>
 }
@@ -155,7 +156,7 @@ export default function CharacterPreview({ baseUrl, attachments, showRig, onRigI
       state.scene.add(root)
       state.characterRoot = root
       root.updateMatrixWorld(true)
-      const mapped = mapHumanoidRig(root)
+      const mapped = mapCharacterRig(root)
       state.rig = mapped.rig
       callbackRef.current?.(mapped.info)
       fitCharacter(root, state)
