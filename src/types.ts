@@ -11,14 +11,21 @@ export type TrackingQuality = {
   handCount: number
   footCount: number
   missing: string[]
+  ikAssistCount?: number
 }
 
 export type CaptureTiming = {
+  engine?: 'holistic' | 'pose-lite'
   videoTimeMs?: number
   inferenceMs?: number
+  bodyInferenceMs?: number
+  handInferenceMs?: number
   predictionMs?: number
   producedAt?: number
+  handAttempt?: 'left' | 'right'
+  handDetected?: boolean
   handFallback?: 'left' | 'right' | 'both'
+  cameraFpsTarget?: number
 }
 
 export type PoseFrame = {
