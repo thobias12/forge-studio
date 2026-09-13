@@ -1,9 +1,9 @@
 import { Box, Clapperboard, Layers3, ScanLine, Sparkles, WandSparkles } from 'lucide-react'
 
 const tools = [
-  { icon: ScanLine, title: 'Phone Mocap', text: 'Pair your phone, capture movement and record Forge motion clips.', badge: 'Working now' },
+  { icon: ScanLine, title: 'Phone Mocap', text: 'Pair one phone, capture movement and drive a rigged GLB character live.', badge: 'Working now' },
   { icon: Box, title: 'Model Lab', text: 'Inspect GLB/GLTF assets, scale, animation and scene fit.', badge: 'Working now' },
-  { icon: Clapperboard, title: 'Animation Studio', text: 'Clean, trim, loop, blend and retarget animation clips.', badge: 'Foundation ready' },
+  { icon: Clapperboard, title: 'Animation Studio', text: 'Clean, trim, loop and bake retargeted motion into reusable animation clips.', badge: 'Next' },
   { icon: Layers3, title: 'Texture Lab', text: 'Create and inspect PBR material sets and reusable texture presets.', badge: 'Next' },
   { icon: WandSparkles, title: 'AI Workshop', text: 'Connect local image-to-3D and texture generation to your GPU.', badge: 'Planned' },
   { icon: Sparkles, title: 'Asset Library', text: 'One reusable library shared by every Three.js game you build.', badge: 'Foundation ready' },
@@ -19,7 +19,7 @@ export default function Dashboard({ onOpenMocap }: { onOpenMocap: () => void }) 
           <p>Models, animation, phone mocap and reusable content for your Three.js projects in one studio.</p>
           <div className="hero-actions">
             <button className="primary-button" onClick={onOpenMocap}><ScanLine size={17} /> Start phone mocap</button>
-            <span className="hero-note">v0.1 · live peer-to-peer capture</span>
+            <span className="hero-note">v0.2 · one-phone live character retargeting</span>
           </div>
         </div>
         <div className="hero-orb">

@@ -5,6 +5,7 @@ import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import Capture from './pages/Capture'
 import './styles.css'
+import './retarget.css'
 
 type Page = 'home' | 'mocap' | 'models' | 'animations' | 'textures' | 'assets'
 
@@ -50,7 +51,7 @@ export default function App() {
           <div><span>Workspace</span><strong>Shared Library</strong></div>
         </div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.1.1</div>
+        <div className="build-tag">FORGE v0.2.0</div>
       </aside>
 
       <div className="studio-body">
@@ -62,7 +63,7 @@ export default function App() {
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
-          {page === 'animations' && <ComingSoon icon={<Clapperboard size={30} />} title="Animation Studio" text="Timeline editing, cleanup, loop tools, IK and skeleton retargeting are the next part of the Forge pipeline." />}
+          {page === 'animations' && <ComingSoon icon={<Clapperboard size={30} />} title="Animation Studio" text="Timeline editing, cleanup, loop tools, foot locking and baking live retargeted motion into reusable animation clips are next." />}
           {page === 'textures' && <ComingSoon icon={<Layers3 size={30} />} title="Texture Lab" text="PBR material authoring, texture channel generation and reusable material presets will live here." />}
           {page === 'assets' && <AssetLibrary />}
         </div>

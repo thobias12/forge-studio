@@ -1,28 +1,36 @@
 # Forge Studio
 
-Forge Studio is a shared Three.js game-asset workspace with live phone mocap.
+Forge Studio is a shared Three.js game-asset workspace with one-phone mocap, humanoid rig mapping and live GLB character retargeting.
 
-## v0.1
+## v0.2
 
 - Desktop mocap receiver with QR pairing
 - Phone browser capture using MediaPipe Pose Landmarker
 - Peer-to-peer live pose streaming with PeerJS/WebRTC
+- Automatic humanoid bone mapping for common Mixamo, Blender and Unity-style rigs
+- Import a rigged GLB character directly inside Mocap Studio
+- Live body retargeting from the phone onto the imported character
+- Smoothing, X mirroring and skeleton-helper controls
 - Record and export `.forge-motion.json`
-- Import/play Forge motion captures
-- GLB/GLTF model viewer
-- Shared asset-library shell
+- Replay a recorded Forge motion clip on the imported character
+- Model Lab humanoid-rig inspection
+- Shared asset-library foundation
 
-## Run
+Forge deliberately targets a **single-phone** mocap workflow. Multi-camera capture is not part of the plan.
+
+## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Camera access on phones requires HTTPS. Deploy the app to an HTTPS host (for example Vercel), open Mocap on the PC, then scan the QR code with the phone.
+Phone camera access requires HTTPS outside localhost. The repository deploys automatically to GitHub Pages on pushes to `main`. Open Forge on the PC, enter Mocap, then scan the generated QR code with the phone.
 
-## Architecture
+## Current pipeline
 
-The phone performs pose inference locally and streams pose landmark frames to the desktop studio over a PeerJS/WebRTC data channel. Camera video is not sent to the PC in v0.1.
+`Phone -> MediaPipe pose -> WebRTC landmarks -> smoothing -> humanoid bone mapper -> Three.js GLB rig -> live preview / recording`
+
+The next animation milestone is baking the retargeted bone rotations into a real reusable glTF/GLB animation clip, followed by foot locking and motion cleanup.
 
 See `docs/ARCHITECTURE.md` and `docs/DEPLOY.md`.

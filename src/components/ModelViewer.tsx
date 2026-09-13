@@ -2,11 +2,14 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { mapHumanoidRig, type RigInfo } from '../lib/retarget'
 
-type Props = { src?: string }
+type Props = { src?: string; onRigInfo?: (info?: RigInfo) => void }
 
-export default function ModelViewer({ src }: Props) {
+export default function ModelViewer({ src, onRigInfo }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
+  const infoCallbackRef = useRef(onRigInfo)
+  infoCallbackRef.current = onRigInfo
 
   useEffect(() => {
     const mount = mountRef.current
@@ -52,6 +55,8 @@ export default function ModelViewer({ src }: Props) {
         fallback.visible = false
         root = gltf.scene
         scene.add(root)
+        root.updateMatrixWorld(true)
+        infoCallbackRef.current?.(mapHumanoidRig(root).info)
         const box = new THREE.Box3().setFromObject(root)
         const size = box.getSize(new THREE.Vector3())
         const center = box.getCenter(new THREE.Vector3())
@@ -90,6 +95,7 @@ export default function ModelViewer({ src }: Props) {
       observer.disconnect()
       controls.dispose()
       mixer?.stopAllAction()
+      infoCallbackRef.current?.(undefined)
       if (root) scene.remove(root)
       renderer.dispose()
       mount.removeChild(renderer.domElement)
