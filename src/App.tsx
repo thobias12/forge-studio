@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Boxes, Clapperboard, Home, Layers3, ScanLine, Settings, Sparkles } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import AnimationStudio from './pages/AnimationStudio'
+import TextureLab from './pages/TextureLab'
 import AssetLibrary from './pages/AssetLibrary'
 import Capture from './pages/Capture'
 import { FORGE_VERSION } from './version'
@@ -41,7 +42,7 @@ export default function App() {
         <nav className="sidebar-nav">
           {nav.map(({ id, label, icon: Icon }) => (
             <button key={id} className={page === id ? 'active' : ''} onClick={() => setPage(id)}>
-              <Icon size={18} /><span>{label}</span>{id === 'textures' && <small>SOON</small>}
+              <Icon size={18} /><span>{label}</span>
             </button>
           ))}
         </nav>
@@ -61,14 +62,10 @@ export default function App() {
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
           {page === 'animations' && <AnimationStudio />}
-          {page === 'textures' && <ComingSoon icon={<Layers3 size={30} />} title="Texture Lab" text="PBR material authoring, texture channel generation and reusable material presets will live here." />}
+          {page === 'textures' && <TextureLab />}
           {page === 'assets' && <AssetLibrary />}
         </div>
       </div>
     </div>
   )
-}
-
-function ComingSoon({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
-  return <div className="center-state"><div className="center-state-icon">{icon}</div><span className="eyebrow">FORGE PIPELINE</span><h2>{title}</h2><p>{text}</p><div className="soon-chip">FOUNDATION IN PLACE</div></div>
 }
