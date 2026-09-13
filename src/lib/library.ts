@@ -1,3 +1,4 @@
+import { characterPackageDataToBlob, characterSlug, parseCharacterPackage } from './characterPackage'
 import { dataUrlToBlob, materialSlug, parseMaterialPackage } from './materialPackage'
 
 export type AssetCategory = 'characters' | 'animations' | 'props' | 'materials' | 'textures' | 'environment' | 'audio'
@@ -124,6 +125,7 @@ export function detectAssetCategory(file: File): AssetCategory {
   const name = file.name.toLowerCase()
   if (name.endsWith('.forge-motion.json')) return 'animations'
   if (name.endsWith('.forge-material.json')) return 'materials'
+  if (name.endsWith('.forge-character.json')) return 'characters'
   if (name.endsWith('.glb') || name.endsWith('.gltf')) return 'props'
   if (/\.(png|jpe?g|webp|ktx2|hdr)$/i.test(name)) return 'textures'
   if (/\.(mp3|wav|ogg|m4a)$/i.test(name)) return 'audio'
@@ -156,6 +158,9 @@ export function safeAssetFilename(name: string, kind: AssetKind, mime = '') {
 }
 
 export async function sendAssetToProject(asset: LibraryAsset, project: ProjectProfile) {
+  const characterPackage = asset.category === 'characters' ? await parseCharacterPackage(asset.blob) : undefined
+  if (characterPackage) return sendCharacterPackageToProject(asset, project, characterPackage)
+
   const materialPackage = asset.category === 'materials' ? await parseMaterialPackage(asset.blob) : undefined
   if (materialPackage) return sendMaterialPackageToProject(asset, project, materialPackage)
 
@@ -172,6 +177,53 @@ export async function sendAssetToProject(asset: LibraryAsset, project: ProjectPr
   download(asset.blob, filename)
   download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), `${filename}.forge-asset.json`)
   return { mode: 'download' as const, filename }
+}
+
+async function sendCharacterPackageToProject(asset: LibraryAsset, project: ProjectProfile, character: Awaited<ReturnType<typeof parseCharacterPackage>> & {}) {
+  const slug = characterSlug(character.name)
+  const packageFilename = `${slug}.forge-character.json`
+  const handle = project.directoryHandle as any
+
+  if (handle && typeof handle.getDirectoryHandle === 'function') {
+    const baseDirectory = await getProjectAssetDirectory(handle, project.assetPath)
+    const characterDirectory = await baseDirectory.getDirectoryHandle(slug, { create: true })
+    const attachmentDirectory = await characterDirectory.getDirectoryHandle('attachments', { create: true })
+
+    const baseFilename = character.base.file || 'character.glb'
+    await writeFile(characterDirectory, baseFilename, characterPackageDataToBlob(character.base.data))
+
+    const runtimeAttachments: Array<Record<string, unknown>> = []
+    for (const item of character.attachments) {
+      const filename = `${item.slot}-${item.file || 'part.glb'}`.replace(/[^a-z0-9._-]+/gi, '-')
+      await writeFile(attachmentDirectory, filename, characterPackageDataToBlob(item.data))
+      runtimeAttachments.push({
+        id: item.id,
+        name: item.name,
+        slot: item.slot,
+        targetBone: item.targetBone,
+        file: `attachments/${filename}`,
+        transform: item.transform,
+      })
+    }
+
+    const runtimeManifest = {
+      format: 'forge-character-runtime',
+      version: 1,
+      name: character.name,
+      base: baseFilename,
+      rig: character.rig,
+      attachments: runtimeAttachments,
+      forge: { assetId: asset.id, source: asset.source, exportedAt: new Date().toISOString() },
+    }
+    await writeFile(characterDirectory, 'character.forge.json', new Blob([JSON.stringify(runtimeManifest, null, 2)], { type: 'application/json' }))
+    await writeFile(characterDirectory, packageFilename, asset.blob)
+    return { mode: 'folder' as const, filename: `${slug}/character.forge.json` }
+  }
+
+  download(asset.blob, packageFilename)
+  const manifest = buildAssetManifest(asset, project, packageFilename)
+  download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), `${packageFilename}.forge-asset.json`)
+  return { mode: 'download' as const, filename: packageFilename }
 }
 
 async function sendMaterialPackageToProject(asset: LibraryAsset, project: ProjectProfile, material: Awaited<ReturnType<typeof parseMaterialPackage>> & {}) {
