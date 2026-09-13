@@ -1,0 +1,19 @@
+name: Validate Forge v0.8.1
+
+on:
+  push:
+    branches: [character-v081-fix]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
