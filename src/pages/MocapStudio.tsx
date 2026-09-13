@@ -92,7 +92,16 @@ export default function MocapStudio() {
     return () => cancelAnimationFrame(raf)
   }, [playing, clip])
 
-  const captureUrl = peerId ? `${window.location.origin}/capture?target=${encodeURIComponent(peerId)}` : ''
+  const captureUrl = useMemo(() => {
+    if (!peerId) return ''
+    const url = new URL('.', window.location.href)
+    url.hash = ''
+    url.search = ''
+    url.searchParams.set('capture', '1')
+    url.searchParams.set('target', peerId)
+    return url.toString()
+  }, [peerId])
+
   const activeFrame = useMemo(() => {
     if (!clip?.frames.length) return lastFrame
     const target = playhead

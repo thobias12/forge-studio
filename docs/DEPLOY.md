@@ -1,27 +1,27 @@
-# Deploying Forge Studio
+# Deploying Forge Studio with GitHub Pages
 
-Forge phone capture requires HTTPS on the phone. Vercel is a good fit for the browser build.
+Forge Studio v0.1 is a static Vite/Three.js application, so GitHub Pages can host both the desktop studio and the phone capture screen over HTTPS.
 
-## Vercel
+## One-time repository setting
 
-1. Create a repository and put this project in it.
-2. Import the repository into Vercel.
-3. Framework preset: Vite.
-4. Build command: `npm run build`.
-5. Output directory: `dist`.
-6. Deploy.
+In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions**.
 
-`vercel.json` already rewrites `/capture` to the SPA entry point, so QR links open correctly.
+After that, every push to `main` runs `.github/workflows/deploy-pages.yml` and publishes the latest Forge build automatically.
 
-## Use phone mocap
+The expected site URL is:
 
-1. Open Forge Studio on the PC using the deployed HTTPS URL.
+`https://thobias12.github.io/forge-studio/`
+
+## Phone mocap
+
+1. Open the GitHub Pages Forge URL on the PC.
 2. Open **Mocap**.
-3. Scan the displayed QR code using the phone.
-4. On the phone, tap **Start camera** and allow camera access.
-5. Put the phone where the full body is visible.
-6. Press the red record control on the phone.
-7. Stop recording when finished.
-8. The clip appears in the desktop timeline and can be exported as `.forge-motion.json`.
+3. Scan the QR code from the phone.
+4. The phone opens the same GitHub Pages site in Capture mode using HTTPS.
+5. Allow camera access and start tracking.
 
-If WebRTC cannot establish a direct connection on a restrictive network, the future production setup should add a TURN server. The prototype uses PeerJS Cloud for signaling.
+The QR uses a query parameter rather than a separate `/capture` route so GitHub Pages works without a server-side rewrite.
+
+## Repository visibility
+
+GitHub Pages is available for private repositories on eligible paid GitHub plans. If Pages is unavailable for this private repository, either upgrade the GitHub plan or make only this repository public. The deployed Pages site should be treated as publicly reachable unless separate enterprise access controls are configured.

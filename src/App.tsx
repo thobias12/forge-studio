@@ -18,7 +18,8 @@ const nav = [
 ]
 
 export default function App() {
-  if (window.location.pathname === '/capture') return <Capture />
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('capture') === '1') return <Capture />
 
   const [page, setPage] = useState<Page>(() => {
     const value = window.location.hash.replace('#/', '') as Page
@@ -49,13 +50,13 @@ export default function App() {
           <div><span>Workspace</span><strong>Shared Library</strong></div>
         </div>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v0.1.0</div>
+        <div className="build-tag">FORGE v0.1.1</div>
       </aside>
 
       <div className="studio-body">
         <header className="topbar">
           <div className="breadcrumb"><span>FORGE</span><b>/</b><strong>{nav.find((item) => item.id === page)?.label}</strong></div>
-          <div className="topbar-right"><span className="engine-pill">THREE.JS</span><span className="session-dot" /> Local workspace</div>
+          <div className="topbar-right"><span className="engine-pill">THREE.JS</span><span className="session-dot" /> GitHub workspace</div>
         </header>
         <div className="content-area">
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
