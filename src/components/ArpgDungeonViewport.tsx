@@ -8,10 +8,16 @@ type Props = { value: DungeonWithProps }
 type RoomOpening = DungeonConnection & { corridorId: string }
 type FlickerLight = { light: THREE.PointLight; base: number; phase: number; speed: number }
 
-const CAMERA_OFFSET = new THREE.Vector3(7.4, 16.5, 9)
-const CAMERA_FOV = 38
+// Closer/lower than the first ARPG pass. This gives roughly a 51 degree
+// downward viewing angle and a much more character-focused Diablo/PoE frame.
+const CAMERA_OFFSET = new THREE.Vector3(5.1, 10.2, 6.4)
+const CAMERA_FOV = 35
+const CAMERA_LOOK_AHEAD = 1.15
+const CAMERA_FOLLOW_RATE = 10.5
+const CAMERA_FOCUS_RATE = 8.5
 const WALK_SPEED = 4.2
 const SPRINT_SPEED = 7.2
+const OCCLUDER_OPACITY = 0.16
 
 export default function ArpgDungeonViewport({ value }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -27,7 +33,7 @@ export default function ArpgDungeonViewport({ value }: Props) {
     scene.background = new THREE.Color(initialAtmosphere.background)
     scene.fog = new THREE.FogExp2(initialAtmosphere.fog, valueRef.current.settings.fogDensity * initialAtmosphere.fogMultiplier)
 
-    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.08, 240)
+    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.08, 220)
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -44,26 +50,29 @@ export default function ArpgDungeonViewport({ value }: Props) {
     key.position.set(12, 22, 9)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
-    key.shadow.camera.left = -40
-    key.shadow.camera.right = 40
-    key.shadow.camera.top = 40
-    key.shadow.camera.bottom = -40
+    key.shadow.camera.left = -36
+    key.shadow.camera.right = 36
+    key.shadow.camera.top = 36
+    key.shadow.camera.bottom = -36
     key.shadow.camera.near = 1
-    key.shadow.camera.far = 80
+    key.shadow.camera.far = 76
     key.shadow.bias = -0.0005
     scene.add(key)
 
     const world = new THREE.Group()
     scene.add(world)
     const avatar = createAvatar()
+    avatar.scale.setScalar(1.08)
     scene.add(avatar)
 
     const keys = new Set<string>()
     const occlusionRay = new THREE.Raycaster()
     const playerPosition = new THREE.Vector3()
+    const cameraFocus = new THREE.Vector3()
     const cameraForward = new THREE.Vector3(-CAMERA_OFFSET.x, 0, -CAMERA_OFFSET.z).normalize()
     const cameraRight = new THREE.Vector3(-cameraForward.z, 0, cameraForward.x)
     const flickerLights: FlickerLight[] = []
+    const fadedOccluders = new Map<THREE.Mesh, number>()
     let playerInitialized = false
     let lastFrame = performance.now()
     let lastSignature = ''
@@ -84,19 +93,24 @@ export default function ArpgDungeonViewport({ value }: Props) {
       return atmosphere
     }
 
+    const focusTarget = () => playerPosition.clone()
+      .addScaledVector(cameraForward, CAMERA_LOOK_AHEAD)
+      .add(new THREE.Vector3(0, 0.82, 0))
+
     const spawnPlayer = (current: DungeonWithProps) => {
       const entrance = current.rooms.find((room) => room.type === 'entrance') ?? current.rooms[0]
       if (!entrance) return
       playerPosition.set(entrance.x, entrance.floorLevel, entrance.z)
       avatar.position.copy(playerPosition)
       avatar.visible = true
-      const desired = playerPosition.clone().add(CAMERA_OFFSET)
-      camera.position.copy(desired)
-      camera.lookAt(playerPosition.x, playerPosition.y + 0.72, playerPosition.z)
+      cameraFocus.copy(focusTarget())
+      camera.position.copy(playerPosition).add(CAMERA_OFFSET)
+      camera.lookAt(cameraFocus)
       playerInitialized = true
     }
 
     const rebuild = () => {
+      fadedOccluders.clear()
       while (world.children.length) disposeObject(world.children.pop()!)
       flickerLights.length = 0
       const current = valueRef.current
@@ -161,32 +175,89 @@ export default function ArpgDungeonViewport({ value }: Props) {
         if (canWalkAt(current, playerPosition.x, nextZ)) playerPosition.z = nextZ
         avatar.rotation.y = Math.atan2(move.x, move.z)
       }
+
       playerPosition.y = floorHeightAt(current, playerPosition.x, playerPosition.z)
-      avatar.position.lerp(playerPosition, 1 - Math.exp(-18 * dt))
+      avatar.position.lerp(playerPosition, 1 - Math.exp(-20 * dt))
 
       const desiredCamera = playerPosition.clone().add(CAMERA_OFFSET)
-      camera.position.lerp(desiredCamera, 1 - Math.exp(-7.5 * dt))
-      camera.lookAt(playerPosition.x, playerPosition.y + 0.72, playerPosition.z)
+      camera.position.lerp(desiredCamera, 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt))
+      cameraFocus.lerp(focusTarget(), 1 - Math.exp(-CAMERA_FOCUS_RATE * dt))
+      camera.lookAt(cameraFocus)
     }
 
-    const hideOccluders = () => {
-      const target = playerPosition.clone().add(new THREE.Vector3(0, 0.7, 0))
-      const direction = target.clone().sub(camera.position)
-      const distance = direction.length()
-      if (distance < 0.1) return [] as THREE.Mesh[]
-      direction.normalize()
-      occlusionRay.set(camera.position, direction)
-      occlusionRay.near = 0.1
-      occlusionRay.far = Math.max(0.1, distance - 0.45)
-      const hidden: THREE.Mesh[] = []
-      for (const hit of occlusionRay.intersectObjects(world.children, true)) {
-        const mesh = hit.object as THREE.Mesh
-        if (!mesh.isMesh || !mesh.userData.arpgOccluder || !mesh.visible) continue
-        mesh.visible = false
-        hidden.push(mesh)
-        if (hidden.length >= 7) break
+    const ensureIndependentFadeMaterial = (mesh: THREE.Mesh) => {
+      if (mesh.userData.arpgFadeMaterial) return
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((material) => material.clone())
+        : mesh.material.clone()
+      mesh.userData.arpgFadeMaterial = true
+      mesh.userData.arpgOriginalCastShadow = mesh.castShadow
+    }
+
+    const setOccluderOpacity = (mesh: THREE.Mesh, opacity: number) => {
+      ensureIndependentFadeMaterial(mesh)
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      const transparent = opacity < 0.995
+      for (const material of materials) {
+        if (material.transparent !== transparent) {
+          material.transparent = transparent
+          material.needsUpdate = true
+        }
+        material.opacity = opacity
+        material.depthWrite = !transparent
       }
-      return hidden
+      mesh.castShadow = transparent ? false : Boolean(mesh.userData.arpgOriginalCastShadow)
+    }
+
+    const occludersBetweenCameraAndPlayer = () => {
+      const hits = new Set<THREE.Mesh>()
+      const targetOffsets = [-0.56, 0, 0.56]
+      const targets = targetOffsets.map((offset) => playerPosition.clone()
+        .addScaledVector(cameraRight, offset)
+        .add(new THREE.Vector3(0, 0.78, 0)))
+      targets.push(playerPosition.clone().add(new THREE.Vector3(0, 1.35, 0)))
+
+      for (const target of targets) {
+        const direction = target.clone().sub(camera.position)
+        const distance = direction.length()
+        if (distance < 0.1) continue
+        direction.normalize()
+        occlusionRay.set(camera.position, direction)
+        occlusionRay.near = 0.08
+        occlusionRay.far = Math.max(0.1, distance - 0.38)
+        for (const hit of occlusionRay.intersectObjects(world.children, true)) {
+          const mesh = hit.object as THREE.Mesh
+          if (!mesh.isMesh || !mesh.userData.arpgOccluder) continue
+          hits.add(mesh)
+          if (hits.size >= 12) break
+        }
+      }
+      return hits
+    }
+
+    const updateOcclusion = (dt: number) => {
+      const blocked = occludersBetweenCameraAndPlayer()
+      const fadeOut = 1 - Math.exp(-13 * dt)
+      const fadeIn = 1 - Math.exp(-8 * dt)
+
+      for (const mesh of blocked) {
+        const current = fadedOccluders.get(mesh) ?? 1
+        const next = THREE.MathUtils.lerp(current, OCCLUDER_OPACITY, fadeOut)
+        setOccluderOpacity(mesh, next)
+        fadedOccluders.set(mesh, next)
+      }
+
+      for (const [mesh, current] of [...fadedOccluders.entries()]) {
+        if (blocked.has(mesh)) continue
+        const next = THREE.MathUtils.lerp(current, 1, fadeIn)
+        if (next >= 0.995) {
+          setOccluderOpacity(mesh, 1)
+          fadedOccluders.delete(mesh)
+        } else {
+          setOccluderOpacity(mesh, next)
+          fadedOccluders.set(mesh, next)
+        }
+      }
     }
 
     let frame = 0
@@ -208,9 +279,8 @@ export default function ArpgDungeonViewport({ value }: Props) {
         entry.light.intensity = entry.base * (1 + noise)
       }
 
-      const hidden = hideOccluders()
+      updateOcclusion(dt)
       renderer.render(scene, camera)
-      for (const mesh of hidden) mesh.visible = true
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
@@ -230,8 +300,13 @@ export default function ArpgDungeonViewport({ value }: Props) {
 
   return <div className="dungeon-viewport-canvas map-arpg-active">
     <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
-    <div className="map-arpg-overlay"><div className="map-walk-help"><strong>ARPG CAMERA</strong><span>WASD move · Shift sprint · fixed Diablo / PoE-style follow camera</span></div></div>
+    <div className="map-arpg-overlay"><div className="map-walk-help"><strong>ARPG CAMERA</strong><span>WASD move · Shift sprint · close Diablo / PoE framing · foreground walls fade</span></div></div>
   </div>
+}
+
+function markOccluder(mesh: THREE.Mesh) {
+  mesh.userData.arpgOccluder = true
+  return mesh
 }
 
 function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[]) {
@@ -256,11 +331,10 @@ function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, 
 
   const inset = 0.15
   for (const [x, z] of [[-room.width / 2 + inset, -room.depth / 2 + inset], [room.width / 2 - inset, -room.depth / 2 + inset], [-room.width / 2 + inset, room.depth / 2 - inset], [room.width / 2 - inset, room.depth / 2 - inset]] as Array<[number, number]>) {
-    const column = new THREE.Mesh(new THREE.BoxGeometry(0.36, room.height, 0.36), darkMaterial)
+    const column = markOccluder(new THREE.Mesh(new THREE.BoxGeometry(0.36, room.height, 0.36), darkMaterial))
     column.position.set(x, room.height / 2, z)
     column.castShadow = true
     column.receiveShadow = true
-    column.userData.arpgOccluder = true
     group.add(column)
   }
 
@@ -280,14 +354,13 @@ function addWallWithOpenings(group: THREE.Group, room: DungeonRoom, side: 'north
     if (openingLength > 0.05 && room.height > doorHeight + 0.12) {
       const lintelHeight = room.height - doorHeight
       const center = (interval.start + interval.end) / 2
-      const lintel = horizontal
+      const lintel = markOccluder(horizontal
         ? new THREE.Mesh(new THREE.BoxGeometry(openingLength, lintelHeight, thickness), material)
-        : new THREE.Mesh(new THREE.BoxGeometry(thickness, lintelHeight, openingLength), material)
+        : new THREE.Mesh(new THREE.BoxGeometry(thickness, lintelHeight, openingLength), material))
       if (horizontal) lintel.position.set(center, doorHeight + lintelHeight / 2, (side === 'south' ? 1 : -1) * room.depth / 2)
       else lintel.position.set((side === 'east' ? 1 : -1) * room.width / 2, doorHeight + lintelHeight / 2, center)
       lintel.castShadow = true
       lintel.receiveShadow = true
-      lintel.userData.arpgOccluder = true
       group.add(lintel)
     }
     cursor = interval.end
@@ -300,21 +373,21 @@ function addWallSegment(group: THREE.Group, room: DungeonRoom, side: 'north' | '
   if (length <= 0.04) return
   const horizontal = side === 'north' || side === 'south'
   const center = (start + end) / 2
-  const wall = horizontal
+  const wall = markOccluder(horizontal
     ? new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), material)
-    : new THREE.Mesh(new THREE.BoxGeometry(thickness, height, length), material)
+    : new THREE.Mesh(new THREE.BoxGeometry(thickness, height, length), material))
   if (horizontal) wall.position.set(center, height / 2, (side === 'south' ? 1 : -1) * room.depth / 2)
   else wall.position.set((side === 'east' ? 1 : -1) * room.width / 2, height / 2, center)
   wall.castShadow = true
   wall.receiveShadow = true
-  wall.userData.arpgOccluder = true
   group.add(wall)
 
-  const base = horizontal
+  const base = markOccluder(horizontal
     ? new THREE.Mesh(new THREE.BoxGeometry(length, 0.26, thickness + 0.08), darkMaterial)
-    : new THREE.Mesh(new THREE.BoxGeometry(thickness + 0.08, 0.26, length), darkMaterial)
+    : new THREE.Mesh(new THREE.BoxGeometry(thickness + 0.08, 0.26, length), darkMaterial))
   base.position.copy(wall.position)
   base.position.y = 0.13
+  base.receiveShadow = true
   group.add(base)
 }
 
@@ -363,12 +436,11 @@ function addCorridorSegment(parent: THREE.Group, x1: number, z1: number, x2: num
   floor.receiveShadow = true
   parent.add(floor)
   for (const side of [-1, 1]) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.55, length), wallMaterial)
+    const wall = markOccluder(new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.55, length), wallMaterial))
     wall.position.set(floor.position.x + Math.cos(angle) * (width / 2 + 0.11) * side, 1.275, floor.position.z - Math.sin(angle) * (width / 2 + 0.11) * side)
     wall.rotation.y = angle
     wall.castShadow = true
     wall.receiveShadow = true
-    wall.userData.arpgOccluder = true
     parent.add(wall)
   }
 }
@@ -383,8 +455,14 @@ function addProp(parent: THREE.Group, prop: DungeonProp, atmosphere: DungeonAtmo
   const stone = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.9 })
   const wood = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.9 })
   const metal = new THREE.MeshStandardMaterial({ color: 0x4f565c, roughness: 0.65, metalness: 0.32 })
-  const add = (object: THREE.Object3D) => {
-    object.traverse((child) => { const mesh = child as THREE.Mesh; if (mesh.isMesh) { mesh.castShadow = true; mesh.receiveShadow = true } })
+  const add = (object: THREE.Object3D, occluder = false) => {
+    object.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) return
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      if (occluder) mesh.userData.arpgOccluder = true
+    })
     group.add(object)
   }
 
@@ -398,7 +476,7 @@ function addProp(parent: THREE.Group, prop: DungeonProp, atmosphere: DungeonAtmo
   if (prop.assetRef === 'pillar') {
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.42, 2.6, 10), stone); shaft.position.y = 1.3
     const base = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.22, 0.92), stone); base.position.y = 0.11
-    add(shaft); add(base)
+    add(shaft, true); add(base, true)
   } else if (prop.assetRef === 'torch') {
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.8, 8), wood); stem.position.y = 0.55; stem.rotation.z = 0.25
     const flame = new THREE.Mesh(new THREE.SphereGeometry(0.1, 9, 7), new THREE.MeshStandardMaterial({ color: atmosphere.torch, emissive: atmosphere.torch, emissiveIntensity: 2.6, roughness: 0.3 })); flame.scale.y = 1.35; flame.position.set(0.1, 1.02, 0)
@@ -409,7 +487,7 @@ function addProp(parent: THREE.Group, prop: DungeonProp, atmosphere: DungeonAtmo
     const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.4, 0.9), stone); base.position.y = 0.2
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 1.1, 5, 8), stone); body.position.y = 1.25
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 12, 9), stone); head.position.y = 2.15
-    add(base); add(body); add(head)
+    add(base, true); add(body, true); add(head, true)
   } else if (prop.assetRef === 'barrel') {
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.9, 12), wood); barrel.position.y = 0.45
     add(barrel)
@@ -472,13 +550,13 @@ function addMarker(parent: THREE.Group, marker: DungeonMarker) {
 function createAvatar() {
   const group = new THREE.Group()
   group.visible = false
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x202a31, roughness: 0.72, metalness: 0.06 })
-  const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x62798a, roughness: 0.58, metalness: 0.12 })
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x46545f, roughness: 0.66, metalness: 0.06, emissive: 0x0a1116, emissiveIntensity: 0.2 })
+  const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x9bb6c7, roughness: 0.5, metalness: 0.1, emissive: 0x101a21, emissiveIntensity: 0.16 })
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.72, 5, 9), bodyMaterial)
   body.position.y = 0.86
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 9), accentMaterial)
   head.position.y = 1.55
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.37, 0.48, 28), new THREE.MeshBasicMaterial({ color: 0x90b5cc, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }))
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.38, 0.5, 28), new THREE.MeshBasicMaterial({ color: 0xa9d6ee, transparent: true, opacity: 0.48, side: THREE.DoubleSide, depthWrite: false }))
   ring.rotation.x = -Math.PI / 2
   ring.position.y = 0.025
   body.castShadow = true
