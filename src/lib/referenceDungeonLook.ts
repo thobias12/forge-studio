@@ -36,15 +36,15 @@ function styleObject(parent: THREE.Object3D, object: THREE.Object3D, previousAdd
   if (object.userData?.referenceDungeonLook) return
 
   if (object instanceof THREE.HemisphereLight) {
-    object.color.setHex(0x425a70)
-    object.groundColor.setHex(0x070a0d)
-    object.intensity *= 0.92
+    object.color.setHex(0x607a92)
+    object.groundColor.setHex(0x10161c)
+    object.intensity *= 1.18
     return
   }
 
   if (object instanceof THREE.DirectionalLight) {
-    object.color.setHex(0x7895ad)
-    object.intensity *= 0.9
+    object.color.setHex(0x7995b0)
+    object.intensity *= 1.08
     return
   }
 
@@ -55,7 +55,7 @@ function styleObject(parent: THREE.Object3D, object: THREE.Object3D, previousAdd
 
   if (object instanceof THREE.Points) {
     const material = object.material
-    if (material instanceof THREE.PointsMaterial && material.transparent) material.opacity *= 0.72
+    if (material instanceof THREE.PointsMaterial && material.transparent) material.opacity *= 0.62
     return
   }
 
@@ -82,13 +82,15 @@ function styleObject(parent: THREE.Object3D, object: THREE.Object3D, previousAdd
 
 function stylePointLight(light: THREE.PointLight) {
   const c = light.color
-  const warm = c.r > 0.68 && c.g > 0.18 && c.g < 0.76 && c.b < 0.5
+  const warm = c.r > 0.68 && c.g > 0.18 && c.g < 0.8 && c.b < 0.52
   if (!warm) return
 
-  light.color.setHex(0xff9854)
-  light.intensity *= 0.94
-  light.distance = Math.max(light.distance, 11)
-  light.decay = Math.min(light.decay, 1.45)
+  // dungeonVisualAssist already softens these once, so compensate here rather
+  // than accidentally dimming the same torch twice.
+  light.color.setHex(0xff9d5c)
+  light.intensity *= 1.34
+  light.distance = Math.max(light.distance, 12.5)
+  light.decay = Math.min(light.decay, 1.38)
 }
 
 function styleWarmEmissive(mesh: THREE.Mesh) {
@@ -97,17 +99,17 @@ function styleWarmEmissive(mesh: THREE.Mesh) {
   for (const material of materials) {
     if (!(material instanceof THREE.MeshStandardMaterial)) continue
     const e = material.emissive
-    if (e.r > 0.68 && e.g > 0.12 && e.g < 0.76 && e.b < 0.52) {
+    if (e.r > 0.68 && e.g > 0.12 && e.g < 0.78 && e.b < 0.54) {
       warm = true
-      material.emissive.setHex(0xff8d47)
-      material.emissiveIntensity = Math.min(material.emissiveIntensity, 1.45)
-      material.roughness = Math.max(material.roughness, 0.34)
+      material.emissive.setHex(0xff9650)
+      material.emissiveIntensity = Math.min(material.emissiveIntensity, 1.8)
+      material.roughness = Math.max(material.roughness, 0.36)
     }
   }
   if (warm && mesh.geometry instanceof THREE.SphereGeometry) {
-    mesh.scale.x *= 0.68
-    mesh.scale.z *= 0.68
-    mesh.scale.y *= 1.06
+    mesh.scale.x *= 0.62
+    mesh.scale.z *= 0.62
+    mesh.scale.y *= 1.08
   }
 }
 
@@ -116,26 +118,27 @@ function styleWetFloor(parent: THREE.Object3D, floor: THREE.Mesh, size: THREE.Ve
   if (!(source instanceof THREE.MeshStandardMaterial)) return
 
   const material = source.clone()
-  material.color.multiply(new THREE.Color(0x9aa8b4))
-  material.roughness = 0.43
-  material.metalness = 0.025
-  material.map = makeStoneTexture(false, Math.max(1, size.x / 2.25), Math.max(1, size.z / 2.25))
-  material.roughnessMap = makeStoneTexture(true, Math.max(1, size.x / 2.25), Math.max(1, size.z / 2.25))
+  const targetStone = new THREE.Color(0x465563)
+  material.color.lerp(targetStone, 0.42)
+  material.roughness = 0.47
+  material.metalness = 0.018
+  material.map = makeStoneTexture(false, Math.max(1, size.x / 2.4), Math.max(1, size.z / 2.4))
+  material.roughnessMap = makeStoneTexture(true, Math.max(1, size.x / 2.4), Math.max(1, size.z / 2.4))
   material.bumpMap = material.roughnessMap
-  material.bumpScale = 0.026
+  material.bumpScale = 0.018
   material.needsUpdate = true
   floor.material = material
   floor.receiveShadow = true
 
   if (Math.max(size.x, size.z) < 2.2) return
   const puddleMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x0b1117,
-    roughness: 0.12,
+    color: 0x314455,
+    roughness: 0.16,
     metalness: 0,
-    clearcoat: 1,
-    clearcoatRoughness: 0.08,
+    clearcoat: 0.95,
+    clearcoatRoughness: 0.1,
     transparent: true,
-    opacity: 0.22,
+    opacity: 0.1,
     depthWrite: false,
   })
   const puddle = new THREE.Mesh(new THREE.CircleGeometry(0.58, 22), puddleMaterial)
@@ -156,14 +159,14 @@ function styleStoneWall(mesh: THREE.Mesh, size: THREE.Vector3) {
   if (!(source instanceof THREE.MeshStandardMaterial)) return
 
   const material = source.clone()
-  material.color.multiply(new THREE.Color(0x8997a2))
-  material.roughness = Math.min(0.88, Math.max(0.74, material.roughness))
+  material.color.lerp(new THREE.Color(0x4a5967), 0.38)
+  material.roughness = Math.min(0.9, Math.max(0.78, material.roughness))
   material.metalness = 0
-  const repeatX = size.x > size.z ? Math.max(1, size.x / 2.1) : 1.2
-  const repeatY = Math.max(1, size.y / 1.7)
+  const repeatX = size.x > size.z ? Math.max(1, size.x / 2.15) : 1.2
+  const repeatY = Math.max(1, size.y / 1.75)
   material.map = makeStoneTexture(false, repeatX, repeatY)
   material.bumpMap = makeStoneTexture(true, repeatX, repeatY)
-  material.bumpScale = 0.018
+  material.bumpScale = 0.013
   material.needsUpdate = true
   mesh.material = material
 }
@@ -174,8 +177,8 @@ function styleStoneProp(mesh: THREE.Mesh) {
   if (source.metalness > 0.18 || source.emissiveIntensity > 0.25) return
   const c = source.color
   if (c.r > 0.55 && c.r > c.b * 1.25) return
-  source.color.multiply(new THREE.Color(0xa0abb3))
-  source.roughness = Math.min(0.88, Math.max(0.7, source.roughness))
+  source.color.lerp(new THREE.Color(0x53616d), 0.26)
+  source.roughness = Math.min(0.9, Math.max(0.74, source.roughness))
 }
 
 function makeStoneTexture(roughness: boolean, repeatX: number, repeatY: number) {
@@ -195,18 +198,20 @@ function getColorCanvas() {
   canvas.width = 256
   canvas.height = 256
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#bec5c9'
+  // Keep the albedo texture close to white: it should add variation, not
+  // multiply the already-dark crypt material into near-black.
+  ctx.fillStyle = '#e2e7ea'
   ctx.fillRect(0, 0, 256, 256)
   const random = seeded(0x51a7c0de)
   for (let i = 0; i < 900; i += 1) {
-    const v = 155 + Math.floor(random() * 75)
-    ctx.fillStyle = `rgba(${v},${Math.min(255, v + 4)},${Math.min(255, v + 8)},${0.035 + random() * 0.085})`
+    const v = 188 + Math.floor(random() * 63)
+    ctx.fillStyle = `rgba(${v},${Math.min(255, v + 4)},${Math.min(255, v + 8)},${0.025 + random() * 0.07})`
     const s = 1 + random() * 4
     ctx.fillRect(random() * 256, random() * 256, s, s)
   }
-  ctx.strokeStyle = 'rgba(42,48,53,.22)'
-  ctx.lineWidth = 1.4
-  for (let i = 0; i < 16; i += 1) {
+  ctx.strokeStyle = 'rgba(31,42,51,.16)'
+  ctx.lineWidth = 1.2
+  for (let i = 0; i < 14; i += 1) {
     let x = random() * 256, y = random() * 256
     ctx.beginPath(); ctx.moveTo(x, y)
     for (let j = 0; j < 4; j += 1) { x += (random() - 0.5) * 38; y += 10 + random() * 28; ctx.lineTo(x, y) }
@@ -222,13 +227,13 @@ function getRoughnessCanvas() {
   canvas.width = 256
   canvas.height = 256
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#9c9c9c'
+  ctx.fillStyle = '#b8b8b8'
   ctx.fillRect(0, 0, 256, 256)
   const random = seeded(0x0ddba11)
-  for (let i = 0; i < 420; i += 1) {
-    const wet = random() > 0.78
-    const v = wet ? 48 + random() * 38 : 112 + random() * 72
-    ctx.fillStyle = `rgba(${v},${v},${v},${0.12 + random() * 0.2})`
+  for (let i = 0; i < 360; i += 1) {
+    const wet = random() > 0.82
+    const v = wet ? 62 + random() * 44 : 142 + random() * 74
+    ctx.fillStyle = `rgba(${v},${v},${v},${0.09 + random() * 0.16})`
     ctx.beginPath()
     ctx.ellipse(random() * 256, random() * 256, 3 + random() * 20, 2 + random() * 12, random() * Math.PI, 0, Math.PI * 2)
     ctx.fill()
