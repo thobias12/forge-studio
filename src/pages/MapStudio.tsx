@@ -5,6 +5,7 @@ import {
   Spline, Square, Trash2, WandSparkles, Waypoints,
 } from 'lucide-react'
 import DungeonViewport, { type DungeonTool, type ResizeSide } from '../components/DungeonViewport'
+import ArpgDungeonViewport from '../components/ArpgDungeonViewport'
 import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import {
   corridor, createStarterDungeon, dungeonBlob, generateDungeon, getRoomConnection, marker, room, validateDungeon,
@@ -137,7 +138,7 @@ export default function MapStudio() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('input,select,textarea') || playtest) return
+      if (target?.closest('input,select,textarea') || playtest || topDown) return
       if ((event.key === 'Delete' || event.key === 'Backspace') && (selectedRoomId || selectedMarkerId || selectedPropId)) { event.preventDefault(); deleteSelection(); return }
       if (selectedPropId && (event.key.toLowerCase() === 'q' || event.key.toLowerCase() === 'e')) {
         event.preventDefault(); const delta = event.key.toLowerCase() === 'q' ? -15 : 15
@@ -151,7 +152,7 @@ export default function MapStudio() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedRoomId, selectedMarkerId, selectedPropId, value, playtest])
+  }, [selectedRoomId, selectedMarkerId, selectedPropId, value, playtest, topDown])
 
   const placeProp = (x: number, z: number) => {
     const targetRoom = nearestRoom(value.rooms, x, z)
@@ -202,8 +203,8 @@ export default function MapStudio() {
     </aside>
 
     <main className="map-workspace">
-      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions"><button className={topDown?'active':''} onClick={()=>{setTopDown(!topDown);setPlaytest(false)}}><Grid3X3 size={14}/> Top</button><button className={playtest?'active play':''} onClick={()=>{setPlaytest(!playtest);setTopDown(false)}}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button onClick={proceduralGenerate}><RotateCcw size={14}/> Regenerate</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></div></header>
-      <div className="map-viewport-wrap"><DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} corridorStartId={corridorStartId} topDown={topDown} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp}/>{!playtest&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.markers.length} markers</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
+      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions"><button className={topDown?'active play':''} onClick={()=>{setTopDown(!topDown);setPlaytest(false)}}><Grid3X3 size={14}/> {topDown?'Exit ARPG':'ARPG'}</button><button className={playtest?'active play':''} onClick={()=>{setPlaytest(!playtest);setTopDown(false)}}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button onClick={proceduralGenerate}><RotateCcw size={14}/> Regenerate</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></div></header>
+      <div className="map-viewport-wrap">{topDown?<ArpgDungeonViewport value={value}/>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp}/>} {!playtest&&!topDown&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.markers.length} markers</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
       <section className={`map-flow ${flowOpen?'open':''}`}><button className="map-flow-header" onClick={()=>setFlowOpen(!flowOpen)}><Network size={14}/><strong>DUNGEON FLOW</strong><span>{flowOpen?'Hide':'Show'}</span></button>{flowOpen&&<div className="map-flow-body">{value.rooms.map((item,index)=><div key={item.id} className={`flow-node ${item.type} ${selectedRoomId===item.id?'selected':''}`} onClick={()=>{setSelectedRoomId(item.id);setSelectedMarkerId(undefined);setSelectedPropId(undefined);setTool('select')}}><span>{item.type}</span><strong>{item.name}</strong>{index<value.rooms.length-1&&<ChevronRight size={14}/>}</div>)}</div>}</section>
       <footer className="map-status"><span>{status}</span><b>{validation.ok?'Ready for Skillbound export':validation.warnings[0]}</b></footer>
     </main>
