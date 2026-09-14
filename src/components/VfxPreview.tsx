@@ -1,171 +1,84 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import type { ForgeVfxEmitter, ForgeVfxPackage } from '../lib/vfxPackage'
 
 export type VfxPreviewHandle = { restart: () => void; frame: () => void }
 type Props = { value: ForgeVfxPackage; playing: boolean; showGrid: boolean; background: 'studio' | 'dark' | 'outdoor' }
-
-type AdvancedEmitter = Omit<ForgeVfxEmitter, 'shape' | 'style'> & {
-  shape: string
-  style: string
-  spawnRadius?: number
-  innerRadius?: number
-  lineLength?: number
-  arcDeg?: number
-  spiralTurns?: number
-  radialAccel?: number
-  orbitStrength?: number
-  turbulence?: number
-  sizeRandom?: number
-  alphaRandom?: number
-  delay?: number
+type AdvancedEmitter = Omit<ForgeVfxEmitter,'shape'|'style'> & {
+  shape:string; style:string; spawnRadius?:number; innerRadius?:number; lineLength?:number; arcDeg?:number; spiralTurns?:number;
+  radialAccel?:number; inwardAccel?:number; orbitStrength?:number; turbulence?:number; sizeRandom?:number; alphaRandom?:number; delay?:number;
+  bloomBoost?:number; shakeStrength?:number; beamWidth?:number; groundDecal?:boolean; decalSize?:number; decalOpacity?:number;
 }
-type Particle = { position: THREE.Vector3; velocity: THREE.Vector3; age: number; life: number; spin: number; sizeScale: number; alphaScale: number }
-type EmitterRuntime = { emitter: ForgeVfxEmitter; points: THREE.Points; particles: Particle[]; accumulator: number; elapsed: number; burstDone: boolean; positions: Float32Array; colors: Float32Array; sizes: Float32Array; alphas: Float32Array }
+type Particle={position:THREE.Vector3;velocity:THREE.Vector3;age:number;life:number;sizeScale:number;alphaScale:number}
+type Runtime={emitter:ForgeVfxEmitter;points:THREE.Points;material:THREE.ShaderMaterial;particles:Particle[];accumulator:number;elapsed:number;burstDone:boolean;positions:Float32Array;colors:Float32Array;sizes:Float32Array;alphas:Float32Array;beam?:THREE.Mesh;beamMat?:THREE.MeshBasicMaterial;trail?:THREE.Mesh;trailMat?:THREE.MeshBasicMaterial;decal?:THREE.Mesh;decalMat?:THREE.MeshBasicMaterial}
+type State={renderer?:THREE.WebGLRenderer;composer?:EffectComposer;bloom?:UnrealBloomPass;scene?:THREE.Scene;camera?:THREE.PerspectiveCamera;orbit?:OrbitControls;grid?:THREE.GridHelper;floor?:THREE.Mesh;runtimes:Runtime[];last:number;elapsed:number;shake:number}
+const UP=new THREE.Vector3(0,1,0)
+let SPRITE_ATLAS:THREE.CanvasTexture|undefined
 
-const VfxPreview = forwardRef<VfxPreviewHandle, Props>(function VfxPreview({ value, playing, showGrid, background }, ref) {
-  const hostRef = useRef<HTMLDivElement>(null)
-  const playingRef = useRef(playing)
-  const valueRef = useRef(value)
-  const state = useRef<{ renderer?:THREE.WebGLRenderer; scene?:THREE.Scene; camera?:THREE.PerspectiveCamera; orbit?:OrbitControls; grid?:THREE.GridHelper; floor?:THREE.Mesh; runtimes:EmitterRuntime[]; last:number; elapsed:number }>({ runtimes:[], last:0, elapsed:0 })
-
-  useEffect(() => { playingRef.current = playing }, [playing])
-  useEffect(() => { valueRef.current = value }, [value])
-
-  const resetRuntimes = () => {
-    const s = state.current
-    s.elapsed = 0
-    for (const runtime of s.runtimes) {
-      runtime.particles = []
-      runtime.accumulator = 0
-      runtime.elapsed = 0
-      runtime.burstDone = false
-      runtime.points.visible = runtime.emitter.enabled
-      clearAttributes(runtime)
-    }
-  }
-
-  useImperativeHandle(ref, () => ({ restart: resetRuntimes, frame: () => state.current.orbit?.update() }))
-
-  useEffect(() => {
-    const host = hostRef.current
-    if (!host) return
-    const s = state.current
-    const scene = new THREE.Scene(); s.scene = scene
-    const camera = new THREE.PerspectiveCamera(48, 1, .01, 140); camera.position.set(7.4, 4.5, 8.4); s.camera = camera
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false }); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.shadowMap.enabled = true; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2; host.appendChild(renderer.domElement); s.renderer = renderer
-    const orbit = new OrbitControls(camera, renderer.domElement); orbit.enableDamping = true; orbit.target.set(0,1.35,0); orbit.update(); s.orbit = orbit
-    scene.add(new THREE.HemisphereLight(0xbfd8ff,0x26313c,1.6))
-    const key = new THREE.DirectionalLight(0xffffff,2.5); key.position.set(4,6,3); key.castShadow = true; scene.add(key)
-    const grid = new THREE.GridHelper(18,36,0x3c5267,0x1a2733); scene.add(grid); s.grid = grid
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(18,18),new THREE.MeshStandardMaterial({ color:0x111922,roughness:1 })); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor); s.floor=floor
-    const origin = new THREE.Mesh(new THREE.SphereGeometry(.06,14,10),new THREE.MeshStandardMaterial({ color:0x7fb6de,emissive:0x284d6d,emissiveIntensity:1.2 })); origin.position.y=.06; scene.add(origin)
-
-    const resize = () => { const rect=host.getBoundingClientRect(); if(!rect.width||!rect.height)return; renderer.setSize(rect.width,rect.height,false); camera.aspect=rect.width/rect.height; camera.updateProjectionMatrix() }
-    resize(); const ro=new ResizeObserver(resize); ro.observe(host)
-    let raf=0
-    const tick=(now:number)=>{ const dt=s.last?Math.min(.05,(now-s.last)/1000):0; s.last=now; orbit.update(); if(playingRef.current) updateSimulation(s,dt,valueRef.current); renderer.render(scene,camera); raf=requestAnimationFrame(tick) }
-    raf=requestAnimationFrame(tick)
-    return()=>{ cancelAnimationFrame(raf); ro.disconnect(); disposeRuntimes(s); orbit.dispose(); renderer.dispose(); renderer.domElement.remove(); s.last=0 }
-  }, [])
-
-  useEffect(() => {
-    const s=state.current; if(!s.scene)return
-    disposeRuntimes(s)
-    s.runtimes=value.emitters.map((emitter)=>createRuntime(emitter,s.scene!))
-    resetRuntimes()
-  }, [JSON.stringify(value.emitters)])
-
-  useEffect(()=>{ const s=state.current; if(s.grid)s.grid.visible=showGrid; if(s.floor)s.floor.visible=showGrid },[showGrid])
-  useEffect(()=>{ const scene=state.current.scene; if(!scene)return; scene.background=new THREE.Color(background==='dark'?0x030508:background==='outdoor'?0x263847:0x0a1017) },[background])
-
-  return <div ref={hostRef} className="vfx-preview-canvas" />
+const VfxPreview=forwardRef<VfxPreviewHandle,Props>(function VfxPreview({value,playing,showGrid,background},ref){
+  const hostRef=useRef<HTMLDivElement>(null),playingRef=useRef(playing),valueRef=useRef(value)
+  const state=useRef<State>({runtimes:[],last:0,elapsed:0,shake:0})
+  useEffect(()=>{playingRef.current=playing},[playing]);useEffect(()=>{valueRef.current=value},[value])
+  const reset=()=>{const s=state.current;s.elapsed=0;s.shake=0;for(const r of s.runtimes){r.particles=[];r.accumulator=0;r.elapsed=0;r.burstDone=false;r.points.visible=r.emitter.enabled;if(r.beam)r.beam.visible=false;if(r.trail)r.trail.visible=false;if(r.decal)r.decal.visible=false;clearAttributes(r)}}
+  useImperativeHandle(ref,()=>({restart:reset,frame:()=>state.current.orbit?.update()}))
+  useEffect(()=>{const host=hostRef.current;if(!host)return;const s=state.current,scene=new THREE.Scene();s.scene=scene
+    const camera=new THREE.PerspectiveCamera(48,1,.01,140);camera.position.set(7.4,4.5,8.4);s.camera=camera
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;host.appendChild(renderer.domElement);s.renderer=renderer
+    const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),1.25,.7,.16);composer.addPass(bloom);s.composer=composer;s.bloom=bloom
+    const orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;orbit.target.set(0,1.35,0);orbit.update();s.orbit=orbit
+    scene.add(new THREE.HemisphereLight(0xbfd8ff,0x26313c,1.6));const key=new THREE.DirectionalLight(0xffffff,2.5);key.position.set(4,6,3);key.castShadow=true;scene.add(key)
+    const grid=new THREE.GridHelper(18,36,0x3c5267,0x1a2733);scene.add(grid);s.grid=grid
+    const floor=new THREE.Mesh(new THREE.PlaneGeometry(18,18),new THREE.MeshStandardMaterial({color:0x111922,roughness:1}));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);s.floor=floor
+    const origin=new THREE.Mesh(new THREE.SphereGeometry(.06,14,10),new THREE.MeshStandardMaterial({color:0x7fb6de,emissive:0x284d6d,emissiveIntensity:1.2}));origin.position.y=.06;scene.add(origin)
+    const resize=()=>{const rect=host.getBoundingClientRect();if(!rect.width||!rect.height)return;renderer.setSize(rect.width,rect.height,false);composer.setSize(rect.width,rect.height);camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix()};resize();const ro=new ResizeObserver(resize);ro.observe(host)
+    let raf=0;const tick=(now:number)=>{const dt=s.last?Math.min(.05,(now-s.last)/1000):0;s.last=now;orbit.update();if(playingRef.current)updateSimulation(s,dt,valueRef.current);const base=camera.position.clone();applyShake(s,camera,base);composer.render();camera.position.copy(base);raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)
+    return()=>{cancelAnimationFrame(raf);ro.disconnect();disposeRuntimes(s);orbit.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();s.last=0}
+  },[])
+  useEffect(()=>{const s=state.current;if(!s.scene)return;disposeRuntimes(s);s.runtimes=value.emitters.map(e=>createRuntime(e,s.scene!));reset()},[JSON.stringify(value.emitters)])
+  useEffect(()=>{const s=state.current;if(s.grid)s.grid.visible=showGrid;if(s.floor)s.floor.visible=showGrid},[showGrid])
+  useEffect(()=>{const scene=state.current.scene;if(scene)scene.background=new THREE.Color(background==='dark'?0x030508:background==='outdoor'?0x263847:0x0a1017)},[background])
+  return <div ref={hostRef} className="vfx-preview-canvas"/>
 })
 
-function styleValue(style:string){
-  switch(style){
-    case 'soft': return 0
-    case 'spark': return 1
-    case 'square': return 2
-    case 'ring': return 3
-    case 'diamond': return 4
-    case 'star': return 5
-    case 'streak': return 6
-    case 'flare': return 7
-    case 'smoke': return 8
-    case 'rune': return 9
-    case 'shockwave': return 10
-    case 'ember': return 11
-    case 'mist': return 12
-    default: return 0
-  }
-}
+function styleValue(style:string){return style==='soft'?0:style==='spark'?1:style==='square'?2:style==='ring'?3:style==='diamond'?4:style==='star'?5:style==='streak'?6:style==='flare'?7:style==='smoke'?8:style==='rune'?9:style==='shockwave'?10:style==='ember'?11:style==='mist'?12:7}
+function createRuntime(emitter:ForgeVfxEmitter,scene:THREE.Scene):Runtime{const e=emitter as AdvancedEmitter,max=Math.max(8,Math.min(2000,Math.round(e.maxParticles))),positions=new Float32Array(max*3),colors=new Float32Array(max*3),sizes=new Float32Array(max),alphas=new Float32Array(max)
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3).setUsage(THREE.DynamicDrawUsage));geometry.setAttribute('aColor',new THREE.BufferAttribute(colors,3).setUsage(THREE.DynamicDrawUsage));geometry.setAttribute('aSize',new THREE.BufferAttribute(sizes,1).setUsage(THREE.DynamicDrawUsage));geometry.setAttribute('aAlpha',new THREE.BufferAttribute(alphas,1).setUsage(THREE.DynamicDrawUsage));geometry.setDrawRange(0,0)
+  const material=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:e.blendMode==='additive'?THREE.AdditiveBlending:THREE.NormalBlending,vertexColors:true,uniforms:{uPixelRatio:{value:Math.min(devicePixelRatio,2)},uStyle:{value:styleValue(e.style)},uBoost:{value:e.bloomBoost??0},uTime:{value:0},uSprite:{value:getSpriteAtlas()}},vertexShader:`attribute vec3 aColor;attribute float aSize;attribute float aAlpha;varying vec3 vColor;varying float vAlpha;uniform float uPixelRatio;void main(){vColor=aColor;vAlpha=aAlpha;vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=max(1.,aSize*uPixelRatio*(360./max(.2,-mv.z)));gl_Position=projectionMatrix*mv;}`,fragmentShader:`varying vec3 vColor;varying float vAlpha;uniform float uStyle;uniform float uBoost;uniform float uTime;uniform sampler2D uSprite;void main(){vec2 p=gl_PointCoord*2.-1.;float r=length(p),a=1.;if(uStyle<.5)a=1.-smoothstep(.12,1.,r);else if(uStyle<1.5)a=1.-smoothstep(0.,1.,abs(p.x)+abs(p.y)*.28);else if(uStyle<2.5)a=step(max(abs(p.x),abs(p.y)),1.);else if(uStyle<3.5)a=1.-smoothstep(.035,.18,abs(r-.62));else if(uStyle<4.5)a=1.-smoothstep(.68,1.,abs(p.x)+abs(p.y));else if(uStyle<5.5){float ax=min(abs(p.x),abs(p.y)),dg=min(abs(p.x+p.y),abs(p.x-p.y))*.7071;a=(1.-smoothstep(.055,.23,min(ax,dg)))*(1.-smoothstep(.52,1.05,r));}else if(uStyle<6.5)a=(1.-smoothstep(.08,.42,abs(p.x)))*(1.-smoothstep(.15,1.,abs(p.y)));else if(uStyle<7.5){float core=1.-smoothstep(0.,.38,r),halo=(1.-smoothstep(.1,1.,r))*.55,cross=(1.-smoothstep(0.,.09,min(abs(p.x),abs(p.y))))*(1.-smoothstep(.25,1.,r));a=max(core,halo+cross*.75);}else if(uStyle<8.5)a=(1.-smoothstep(.05,1.,r))*.72;else if(uStyle<9.5){float ring=1.-smoothstep(.03,.12,abs(r-.58)),cross=1.-smoothstep(.02,.08,min(abs(p.x),abs(p.y)));a=max(ring,cross*(1.-smoothstep(.45,.9,r)));}else if(uStyle<10.5)a=1.-smoothstep(.018,.09,abs(r-.72));else if(uStyle<11.5)a=max((1.-smoothstep(0.,.5,r))*.8,1.-smoothstep(0.,.45,abs(p.x)+abs(p.y)*.2));else a=(1.-smoothstep(0.,1.,r))*.45;if(uStyle>7.5&&uStyle<9.5||uStyle>11.5){float f=mod(floor(uTime*10.),16.);vec2 cell=vec2(mod(f,4.),floor(f/4.));vec2 uv=(gl_PointCoord+cell)/4.;a*=mix(.55,1.,texture2D(uSprite,uv).r);}if(a<.01)discard;gl_FragColor=vec4(vColor*(1.+uBoost*.45),vAlpha*a);}`})
+  const points=new THREE.Points(geometry,material);points.frustumCulled=false;scene.add(points);const r:Runtime={emitter,points,material,particles:[],accumulator:0,elapsed:0,burstDone:false,positions,colors,sizes,alphas}
+  if(e.shape==='line'&&['flare','streak','shockwave'].includes(e.style)){const mat=new THREE.MeshBasicMaterial({color:e.startColor,transparent:true,opacity:.8,blending:THREE.AdditiveBlending,depthWrite:false}),mesh=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,12,1,true),mat);mesh.visible=false;scene.add(mesh);r.beam=mesh;r.beamMat=mat}
+  if(e.shape==='spiral'||e.shape==='vortex'){const radius=Math.max(.3,e.spawnRadius??1.5),turns=e.spiralTurns??3,pts:Array<THREE.Vector3>=[];for(let i=0;i<40;i++){const t=i/39,a=t*Math.PI*2*turns,rr=e.shape==='vortex'?radius*(1-t*.7):radius*(.2+.8*t);pts.push(new THREE.Vector3(Math.cos(a)*rr,t*2.6,Math.sin(a)*rr))}const curve=new THREE.CatmullRomCurve3(pts),mat=new THREE.MeshBasicMaterial({color:e.startColor,transparent:true,opacity:.42,blending:THREE.AdditiveBlending,depthWrite:false}),mesh=new THREE.Mesh(new THREE.TubeGeometry(curve,80,.045,6,false),mat);mesh.position.set(...e.position);mesh.visible=false;scene.add(mesh);r.trail=mesh;r.trailMat=mat}
+  if(e.shape==='groundCircle'){const tex=makeDecalTexture(),mat=new THREE.MeshBasicMaterial({map:tex,color:e.endColor,transparent:true,opacity:e.decalOpacity??.42,depthWrite:false,blending:THREE.NormalBlending}),mesh=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat);mesh.rotation.x=-Math.PI/2;mesh.position.set(e.position[0],.018,e.position[2]);mesh.visible=false;scene.add(mesh);r.decal=mesh;r.decalMat=mat}
+  return r}
 
-function createRuntime(emitter:ForgeVfxEmitter,scene:THREE.Scene):EmitterRuntime{
-  const e=emitter as AdvancedEmitter
-  const max=Math.max(8,Math.min(2000,Math.round(emitter.maxParticles)))
-  const positions=new Float32Array(max*3),colors=new Float32Array(max*3),sizes=new Float32Array(max),alphas=new Float32Array(max)
-  const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.BufferAttribute(positions,3).setUsage(THREE.DynamicDrawUsage)); geometry.setAttribute('aColor',new THREE.BufferAttribute(colors,3).setUsage(THREE.DynamicDrawUsage)); geometry.setAttribute('aSize',new THREE.BufferAttribute(sizes,1).setUsage(THREE.DynamicDrawUsage)); geometry.setAttribute('aAlpha',new THREE.BufferAttribute(alphas,1).setUsage(THREE.DynamicDrawUsage)); geometry.setDrawRange(0,0)
-  const material=new THREE.ShaderMaterial({ transparent:true,depthWrite:false,blending:emitter.blendMode==='additive'?THREE.AdditiveBlending:THREE.NormalBlending,vertexColors:true,uniforms:{ uPixelRatio:{value:Math.min(devicePixelRatio,2)},uStyle:{value:styleValue(e.style)}},vertexShader:`attribute vec3 aColor;attribute float aSize;attribute float aAlpha;varying vec3 vColor;varying float vAlpha;uniform float uPixelRatio;void main(){vColor=aColor;vAlpha=aAlpha;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=max(1.0,aSize*uPixelRatio*(360.0/max(0.2,-mv.z)));gl_Position=projectionMatrix*mv;}`,fragmentShader:`varying vec3 vColor;varying float vAlpha;uniform float uStyle;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=length(p);float a=1.0;if(uStyle<0.5){a=1.0-smoothstep(.12,1.0,r);}else if(uStyle<1.5){a=1.0-smoothstep(.0,1.0,abs(p.x)+abs(p.y)*.28);}else if(uStyle<2.5){a=step(max(abs(p.x),abs(p.y)),1.0);}else if(uStyle<3.5){a=1.0-smoothstep(.035,.18,abs(r-.62));}else if(uStyle<4.5){a=1.0-smoothstep(.68,1.0,abs(p.x)+abs(p.y));}else if(uStyle<5.5){float axis=min(abs(p.x),abs(p.y));float diag=min(abs(p.x+p.y),abs(p.x-p.y))*.7071;float rays=1.0-smoothstep(.055,.23,min(axis,diag));float fade=1.0-smoothstep(.52,1.05,r);a=rays*fade;}else if(uStyle<6.5){a=(1.0-smoothstep(.08,.42,abs(p.x)))*(1.0-smoothstep(.15,1.0,abs(p.y)));}else if(uStyle<7.5){float core=1.0-smoothstep(.0,.38,r);float halo=(1.0-smoothstep(.1,1.0,r))*.55;float cross=(1.0-smoothstep(.0,.09,min(abs(p.x),abs(p.y))))*(1.0-smoothstep(.25,1.0,r));a=max(core,halo+cross*.75);}else if(uStyle<8.5){a=(1.0-smoothstep(.05,1.0,r))*.72;}else if(uStyle<9.5){float ring=1.0-smoothstep(.03,.12,abs(r-.58));float cross=1.0-smoothstep(.02,.08,min(abs(p.x),abs(p.y)));a=max(ring,cross*(1.0-smoothstep(.45,.9,r)));}else if(uStyle<10.5){a=1.0-smoothstep(.018,.09,abs(r-.72));}else if(uStyle<11.5){float core=1.0-smoothstep(.0,.5,r);float tip=1.0-smoothstep(.0,.45,abs(p.x)+abs(p.y)*.2);a=max(core*.8,tip);}else{a=(1.0-smoothstep(.0,1.0,r))*.45;}if(a<.01)discard;gl_FragColor=vec4(vColor,vAlpha*a);}` })
-  const points=new THREE.Points(geometry,material); points.frustumCulled=false; scene.add(points)
-  return { emitter,points,particles:[],accumulator:0,elapsed:0,burstDone:false,positions,colors,sizes,alphas }
-}
+function updateSimulation(s:State,dt:number,pkg:ForgeVfxPackage){s.elapsed+=dt;if(!pkg.looping&&s.elapsed>pkg.duration+.8)return;if(pkg.looping&&s.elapsed>Math.max(.1,pkg.duration)){s.elapsed=0;for(const r of s.runtimes){r.burstDone=false;r.elapsed=0}}
+  let bloom=1.15,shake=0;for(const r of s.runtimes){r.material.uniforms.uTime.value+=dt;const e=r.emitter as AdvancedEmitter;if(!e.enabled){r.points.visible=false;hideExtras(r);continue}r.points.visible=true;r.elapsed+=dt;const delay=Math.max(0,e.delay??0),t=r.elapsed-delay,active=t>=0&&(e.looping||t<=Math.max(.05,e.duration));updateExtras(r,active,t,dt)
+    if(t>=0&&active&&!r.burstDone&&e.burst>0){for(let i=0;i<e.burst;i++)spawn(r);r.burstDone=true}if(t>=0&&active&&e.spawnRate>0){r.accumulator+=dt*e.spawnRate;while(r.accumulator>=1){spawn(r);r.accumulator-=1}}
+    const center=new THREE.Vector3(...e.position);for(let i=r.particles.length-1;i>=0;i--){const p=r.particles[i];p.age+=dt;if(p.age>=p.life){r.particles.splice(i,1);continue}const off=p.position.clone().sub(center);if(off.lengthSq()>.0001){const radial=e.radialAccel??0;if(radial)p.velocity.addScaledVector(off.clone().normalize(),radial*dt);const inward=e.inwardAccel??0;if(inward)p.velocity.addScaledVector(off.clone().normalize(),-inward*dt);const orbit=e.orbitStrength??0;if(orbit){const tangent=new THREE.Vector3(-off.z,0,off.x);if(tangent.lengthSq()>.0001)p.velocity.addScaledVector(tangent.normalize(),orbit*dt)}}const turb=e.turbulence??0;if(turb){p.velocity.x+=(Math.random()*2-1)*turb*dt;p.velocity.y+=(Math.random()*2-1)*turb*dt;p.velocity.z+=(Math.random()*2-1)*turb*dt}const drag=Math.max(0,1-e.drag*dt);p.velocity.x=(p.velocity.x+e.gravity[0]*dt)*drag;p.velocity.y=(p.velocity.y+e.gravity[1]*dt)*drag;p.velocity.z=(p.velocity.z+e.gravity[2]*dt)*drag;p.position.addScaledVector(p.velocity,dt)}writeAttributes(r)
+    if(active){bloom=Math.max(bloom,1.15+(e.bloomBoost??inferBloom(e))*.35);if(!e.looping&&t<.32)shake=Math.max(shake,e.shakeStrength??inferShake(e))}}
+  s.shake=THREE.MathUtils.lerp(s.shake,shake,.18);if(s.bloom)s.bloom.strength=THREE.MathUtils.lerp(s.bloom.strength,bloom,.1)}
 
-function updateSimulation(s:{runtimes:EmitterRuntime[];elapsed:number},dt:number,pkg:ForgeVfxPackage){
-  s.elapsed+=dt
-  if(!pkg.looping&&s.elapsed>pkg.duration+.6)return
-  if(pkg.looping&&s.elapsed>Math.max(.1,pkg.duration)) { s.elapsed=0; for(const r of s.runtimes){r.burstDone=false;r.elapsed=0} }
-  for(const runtime of s.runtimes){
-    const e=runtime.emitter as AdvancedEmitter
-    if(!e.enabled){runtime.points.visible=false;continue}
-    runtime.points.visible=true; runtime.elapsed+=dt
-    const delay=Math.max(0,e.delay??0)
-    const activeTime=runtime.elapsed-delay
-    const canEmit=activeTime>=0&&(e.looping||activeTime<=Math.max(.05,e.duration))
-    if(canEmit&&!runtime.burstDone&&e.burst>0){for(let i=0;i<e.burst;i++)spawn(runtime);runtime.burstDone=true}
-    if(canEmit&&e.spawnRate>0){runtime.accumulator+=dt*e.spawnRate; while(runtime.accumulator>=1){spawn(runtime);runtime.accumulator-=1}}
-    const center=new THREE.Vector3(...e.position)
-    for(let i=runtime.particles.length-1;i>=0;i--){
-      const p=runtime.particles[i];p.age+=dt;if(p.age>=p.life){runtime.particles.splice(i,1);continue}
-      const radialAccel=e.radialAccel??0
-      if(radialAccel!==0){const radial=p.position.clone().sub(center);if(radial.lengthSq()>.0001)p.velocity.addScaledVector(radial.normalize(),radialAccel*dt)}
-      const orbit=e.orbitStrength??0
-      if(orbit!==0){const offset=p.position.clone().sub(center);const tangent=new THREE.Vector3(-offset.z,0,offset.x);if(tangent.lengthSq()>.0001)p.velocity.addScaledVector(tangent.normalize(),orbit*dt)}
-      const turbulence=e.turbulence??0
-      if(turbulence>0){p.velocity.x+=(Math.random()*2-1)*turbulence*dt;p.velocity.y+=(Math.random()*2-1)*turbulence*dt;p.velocity.z+=(Math.random()*2-1)*turbulence*dt}
-      const drag=Math.max(0,1-e.drag*dt);p.velocity.x=(p.velocity.x+e.gravity[0]*dt)*drag;p.velocity.y=(p.velocity.y+e.gravity[1]*dt)*drag;p.velocity.z=(p.velocity.z+e.gravity[2]*dt)*drag;p.position.addScaledVector(p.velocity,dt)
-    }
-    writeAttributes(runtime)
-  }
-}
+function updateExtras(r:Runtime,active:boolean,t:number,dt:number){const e=r.emitter as AdvancedEmitter,fade=THREE.MathUtils.clamp(1-Math.max(0,t)/Math.max(.1,e.duration),0,1)
+  if(r.beam&&r.beamMat){if(!active){r.beam.visible=false}else{const dir=new THREE.Vector3(...e.direction);if(dir.lengthSq()<.0001)dir.set(0,1,0);dir.normalize();const len=Math.max(.5,e.lineLength??5),w=e.beamWidth??Math.max(.06,e.startSize*.18),pulse=.9+Math.sin(t*22)*.08;r.beam.visible=true;r.beam.position.set(...e.position).addScaledVector(dir,len*.5);r.beam.quaternion.setFromUnitVectors(UP,dir);r.beam.scale.set(w*pulse,len,w*pulse);r.beamMat.color.copy(new THREE.Color(e.startColor).lerp(new THREE.Color(e.endColor),1-fade));r.beamMat.opacity=Math.min(1,(e.startAlpha*.85+.15)*Math.max(.15,fade))}}
+  if(r.trail&&r.trailMat){r.trail.visible=active;r.trail.rotation.y+=dt*(e.orbitStrength??1.2)*.35;r.trailMat.opacity=active?.28+.28*fade:0;r.trailMat.color.copy(new THREE.Color(e.startColor).lerp(new THREE.Color(e.endColor),1-fade))}
+  if(r.decal&&r.decalMat){const linger=t>=0&&t<=e.duration+1.1;r.decal.visible=linger;if(linger){const life=THREE.MathUtils.clamp(t/Math.max(.1,e.duration+1.1),0,1),size=e.decalSize??Math.max(2,(e.spawnRadius??1)*2.4);r.decal.scale.setScalar(size*(.75+life*.32));r.decalMat.opacity=(e.decalOpacity??inferDecal(e))*(1-life)}}}
+function hideExtras(r:Runtime){if(r.beam)r.beam.visible=false;if(r.trail)r.trail.visible=false;if(r.decal)r.decal.visible=false}
 
-function spawn(runtime:EmitterRuntime){
-  const e=runtime.emitter as AdvancedEmitter,max=(runtime.positions.length/3)|0
-  if(runtime.particles.length>=max)runtime.particles.shift()
-  const p=new THREE.Vector3(...e.position)
-  const radius=Math.max(.001,e.spawnRadius??1)
-  const inner=Math.min(radius,Math.max(0,e.innerRadius??0))
-  if(e.shape==='sphere'){const r=Math.cbrt(Math.random())*radius;p.add(randomUnit().multiplyScalar(r))}
-  else if(e.shape==='shell'){p.add(randomUnit().multiplyScalar(inner+(radius-inner)*Math.sqrt(Math.random())))}
-  else if(e.shape==='box'){p.x+=(Math.random()-.5)*e.boxSize[0];p.y+=(Math.random()-.5)*e.boxSize[1];p.z+=(Math.random()-.5)*e.boxSize[2]}
-  else if(e.shape==='ring'||e.shape==='vortex'){const a=Math.random()*Math.PI*2;const r=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*r;p.z+=Math.sin(a)*r}
-  else if(e.shape==='groundCircle'){const a=Math.random()*Math.PI*2;const r=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*r;p.z+=Math.sin(a)*r;p.y+=(Math.random()-.5)*.08}
-  else if(e.shape==='arc'){const span=THREE.MathUtils.degToRad(e.arcDeg??120);const a=(Math.random()-.5)*span;const r=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*r;p.z+=Math.sin(a)*r}
-  else if(e.shape==='line'){const dir=new THREE.Vector3(...e.direction);if(dir.lengthSq()<.0001)dir.set(1,0,0);dir.normalize();p.addScaledVector(dir,(Math.random()-.5)*(e.lineLength??2))}
-  else if(e.shape==='spiral'){const t=Math.random();const a=t*Math.PI*2*(e.spiralTurns??2);const r=inner+(radius-inner)*t;p.x+=Math.cos(a)*r;p.z+=Math.sin(a)*r;p.y+=(t-.5)*radius*.5}
+function spawn(r:Runtime){const e=r.emitter as AdvancedEmitter,max=(r.positions.length/3)|0;if(r.particles.length>=max)r.particles.shift();const p=new THREE.Vector3(...e.position),radius=Math.max(.001,e.spawnRadius??1),inner=Math.min(radius,Math.max(0,e.innerRadius??0))
+  if(e.shape==='sphere'){p.add(randomUnit().multiplyScalar(Math.cbrt(Math.random())*radius))}else if(e.shape==='shell'){p.add(randomUnit().multiplyScalar(inner+(radius-inner)*Math.sqrt(Math.random())))}else if(e.shape==='box'){p.x+=(Math.random()-.5)*e.boxSize[0];p.y+=(Math.random()-.5)*e.boxSize[1];p.z+=(Math.random()-.5)*e.boxSize[2]}else if(e.shape==='ring'||e.shape==='vortex'||e.shape==='groundCircle'){const a=Math.random()*Math.PI*2,rr=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*rr;p.z+=Math.sin(a)*rr;if(e.shape==='groundCircle')p.y+=(Math.random()-.5)*.08}else if(e.shape==='arc'){const a=(Math.random()-.5)*THREE.MathUtils.degToRad(e.arcDeg??120),rr=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*rr;p.z+=Math.sin(a)*rr}else if(e.shape==='line'){const d=new THREE.Vector3(...e.direction);if(d.lengthSq()<.0001)d.set(1,0,0);p.addScaledVector(d.normalize(),(Math.random()-.5)*(e.lineLength??2))}else if(e.shape==='spiral'){const t=Math.random(),a=t*Math.PI*2*(e.spiralTurns??2),rr=inner+(radius-inner)*t;p.x+=Math.cos(a)*rr;p.z+=Math.sin(a)*rr;p.y+=(t-.5)*radius*.5}
+  let dir=new THREE.Vector3(...e.direction);if(dir.lengthSq()<.0001)dir.set(0,1,0);dir.normalize();if(['ring','shell','groundCircle','vortex','spiral'].includes(e.shape)){const radial=p.clone().sub(new THREE.Vector3(...e.position));if(radial.lengthSq()>.0001)dir=radial.normalize()}dir.addScaledVector(randomUnit(),Math.sin(THREE.MathUtils.degToRad(e.spreadDeg*.5))*Math.random()).normalize();const speed=e.speed*(1+(Math.random()*2-1)*e.speedRandom),sizeR=Math.max(0,e.sizeRandom??0),alphaR=Math.max(0,e.alphaRandom??0);r.particles.push({position:p,velocity:dir.multiplyScalar(speed),age:0,life:Math.max(.04,e.lifetime*(1+(Math.random()*2-1)*e.lifetimeRandom)),sizeScale:Math.max(.1,1+(Math.random()*2-1)*sizeR),alphaScale:Math.max(0,1-Math.random()*alphaR)})}
+function writeAttributes(r:Runtime){const e=r.emitter,start=new THREE.Color(e.startColor),end=new THREE.Color(e.endColor),tmp=new THREE.Color(),count=Math.min(r.particles.length,r.positions.length/3);for(let i=0;i<count;i++){const p=r.particles[i],t=Math.min(1,p.age/p.life),j=i*3;r.positions[j]=p.position.x;r.positions[j+1]=p.position.y;r.positions[j+2]=p.position.z;tmp.copy(start).lerp(end,t);r.colors[j]=tmp.r;r.colors[j+1]=tmp.g;r.colors[j+2]=tmp.b;r.sizes[i]=THREE.MathUtils.lerp(e.startSize,e.endSize,t)*p.sizeScale;r.alphas[i]=THREE.MathUtils.lerp(e.startAlpha,e.endAlpha,t)*p.alphaScale}r.points.geometry.setDrawRange(0,count);for(const key of ['position','aColor','aSize','aAlpha']){const a=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;a.needsUpdate=true}}
+function clearAttributes(r:Runtime){r.points.geometry.setDrawRange(0,0);for(const key of ['position','aColor','aSize','aAlpha']){const a=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;a.needsUpdate=true}}
+function inferBloom(e:AdvancedEmitter){return e.blendMode==='additive'?Math.min(2.2,.35+e.startSize+e.burst/180):.15}
+function inferShake(e:AdvancedEmitter){return Math.min(4.5,(e.burst/90)+(e.speed/10)+(e.startSize*.9))}
+function inferDecal(e:AdvancedEmitter){return e.style==='smoke'||e.style==='mist'? .46:.28}
+function applyShake(s:State,camera:THREE.PerspectiveCamera,base:THREE.Vector3){const a=Math.min(.28,s.shake*.035);if(a<.0001)return;camera.position.set(base.x+(Math.random()*2-1)*a,base.y+(Math.random()*2-1)*a*.65,base.z+(Math.random()*2-1)*a)}
 
-  let direction=new THREE.Vector3(...e.direction);if(direction.lengthSq()<.0001)direction.set(0,1,0);direction.normalize()
-  if(['ring','shell','groundCircle','vortex','spiral'].includes(e.shape)){const radial=p.clone().sub(new THREE.Vector3(...e.position));if(radial.lengthSq()>.0001)direction=radial.normalize()}
-  const spread=Math.sin(THREE.MathUtils.degToRad(e.spreadDeg*.5));direction.addScaledVector(randomUnit(),spread*Math.random()).normalize()
-  const speed=e.speed*(1+(Math.random()*2-1)*e.speedRandom)
-  const sizeRandom=Math.max(0,e.sizeRandom??0),alphaRandom=Math.max(0,e.alphaRandom??0)
-  runtime.particles.push({position:p,velocity:direction.multiplyScalar(speed),age:0,life:Math.max(.04,e.lifetime*(1+(Math.random()*2-1)*e.lifetimeRandom)),spin:Math.random()*Math.PI*2,sizeScale:Math.max(.05,1+(Math.random()*2-1)*sizeRandom),alphaScale:Math.max(0,1-Math.random()*alphaRandom)})
-}
-
-function writeAttributes(r:EmitterRuntime){const e=r.emitter,start=new THREE.Color(e.startColor),end=new THREE.Color(e.endColor),temp=new THREE.Color();const count=Math.min(r.particles.length,r.positions.length/3);for(let i=0;i<count;i++){const p=r.particles[i],t=Math.min(1,p.age/p.life),idx=i*3;r.positions[idx]=p.position.x;r.positions[idx+1]=p.position.y;r.positions[idx+2]=p.position.z;temp.copy(start).lerp(end,t);r.colors[idx]=temp.r;r.colors[idx+1]=temp.g;r.colors[idx+2]=temp.b;r.sizes[i]=THREE.MathUtils.lerp(e.startSize,e.endSize,t)*p.sizeScale;r.alphas[i]=THREE.MathUtils.lerp(e.startAlpha,e.endAlpha,t)*p.alphaScale}r.points.geometry.setDrawRange(0,count);for(const key of ['position','aColor','aSize','aAlpha']){const attr=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;attr.needsUpdate=true}}
-function clearAttributes(r:EmitterRuntime){r.points.geometry.setDrawRange(0,0);for(const key of ['position','aColor','aSize','aAlpha']){const attr=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;attr.needsUpdate=true}}
+function getSpriteAtlas(){if(SPRITE_ATLAS)return SPRITE_ATLAS;const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d')!;for(let f=0;f<16;f++){const ox=(f%4)*64,oy=Math.floor(f/4)*64;x.clearRect(ox,oy,64,64);const pulse=.78+.18*Math.sin(f/16*Math.PI*2),g=x.createRadialGradient(ox+32,oy+32,3,ox+32,oy+32,30);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.35,`rgba(255,255,255,${.72*pulse})`);g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.beginPath();x.arc(ox+32,oy+32,30,0,Math.PI*2);x.fill();x.globalAlpha=.24;for(let i=0;i<8;i++){const a=(i/8)*Math.PI*2+f*.17,rr=9+(i%3)*5;x.fillStyle='white';x.beginPath();x.arc(ox+32+Math.cos(a)*rr,oy+32+Math.sin(a)*rr,4+(f+i)%5,0,Math.PI*2);x.fill()}x.globalAlpha=1}SPRITE_ATLAS=new THREE.CanvasTexture(c);SPRITE_ATLAS.colorSpace=THREE.SRGBColorSpace;SPRITE_ATLAS.wrapS=SPRITE_ATLAS.wrapT=THREE.ClampToEdgeWrapping;return SPRITE_ATLAS}
+function makeDecalTexture(){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d')!,g=x.createRadialGradient(128,128,16,128,128,120);g.addColorStop(0,'rgba(255,255,255,.9)');g.addColorStop(.38,'rgba(150,150,150,.4)');g.addColorStop(.75,'rgba(50,50,50,.16)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,256,256);x.strokeStyle='rgba(20,20,20,.55)';x.lineWidth=3;for(let i=0;i<15;i++){const a=i/15*Math.PI*2;x.beginPath();x.moveTo(128,128);x.lineTo(128+Math.cos(a)*(55+(i%4)*15),128+Math.sin(a)*(55+((i+2)%4)*15));x.stroke()}const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t}
 function randomUnit(){const z=Math.random()*2-1,a=Math.random()*Math.PI*2,r=Math.sqrt(Math.max(0,1-z*z));return new THREE.Vector3(r*Math.cos(a),z,r*Math.sin(a))}
-function disposeRuntimes(s:{scene?:THREE.Scene;runtimes:EmitterRuntime[]}){for(const r of s.runtimes){s.scene?.remove(r.points);r.points.geometry.dispose();(r.points.material as THREE.Material).dispose()}s.runtimes=[]}
-
+function disposeRuntimes(s:{scene?:THREE.Scene;runtimes:Runtime[]}){for(const r of s.runtimes){s.scene?.remove(r.points);r.points.geometry.dispose();r.material.dispose();for(const m of [r.beam,r.trail,r.decal])if(m){s.scene?.remove(m);m.geometry.dispose()}r.beamMat?.dispose();r.trailMat?.dispose();r.decalMat?.map?.dispose();r.decalMat?.dispose()}s.runtimes=[]}
 export default VfxPreview
