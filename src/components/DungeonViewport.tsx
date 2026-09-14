@@ -41,8 +41,10 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x0b1015)
     scene.fog = new THREE.FogExp2(0x0b1015, value.settings.fogDensity)
-    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 300)
+    const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 300)
     camera.position.set(26, 30, 32)
+    camera.rotation.order = 'YXZ'
+
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -78,13 +80,20 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
     const pointer = new THREE.Vector2()
     const roomVisuals = new Map<string, RoomVisual>()
     const markerVisuals = new Map<string, MarkerVisual>()
+    const keys = new Set<string>()
     let drag: DragState | undefined
+    let yaw = 0
+    let pitch = 0
+    let wasPlaytest = false
+    let walkInitialized = false
+    let lastFrame = performance.now()
 
     const rebuild = () => {
       while (dungeonGroup.children.length) disposeObject(dungeonGroup.children.pop()!)
       roomVisuals.clear()
       markerVisuals.clear()
       const current = propsRef.current.value
+      const immersive = propsRef.current.playtest
       if (scene.fog instanceof THREE.FogExp2) scene.fog.density = current.settings.fogDensity
       ambient.intensity = 0.6 + current.settings.ambientLight * 2.2
 
@@ -102,11 +111,11 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
         addCorridor(dungeonGroup, fromConnection, toConnection, edge.width)
       }
       for (const roomValue of current.rooms) {
-        const visual = addRoom(dungeonGroup, roomValue, current.settings.wallThickness, openingMap.get(roomValue.id) ?? [], roomValue.id === propsRef.current.selectedRoomId, roomValue.id === propsRef.current.corridorStartId)
+        const visual = addRoom(dungeonGroup, roomValue, current.settings.wallThickness, openingMap.get(roomValue.id) ?? [], !immersive && roomValue.id === propsRef.current.selectedRoomId, !immersive && roomValue.id === propsRef.current.corridorStartId, immersive)
         roomVisuals.set(roomValue.id, visual)
       }
       for (const item of current.markers) {
-        const visual = addMarker(dungeonGroup, item, item.id === propsRef.current.selectedMarkerId)
+        const visual = addMarker(dungeonGroup, item, !immersive && item.id === propsRef.current.selectedMarkerId, immersive)
         markerVisuals.set(item.id, visual)
       }
     }
@@ -135,8 +144,21 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
       return raycaster.intersectObject(ground, false)[0]?.point
     }
 
+    const requestWalkLock = () => {
+      if (!propsRef.current.playtest || document.pointerLockElement === renderer.domElement) return
+      try {
+        const result = renderer.domElement.requestPointerLock()
+        if (result && typeof (result as Promise<void>).catch === 'function') void (result as Promise<void>).catch(() => undefined)
+      } catch { /* Pointer lock may be denied until the next user gesture. */ }
+    }
+
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || propsRef.current.playtest) return
+      if (event.button !== 0) return
+      if (propsRef.current.playtest) {
+        requestWalkLock()
+        event.preventDefault()
+        return
+      }
       updatePointer(event)
       const hits = raycaster.intersectObjects([dungeonGroup, ground], true)
       const hit = hits.find((candidate) => candidate.object.userData.roomId || candidate.object.userData.markerId || candidate.object.name === '__ground')
@@ -170,7 +192,7 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
         return
       }
       if (propsRef.current.playtest) {
-        renderer.domElement.style.cursor = 'default'
+        renderer.domElement.style.cursor = document.pointerLockElement === renderer.domElement ? 'none' : 'crosshair'
         return
       }
       updatePointer(event)
@@ -185,36 +207,118 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
       controls.enabled = !propsRef.current.playtest
       event.preventDefault()
     }
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (!propsRef.current.playtest || document.pointerLockElement !== renderer.domElement) return
+      const sensitivity = 0.0022
+      yaw -= event.movementX * sensitivity
+      pitch -= event.movementY * sensitivity
+      pitch = THREE.MathUtils.clamp(pitch, -Math.PI * 0.47, Math.PI * 0.47)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!propsRef.current.playtest) return
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight'].includes(event.code)) {
+        keys.add(event.code)
+        event.preventDefault()
+      }
+    }
+    const onKeyUp = (event: KeyboardEvent) => { keys.delete(event.code) }
+    const onBlur = () => keys.clear()
+    const onLockChange = () => {
+      renderer.domElement.style.cursor = propsRef.current.playtest && document.pointerLockElement === renderer.domElement ? 'none' : propsRef.current.playtest ? 'crosshair' : 'default'
+      if (document.pointerLockElement !== renderer.domElement) keys.clear()
+    }
+
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('pointercancel', onPointerUp)
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('pointerlockchange', onLockChange)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+
+    const enterWalkMode = () => {
+      const current = propsRef.current.value
+      const entrance = current.rooms.find((item) => item.type === 'entrance') ?? current.rooms[0]
+      if (!entrance) return
+      camera.fov = 74
+      camera.updateProjectionMatrix()
+      camera.position.set(entrance.x, entrance.floorLevel + 1.68, entrance.z)
+      const edge = current.corridors.find((item) => item.fromRoomId === entrance.id || item.toRoomId === entrance.id)
+      const otherId = edge ? (edge.fromRoomId === entrance.id ? edge.toRoomId : edge.fromRoomId) : undefined
+      const other = current.rooms.find((item) => item.id === otherId)
+      if (other) yaw = Math.atan2(-(other.x - entrance.x), -(other.z - entrance.z))
+      else yaw = 0
+      pitch = 0
+      walkInitialized = true
+      controls.enabled = false
+      grid.visible = false
+    }
+
+    const leaveWalkMode = () => {
+      if (document.pointerLockElement === renderer.domElement) document.exitPointerLock()
+      keys.clear()
+      walkInitialized = false
+      camera.fov = 48
+      camera.updateProjectionMatrix()
+      camera.rotation.set(0, 0, 0)
+      camera.position.set(26, 30, 32)
+      controls.target.set(4, 0, 0)
+      controls.enabled = true
+      controls.update()
+      grid.visible = true
+    }
+
+    const updateWalk = (dt: number) => {
+      const current = propsRef.current.value
+      camera.rotation.set(pitch, yaw, 0)
+      const forwardAmount = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0)
+      const rightAmount = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0)
+      if (!forwardAmount && !rightAmount) return
+      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw))
+      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw))
+      const move = forward.multiplyScalar(forwardAmount).add(right.multiplyScalar(rightAmount))
+      if (move.lengthSq() > 1) move.normalize()
+      const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight')
+      move.multiplyScalar((sprint ? 6.8 : 3.8) * dt)
+      const targetX = camera.position.x + move.x
+      const targetZ = camera.position.z + move.z
+      if (canWalkAt(current, targetX, camera.position.z)) camera.position.x = targetX
+      if (canWalkAt(current, camera.position.x, targetZ)) camera.position.z = targetZ
+      camera.position.y = floorHeightAt(current, camera.position.x, camera.position.z) + 1.68
+    }
 
     let raf = 0
-    let playAngle = 0
-    const tick = () => {
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000))
+      lastFrame = now
       const state = propsRef.current
-      const signature = JSON.stringify([state.value.rooms, state.value.corridors, state.value.markers, state.value.settings, state.selectedRoomId, state.selectedMarkerId, state.corridorStartId])
+      if (state.playtest !== wasPlaytest) {
+        if (state.playtest) enterWalkMode()
+        else leaveWalkMode()
+        wasPlaytest = state.playtest
+      }
+      const signature = JSON.stringify([state.value.rooms, state.value.corridors, state.value.markers, state.value.settings, state.selectedRoomId, state.selectedMarkerId, state.corridorStartId, state.playtest])
       if (signature !== lastSignature) {
         lastSignature = signature
         rebuild()
       }
-      if (state.topDown && !state.playtest && !drag) {
-        const center = dungeonCenter(state.value.rooms)
-        camera.position.lerp(new THREE.Vector3(center.x, 42, center.z + 0.01), 0.09)
-        controls.target.lerp(new THREE.Vector3(center.x, 0, center.z), 0.09)
-      }
-      controls.enabled = !state.playtest && !drag
+      grid.visible = !state.playtest
       if (state.playtest) {
-        const entrance = state.value.rooms.find((item) => item.type === 'entrance') ?? state.value.rooms[0]
-        if (entrance) {
-          playAngle += 0.0025
-          const radius = Math.max(7, Math.max(entrance.width, entrance.depth) * 0.8)
-          const target = new THREE.Vector3(entrance.x, 0.9, entrance.z)
-          camera.position.lerp(new THREE.Vector3(entrance.x + Math.cos(playAngle) * radius, 4.6, entrance.z + Math.sin(playAngle) * radius), 0.04)
-          camera.lookAt(target)
+        if (!walkInitialized) enterWalkMode()
+        controls.enabled = false
+        updateWalk(dt)
+      } else {
+        if (state.topDown && !drag) {
+          const center = dungeonCenter(state.value.rooms)
+          camera.position.lerp(new THREE.Vector3(center.x, 42, center.z + 0.01), 0.09)
+          controls.target.lerp(new THREE.Vector3(center.x, 0, center.z), 0.09)
         }
-      } else if (!drag) controls.update()
+        controls.enabled = !drag
+        if (!drag) controls.update()
+      }
       renderer.render(scene, camera)
       raf = requestAnimationFrame(tick)
     }
@@ -223,10 +327,16 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      if (document.pointerLockElement === renderer.domElement) document.exitPointerLock()
       renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       renderer.domElement.removeEventListener('pointermove', onPointerMove)
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointercancel', onPointerUp)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('pointerlockchange', onLockChange)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
       controls.dispose()
       disposeObject(dungeonGroup)
       ground.geometry.dispose()
@@ -235,10 +345,23 @@ export default function DungeonViewport({ value, tool, selectedRoomId, selectedM
       renderer.domElement.remove()
     }
   }, [])
-  return <div ref={hostRef} className="dungeon-viewport-canvas" />
+
+  return <div className="dungeon-viewport-canvas">
+    <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
+    {playtest && <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', left: '50%', top: '50%', width: 14, height: 14, transform: 'translate(-50%,-50%)' }}>
+        <span style={{ position: 'absolute', left: 6, top: 0, width: 2, height: 14, background: 'rgba(235,247,255,.78)', boxShadow: '0 0 6px rgba(0,0,0,.8)' }} />
+        <span style={{ position: 'absolute', left: 0, top: 6, width: 14, height: 2, background: 'rgba(235,247,255,.78)', boxShadow: '0 0 6px rgba(0,0,0,.8)' }} />
+      </div>
+      <div style={{ position: 'absolute', left: 12, bottom: 12, padding: '8px 10px', border: '1px solid rgba(94,132,158,.55)', borderRadius: 7, background: 'rgba(7,12,17,.84)', color: '#dce8f1', fontSize: 10, lineHeight: 1.45, backdropFilter: 'blur(6px)' }}>
+        <strong style={{ display: 'block', fontSize: 10, letterSpacing: '.08em' }}>FIRST PERSON WALK</strong>
+        <span style={{ color: '#91aabd' }}>Click viewport for mouse look · WASD move · Shift sprint · Esc releases mouse</span>
+      </div>
+    </div>}
+  </div>
 }
 
-function addRoom(parent: THREE.Group, roomValue: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean): RoomVisual {
+function addRoom(parent: THREE.Group, roomValue: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean): RoomVisual {
   const group = new THREE.Group()
   group.position.set(roomValue.x, roomValue.floorLevel, roomValue.z)
   group.rotation.y = THREE.MathUtils.degToRad(roomValue.rotation)
@@ -252,10 +375,12 @@ function addRoom(parent: THREE.Group, roomValue: DungeonRoom, wallThickness: num
   const wallMaterial = new THREE.MeshStandardMaterial({ color: selected ? 0x9cc8df : 0x39434b, roughness: 0.95 })
   const t = Math.max(0.12, wallThickness)
   for (const side of ['north', 'south', 'west', 'east'] as const) addWallWithOpenings(group, roomValue, side, openings.filter((item) => item.side === side), t, wallMaterial)
-  if (selected) addMoveGizmo(group, roomValue)
-  const label = makeLabel(roomValue.name, roomValue.type.toUpperCase())
-  label.position.set(0, roomValue.height + 0.6, 0)
-  group.add(label)
+  if (selected && !immersive) addMoveGizmo(group, roomValue)
+  if (!immersive) {
+    const label = makeLabel(roomValue.name, roomValue.type.toUpperCase())
+    label.position.set(0, roomValue.height + 0.6, 0)
+    group.add(label)
+  }
   return { group, floor }
 }
 
@@ -345,10 +470,16 @@ function addCorridorSegment(parent: THREE.Group, x1: number, z1: number, x2: num
   }
 }
 
-function addMarker(parent: THREE.Group, markerValue: DungeonMarker, selected: boolean): MarkerVisual {
+function addMarker(parent: THREE.Group, markerValue: DungeonMarker, selected: boolean, immersive: boolean): MarkerVisual {
   const group = new THREE.Group()
   group.position.set(markerValue.x, markerValue.y, markerValue.z)
   const color = markerColor(markerValue.type)
+
+  if (immersive && ['enemy', 'loot', 'checkpoint', 'trigger'].includes(markerValue.type)) {
+    parent.add(group)
+    return { object: group }
+  }
+
   let object: THREE.Object3D
   if (markerValue.type === 'portal') {
     const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.12, 10, 28), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }))
@@ -363,6 +494,11 @@ function addMarker(parent: THREE.Group, markerValue: DungeonMarker, selected: bo
     const panelMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.06 })
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.25, 1.65), panelMaterial)
     panel.position.y = 1.13
+    if (!Boolean(markerValue.data.locked)) {
+      panel.rotation.y = Math.PI / 2
+      panel.position.x = 0.82
+      panel.position.z = -0.78
+    }
     const left = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.55, 0.22), frameMaterial)
     left.position.set(0, 1.27, -0.94)
     const right = left.clone(); right.position.z = 0.94
@@ -381,11 +517,68 @@ function addMarker(parent: THREE.Group, markerValue: DungeonMarker, selected: bo
   object.traverse((child) => { child.userData.markerId = markerValue.id })
   if (selected) object.scale.setScalar(1.25)
   group.add(object)
-  const label = makeLabel(markerValue.name, markerValue.type.toUpperCase())
-  label.position.y = markerValue.type === 'door' ? 3.0 : 1.05
-  group.add(label)
+  if (!immersive) {
+    const label = makeLabel(markerValue.name, markerValue.type.toUpperCase())
+    label.position.y = markerValue.type === 'door' ? 3.0 : 1.05
+    group.add(label)
+  }
   parent.add(group)
   return { object: group }
+}
+
+function canWalkAt(value: ForgeDungeonPackage, x: number, z: number) {
+  const playerRadius = 0.3
+  if (!value.rooms.some((roomValue) => pointInsideRoom(roomValue, x, z, playerRadius)) && !pointInsideCorridor(value, x, z, playerRadius)) return false
+  for (const item of value.markers) {
+    if (item.type !== 'door' || !Boolean(item.data.locked)) continue
+    if (pointInsideDoor(item, x, z, playerRadius)) return false
+  }
+  return true
+}
+
+function pointInsideRoom(roomValue: DungeonRoom, x: number, z: number, margin: number) {
+  const dx = x - roomValue.x
+  const dz = z - roomValue.z
+  const angle = -THREE.MathUtils.degToRad(roomValue.rotation)
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  const localX = dx * cos - dz * sin
+  const localZ = dx * sin + dz * cos
+  return Math.abs(localX) <= Math.max(0.2, roomValue.width / 2 - margin) && Math.abs(localZ) <= Math.max(0.2, roomValue.depth / 2 - margin)
+}
+
+function pointInsideCorridor(value: ForgeDungeonPackage, x: number, z: number, margin: number) {
+  const roomMap = new Map(value.rooms.map((item) => [item.id, item]))
+  for (const edge of value.corridors) {
+    const fromRoom = roomMap.get(edge.fromRoomId), toRoom = roomMap.get(edge.toRoomId)
+    if (!fromRoom || !toRoom) continue
+    const from = getRoomConnection(fromRoom, toRoom, edge.width)
+    const to = getRoomConnection(toRoom, fromRoom, edge.width)
+    const midX = to.x, midZ = from.z
+    if (pointInsideAxisSegment(x, z, from.x, from.z, midX, midZ, edge.width, margin) || pointInsideAxisSegment(x, z, midX, midZ, to.x, to.z, edge.width, margin)) return true
+  }
+  return false
+}
+
+function pointInsideAxisSegment(x: number, z: number, x1: number, z1: number, x2: number, z2: number, width: number, margin: number) {
+  const halfWidth = Math.max(0.25, width / 2 - margin)
+  const endPad = margin + 0.28
+  if (Math.abs(z2 - z1) < 0.05) return x >= Math.min(x1, x2) - endPad && x <= Math.max(x1, x2) + endPad && Math.abs(z - z1) <= halfWidth
+  if (Math.abs(x2 - x1) < 0.05) return z >= Math.min(z1, z2) - endPad && z <= Math.max(z1, z2) + endPad && Math.abs(x - x1) <= halfWidth
+  return false
+}
+
+function pointInsideDoor(item: DungeonMarker, x: number, z: number, margin: number) {
+  const dx = x - item.x, dz = z - item.z
+  const angle = -THREE.MathUtils.degToRad(Number(item.data.yaw ?? 0))
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  const localX = dx * cos - dz * sin
+  const localZ = dx * sin + dz * cos
+  return Math.abs(localX) <= 0.2 + margin && Math.abs(localZ) <= 0.9 + margin
+}
+
+function floorHeightAt(value: ForgeDungeonPackage, x: number, z: number) {
+  const roomValue = value.rooms.find((item) => pointInsideRoom(item, x, z, 0))
+  return roomValue?.floorLevel ?? 0
 }
 
 function makeLabel(title: string, subtitle: string) {
