@@ -40,8 +40,9 @@ const THEMES: Record<DungeonTheme, DungeonAtmosphere> = {
 }
 
 export function dungeonAtmosphere(theme: DungeonTheme): DungeonAtmosphere {
-  if (typeof document !== 'undefined') document.documentElement.dataset.forgeDungeonTheme = theme
-  return THEMES[theme] ?? THEMES.crypt
+  const resolved = (theme as string) === 'crypt-interaction' ? 'crypt' : theme
+  if (typeof document !== 'undefined') document.documentElement.dataset.forgeDungeonTheme = resolved
+  return THEMES[resolved as DungeonTheme] ?? THEMES.crypt
 }
 export function roomAccent(type: DungeonRoomType, atmosphere: DungeonAtmosphere): number | undefined { if(type==='boss'||type==='elite')return atmosphere.boss;if(type==='shrine')return atmosphere.shrine;if(type==='treasure')return atmosphere.treasure;return undefined }
 export function tintRoomFloor(base:number,type:DungeonRoomType,atmosphere:DungeonAtmosphere){const color=new THREE.Color(base);const accent=roomAccent(type,atmosphere);if(accent!==undefined)color.lerp(new THREE.Color(accent),type==='boss'?0.08:0.04);if(type==='entrance')color.offsetHSL(0,-0.02,0.025);return color}

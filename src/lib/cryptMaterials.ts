@@ -21,24 +21,29 @@ type TexturePack = {
 }
 
 const textureCache = new Map<string, TexturePack>()
+const materialCache = new Map<string, CryptMaterialSet>()
 
 export function createCryptMaterialSet(atmosphere: DungeonAtmosphere): CryptMaterialSet {
+  const key = `${atmosphere.floor}-${atmosphere.wall}-${atmosphere.wallDark}`
+  const cached = materialCache.get(key)
+  if (cached) return cached
+
   const floorPack = texturePack('floor', atmosphere.floor, 0.22)
   const wallPack = texturePack('wall', atmosphere.wall, 0.14)
   const darkPack = texturePack('dark', atmosphere.wallDark, 0.1)
 
-  const floor = standard(floorPack, 0.78, 0.025, 0.075)
-  const floorDark = standard(darkPack, 0.92, 0.01, 0.045)
-  const wall = standard(wallPack, 0.88, 0.015, 0.09)
-  const wallLight = standard(wallPack, 0.82, 0.015, 0.105)
+  const floor = keepMaterial(standard(floorPack, 0.78, 0.025, 0.075))
+  const floorDark = keepMaterial(standard(darkPack, 0.92, 0.01, 0.045))
+  const wall = keepMaterial(standard(wallPack, 0.88, 0.015, 0.09))
+  const wallLight = keepMaterial(standard(wallPack, 0.82, 0.015, 0.105))
   wallLight.color.setHex(0xdce5eb)
-  const wallDark = standard(darkPack, 0.95, 0.005, 0.065)
+  const wallDark = keepMaterial(standard(darkPack, 0.95, 0.005, 0.065))
 
-  const iron = new THREE.MeshStandardMaterial({ color: 0x2c353d, roughness: 0.57, metalness: 0.5 })
-  const wood = new THREE.MeshStandardMaterial({ color: 0x443023, roughness: 0.91 })
-  const bone = new THREE.MeshStandardMaterial({ color: 0x968f7e, roughness: 0.9 })
-  const cloth = new THREE.MeshStandardMaterial({ color: 0x263039, roughness: 0.96, side: THREE.DoubleSide })
-  const wet = new THREE.MeshPhysicalMaterial({
+  const iron = keepMaterial(new THREE.MeshStandardMaterial({ color: 0x2c353d, roughness: 0.57, metalness: 0.5 }))
+  const wood = keepMaterial(new THREE.MeshStandardMaterial({ color: 0x443023, roughness: 0.91 }))
+  const bone = keepMaterial(new THREE.MeshStandardMaterial({ color: 0x968f7e, roughness: 0.9 }))
+  const cloth = keepMaterial(new THREE.MeshStandardMaterial({ color: 0x263039, roughness: 0.96, side: THREE.DoubleSide }))
+  const wet = keepMaterial(new THREE.MeshPhysicalMaterial({
     color: 0x0b1720,
     roughness: 0.13,
     metalness: 0.02,
@@ -47,9 +52,19 @@ export function createCryptMaterialSet(atmosphere: DungeonAtmosphere): CryptMate
     transparent: true,
     opacity: 0.48,
     depthWrite: false,
-  })
+  }))
 
-  return { floor, floorDark, wall, wallLight, wallDark, iron, wood, bone, cloth, wet }
+  const set = { floor, floorDark, wall, wallLight, wallDark, iron, wood, bone, cloth, wet }
+  materialCache.set(key, set)
+  return set
+}
+
+function keepMaterial<T extends THREE.Material>(material: T): T {
+  material.userData.forgeShared = true
+  // Dungeon preview rebuilds dispose scene materials aggressively. These procedural
+  // materials are app-level shared resources, so keep their GPU programs alive.
+  material.dispose = () => undefined
+  return material
 }
 
 function standard(pack: TexturePack, roughness: number, metalness: number, bumpScale: number) {
@@ -148,10 +163,10 @@ function texturePack(kind: string, color: number, wetness: number): TexturePack 
     }
   }
 
-  const colorTexture = new THREE.CanvasTexture(colorCanvas)
+  const colorTexture = keepTexture(new THREE.CanvasTexture(colorCanvas))
   colorTexture.colorSpace = THREE.SRGBColorSpace
-  const bumpTexture = new THREE.CanvasTexture(bumpCanvas)
-  const roughTexture = new THREE.CanvasTexture(roughCanvas)
+  const bumpTexture = keepTexture(new THREE.CanvasTexture(bumpCanvas))
+  const roughTexture = keepTexture(new THREE.CanvasTexture(roughCanvas))
   for (const texture of [colorTexture, bumpTexture, roughTexture]) {
     texture.wrapS = THREE.RepeatWrapping
     texture.wrapT = THREE.RepeatWrapping
@@ -162,6 +177,14 @@ function texturePack(kind: string, color: number, wetness: number): TexturePack 
   const pack = { color: colorTexture, bump: bumpTexture, roughness: roughTexture }
   textureCache.set(key, pack)
   return pack
+}
+
+function keepTexture<T extends THREE.Texture>(texture: T): T {
+  texture.userData.forgeShared = true
+  // Shared procedural textures survive scene rebuilds instead of being deleted
+  // and uploaded again for every drag tick.
+  texture.dispose = () => undefined
+  return texture
 }
 
 function canvas(size: number) {
