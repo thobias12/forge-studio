@@ -11,9 +11,9 @@ type Props = { value: ForgeVfxPackage; playing: boolean; showGrid: boolean; back
 
 type AdvancedShape = ForgeVfxEmitter['shape'] | 'ring' | 'shell' | 'arc' | 'line' | 'spiral' | 'vortex' | 'groundCircle'
 type AdvancedStyle = ForgeVfxEmitter['style'] | 'streak' | 'flare' | 'smoke' | 'rune' | 'shockwave' | 'ember' | 'mist'
-type AdvancedEmitter = ForgeVfxEmitter & {
-  shape?: AdvancedShape
-  style?: AdvancedStyle
+type AdvancedEmitter = Omit<ForgeVfxEmitter, 'shape' | 'style'> & {
+  shape: AdvancedShape
+  style: AdvancedStyle
   radialAccel?: number
   inwardAccel?: number
   orbitStrength?: number
@@ -259,7 +259,7 @@ function createRuntime(emitter: ForgeVfxEmitter, scene: THREE.Scene): EmitterRun
     vertexColors: true,
     uniforms: {
       uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
-      uStyle: { value: styleIndex(advanced.style ?? emitter.style) },
+      uStyle: { value: styleIndex(advanced.style) },
       uBloomBoost: { value: num(advanced.bloomBoost, 0) },
     },
     vertexShader: `
@@ -512,8 +512,9 @@ function updateBeamMesh(runtime: EmitterRuntime, active: boolean, localTime: num
   if (!beam || !material) return
   const emitter = runtime.emitter
   const advanced = emitter as AdvancedEmitter
-  const style = advanced.style ?? emitter.style
-  const isBeamLike = emitter.shape === 'line' || style === 'flare' || style === 'streak' || style === 'shockwave'
+  const style = advanced.style
+  const shape = advanced.shape
+  const isBeamLike = shape === 'line' || style === 'flare' || style === 'streak' || style === 'shockwave'
   if (!active || !isBeamLike) {
     beam.visible = false
     return
@@ -525,7 +526,7 @@ function updateBeamMesh(runtime: EmitterRuntime, active: boolean, localTime: num
   const pulse = 0.82 + Math.sin(localTime * 18) * 0.12 + (1 - t) * 0.18
   const length = num(advanced.beamLength, Math.max(2.2, num(advanced.lineLength, 4.6)))
   const width = num(advanced.beamWidth, style === 'streak' ? 0.08 : 0.14)
-  beam.visible = emitter.shape === 'line' || num(advanced.beamLength, 0) > 0
+  beam.visible = shape === 'line' || num(advanced.beamLength, 0) > 0
   beam.position.set(...emitter.position).addScaledVector(dir, length * 0.5)
   beam.quaternion.setFromUnitVectors(Y_AXIS, dir)
   beam.scale.set(width * pulse, length, width * pulse)
@@ -542,8 +543,8 @@ function updateTrailMesh(runtime: EmitterRuntime, dt: number, active: boolean, l
   const dir = new THREE.Vector3(...emitter.direction)
   if (dir.lengthSq() < 0.0001) dir.set(1, 0.15, 0)
   dir.normalize()
-  const style = advanced.style ?? emitter.style
-  const wantsTrail = style === 'ember' || style === 'mist' || style === 'smoke' || emitter.shape === 'spiral' || emitter.shape === 'vortex' || num(advanced.trailLength, 0) > 0
+  const style = advanced.style
+  const wantsTrail = style === 'ember' || style === 'mist' || style === 'smoke' || advanced.shape === 'spiral' || advanced.shape === 'vortex' || num(advanced.trailLength, 0) > 0
 
   if (active && wantsTrail) {
     const speed = Math.max(1, emitter.speed * 0.9)
@@ -589,8 +590,8 @@ function updateDecalMesh(runtime: EmitterRuntime, active: boolean, localTime: nu
   if (!decal || !material) return
   const emitter = runtime.emitter
   const advanced = emitter as AdvancedEmitter
-  const shape = advanced.shape ?? emitter.shape
-  const wants = shape === 'groundCircle' || Boolean(advanced.groundDecal) || styleNeedsGround(advanced.style ?? emitter.style)
+  const shape = advanced.shape
+  const wants = shape === 'groundCircle' || Boolean(advanced.groundDecal) || styleNeedsGround(advanced.style)
   const lingerTime = emitter.duration + num(advanced.zoneLinger, 0.8)
   const linger = localTime >= 0 && localTime <= lingerTime
   if (!wants || (!linger && !active)) {
@@ -612,8 +613,8 @@ function updateZoneMesh(runtime: EmitterRuntime, active: boolean, localTime: num
   if (!zone || !material) return
   const emitter = runtime.emitter
   const advanced = emitter as AdvancedEmitter
-  const shape = advanced.shape ?? emitter.shape
-  const style = advanced.style ?? emitter.style
+  const shape = advanced.shape
+  const style = advanced.style
   const linger = num(advanced.zoneLinger, styleNeedsGround(style) ? 1.4 : 0.7)
   const valid = shape === 'groundCircle' || styleNeedsGround(style) || num(advanced.zonePulse, 0) > 0
   const total = emitter.duration + linger
@@ -637,7 +638,7 @@ function updateHaloMesh(runtime: EmitterRuntime, active: boolean, localTime: num
   if (!halo || !material) return
   const emitter = runtime.emitter
   const advanced = emitter as AdvancedEmitter
-  const style = advanced.style ?? emitter.style
+  const style = advanced.style
   const distortion = num(advanced.distortionStrength, style === 'flare' || style === 'shockwave' ? 0.8 : 0)
   if (!active || distortion <= 0) {
     halo.visible = false
@@ -677,8 +678,8 @@ function updateLightning(runtime: EmitterRuntime, active: boolean, localTime: nu
   if (!line || !material) return
   const emitter = runtime.emitter
   const advanced = emitter as AdvancedEmitter
-  const style = advanced.style ?? emitter.style
-  const wants = (style === 'streak' || style === 'spark' || style === 'shockwave') && (emitter.shape === 'line' || num(advanced.lightningBranches, 0) > 0 || num(advanced.turbulence, 0) > 1.2)
+  const style = advanced.style
+  const wants = (style === 'streak' || style === 'spark' || style === 'shockwave') && (advanced.shape === 'line' || num(advanced.lightningBranches, 0) > 0 || num(advanced.turbulence, 0) > 1.2)
   if (!active || !wants) {
     line.visible = false
     return
@@ -725,7 +726,7 @@ function spawn(runtime: EmitterRuntime) {
   const max = (runtime.positions.length / 3) | 0
   if (runtime.particles.length >= max) runtime.particles.shift()
   const p = new THREE.Vector3(...emitter.position)
-  const shape = (advanced.shape ?? emitter.shape) as AdvancedShape
+  const shape = advanced.shape
   const spawnRadius = num(advanced.spawnRadius, 1)
   const innerRadius = num(advanced.innerRadius, 0)
 
