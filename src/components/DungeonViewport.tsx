@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react
 import DungeonViewportCore, { type DungeonTool, type ResizeSide } from './DungeonViewportCore'
 import type { DungeonTheme } from '../lib/dungeonPackage'
 import type { DungeonWithProps } from '../lib/dungeonProps'
+import { withCryptRuntimeCollision } from '../lib/cryptCollision'
 
 export type { DungeonTool, ResizeSide }
 
@@ -32,11 +33,16 @@ export default function DungeonViewport(props: CoreProps) {
   }, [])
 
   const value = useMemo(() => {
-    if (!interactionLod || props.value.theme !== 'crypt' || props.playtest) return props.value
-    // During editor manipulation, keep the real room/corridor geometry and Crypt palette,
-    // but skip the expensive procedural Crypt dressing/surface layers. dungeonAtmosphere()
-    // normalizes this internal alias back to the Crypt palette.
-    return { ...props.value, theme: 'crypt-interaction' as DungeonTheme } as DungeonWithProps
+    let next = props.value
+    if (interactionLod && props.value.theme === 'crypt' && !props.playtest) {
+      // During editor manipulation, keep real geometry and the Crypt palette but
+      // skip expensive procedural dressing. Full detail returns after the drag.
+      next = { ...props.value, theme: 'crypt-interaction' as DungeonTheme } as DungeonWithProps
+    }
+    // Runtime-only hidden collision proxies mirror major Crypt architecture/dressing.
+    // They never touch the authored package and sit far below the rendered floor.
+    if (props.playtest && props.value.theme === 'crypt') next = withCryptRuntimeCollision(next)
+    return next
   }, [interactionLod, props.value, props.playtest])
 
   const wrapped: CoreProps = {
