@@ -63,6 +63,15 @@ export type DungeonValidation = {
   reachableRoomIds: Set<string>
 }
 
+export type DungeonConnection = {
+  side: 'north' | 'south' | 'east' | 'west'
+  offset: number
+  x: number
+  z: number
+  yaw: number
+  openingWidth: number
+}
+
 export function createStarterDungeon(): ForgeDungeonPackage {
   const now = new Date().toISOString()
   const entrance = room('Entrance', 'entrance', -8, 0, 7, 7)
@@ -168,6 +177,37 @@ export function validateDungeon(value: ForgeDungeonPackage): DungeonValidation {
   return { ok: warnings.length === 0, warnings, reachableRoomIds: reachable }
 }
 
+export function getRoomConnection(roomValue: DungeonRoom, target: DungeonRoom, corridorWidth = 2.4): DungeonConnection {
+  const angle = roomValue.rotation * Math.PI / 180
+  const dx = target.x - roomValue.x
+  const dz = target.z - roomValue.z
+  const localX = dx * Math.cos(angle) - dz * Math.sin(angle)
+  const localZ = dx * Math.sin(angle) + dz * Math.cos(angle)
+  const openingWidth = Math.max(1.4, corridorWidth + 0.18)
+  const margin = 0.35
+
+  let side: DungeonConnection['side']
+  let lx = 0
+  let lz = 0
+  let offset = 0
+  if (Math.abs(localX) >= Math.abs(localZ)) {
+    side = localX >= 0 ? 'east' : 'west'
+    offset = clamp(localZ, -roomValue.depth / 2 + openingWidth / 2 + margin, roomValue.depth / 2 - openingWidth / 2 - margin)
+    lx = (side === 'east' ? 1 : -1) * roomValue.width / 2
+    lz = offset
+  } else {
+    side = localZ >= 0 ? 'south' : 'north'
+    offset = clamp(localX, -roomValue.width / 2 + openingWidth / 2 + margin, roomValue.width / 2 - openingWidth / 2 - margin)
+    lx = offset
+    lz = (side === 'south' ? 1 : -1) * roomValue.depth / 2
+  }
+
+  const x = roomValue.x + lx * Math.cos(angle) + lz * Math.sin(angle)
+  const z = roomValue.z - lx * Math.sin(angle) + lz * Math.cos(angle)
+  const yaw = normalizeDegrees(roomValue.rotation + (side === 'north' || side === 'south' ? 90 : 0))
+  return { side, offset, x, z, yaw, openingWidth }
+}
+
 export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme: DungeonTheme = 'crypt'): ForgeDungeonPackage {
   const random = mulberry32(seed)
   const now = new Date().toISOString()
@@ -220,6 +260,11 @@ export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme
   }
 }
 
+function clamp(value: number, min: number, max: number) {
+  if (min > max) return 0
+  return Math.max(min, Math.min(max, value))
+}
+function normalizeDegrees(value: number) { return ((value % 360) + 360) % 360 }
 function snap(value: number) { return Math.round(value) }
 function titleCase(value: string) { return value.charAt(0).toUpperCase() + value.slice(1) }
 
