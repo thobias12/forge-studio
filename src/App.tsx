@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Home, Layers3, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles } from 'lucide-react'
+import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Home, Layers3, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
@@ -10,6 +10,7 @@ import TextureLab from './pages/TextureLab'
 import GamePreview from './pages/GamePreview'
 import AudioStudioWorkspace from './pages/AudioStudioWorkspace'
 import VfxStudio from './pages/VfxStudio'
+import MapStudio from './pages/MapStudio'
 import Capture from './pages/Capture'
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { FORGE_VERSION } from './version'
@@ -18,7 +19,7 @@ import './retarget.css'
 import './texture-v071.css'
 import './character.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'preview' | 'assets'
+type Page = 'home' | 'mocap' | 'models' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
@@ -29,6 +30,7 @@ const nav = [
   { id: 'textures' as const, label: 'Textures', icon: Layers3 },
   { id: 'audio' as const, label: 'Voice & Audio', icon: AudioLines },
   { id: 'vfx' as const, label: 'VFX Studio', icon: WandSparkles },
+  { id: 'maps' as const, label: 'Map Studio', icon: MapPinned },
   { id: 'preview' as const, label: 'Game Preview', icon: Gamepad2 },
   { id: 'assets' as const, label: 'Asset Library', icon: Boxes },
 ]
@@ -78,6 +80,7 @@ export default function App() {
           {page === 'textures' && <TextureLab />}
           {page === 'audio' && <AudioStudioWorkspace />}
           {page === 'vfx' && <VfxStudio />}
+          {page === 'maps' && <MapStudio />}
           {page === 'preview' && <GamePreview />}
           {page === 'assets' && <AssetLibrary />}
         </div>
