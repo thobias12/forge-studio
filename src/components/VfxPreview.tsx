@@ -8,77 +8,888 @@ import type { ForgeVfxEmitter, ForgeVfxPackage } from '../lib/vfxPackage'
 
 export type VfxPreviewHandle = { restart: () => void; frame: () => void }
 type Props = { value: ForgeVfxPackage; playing: boolean; showGrid: boolean; background: 'studio' | 'dark' | 'outdoor' }
-type AdvancedEmitter = Omit<ForgeVfxEmitter,'shape'|'style'> & {
-  shape:string; style:string; spawnRadius?:number; innerRadius?:number; lineLength?:number; arcDeg?:number; spiralTurns?:number;
-  radialAccel?:number; inwardAccel?:number; orbitStrength?:number; turbulence?:number; sizeRandom?:number; alphaRandom?:number; delay?:number;
-  bloomBoost?:number; shakeStrength?:number; beamWidth?:number; groundDecal?:boolean; decalSize?:number; decalOpacity?:number;
-}
-type Particle={position:THREE.Vector3;velocity:THREE.Vector3;age:number;life:number;sizeScale:number;alphaScale:number}
-type Runtime={emitter:ForgeVfxEmitter;points:THREE.Points;material:THREE.ShaderMaterial;particles:Particle[];accumulator:number;elapsed:number;burstDone:boolean;positions:Float32Array;colors:Float32Array;sizes:Float32Array;alphas:Float32Array;beam?:THREE.Mesh;beamMat?:THREE.MeshBasicMaterial;trail?:THREE.Mesh;trailMat?:THREE.MeshBasicMaterial;decal?:THREE.Mesh;decalMat?:THREE.MeshBasicMaterial}
-type State={renderer?:THREE.WebGLRenderer;composer?:EffectComposer;bloom?:UnrealBloomPass;scene?:THREE.Scene;camera?:THREE.PerspectiveCamera;orbit?:OrbitControls;grid?:THREE.GridHelper;floor?:THREE.Mesh;runtimes:Runtime[];last:number;elapsed:number;shake:number}
-const UP=new THREE.Vector3(0,1,0)
-let SPRITE_ATLAS:THREE.CanvasTexture|undefined
 
-const VfxPreview=forwardRef<VfxPreviewHandle,Props>(function VfxPreview({value,playing,showGrid,background},ref){
-  const hostRef=useRef<HTMLDivElement>(null),playingRef=useRef(playing),valueRef=useRef(value)
-  const state=useRef<State>({runtimes:[],last:0,elapsed:0,shake:0})
-  useEffect(()=>{playingRef.current=playing},[playing]);useEffect(()=>{valueRef.current=value},[value])
-  const reset=()=>{const s=state.current;s.elapsed=0;s.shake=0;for(const r of s.runtimes){r.particles=[];r.accumulator=0;r.elapsed=0;r.burstDone=false;r.points.visible=r.emitter.enabled;if(r.beam)r.beam.visible=false;if(r.trail)r.trail.visible=false;if(r.decal)r.decal.visible=false;clearAttributes(r)}}
-  useImperativeHandle(ref,()=>({restart:reset,frame:()=>state.current.orbit?.update()}))
-  useEffect(()=>{const host=hostRef.current;if(!host)return;const s=state.current,scene=new THREE.Scene();s.scene=scene
-    const camera=new THREE.PerspectiveCamera(48,1,.01,140);camera.position.set(7.4,4.5,8.4);s.camera=camera
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;host.appendChild(renderer.domElement);s.renderer=renderer
-    const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),1.25,.7,.16);composer.addPass(bloom);s.composer=composer;s.bloom=bloom
-    const orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;orbit.target.set(0,1.35,0);orbit.update();s.orbit=orbit
-    scene.add(new THREE.HemisphereLight(0xbfd8ff,0x26313c,1.6));const key=new THREE.DirectionalLight(0xffffff,2.5);key.position.set(4,6,3);key.castShadow=true;scene.add(key)
-    const grid=new THREE.GridHelper(18,36,0x3c5267,0x1a2733);scene.add(grid);s.grid=grid
-    const floor=new THREE.Mesh(new THREE.PlaneGeometry(18,18),new THREE.MeshStandardMaterial({color:0x111922,roughness:1}));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);s.floor=floor
-    const origin=new THREE.Mesh(new THREE.SphereGeometry(.06,14,10),new THREE.MeshStandardMaterial({color:0x7fb6de,emissive:0x284d6d,emissiveIntensity:1.2}));origin.position.y=.06;scene.add(origin)
-    const resize=()=>{const rect=host.getBoundingClientRect();if(!rect.width||!rect.height)return;renderer.setSize(rect.width,rect.height,false);composer.setSize(rect.width,rect.height);camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix()};resize();const ro=new ResizeObserver(resize);ro.observe(host)
-    let raf=0;const tick=(now:number)=>{const dt=s.last?Math.min(.05,(now-s.last)/1000):0;s.last=now;orbit.update();if(playingRef.current)updateSimulation(s,dt,valueRef.current);const base=camera.position.clone();applyShake(s,camera,base);composer.render();camera.position.copy(base);raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)
-    return()=>{cancelAnimationFrame(raf);ro.disconnect();disposeRuntimes(s);orbit.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();s.last=0}
-  },[])
-  useEffect(()=>{const s=state.current;if(!s.scene)return;disposeRuntimes(s);s.runtimes=value.emitters.map(e=>createRuntime(e,s.scene!));reset()},[JSON.stringify(value.emitters)])
-  useEffect(()=>{const s=state.current;if(s.grid)s.grid.visible=showGrid;if(s.floor)s.floor.visible=showGrid},[showGrid])
-  useEffect(()=>{const scene=state.current.scene;if(scene)scene.background=new THREE.Color(background==='dark'?0x030508:background==='outdoor'?0x263847:0x0a1017)},[background])
-  return <div ref={hostRef} className="vfx-preview-canvas"/>
+type AdvancedShape = ForgeVfxEmitter['shape'] | 'ring' | 'shell' | 'arc' | 'line' | 'spiral' | 'vortex' | 'groundCircle'
+type AdvancedStyle = ForgeVfxEmitter['style'] | 'streak' | 'flare' | 'smoke' | 'rune' | 'shockwave' | 'ember' | 'mist'
+type AdvancedEmitter = ForgeVfxEmitter & {
+  shape?: AdvancedShape
+  style?: AdvancedStyle
+  radialAccel?: number
+  inwardAccel?: number
+  orbitStrength?: number
+  turbulence?: number
+  delay?: number
+  spawnRadius?: number
+  innerRadius?: number
+  lineLength?: number
+  arcDeg?: number
+  spiralTurns?: number
+  bloomBoost?: number
+  shakeStrength?: number
+  beamLength?: number
+  beamWidth?: number
+  trailLength?: number
+  trailRadius?: number
+  groundDecal?: boolean
+  decalSize?: number
+  decalOpacity?: number
+  zoneLinger?: number
+  zonePulse?: number
+  lightIntensity?: number
+  lightRange?: number
+  lightColor?: string
+  distortionStrength?: number
+  lightningBranches?: number
+  lightningJitter?: number
+}
+
+type Particle = { position: THREE.Vector3; velocity: THREE.Vector3; age: number; life: number; spin: number }
+type EmitterRuntime = {
+  emitter: ForgeVfxEmitter
+  points: THREE.Points
+  particleMaterial: THREE.ShaderMaterial
+  particles: Particle[]
+  accumulator: number
+  elapsed: number
+  burstDone: boolean
+  positions: Float32Array
+  colors: Float32Array
+  sizes: Float32Array
+  alphas: Float32Array
+  beam?: THREE.Mesh
+  beamMaterial?: THREE.MeshBasicMaterial
+  trail?: THREE.Mesh
+  trailMaterial?: THREE.MeshBasicMaterial
+  trailHead: THREE.Vector3
+  trailPoints: THREE.Vector3[]
+  decal?: THREE.Mesh
+  decalMaterial?: THREE.MeshBasicMaterial
+  zone?: THREE.Mesh
+  zoneMaterial?: THREE.MeshBasicMaterial
+  halo?: THREE.Mesh
+  haloMaterial?: THREE.MeshBasicMaterial
+  light?: THREE.PointLight
+  lightning?: THREE.LineSegments
+  lightningMaterial?: THREE.LineBasicMaterial
+}
+
+type PreviewState = {
+  renderer?: THREE.WebGLRenderer
+  composer?: EffectComposer
+  bloom?: UnrealBloomPass
+  scene?: THREE.Scene
+  camera?: THREE.PerspectiveCamera
+  orbit?: OrbitControls
+  grid?: THREE.GridHelper
+  floor?: THREE.Mesh
+  runtimes: EmitterRuntime[]
+  last: number
+  elapsed: number
+  shake: number
+}
+
+const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
+const VfxPreview = forwardRef<VfxPreviewHandle, Props>(function VfxPreview({ value, playing, showGrid, background }, ref) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const playingRef = useRef(playing)
+  const valueRef = useRef(value)
+  const state = useRef<PreviewState>({ runtimes: [], last: 0, elapsed: 0, shake: 0 })
+
+  useEffect(() => { playingRef.current = playing }, [playing])
+  useEffect(() => { valueRef.current = value }, [value])
+
+  const resetRuntimes = () => {
+    const s = state.current
+    s.elapsed = 0
+    s.shake = 0
+    for (const runtime of s.runtimes) {
+      runtime.particles = []
+      runtime.accumulator = 0
+      runtime.elapsed = 0
+      runtime.burstDone = false
+      runtime.points.visible = runtime.emitter.enabled
+      runtime.trailHead.copy(new THREE.Vector3(...runtime.emitter.position))
+      runtime.trailPoints = []
+      if (runtime.beam) runtime.beam.visible = false
+      if (runtime.trail) runtime.trail.visible = false
+      if (runtime.decal) runtime.decal.visible = false
+      if (runtime.zone) runtime.zone.visible = false
+      if (runtime.halo) runtime.halo.visible = false
+      if (runtime.light) runtime.light.intensity = 0
+      if (runtime.lightning) runtime.lightning.visible = false
+      clearAttributes(runtime)
+    }
+  }
+
+  useImperativeHandle(ref, () => ({ restart: resetRuntimes, frame: () => state.current.orbit?.update() }))
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const s = state.current
+    const scene = new THREE.Scene()
+    s.scene = scene
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 120)
+    camera.position.set(6.4, 3.5, 7.2)
+    s.camera = camera
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.08
+    renderer.shadowMap.enabled = true
+    host.appendChild(renderer.domElement)
+    s.renderer = renderer
+
+    const composer = new EffectComposer(renderer)
+    composer.addPass(new RenderPass(scene, camera))
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 1.35, 0.8, 0.18)
+    composer.addPass(bloom)
+    s.composer = composer
+    s.bloom = bloom
+
+    const orbit = new OrbitControls(camera, renderer.domElement)
+    orbit.enableDamping = true
+    orbit.target.set(0, 1.1, 0)
+    orbit.update()
+    s.orbit = orbit
+
+    scene.add(new THREE.HemisphereLight(0xc7deff, 0x25303b, 1.75))
+    const key = new THREE.DirectionalLight(0xffffff, 2.9)
+    key.position.set(5, 7, 4)
+    key.castShadow = true
+    scene.add(key)
+
+    const grid = new THREE.GridHelper(18, 36, 0x455e73, 0x1c2833)
+    scene.add(grid)
+    s.grid = grid
+
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), new THREE.MeshStandardMaterial({ color: 0x111922, roughness: 1 }))
+    floor.rotation.x = -Math.PI / 2
+    floor.receiveShadow = true
+    scene.add(floor)
+    s.floor = floor
+
+    const origin = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 10), new THREE.MeshStandardMaterial({ color: 0x7fb6de, emissive: 0x284d6d, emissiveIntensity: 1.2 }))
+    origin.position.y = 0.06
+    scene.add(origin)
+
+    const resize = () => {
+      const rect = host.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      renderer.setSize(rect.width, rect.height, false)
+      composer.setSize(rect.width, rect.height)
+      bloom.setSize(rect.width, rect.height)
+      camera.aspect = rect.width / rect.height
+      camera.updateProjectionMatrix()
+    }
+    resize()
+    const ro = new ResizeObserver(resize)
+    ro.observe(host)
+
+    let raf = 0
+    const tick = (now: number) => {
+      const dt = s.last ? Math.min(0.05, (now - s.last) / 1000) : 0
+      s.last = now
+      orbit.update()
+      if (playingRef.current) updateSimulation(s, dt, valueRef.current)
+      const baseCamera = camera.position.clone()
+      applyCameraShake(s, camera, baseCamera)
+      composer.render()
+      camera.position.copy(baseCamera)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      disposeRuntimes(s)
+      orbit.dispose()
+      composer.dispose()
+      renderer.dispose()
+      renderer.domElement.remove()
+      s.last = 0
+    }
+  }, [])
+
+  useEffect(() => {
+    const s = state.current
+    if (!s.scene) return
+    disposeRuntimes(s)
+    s.runtimes = value.emitters.map((emitter) => createRuntime(emitter, s.scene!))
+    resetRuntimes()
+  }, [JSON.stringify(value.emitters)])
+
+  useEffect(() => {
+    const s = state.current
+    if (s.grid) s.grid.visible = showGrid
+    if (s.floor) s.floor.visible = showGrid
+  }, [showGrid])
+
+  useEffect(() => {
+    const scene = state.current.scene
+    if (!scene) return
+    scene.background = new THREE.Color(background === 'dark' ? 0x030508 : background === 'outdoor' ? 0x263847 : 0x0a1017)
+  }, [background])
+
+  return <div ref={hostRef} className="vfx-preview-canvas" />
 })
 
-function styleValue(style:string){return style==='soft'?0:style==='spark'?1:style==='square'?2:style==='ring'?3:style==='diamond'?4:style==='star'?5:style==='streak'?6:style==='flare'?7:style==='smoke'?8:style==='rune'?9:style==='shockwave'?10:style==='ember'?11:style==='mist'?12:7}
-function createRuntime(emitter:ForgeVfxEmitter,scene:THREE.Scene):Runtime{const e=emitter as AdvancedEmitter,max=Math.max(8,Math.min(2000,Math.round(e.maxParticles))),positions=new Float32Array(max*3),colors=new Float32Array(max*3),sizes=new Float32Array(max),alphas=new Float32Array(max)
-  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3).setUsage(THREE.DynamicDrawUsage));geometry.setAttribute('aColor',new THREE.BufferAttribute(colors,3).setUsage(THREE.DynamicDrawUsage));geometry.setAttribute('aSize',new THREE.BufferAttribute(sizes,1).setUsage(THREE.DynamicDrawUsage));geometry.setAttribute('aAlpha',new THREE.BufferAttribute(alphas,1).setUsage(THREE.DynamicDrawUsage));geometry.setDrawRange(0,0)
-  const material=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:e.blendMode==='additive'?THREE.AdditiveBlending:THREE.NormalBlending,vertexColors:true,uniforms:{uPixelRatio:{value:Math.min(devicePixelRatio,2)},uStyle:{value:styleValue(e.style)},uBoost:{value:e.bloomBoost??0},uTime:{value:0},uSprite:{value:getSpriteAtlas()}},vertexShader:`attribute vec3 aColor;attribute float aSize;attribute float aAlpha;varying vec3 vColor;varying float vAlpha;uniform float uPixelRatio;void main(){vColor=aColor;vAlpha=aAlpha;vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=max(1.,aSize*uPixelRatio*(360./max(.2,-mv.z)));gl_Position=projectionMatrix*mv;}`,fragmentShader:`varying vec3 vColor;varying float vAlpha;uniform float uStyle;uniform float uBoost;uniform float uTime;uniform sampler2D uSprite;void main(){vec2 p=gl_PointCoord*2.-1.;float r=length(p),a=1.;if(uStyle<.5)a=1.-smoothstep(.12,1.,r);else if(uStyle<1.5)a=1.-smoothstep(0.,1.,abs(p.x)+abs(p.y)*.28);else if(uStyle<2.5)a=step(max(abs(p.x),abs(p.y)),1.);else if(uStyle<3.5)a=1.-smoothstep(.035,.18,abs(r-.62));else if(uStyle<4.5)a=1.-smoothstep(.68,1.,abs(p.x)+abs(p.y));else if(uStyle<5.5){float ax=min(abs(p.x),abs(p.y)),dg=min(abs(p.x+p.y),abs(p.x-p.y))*.7071;a=(1.-smoothstep(.055,.23,min(ax,dg)))*(1.-smoothstep(.52,1.05,r));}else if(uStyle<6.5)a=(1.-smoothstep(.08,.42,abs(p.x)))*(1.-smoothstep(.15,1.,abs(p.y)));else if(uStyle<7.5){float core=1.-smoothstep(0.,.38,r),halo=(1.-smoothstep(.1,1.,r))*.55,cross=(1.-smoothstep(0.,.09,min(abs(p.x),abs(p.y))))*(1.-smoothstep(.25,1.,r));a=max(core,halo+cross*.75);}else if(uStyle<8.5)a=(1.-smoothstep(.05,1.,r))*.72;else if(uStyle<9.5){float ring=1.-smoothstep(.03,.12,abs(r-.58)),cross=1.-smoothstep(.02,.08,min(abs(p.x),abs(p.y)));a=max(ring,cross*(1.-smoothstep(.45,.9,r)));}else if(uStyle<10.5)a=1.-smoothstep(.018,.09,abs(r-.72));else if(uStyle<11.5)a=max((1.-smoothstep(0.,.5,r))*.8,1.-smoothstep(0.,.45,abs(p.x)+abs(p.y)*.2));else a=(1.-smoothstep(0.,1.,r))*.45;if(uStyle>7.5&&uStyle<9.5||uStyle>11.5){float f=mod(floor(uTime*10.),16.);vec2 cell=vec2(mod(f,4.),floor(f/4.));vec2 uv=(gl_PointCoord+cell)/4.;a*=mix(.55,1.,texture2D(uSprite,uv).r);}if(a<.01)discard;gl_FragColor=vec4(vColor*(1.+uBoost*.45),vAlpha*a);}`})
-  const points=new THREE.Points(geometry,material);points.frustumCulled=false;scene.add(points);const r:Runtime={emitter,points,material,particles:[],accumulator:0,elapsed:0,burstDone:false,positions,colors,sizes,alphas}
-  if(e.shape==='line'&&['flare','streak','shockwave'].includes(e.style)){const mat=new THREE.MeshBasicMaterial({color:e.startColor,transparent:true,opacity:.8,blending:THREE.AdditiveBlending,depthWrite:false}),mesh=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,12,1,true),mat);mesh.visible=false;scene.add(mesh);r.beam=mesh;r.beamMat=mat}
-  if(e.shape==='spiral'||e.shape==='vortex'){const radius=Math.max(.3,e.spawnRadius??1.5),turns=e.spiralTurns??3,pts:Array<THREE.Vector3>=[];for(let i=0;i<40;i++){const t=i/39,a=t*Math.PI*2*turns,rr=e.shape==='vortex'?radius*(1-t*.7):radius*(.2+.8*t);pts.push(new THREE.Vector3(Math.cos(a)*rr,t*2.6,Math.sin(a)*rr))}const curve=new THREE.CatmullRomCurve3(pts),mat=new THREE.MeshBasicMaterial({color:e.startColor,transparent:true,opacity:.42,blending:THREE.AdditiveBlending,depthWrite:false}),mesh=new THREE.Mesh(new THREE.TubeGeometry(curve,80,.045,6,false),mat);mesh.position.set(...e.position);mesh.visible=false;scene.add(mesh);r.trail=mesh;r.trailMat=mat}
-  if(e.shape==='groundCircle'){const tex=makeDecalTexture(),mat=new THREE.MeshBasicMaterial({map:tex,color:e.endColor,transparent:true,opacity:e.decalOpacity??.42,depthWrite:false,blending:THREE.NormalBlending}),mesh=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat);mesh.rotation.x=-Math.PI/2;mesh.position.set(e.position[0],.018,e.position[2]);mesh.visible=false;scene.add(mesh);r.decal=mesh;r.decalMat=mat}
-  return r}
+function createRuntime(emitter: ForgeVfxEmitter, scene: THREE.Scene): EmitterRuntime {
+  const advanced = emitter as AdvancedEmitter
+  const max = Math.max(8, Math.min(2200, Math.round(emitter.maxParticles)))
+  const positions = new Float32Array(max * 3)
+  const colors = new Float32Array(max * 3)
+  const sizes = new Float32Array(max)
+  const alphas = new Float32Array(max)
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage))
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage))
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage))
+  geometry.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1).setUsage(THREE.DynamicDrawUsage))
+  geometry.setDrawRange(0, 0)
 
-function updateSimulation(s:State,dt:number,pkg:ForgeVfxPackage){s.elapsed+=dt;if(!pkg.looping&&s.elapsed>pkg.duration+.8)return;if(pkg.looping&&s.elapsed>Math.max(.1,pkg.duration)){s.elapsed=0;for(const r of s.runtimes){r.burstDone=false;r.elapsed=0}}
-  let bloom=1.15,shake=0;for(const r of s.runtimes){r.material.uniforms.uTime.value+=dt;const e=r.emitter as AdvancedEmitter;if(!e.enabled){r.points.visible=false;hideExtras(r);continue}r.points.visible=true;r.elapsed+=dt;const delay=Math.max(0,e.delay??0),t=r.elapsed-delay,active=t>=0&&(e.looping||t<=Math.max(.05,e.duration));updateExtras(r,active,t,dt)
-    if(t>=0&&active&&!r.burstDone&&e.burst>0){for(let i=0;i<e.burst;i++)spawn(r);r.burstDone=true}if(t>=0&&active&&e.spawnRate>0){r.accumulator+=dt*e.spawnRate;while(r.accumulator>=1){spawn(r);r.accumulator-=1}}
-    const center=new THREE.Vector3(...e.position);for(let i=r.particles.length-1;i>=0;i--){const p=r.particles[i];p.age+=dt;if(p.age>=p.life){r.particles.splice(i,1);continue}const off=p.position.clone().sub(center);if(off.lengthSq()>.0001){const radial=e.radialAccel??0;if(radial)p.velocity.addScaledVector(off.clone().normalize(),radial*dt);const inward=e.inwardAccel??0;if(inward)p.velocity.addScaledVector(off.clone().normalize(),-inward*dt);const orbit=e.orbitStrength??0;if(orbit){const tangent=new THREE.Vector3(-off.z,0,off.x);if(tangent.lengthSq()>.0001)p.velocity.addScaledVector(tangent.normalize(),orbit*dt)}}const turb=e.turbulence??0;if(turb){p.velocity.x+=(Math.random()*2-1)*turb*dt;p.velocity.y+=(Math.random()*2-1)*turb*dt;p.velocity.z+=(Math.random()*2-1)*turb*dt}const drag=Math.max(0,1-e.drag*dt);p.velocity.x=(p.velocity.x+e.gravity[0]*dt)*drag;p.velocity.y=(p.velocity.y+e.gravity[1]*dt)*drag;p.velocity.z=(p.velocity.z+e.gravity[2]*dt)*drag;p.position.addScaledVector(p.velocity,dt)}writeAttributes(r)
-    if(active){bloom=Math.max(bloom,1.15+(e.bloomBoost??inferBloom(e))*.35);if(!e.looping&&t<.32)shake=Math.max(shake,e.shakeStrength??inferShake(e))}}
-  s.shake=THREE.MathUtils.lerp(s.shake,shake,.18);if(s.bloom)s.bloom.strength=THREE.MathUtils.lerp(s.bloom.strength,bloom,.1)}
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: emitter.blendMode === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
+    vertexColors: true,
+    uniforms: {
+      uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
+      uStyle: { value: styleIndex(advanced.style ?? emitter.style) },
+      uBloomBoost: { value: num(advanced.bloomBoost, 0) },
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aSize;
+      attribute float aAlpha;
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform float uPixelRatio;
+      void main() {
+        vColor = aColor;
+        vAlpha = aAlpha;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = max(1.0, aSize * uPixelRatio * (340.0 / max(0.2, -mv.z)));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform float uStyle;
+      uniform float uBloomBoost;
+      float circle(vec2 p, float r) { return 1.0 - smoothstep(r - 0.12, r + 0.12, length(p)); }
+      float noise(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+      void main() {
+        vec2 p = gl_PointCoord * 2.0 - 1.0;
+        float a = 1.0;
+        if (uStyle < 0.5) {
+          a = 1.0 - smoothstep(0.15, 1.0, length(p));
+        } else if (uStyle < 1.5) {
+          a = 1.0 - smoothstep(0.0, 1.0, abs(p.x) + abs(p.y) * 0.32);
+        } else if (uStyle < 2.5) {
+          a = step(max(abs(p.x), abs(p.y)), 1.0);
+        } else if (uStyle < 3.5) {
+          a = 1.0 - smoothstep(0.035, 0.18, abs(length(p) - 0.62));
+        } else if (uStyle < 4.5) {
+          a = 1.0 - smoothstep(0.68, 1.0, abs(p.x) + abs(p.y));
+        } else if (uStyle < 5.5) {
+          float axis = min(abs(p.x), abs(p.y));
+          float diag = min(abs(p.x + p.y), abs(p.x - p.y)) * 0.7071;
+          float rays = 1.0 - smoothstep(0.055, 0.23, min(axis, diag));
+          float fade = 1.0 - smoothstep(0.52, 1.05, length(p));
+          a = rays * fade;
+        } else if (uStyle < 6.5) {
+          vec2 q = vec2(p.x * 0.35, p.y);
+          a = (1.0 - smoothstep(0.0, 1.05, length(q))) * (1.0 - smoothstep(0.45, 1.0, abs(p.y)));
+        } else if (uStyle < 7.5) {
+          float core = 1.0 - smoothstep(0.0, 0.55, length(p));
+          float halo = 1.0 - smoothstep(0.2, 1.1, length(p));
+          a = max(core, halo * 0.65);
+        } else if (uStyle < 8.5) {
+          float smoke = 1.0 - smoothstep(0.15, 1.1, length(vec2(p.x * 0.92, p.y * 1.08)));
+          a = smoke * (0.48 + 0.22 * noise(p * 4.0));
+        } else if (uStyle < 9.5) {
+          float outer = 1.0 - smoothstep(0.56, 0.76, length(p));
+          float inner = smoothstep(0.18, 0.26, length(p));
+          float cross = 1.0 - smoothstep(0.05, 0.11, min(abs(p.x), abs(p.y)));
+          a = max(outer * inner, cross * 0.35);
+        } else if (uStyle < 10.5) {
+          a = circle(p, 0.78) * (1.0 - smoothstep(0.0, 0.48, length(p)) * 0.6);
+        } else if (uStyle < 11.5) {
+          float hot = 1.0 - smoothstep(0.0, 0.32, length(p));
+          float shell = 1.0 - smoothstep(0.1, 0.9, length(p));
+          a = max(hot, shell * 0.65);
+        } else if (uStyle < 12.5) {
+          a = (1.0 - smoothstep(0.1, 1.12, length(p))) * 0.75;
+        } else {
+          a = 1.0 - smoothstep(0.15, 1.0, length(p));
+        }
+        if (a < 0.01) discard;
+        vec3 boosted = vColor * (1.0 + uBloomBoost * 0.55);
+        gl_FragColor = vec4(boosted, vAlpha * max(0.0, a));
+      }
+    `,
+  })
+  const points = new THREE.Points(geometry, material)
+  points.frustumCulled = false
+  scene.add(points)
 
-function updateExtras(r:Runtime,active:boolean,t:number,dt:number){const e=r.emitter as AdvancedEmitter,fade=THREE.MathUtils.clamp(1-Math.max(0,t)/Math.max(.1,e.duration),0,1)
-  if(r.beam&&r.beamMat){if(!active){r.beam.visible=false}else{const dir=new THREE.Vector3(...e.direction);if(dir.lengthSq()<.0001)dir.set(0,1,0);dir.normalize();const len=Math.max(.5,e.lineLength??5),w=e.beamWidth??Math.max(.06,e.startSize*.18),pulse=.9+Math.sin(t*22)*.08;r.beam.visible=true;r.beam.position.set(...e.position).addScaledVector(dir,len*.5);r.beam.quaternion.setFromUnitVectors(UP,dir);r.beam.scale.set(w*pulse,len,w*pulse);r.beamMat.color.copy(new THREE.Color(e.startColor).lerp(new THREE.Color(e.endColor),1-fade));r.beamMat.opacity=Math.min(1,(e.startAlpha*.85+.15)*Math.max(.15,fade))}}
-  if(r.trail&&r.trailMat){r.trail.visible=active;r.trail.rotation.y+=dt*(e.orbitStrength??1.2)*.35;r.trailMat.opacity=active?.28+.28*fade:0;r.trailMat.color.copy(new THREE.Color(e.startColor).lerp(new THREE.Color(e.endColor),1-fade))}
-  if(r.decal&&r.decalMat){const linger=t>=0&&t<=e.duration+1.1;r.decal.visible=linger;if(linger){const life=THREE.MathUtils.clamp(t/Math.max(.1,e.duration+1.1),0,1),size=e.decalSize??Math.max(2,(e.spawnRadius??1)*2.4);r.decal.scale.setScalar(size*(.75+life*.32));r.decalMat.opacity=(e.decalOpacity??inferDecal(e))*(1-life)}}}
-function hideExtras(r:Runtime){if(r.beam)r.beam.visible=false;if(r.trail)r.trail.visible=false;if(r.decal)r.decal.visible=false}
+  const runtime: EmitterRuntime = { emitter, points, particleMaterial: material, particles: [], accumulator: 0, elapsed: 0, burstDone: false, positions, colors, sizes, alphas, trailHead: new THREE.Vector3(...emitter.position), trailPoints: [] }
 
-function spawn(r:Runtime){const e=r.emitter as AdvancedEmitter,max=(r.positions.length/3)|0;if(r.particles.length>=max)r.particles.shift();const p=new THREE.Vector3(...e.position),radius=Math.max(.001,e.spawnRadius??1),inner=Math.min(radius,Math.max(0,e.innerRadius??0))
-  if(e.shape==='sphere'){p.add(randomUnit().multiplyScalar(Math.cbrt(Math.random())*radius))}else if(e.shape==='shell'){p.add(randomUnit().multiplyScalar(inner+(radius-inner)*Math.sqrt(Math.random())))}else if(e.shape==='box'){p.x+=(Math.random()-.5)*e.boxSize[0];p.y+=(Math.random()-.5)*e.boxSize[1];p.z+=(Math.random()-.5)*e.boxSize[2]}else if(e.shape==='ring'||e.shape==='vortex'||e.shape==='groundCircle'){const a=Math.random()*Math.PI*2,rr=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*rr;p.z+=Math.sin(a)*rr;if(e.shape==='groundCircle')p.y+=(Math.random()-.5)*.08}else if(e.shape==='arc'){const a=(Math.random()-.5)*THREE.MathUtils.degToRad(e.arcDeg??120),rr=inner+(radius-inner)*Math.sqrt(Math.random());p.x+=Math.cos(a)*rr;p.z+=Math.sin(a)*rr}else if(e.shape==='line'){const d=new THREE.Vector3(...e.direction);if(d.lengthSq()<.0001)d.set(1,0,0);p.addScaledVector(d.normalize(),(Math.random()-.5)*(e.lineLength??2))}else if(e.shape==='spiral'){const t=Math.random(),a=t*Math.PI*2*(e.spiralTurns??2),rr=inner+(radius-inner)*t;p.x+=Math.cos(a)*rr;p.z+=Math.sin(a)*rr;p.y+=(t-.5)*radius*.5}
-  let dir=new THREE.Vector3(...e.direction);if(dir.lengthSq()<.0001)dir.set(0,1,0);dir.normalize();if(['ring','shell','groundCircle','vortex','spiral'].includes(e.shape)){const radial=p.clone().sub(new THREE.Vector3(...e.position));if(radial.lengthSq()>.0001)dir=radial.normalize()}dir.addScaledVector(randomUnit(),Math.sin(THREE.MathUtils.degToRad(e.spreadDeg*.5))*Math.random()).normalize();const speed=e.speed*(1+(Math.random()*2-1)*e.speedRandom),sizeR=Math.max(0,e.sizeRandom??0),alphaR=Math.max(0,e.alphaRandom??0);r.particles.push({position:p,velocity:dir.multiplyScalar(speed),age:0,life:Math.max(.04,e.lifetime*(1+(Math.random()*2-1)*e.lifetimeRandom)),sizeScale:Math.max(.1,1+(Math.random()*2-1)*sizeR),alphaScale:Math.max(0,1-Math.random()*alphaR)})}
-function writeAttributes(r:Runtime){const e=r.emitter,start=new THREE.Color(e.startColor),end=new THREE.Color(e.endColor),tmp=new THREE.Color(),count=Math.min(r.particles.length,r.positions.length/3);for(let i=0;i<count;i++){const p=r.particles[i],t=Math.min(1,p.age/p.life),j=i*3;r.positions[j]=p.position.x;r.positions[j+1]=p.position.y;r.positions[j+2]=p.position.z;tmp.copy(start).lerp(end,t);r.colors[j]=tmp.r;r.colors[j+1]=tmp.g;r.colors[j+2]=tmp.b;r.sizes[i]=THREE.MathUtils.lerp(e.startSize,e.endSize,t)*p.sizeScale;r.alphas[i]=THREE.MathUtils.lerp(e.startAlpha,e.endAlpha,t)*p.alphaScale}r.points.geometry.setDrawRange(0,count);for(const key of ['position','aColor','aSize','aAlpha']){const a=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;a.needsUpdate=true}}
-function clearAttributes(r:Runtime){r.points.geometry.setDrawRange(0,0);for(const key of ['position','aColor','aSize','aAlpha']){const a=r.points.geometry.getAttribute(key) as THREE.BufferAttribute;a.needsUpdate=true}}
-function inferBloom(e:AdvancedEmitter){return e.blendMode==='additive'?Math.min(2.2,.35+e.startSize+e.burst/180):.15}
-function inferShake(e:AdvancedEmitter){return Math.min(4.5,(e.burst/90)+(e.speed/10)+(e.startSize*.9))}
-function inferDecal(e:AdvancedEmitter){return e.style==='smoke'||e.style==='mist'? .46:.28}
-function applyShake(s:State,camera:THREE.PerspectiveCamera,base:THREE.Vector3){const a=Math.min(.28,s.shake*.035);if(a<.0001)return;camera.position.set(base.x+(Math.random()*2-1)*a,base.y+(Math.random()*2-1)*a*.65,base.z+(Math.random()*2-1)*a)}
+  const beamMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(emitter.startColor), transparent: true, opacity: emitter.startAlpha, blending: THREE.AdditiveBlending, depthWrite: false })
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12, 1, true), beamMaterial)
+  beam.visible = false
+  scene.add(beam)
+  runtime.beam = beam
+  runtime.beamMaterial = beamMaterial
 
-function getSpriteAtlas(){if(SPRITE_ATLAS)return SPRITE_ATLAS;const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d')!;for(let f=0;f<16;f++){const ox=(f%4)*64,oy=Math.floor(f/4)*64;x.clearRect(ox,oy,64,64);const pulse=.78+.18*Math.sin(f/16*Math.PI*2),g=x.createRadialGradient(ox+32,oy+32,3,ox+32,oy+32,30);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.35,`rgba(255,255,255,${.72*pulse})`);g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.beginPath();x.arc(ox+32,oy+32,30,0,Math.PI*2);x.fill();x.globalAlpha=.24;for(let i=0;i<8;i++){const a=(i/8)*Math.PI*2+f*.17,rr=9+(i%3)*5;x.fillStyle='white';x.beginPath();x.arc(ox+32+Math.cos(a)*rr,oy+32+Math.sin(a)*rr,4+(f+i)%5,0,Math.PI*2);x.fill()}x.globalAlpha=1}SPRITE_ATLAS=new THREE.CanvasTexture(c);SPRITE_ATLAS.colorSpace=THREE.SRGBColorSpace;SPRITE_ATLAS.wrapS=SPRITE_ATLAS.wrapT=THREE.ClampToEdgeWrapping;return SPRITE_ATLAS}
-function makeDecalTexture(){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d')!,g=x.createRadialGradient(128,128,16,128,128,120);g.addColorStop(0,'rgba(255,255,255,.9)');g.addColorStop(.38,'rgba(150,150,150,.4)');g.addColorStop(.75,'rgba(50,50,50,.16)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,256,256);x.strokeStyle='rgba(20,20,20,.55)';x.lineWidth=3;for(let i=0;i<15;i++){const a=i/15*Math.PI*2;x.beginPath();x.moveTo(128,128);x.lineTo(128+Math.cos(a)*(55+(i%4)*15),128+Math.sin(a)*(55+((i+2)%4)*15));x.stroke()}const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t}
-function randomUnit(){const z=Math.random()*2-1,a=Math.random()*Math.PI*2,r=Math.sqrt(Math.max(0,1-z*z));return new THREE.Vector3(r*Math.cos(a),z,r*Math.sin(a))}
-function disposeRuntimes(s:{scene?:THREE.Scene;runtimes:Runtime[]}){for(const r of s.runtimes){s.scene?.remove(r.points);r.points.geometry.dispose();r.material.dispose();for(const m of [r.beam,r.trail,r.decal])if(m){s.scene?.remove(m);m.geometry.dispose()}r.beamMat?.dispose();r.trailMat?.dispose();r.decalMat?.map?.dispose();r.decalMat?.dispose()}s.runtimes=[]}
+  const trailMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(emitter.startColor), transparent: true, opacity: emitter.startAlpha, blending: THREE.AdditiveBlending, depthWrite: false })
+  const trail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(new THREE.Vector3(), new THREE.Vector3(0, 0.01, 0)), 4, 0.05, 6, false), trailMaterial)
+  trail.visible = false
+  scene.add(trail)
+  runtime.trail = trail
+  runtime.trailMaterial = trailMaterial
+
+  const decalMaterial = new THREE.MeshBasicMaterial({ map: makeDecalTexture(), transparent: true, opacity: num(advanced.decalOpacity, 0.6), color: new THREE.Color(emitter.endColor), depthWrite: false, blending: THREE.NormalBlending })
+  const decal = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), decalMaterial)
+  decal.rotation.x = -Math.PI / 2
+  decal.position.y = 0.02
+  decal.visible = false
+  scene.add(decal)
+  runtime.decal = decal
+  runtime.decalMaterial = decalMaterial
+
+  const zoneMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(emitter.endColor), transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+  const zone = new THREE.Mesh(new THREE.CircleGeometry(1, 48), zoneMaterial)
+  zone.rotation.x = -Math.PI / 2
+  zone.position.y = 0.025
+  zone.visible = false
+  scene.add(zone)
+  runtime.zone = zone
+  runtime.zoneMaterial = zoneMaterial
+
+  const haloMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(emitter.startColor), transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+  const halo = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 48), haloMaterial)
+  halo.rotation.x = -Math.PI / 2
+  halo.position.y = 0.03
+  halo.visible = false
+  scene.add(halo)
+  runtime.halo = halo
+  runtime.haloMaterial = haloMaterial
+
+  const light = new THREE.PointLight(new THREE.Color(advanced.lightColor ?? emitter.startColor), 0, num(advanced.lightRange, Math.max(3, num(advanced.spawnRadius, 1.5) * 3.2)), 2)
+  light.position.set(...emitter.position)
+  scene.add(light)
+  runtime.light = light
+
+  const lightningMaterial = new THREE.LineBasicMaterial({ color: new THREE.Color(emitter.startColor), transparent: true, opacity: 0.88, depthWrite: false })
+  const lightningGeometry = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+  const lightning = new THREE.LineSegments(lightningGeometry, lightningMaterial)
+  lightning.visible = false
+  scene.add(lightning)
+  runtime.lightning = lightning
+  runtime.lightningMaterial = lightningMaterial
+
+  return runtime
+}
+
+function updateSimulation(s: PreviewState, dt: number, pkg: ForgeVfxPackage) {
+  s.elapsed += dt
+  if (!pkg.looping && s.elapsed > pkg.duration + 1.5) return
+  if (pkg.looping && s.elapsed > Math.max(0.1, pkg.duration)) {
+    s.elapsed = 0
+    for (const r of s.runtimes) {
+      r.burstDone = false
+      r.elapsed = 0
+      r.trailHead.set(...r.emitter.position)
+      r.trailPoints = []
+    }
+  }
+
+  let shakeTarget = 0
+  let bloomTarget = 1.2
+
+  for (const runtime of s.runtimes) {
+    const e = runtime.emitter
+    const advanced = e as AdvancedEmitter
+    if (!e.enabled) {
+      runtime.points.visible = false
+      hideSecondaryVisuals(runtime)
+      continue
+    }
+
+    runtime.points.visible = true
+    runtime.elapsed += dt
+    const delay = num(advanced.delay, 0)
+    const localTime = runtime.elapsed - delay
+    const activeWindow = e.looping || localTime <= Math.max(0.05, e.duration)
+    const active = localTime >= 0 && activeWindow
+
+    updateBeamMesh(runtime, active, localTime)
+    updateTrailMesh(runtime, dt, active, localTime)
+    updateDecalMesh(runtime, active, localTime)
+    updateZoneMesh(runtime, active, localTime)
+    updateHaloMesh(runtime, active, localTime)
+    updateLightning(runtime, active, localTime)
+    updateImpactLight(runtime, active, localTime)
+
+    if (localTime < 0) {
+      writeAttributes(runtime)
+      continue
+    }
+
+    if (active && !runtime.burstDone && e.burst > 0) {
+      for (let i = 0; i < e.burst; i += 1) spawn(runtime)
+      runtime.burstDone = true
+    }
+    if (active && e.spawnRate > 0) {
+      runtime.accumulator += dt * e.spawnRate
+      while (runtime.accumulator >= 1) {
+        spawn(runtime)
+        runtime.accumulator -= 1
+      }
+    }
+
+    const center = new THREE.Vector3(...e.position)
+    for (let i = runtime.particles.length - 1; i >= 0; i -= 1) {
+      const p = runtime.particles[i]
+      p.age += dt
+      if (p.age >= p.life) {
+        runtime.particles.splice(i, 1)
+        continue
+      }
+      const offset = p.position.clone().sub(center)
+      if (offset.lengthSq() > 0.0001) {
+        if (num(advanced.radialAccel, 0) !== 0) p.velocity.addScaledVector(offset.clone().normalize(), num(advanced.radialAccel, 0) * dt)
+        if (num(advanced.inwardAccel, 0) !== 0) p.velocity.addScaledVector(offset.clone().normalize(), -num(advanced.inwardAccel, 0) * dt)
+        if (num(advanced.orbitStrength, 0) !== 0) {
+          const tangent = new THREE.Vector3(-offset.z, 0, offset.x)
+          if (tangent.lengthSq() > 0.0001) p.velocity.addScaledVector(tangent.normalize(), num(advanced.orbitStrength, 0) * dt)
+        }
+      }
+      if (num(advanced.turbulence, 0) > 0) {
+        const t = num(advanced.turbulence, 0) * dt
+        p.velocity.x += (Math.random() * 2 - 1) * t
+        p.velocity.y += (Math.random() * 2 - 1) * t
+        p.velocity.z += (Math.random() * 2 - 1) * t
+      }
+      const drag = Math.max(0, 1 - e.drag * dt)
+      p.velocity.x = (p.velocity.x + e.gravity[0] * dt) * drag
+      p.velocity.y = (p.velocity.y + e.gravity[1] * dt) * drag
+      p.velocity.z = (p.velocity.z + e.gravity[2] * dt) * drag
+      p.position.addScaledVector(p.velocity, dt)
+    }
+
+    writeAttributes(runtime)
+    if (active) {
+      shakeTarget = Math.max(shakeTarget, num(advanced.shakeStrength, 0), num(advanced.lightIntensity, 0) * 0.35)
+      bloomTarget = Math.max(bloomTarget, 1.2 + num(advanced.bloomBoost, 0) * 0.38 + num(advanced.distortionStrength, 0) * 0.12)
+    }
+  }
+
+  s.shake = THREE.MathUtils.lerp(s.shake, shakeTarget, 0.12)
+  if (s.bloom) s.bloom.strength = THREE.MathUtils.lerp(s.bloom.strength, bloomTarget, 0.08)
+}
+
+function hideSecondaryVisuals(runtime: EmitterRuntime) {
+  if (runtime.beam) runtime.beam.visible = false
+  if (runtime.trail) runtime.trail.visible = false
+  if (runtime.decal) runtime.decal.visible = false
+  if (runtime.zone) runtime.zone.visible = false
+  if (runtime.halo) runtime.halo.visible = false
+  if (runtime.light) runtime.light.intensity = 0
+  if (runtime.lightning) runtime.lightning.visible = false
+}
+
+function updateBeamMesh(runtime: EmitterRuntime, active: boolean, localTime: number) {
+  const beam = runtime.beam
+  const material = runtime.beamMaterial
+  if (!beam || !material) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const style = advanced.style ?? emitter.style
+  const isBeamLike = emitter.shape === 'line' || style === 'flare' || style === 'streak' || style === 'shockwave'
+  if (!active || !isBeamLike) {
+    beam.visible = false
+    return
+  }
+  const dir = new THREE.Vector3(...emitter.direction)
+  if (dir.lengthSq() < 0.0001) dir.set(0, 1, 0)
+  dir.normalize()
+  const t = THREE.MathUtils.clamp(localTime / Math.max(0.05, emitter.duration), 0, 1)
+  const pulse = 0.82 + Math.sin(localTime * 18) * 0.12 + (1 - t) * 0.18
+  const length = num(advanced.beamLength, Math.max(2.2, num(advanced.lineLength, 4.6)))
+  const width = num(advanced.beamWidth, style === 'streak' ? 0.08 : 0.14)
+  beam.visible = emitter.shape === 'line' || num(advanced.beamLength, 0) > 0
+  beam.position.set(...emitter.position).addScaledVector(dir, length * 0.5)
+  beam.quaternion.setFromUnitVectors(Y_AXIS, dir)
+  beam.scale.set(width * pulse, length, width * pulse)
+  material.color.copy(new THREE.Color(emitter.startColor).lerp(new THREE.Color(emitter.endColor), t))
+  material.opacity = THREE.MathUtils.clamp(THREE.MathUtils.lerp(emitter.startAlpha, emitter.endAlpha, t) * (1.15 - t * 0.35), 0, 1)
+}
+
+function updateTrailMesh(runtime: EmitterRuntime, dt: number, active: boolean, localTime: number) {
+  const trail = runtime.trail
+  const material = runtime.trailMaterial
+  if (!trail || !material) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const dir = new THREE.Vector3(...emitter.direction)
+  if (dir.lengthSq() < 0.0001) dir.set(1, 0.15, 0)
+  dir.normalize()
+  const style = advanced.style ?? emitter.style
+  const wantsTrail = style === 'ember' || style === 'mist' || style === 'smoke' || emitter.shape === 'spiral' || emitter.shape === 'vortex' || num(advanced.trailLength, 0) > 0
+
+  if (active && wantsTrail) {
+    const speed = Math.max(1, emitter.speed * 0.9)
+    const step = dir.clone().multiplyScalar(speed * dt)
+    if (num(advanced.orbitStrength, 0) !== 0 && runtime.trailPoints.length > 0) {
+      const off = runtime.trailHead.clone().sub(new THREE.Vector3(...emitter.position))
+      const tangent = new THREE.Vector3(-off.z, 0, off.x)
+      if (tangent.lengthSq() > 0.0001) step.addScaledVector(tangent.normalize(), num(advanced.orbitStrength, 0) * dt * 0.25)
+    }
+    if (num(advanced.turbulence, 0) > 0) {
+      step.x += (Math.random() * 2 - 1) * num(advanced.turbulence, 0) * dt * 0.35
+      step.y += (Math.random() * 2 - 1) * num(advanced.turbulence, 0) * dt * 0.2
+      step.z += (Math.random() * 2 - 1) * num(advanced.turbulence, 0) * dt * 0.35
+    }
+    if (runtime.trailPoints.length === 0) runtime.trailHead.set(...emitter.position)
+    runtime.trailHead.add(step)
+    runtime.trailPoints.push(runtime.trailHead.clone())
+    const maxPoints = Math.max(6, Math.min(40, Math.round(num(advanced.trailLength, 18))))
+    while (runtime.trailPoints.length > maxPoints) runtime.trailPoints.shift()
+  } else if (runtime.trailPoints.length > 0) {
+    runtime.trailPoints.shift()
+  }
+
+  if (runtime.trailPoints.length < 2 || !wantsTrail) {
+    trail.visible = false
+    return
+  }
+
+  const curve = new THREE.CatmullRomCurve3(runtime.trailPoints)
+  const radius = num(advanced.trailRadius, 0.08)
+  const nextGeometry = new THREE.TubeGeometry(curve, Math.max(8, runtime.trailPoints.length * 2), radius, 6, false)
+  trail.geometry.dispose()
+  trail.geometry = nextGeometry
+  trail.visible = true
+  const t = THREE.MathUtils.clamp(Math.max(0, localTime) / Math.max(0.05, emitter.duration), 0, 1)
+  material.color.copy(new THREE.Color(emitter.startColor).lerp(new THREE.Color(emitter.endColor), t))
+  material.opacity = THREE.MathUtils.clamp(THREE.MathUtils.lerp(emitter.startAlpha, emitter.endAlpha, t) * 0.95, 0, 1)
+}
+
+function updateDecalMesh(runtime: EmitterRuntime, active: boolean, localTime: number) {
+  const decal = runtime.decal
+  const material = runtime.decalMaterial
+  if (!decal || !material) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const shape = advanced.shape ?? emitter.shape
+  const wants = shape === 'groundCircle' || Boolean(advanced.groundDecal) || styleNeedsGround(advanced.style ?? emitter.style)
+  const lingerTime = emitter.duration + num(advanced.zoneLinger, 0.8)
+  const linger = localTime >= 0 && localTime <= lingerTime
+  if (!wants || (!linger && !active)) {
+    decal.visible = false
+    return
+  }
+  const t = THREE.MathUtils.clamp(Math.max(0, localTime) / Math.max(0.05, lingerTime), 0, 1)
+  const size = num(advanced.decalSize, Math.max(1.8, num(advanced.spawnRadius, 1) * 2.5)) * (0.72 + t * 0.46)
+  decal.visible = true
+  decal.position.set(emitter.position[0], 0.02, emitter.position[2])
+  decal.scale.set(size, size, 1)
+  material.color.copy(new THREE.Color(emitter.endColor).lerp(new THREE.Color(0x161618), 0.55))
+  material.opacity = num(advanced.decalOpacity, 0.58) * (1 - t)
+}
+
+function updateZoneMesh(runtime: EmitterRuntime, active: boolean, localTime: number) {
+  const zone = runtime.zone
+  const material = runtime.zoneMaterial
+  if (!zone || !material) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const shape = advanced.shape ?? emitter.shape
+  const style = advanced.style ?? emitter.style
+  const linger = num(advanced.zoneLinger, styleNeedsGround(style) ? 1.4 : 0.7)
+  const valid = shape === 'groundCircle' || styleNeedsGround(style) || num(advanced.zonePulse, 0) > 0
+  const total = emitter.duration + linger
+  if (!valid || localTime < 0 || localTime > total) {
+    zone.visible = false
+    return
+  }
+  const t = THREE.MathUtils.clamp(localTime / Math.max(0.05, total), 0, 1)
+  const pulse = 1 + Math.sin(localTime * (3 + num(advanced.zonePulse, 0) * 2)) * 0.07 * num(advanced.zonePulse, 1)
+  const radius = Math.max(1.2, num(advanced.spawnRadius, 1.2) * 2.3) * (0.86 + t * 0.3) * pulse
+  zone.visible = true
+  zone.position.set(emitter.position[0], 0.024, emitter.position[2])
+  zone.scale.set(radius, radius, 1)
+  material.color.copy(new THREE.Color(emitter.endColor).lerp(new THREE.Color(emitter.startColor), 0.18))
+  material.opacity = Math.max(0, (0.22 + num(advanced.distortionStrength, 0) * 0.06) * (1 - t))
+}
+
+function updateHaloMesh(runtime: EmitterRuntime, active: boolean, localTime: number) {
+  const halo = runtime.halo
+  const material = runtime.haloMaterial
+  if (!halo || !material) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const style = advanced.style ?? emitter.style
+  const distortion = num(advanced.distortionStrength, style === 'flare' || style === 'shockwave' ? 0.8 : 0)
+  if (!active || distortion <= 0) {
+    halo.visible = false
+    return
+  }
+  const t = THREE.MathUtils.clamp(localTime / Math.max(0.05, emitter.duration), 0, 1)
+  const radius = Math.max(0.7, num(advanced.spawnRadius, 1) * 1.5) * (0.85 + t * (1.4 + distortion * 0.5))
+  halo.visible = true
+  halo.position.set(emitter.position[0], emitter.position[1] + 0.03, emitter.position[2])
+  halo.scale.set(radius, radius, 1)
+  halo.rotation.z += 0.012 + distortion * 0.01
+  material.color.copy(new THREE.Color(emitter.startColor).lerp(new THREE.Color(emitter.endColor), 0.4))
+  material.opacity = Math.max(0, (0.35 + distortion * 0.08) * (1 - t))
+}
+
+function updateImpactLight(runtime: EmitterRuntime, active: boolean, localTime: number) {
+  const light = runtime.light
+  if (!light) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const strength = num(advanced.lightIntensity, num(advanced.bloomBoost, 0) * 1.8 + num(advanced.shakeStrength, 0) * 0.9)
+  if (!active || strength <= 0) {
+    light.intensity = THREE.MathUtils.lerp(light.intensity, 0, 0.18)
+    return
+  }
+  const t = THREE.MathUtils.clamp(localTime / Math.max(0.05, emitter.duration), 0, 1)
+  light.position.set(emitter.position[0], emitter.position[1] + Math.max(0.4, num(advanced.spawnRadius, 0.6) * 0.6), emitter.position[2])
+  light.distance = num(advanced.lightRange, Math.max(3, num(advanced.spawnRadius, 1.2) * 3.2))
+  light.color = new THREE.Color(advanced.lightColor ?? emitter.startColor)
+  const flash = (1 - t) * strength * (1.05 + Math.sin(localTime * 20) * 0.08)
+  light.intensity = THREE.MathUtils.lerp(light.intensity, flash, 0.32)
+}
+
+function updateLightning(runtime: EmitterRuntime, active: boolean, localTime: number) {
+  const line = runtime.lightning
+  const material = runtime.lightningMaterial
+  if (!line || !material) return
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const style = advanced.style ?? emitter.style
+  const wants = (style === 'streak' || style === 'spark' || style === 'shockwave') && (emitter.shape === 'line' || num(advanced.lightningBranches, 0) > 0 || num(advanced.turbulence, 0) > 1.2)
+  if (!active || !wants) {
+    line.visible = false
+    return
+  }
+  const dir = new THREE.Vector3(...emitter.direction)
+  if (dir.lengthSq() < 0.0001) dir.set(0, 1, 0)
+  dir.normalize()
+  const branches = Math.max(2, Math.round(num(advanced.lightningBranches, 4)))
+  const jitter = num(advanced.lightningJitter, 0.22 + num(advanced.turbulence, 0) * 0.05)
+  const length = Math.max(1.2, num(advanced.beamLength, num(advanced.lineLength, 4.4)))
+  const positions: number[] = []
+  for (let b = 0; b < branches; b += 1) {
+    const root = new THREE.Vector3(...emitter.position)
+    const segments = 5 + Math.floor(Math.random() * 3)
+    let prev = root.clone()
+    for (let i = 1; i <= segments; i += 1) {
+      const t = i / segments
+      const next = root.clone().addScaledVector(dir, length * t)
+      const side = new THREE.Vector3(dir.z, 0, -dir.x)
+      if (side.lengthSq() < 0.0001) side.set(1, 0, 0)
+      side.normalize()
+      const lift = new THREE.Vector3(0, 1, 0).cross(dir).normalize()
+      next.addScaledVector(side, (Math.random() * 2 - 1) * jitter * length * (1 - t * 0.4))
+      if (lift.lengthSq() > 0.0001) next.addScaledVector(lift, (Math.random() * 2 - 1) * jitter * length * 0.3)
+      positions.push(prev.x, prev.y, prev.z, next.x, next.y, next.z)
+      prev = next
+      if (b > 0 && i === Math.floor(segments * 0.55)) {
+        const childEnd = next.clone().add(side.clone().multiplyScalar((Math.random() * 2 - 1) * jitter * length * 1.4)).addScaledVector(dir, length * 0.18)
+        positions.push(next.x, next.y, next.z, childEnd.x, childEnd.y, childEnd.z)
+      }
+    }
+  }
+  line.geometry.dispose()
+  line.geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  line.visible = true
+  const t = THREE.MathUtils.clamp(localTime / Math.max(0.05, emitter.duration), 0, 1)
+  material.color.copy(new THREE.Color(emitter.startColor).lerp(new THREE.Color(emitter.endColor), t * 0.6))
+  material.opacity = Math.max(0, 0.95 * (1 - t * 0.8))
+}
+
+function spawn(runtime: EmitterRuntime) {
+  const emitter = runtime.emitter
+  const advanced = emitter as AdvancedEmitter
+  const max = (runtime.positions.length / 3) | 0
+  if (runtime.particles.length >= max) runtime.particles.shift()
+  const p = new THREE.Vector3(...emitter.position)
+  const shape = (advanced.shape ?? emitter.shape) as AdvancedShape
+  const spawnRadius = num(advanced.spawnRadius, 1)
+  const innerRadius = num(advanced.innerRadius, 0)
+
+  if (shape === 'sphere') {
+    const r = Math.cbrt(Math.random()) * 0.45
+    p.add(randomUnit().multiplyScalar(r))
+  } else if (shape === 'box') {
+    p.x += (Math.random() - 0.5) * emitter.boxSize[0]
+    p.y += (Math.random() - 0.5) * emitter.boxSize[1]
+    p.z += (Math.random() - 0.5) * emitter.boxSize[2]
+  } else if (shape === 'ring' || shape === 'vortex') {
+    const angle = Math.random() * Math.PI * 2
+    const radius = innerRadius + Math.random() * Math.max(0.001, spawnRadius - innerRadius)
+    p.x += Math.cos(angle) * radius
+    p.z += Math.sin(angle) * radius
+  } else if (shape === 'shell') {
+    p.add(randomUnit().multiplyScalar(spawnRadius))
+  } else if (shape === 'arc') {
+    const span = THREE.MathUtils.degToRad(num(advanced.arcDeg, 120))
+    const angle = (Math.random() - 0.5) * span
+    const radius = innerRadius + Math.random() * Math.max(0.001, spawnRadius - innerRadius)
+    p.x += Math.cos(angle) * radius
+    p.z += Math.sin(angle) * radius
+  } else if (shape === 'line') {
+    const dir = new THREE.Vector3(...emitter.direction)
+    if (dir.lengthSq() < 0.0001) dir.set(0, 1, 0)
+    dir.normalize()
+    p.addScaledVector(dir, (Math.random() - 0.5) * num(advanced.lineLength, 3))
+  } else if (shape === 'spiral') {
+    const t = Math.random()
+    const turns = num(advanced.spiralTurns, 2)
+    const angle = t * Math.PI * 2 * turns
+    const radius = innerRadius + (spawnRadius - innerRadius) * t
+    p.x += Math.cos(angle) * radius
+    p.z += Math.sin(angle) * radius
+  } else if (shape === 'groundCircle') {
+    const angle = Math.random() * Math.PI * 2
+    const radius = Math.sqrt(Math.random()) * spawnRadius
+    p.x += Math.cos(angle) * radius
+    p.z += Math.sin(angle) * radius
+  }
+
+  const direction = new THREE.Vector3(...emitter.direction)
+  if (direction.lengthSq() < 0.0001) direction.set(0, 1, 0)
+  direction.normalize()
+  const spread = Math.sin(THREE.MathUtils.degToRad(emitter.spreadDeg * 0.5))
+  direction.addScaledVector(randomUnit(), spread * Math.random()).normalize()
+  const speed = emitter.speed * (1 + (Math.random() * 2 - 1) * emitter.speedRandom)
+  runtime.particles.push({ position: p, velocity: direction.multiplyScalar(speed), age: 0, life: Math.max(0.04, emitter.lifetime * (1 + (Math.random() * 2 - 1) * emitter.lifetimeRandom)), spin: Math.random() * Math.PI * 2 })
+}
+
+function writeAttributes(runtime: EmitterRuntime) {
+  const emitter = runtime.emitter
+  const start = new THREE.Color(emitter.startColor)
+  const end = new THREE.Color(emitter.endColor)
+  const temp = new THREE.Color()
+  const count = Math.min(runtime.particles.length, runtime.positions.length / 3)
+  for (let i = 0; i < count; i += 1) {
+    const p = runtime.particles[i]
+    const t = Math.min(1, p.age / p.life)
+    const idx = i * 3
+    runtime.positions[idx] = p.position.x
+    runtime.positions[idx + 1] = p.position.y
+    runtime.positions[idx + 2] = p.position.z
+    temp.copy(start).lerp(end, t)
+    runtime.colors[idx] = temp.r
+    runtime.colors[idx + 1] = temp.g
+    runtime.colors[idx + 2] = temp.b
+    runtime.sizes[i] = THREE.MathUtils.lerp(emitter.startSize, emitter.endSize, t)
+    runtime.alphas[i] = THREE.MathUtils.lerp(emitter.startAlpha, emitter.endAlpha, t)
+  }
+  runtime.points.geometry.setDrawRange(0, count)
+  for (const key of ['position', 'aColor', 'aSize', 'aAlpha']) {
+    const attr = runtime.points.geometry.getAttribute(key) as THREE.BufferAttribute
+    attr.needsUpdate = true
+  }
+}
+
+function clearAttributes(runtime: EmitterRuntime) {
+  runtime.points.geometry.setDrawRange(0, 0)
+  for (const key of ['position', 'aColor', 'aSize', 'aAlpha']) {
+    const attr = runtime.points.geometry.getAttribute(key) as THREE.BufferAttribute
+    attr.needsUpdate = true
+  }
+}
+
+function applyCameraShake(s: PreviewState, camera: THREE.PerspectiveCamera, basePosition: THREE.Vector3) {
+  const amount = Math.min(0.62, s.shake * 0.05)
+  if (amount <= 0.0001) return
+  camera.position.set(basePosition.x + (Math.random() * 2 - 1) * amount, basePosition.y + (Math.random() * 2 - 1) * amount * 0.72, basePosition.z + (Math.random() * 2 - 1) * amount)
+}
+
+function styleIndex(style: AdvancedStyle): number {
+  switch (style) {
+    case 'soft': return 0
+    case 'spark': return 1
+    case 'square': return 2
+    case 'ring': return 3
+    case 'diamond': return 4
+    case 'star': return 5
+    case 'streak': return 6
+    case 'flare': return 7
+    case 'smoke': return 8
+    case 'rune': return 9
+    case 'shockwave': return 10
+    case 'ember': return 11
+    case 'mist': return 12
+    default: return 0
+  }
+}
+
+function styleNeedsGround(style: AdvancedStyle) {
+  return style === 'smoke' || style === 'mist' || style === 'rune' || style === 'shockwave'
+}
+
+function makeDecalTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  const gradient = ctx.createRadialGradient(128, 128, 18, 128, 128, 118)
+  gradient.addColorStop(0, 'rgba(255,255,255,0.95)')
+  gradient.addColorStop(0.3, 'rgba(180,180,180,0.55)')
+  gradient.addColorStop(0.65, 'rgba(95,95,95,0.18)')
+  gradient.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 256, 256)
+  ctx.strokeStyle = 'rgba(15,15,15,0.55)'
+  ctx.lineWidth = 3
+  for (let i = 0; i < 14; i += 1) {
+    const a = (i / 14) * Math.PI * 2
+    ctx.beginPath()
+    ctx.moveTo(128, 128)
+    ctx.lineTo(128 + Math.cos(a) * (60 + (i % 3) * 18), 128 + Math.sin(a) * (60 + ((i + 1) % 4) * 14))
+    ctx.stroke()
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+function randomUnit() {
+  const z = Math.random() * 2 - 1
+  const a = Math.random() * Math.PI * 2
+  const r = Math.sqrt(Math.max(0, 1 - z * z))
+  return new THREE.Vector3(r * Math.cos(a), z, r * Math.sin(a))
+}
+
+function num(value: number | undefined, fallback: number) { return typeof value === 'number' && Number.isFinite(value) ? value : fallback }
+
+function disposeRuntimes(s: { scene?: THREE.Scene; runtimes: EmitterRuntime[] }) {
+  for (const runtime of s.runtimes) {
+    s.scene?.remove(runtime.points)
+    runtime.points.geometry.dispose()
+    runtime.particleMaterial.dispose()
+    if (runtime.beam) { s.scene?.remove(runtime.beam); runtime.beam.geometry.dispose(); runtime.beamMaterial?.dispose() }
+    if (runtime.trail) { s.scene?.remove(runtime.trail); runtime.trail.geometry.dispose(); runtime.trailMaterial?.dispose() }
+    if (runtime.decal) { s.scene?.remove(runtime.decal); runtime.decal.geometry.dispose(); runtime.decalMaterial?.map?.dispose(); runtime.decalMaterial?.dispose() }
+    if (runtime.zone) { s.scene?.remove(runtime.zone); runtime.zone.geometry.dispose(); runtime.zoneMaterial?.dispose() }
+    if (runtime.halo) { s.scene?.remove(runtime.halo); runtime.halo.geometry.dispose(); runtime.haloMaterial?.dispose() }
+    if (runtime.light) { s.scene?.remove(runtime.light) }
+    if (runtime.lightning) { s.scene?.remove(runtime.lightning); runtime.lightning.geometry.dispose(); runtime.lightningMaterial?.dispose() }
+  }
+  s.runtimes = []
+}
+
 export default VfxPreview
