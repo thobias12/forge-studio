@@ -8,6 +8,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
+import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
 
 export type DungeonTool = 'select' | 'room' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -146,6 +147,7 @@ export default function DungeonViewport(props: Props) {
       const current = state.value
       const immersive = state.playtest
       const atmosphere = applyAtmosphere(current)
+      const crypt = current.theme === 'crypt'
       const roomMap = new Map(current.rooms.map((item) => [item.id, item]))
       const openings = new Map<string, RoomOpening[]>()
       const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
@@ -159,20 +161,23 @@ export default function DungeonViewport(props: Props) {
         addOpening(fromRoom.id, { ...from, corridorId: edge.id })
         addOpening(toRoom.id, { ...to, corridorId: edge.id })
         addCorridor(dungeonGroup, from, to, edge.width, atmosphere, immersive)
+        if (crypt) addCryptCorridorEnvironment(dungeonGroup, from, to, edge.width, atmosphere, `${edge.id}-${current.seed}`, immersive)
       }
 
       for (const roomValue of current.rooms) {
+        const roomOpenings = openings.get(roomValue.id) ?? []
         addRoom(
           dungeonGroup,
           roomValue,
           current.settings.wallThickness,
-          openings.get(roomValue.id) ?? [],
+          roomOpenings,
           !immersive && roomValue.id === state.selectedRoomId,
           !immersive && roomValue.id === state.corridorStartId,
           immersive,
           atmosphere,
           flickerLights,
         )
+        if (crypt) addCryptRoomEnvironment(dungeonGroup, roomValue, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, immersive)
       }
 
       const assetMap = new Map(state.libraryAssets.map((item) => [item.id, item]))
