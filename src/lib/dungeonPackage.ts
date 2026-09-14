@@ -96,38 +96,51 @@ export type DungeonConnection = {
   openingWidth: number
 }
 
+type RoomScale = { width: number; depth: number; height: number }
+
+const ROOM_SCALE: Record<DungeonRoomType, RoomScale> = {
+  entrance: { width: 14, depth: 12, height: 4.8 },
+  combat: { width: 16, depth: 14, height: 4.9 },
+  treasure: { width: 12, depth: 10, height: 4.6 },
+  elite: { width: 20, depth: 17, height: 5.2 },
+  shrine: { width: 13, depth: 12, height: 4.8 },
+  boss: { width: 28, depth: 24, height: 5.8 },
+  secret: { width: 11, depth: 10, height: 4.5 },
+  utility: { width: 13, depth: 12, height: 4.7 },
+}
+
 export function createStarterDungeon(): ForgeDungeonPackage {
   const now = new Date().toISOString()
-  const entrance = room('Entrance', 'entrance', -8, 0, 7, 7)
-  const combat = room('Crossroads', 'combat', 2, 0, 9, 8)
-  const treasure = room('Treasure Alcove', 'treasure', 2, -10, 6, 5)
-  const boss = room('Boss Arena', 'boss', 15, 0, 12, 11)
+  const entrance = room('Entrance', 'entrance', -32, 0)
+  const combat = room('Crossroads', 'combat', -7, 0, 18, 15)
+  const treasure = room('Treasure Alcove', 'treasure', -7, -21)
+  const boss = room('Boss Arena', 'boss', 27, 2, 30, 25)
   const entranceEdge = corridor(entrance.id, combat.id)
   const treasureEdge = corridor(combat.id, treasure.id)
   const bossEdge = corridor(combat.id, boss.id)
 
   const checkpoint = marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance checkpoint', { checkpointId: 'entrance' })
-  const combatSpawn = marker('enemy', combat.x, 0.3, combat.z, combat.id, 'Skeleton pack', { family: 'undead', count: 6, eliteChance: 0.1, difficulty: 1 })
+  const combatSpawn = marker('enemy', combat.x, 0.3, combat.z, combat.id, 'Skeleton pack', { family: 'undead', count: 7, eliteChance: 0.1, difficulty: 1 })
   const combatEncounterId = crypto.randomUUID()
   const combatTrigger = marker('trigger', combat.x, 0.15, combat.z, combat.id, 'Crossroads encounter trigger', { action: 'start-encounter', targetId: combatEncounterId, once: true })
-  combatTrigger.radius = Math.max(2.2, Math.min(combat.width, combat.depth) * 0.34)
+  combatTrigger.radius = Math.max(3.8, Math.min(combat.width, combat.depth) * 0.32)
 
   const treasureLoot = marker('loot', treasure.x, 0.3, treasure.z, treasure.id, 'Treasure chest', { tier: 'rare', requiresClear: false })
   const bossSpawn = marker('enemy', boss.x, 0.3, boss.z, boss.id, 'Boss spawn', { family: 'crypt-warden', count: 1, eliteChance: 1, difficulty: 3 })
-  const bossReward = marker('loot', boss.x + 1.5, 0.3, boss.z, boss.id, 'Boss reliquary', { tier: 'legendary', requiresClear: true })
+  const bossReward = marker('loot', boss.x + 3.2, 0.3, boss.z + 0.8, boss.id, 'Boss reliquary', { tier: 'legendary', requiresClear: true })
   const bossEncounterId = crypto.randomUUID()
   const bossTrigger = marker('trigger', boss.x, 0.15, boss.z, boss.id, 'Boss arena trigger', { action: 'start-encounter', targetId: bossEncounterId, once: true })
-  bossTrigger.radius = Math.max(3, Math.min(boss.width, boss.depth) * 0.34)
+  bossTrigger.radius = Math.max(5.5, Math.min(boss.width, boss.depth) * 0.3)
   const bossConnection = getRoomConnection(boss, combat, bossEdge.width)
   const bossDoor = marker('door', bossConnection.x, 0, bossConnection.z, boss.id, 'Boss gate', {
     corridorId: bossEdge.id, yaw: bossConnection.yaw, locked: false, encounterId: bossEncounterId,
   })
-  const exitPortal = marker('portal', boss.x + boss.width * 0.27, 0.3, boss.z, boss.id, 'Exit Portal', { action: 'exit-dungeon', requiresEncounterId: bossEncounterId })
+  const exitPortal = marker('portal', boss.x + boss.width * 0.3, 0.3, boss.z, boss.id, 'Exit Portal', { action: 'exit-dungeon', requiresEncounterId: bossEncounterId })
 
   const encounters: DungeonEncounter[] = [
     {
       id: combatEncounterId, name: 'Crossroads Ambush', roomId: combat.id, trigger: 'marker', triggerMarkerId: combatTrigger.id,
-      spawnMarkerIds: [combatSpawn.id], lockDoorIds: [], rewardMarkerIds: [], family: 'undead', count: 6,
+      spawnMarkerIds: [combatSpawn.id], lockDoorIds: [], rewardMarkerIds: [], family: 'undead', count: 7,
       eliteChance: 0.1, difficulty: 1, boss: false, once: true,
     },
     {
@@ -143,16 +156,29 @@ export function createStarterDungeon(): ForgeDungeonPackage {
     rooms: [entrance, combat, treasure, boss], corridors: [entranceEdge, treasureEdge, bossEdge],
     markers: [checkpoint, combatSpawn, combatTrigger, treasureLoot, bossSpawn, bossReward, bossTrigger, bossDoor, exitPortal],
     logic: { encounters, completionPortalId: exitPortal.id },
-    settings: { wallThickness: 0.35, ambientLight: 0.28, fogDensity: 0.018, snap: true },
+    settings: { wallThickness: 0.5, ambientLight: 0.25, fogDensity: 0.014, snap: true },
   }
 }
 
 export function room(name: string, type: DungeonRoomType, x: number, z: number, width = 7, depth = 7): DungeonRoom {
-  return { id: crypto.randomUUID(), name, type, x, z, width, depth, height: 3.2, rotation: 0, floorLevel: 0, tags: [] }
+  const scale = ROOM_SCALE[type]
+  return {
+    id: crypto.randomUUID(),
+    name,
+    type,
+    x,
+    z,
+    width: Math.max(scale.width, width),
+    depth: Math.max(scale.depth, depth),
+    height: scale.height,
+    rotation: 0,
+    floorLevel: 0,
+    tags: [],
+  }
 }
 
 export function corridor(fromRoomId: string, toRoomId: string): DungeonCorridor {
-  return { id: crypto.randomUUID(), fromRoomId, toRoomId, width: 2.4, style: 'l' }
+  return { id: crypto.randomUUID(), fromRoomId, toRoomId, width: 4.2, style: 'l' }
 }
 
 export function marker(type: DungeonMarkerType, x: number, y: number, z: number, roomId?: string, name?: string, data: Record<string, string | number | boolean> = {}): DungeonMarker {
@@ -174,7 +200,7 @@ export function encounterForRoom(roomValue: DungeonRoom, overrides: Partial<Dung
     lockDoorIds: [],
     rewardMarkerIds: [],
     family: 'undead',
-    count: boss ? 1 : elite ? 3 : 6,
+    count: boss ? 1 : elite ? 4 : 7,
     eliteChance: boss ? 1 : elite ? 0.75 : 0.12,
     difficulty: boss ? 3 : elite ? 2 : 1,
     boss,
@@ -216,6 +242,12 @@ export function validateDungeon(value: ForgeDungeonPackage): DungeonValidation {
   if (boss && entrance && !reachable.has(boss.id)) warnings.push('Boss room is not reachable from the entrance.')
   if (value.rooms.length < 3) warnings.push('Dungeon is very small; add at least 3 rooms for a useful ARPG layout.')
 
+  for (const roomItem of value.rooms) {
+    if ((roomItem.type === 'combat' || roomItem.type === 'elite') && Math.min(roomItem.width, roomItem.depth) < 10) warnings.push(`${roomItem.name} is cramped for ARPG combat; aim for at least 10m on its short side.`)
+    if (roomItem.type === 'boss' && Math.min(roomItem.width, roomItem.depth) < 16) warnings.push(`${roomItem.name} is cramped for a boss arena; aim for at least 16m on its short side.`)
+  }
+  for (const edge of value.corridors) if (edge.width < 3) warnings.push('A corridor is narrower than 3m and may feel cramped in ARPG camera mode.')
+
   if (entrance && !value.markers.some((item) => item.type === 'checkpoint' && item.roomId === entrance.id)) warnings.push('Entrance needs a checkpoint / spawn marker.')
   if (boss && !value.markers.some((item) => item.type === 'portal' && item.roomId === boss.id)) warnings.push('Boss room needs an exit portal.')
 
@@ -251,14 +283,14 @@ export function validateDungeon(value: ForgeDungeonPackage): DungeonValidation {
   return { ok: warnings.length === 0, warnings, reachableRoomIds: reachable }
 }
 
-export function getRoomConnection(roomValue: DungeonRoom, target: DungeonRoom, corridorWidth = 2.4): DungeonConnection {
+export function getRoomConnection(roomValue: DungeonRoom, target: DungeonRoom, corridorWidth = 4.2): DungeonConnection {
   const angle = roomValue.rotation * Math.PI / 180
   const dx = target.x - roomValue.x
   const dz = target.z - roomValue.z
   const localX = dx * Math.cos(angle) - dz * Math.sin(angle)
   const localZ = dx * Math.sin(angle) + dz * Math.cos(angle)
-  const openingWidth = Math.max(1.4, corridorWidth + 0.18)
-  const margin = 0.35
+  const openingWidth = Math.max(2.5, corridorWidth + 0.28)
+  const margin = 0.6
   let side: DungeonConnection['side']
   let lx = 0, lz = 0, offset = 0
   if (Math.abs(localX) >= Math.abs(localZ)) {
@@ -286,33 +318,34 @@ export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme
   const markers: DungeonMarker[] = []
   const encounters: DungeonEncounter[] = []
 
-  const entrance = room('Entrance', 'entrance', -18, 0, 7, 7)
+  const entrance = room('Entrance', 'entrance', -38, 0)
   rooms.push(entrance)
   markers.push(marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance Checkpoint', { checkpointId: 'entrance' }))
   let previous = entrance
-  let x = -7
-  let z = 0
   const mainCount = 5 + Math.floor(random() * 3)
 
   for (let i = 0; i < mainCount; i += 1) {
     const isLast = i === mainCount - 1
     const type: DungeonRoomType = isLast ? 'boss' : i === 2 && random() > 0.45 ? 'elite' : 'combat'
-    const width = isLast ? 12 : 7 + Math.floor(random() * 4)
-    const depth = isLast ? 11 : 6 + Math.floor(random() * 4)
-    z += (random() - 0.5) * 10
-    const next = room(isLast ? 'Boss Arena' : type === 'elite' ? `Elite Hall ${i + 1}` : `Combat Chamber ${i + 1}`, type, snap(x), snap(z), width, depth)
+    const base = ROOM_SCALE[type]
+    const width = isLast ? 28 + Math.floor(random() * 5) : base.width + Math.floor(random() * (type === 'elite' ? 4 : 6))
+    const depth = isLast ? 24 + Math.floor(random() * 5) : base.depth + Math.floor(random() * (type === 'elite' ? 4 : 5))
+    const gap = 8 + random() * 7
+    const nextX = previous.x + previous.width / 2 + width / 2 + gap
+    const nextZ = previous.z + (random() - 0.5) * 16
+    const next = room(isLast ? 'Boss Arena' : type === 'elite' ? `Elite Hall ${i + 1}` : `Combat Chamber ${i + 1}`, type, snap(nextX), snap(nextZ), width, depth)
     rooms.push(next)
     const edge = corridor(previous.id, next.id)
     corridors.push(edge)
 
     const encounterId = crypto.randomUUID()
     const family = theme === 'crypt' ? (isLast ? 'crypt-warden' : 'undead') : theme
-    const count = isLast ? 1 : type === 'elite' ? 3 : 5 + Math.floor(random() * 5)
+    const count = isLast ? 1 : type === 'elite' ? 4 : 6 + Math.floor(random() * 6)
     const eliteChance = isLast ? 1 : type === 'elite' ? 0.75 : 0.12
     const difficulty = isLast ? 3 : type === 'elite' ? 2 : 1
     const spawn = marker('enemy', next.x, 0.3, next.z, next.id, isLast ? 'Boss Spawn' : type === 'elite' ? 'Elite Encounter' : 'Enemy Pack', { family, count, eliteChance, difficulty, encounterId })
     const trigger = marker('trigger', next.x, 0.15, next.z, next.id, `${next.name} Trigger`, { action: 'start-encounter', targetId: encounterId, once: true })
-    trigger.radius = Math.max(2.2, Math.min(next.width, next.depth) * 0.34)
+    trigger.radius = Math.max(type === 'boss' ? 5.5 : 3.8, Math.min(next.width, next.depth) * 0.3)
     markers.push(spawn, trigger)
 
     const lockDoorIds: string[] = []
@@ -324,7 +357,7 @@ export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme
       lockDoorIds.push(door.id)
     }
     if (isLast) {
-      const reward = marker('loot', next.x + 1.5, 0.3, next.z, next.id, 'Boss Reliquary', { tier: 'legendary', requiresClear: true, encounterId })
+      const reward = marker('loot', next.x + 3.2, 0.3, next.z + 0.8, next.id, 'Boss Reliquary', { tier: 'legendary', requiresClear: true, encounterId })
       markers.push(reward)
       rewardMarkerIds.push(reward.id)
     }
@@ -336,12 +369,16 @@ export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme
     })
 
     previous = next
-    x += 11 + random() * 5
 
     if (!isLast && random() > 0.42) {
       const branchType: DungeonRoomType = random() > 0.5 ? 'treasure' : 'shrine'
-      const branchZ = next.z + (random() > 0.5 ? 10 : -10)
-      const branch = room(branchType === 'treasure' ? 'Treasure Room' : 'Shrine', branchType, next.x, snap(branchZ), 6, 5)
+      const branchBase = ROOM_SCALE[branchType]
+      const branchWidth = branchBase.width + Math.floor(random() * 3)
+      const branchDepth = branchBase.depth + Math.floor(random() * 3)
+      const direction = random() > 0.5 ? 1 : -1
+      const branchGap = 7 + random() * 5
+      const branchZ = next.z + direction * (next.depth / 2 + branchDepth / 2 + branchGap)
+      const branch = room(branchType === 'treasure' ? 'Treasure Room' : 'Shrine', branchType, next.x + (random() - 0.5) * 4, snap(branchZ), branchWidth, branchDepth)
       rooms.push(branch)
       corridors.push(corridor(next.id, branch.id))
       markers.push(marker(branchType === 'treasure' ? 'loot' : 'checkpoint', branch.x, 0.3, branch.z, branch.id, branchType === 'treasure' ? 'Treasure Chest' : 'Shrine', branchType === 'treasure' ? { tier: 'rare', requiresClear: false } : { checkpointId: `shrine-${branch.id}` }))
@@ -352,7 +389,7 @@ export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme
   let completionPortalId: string | undefined
   if (boss) {
     const bossEncounter = encounters.find((item) => item.roomId === boss.id)
-    const exit = marker('portal', boss.x + boss.width * 0.25, 0.3, boss.z, boss.id, 'Exit Portal', { action: 'exit-dungeon', requiresEncounterId: bossEncounter?.id ?? '' })
+    const exit = marker('portal', boss.x + boss.width * 0.3, 0.3, boss.z, boss.id, 'Exit Portal', { action: 'exit-dungeon', requiresEncounterId: bossEncounter?.id ?? '' })
     markers.push(exit)
     completionPortalId = exit.id
   }
@@ -361,7 +398,7 @@ export function generateDungeon(seed = Math.floor(Math.random() * 999999), theme
     format: 'forge-dungeon-package', version: 2, name: `${titleCase(theme)} Dungeon`, targetGame: 'skillbound', theme,
     gridSize: 1, seed, createdAt: now, updatedAt: now, rooms, corridors, markers,
     logic: { encounters, completionPortalId },
-    settings: { wallThickness: 0.35, ambientLight: 0.28, fogDensity: 0.018, snap: true },
+    settings: { wallThickness: 0.5, ambientLight: 0.25, fogDensity: 0.014, snap: true },
   }
 }
 
@@ -372,7 +409,8 @@ function titleCase(value: string) { return value.charAt(0).toUpperCase() + value
 function mulberry32(seed: number) {
   let a = seed >>> 0
   return () => {
-    a |= 0; a = a + 0x6D2B79F5 | 0
+    a |= 0
+    a = a + 0x6D2B79F5 | 0
     let t = Math.imul(a ^ a >>> 15, 1 | a)
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
     return ((t ^ t >>> 14) >>> 0) / 4294967296
