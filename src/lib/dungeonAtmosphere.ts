@@ -30,7 +30,7 @@ export type DungeonAtmosphere = {
 }
 
 const THEMES: Record<DungeonTheme, DungeonAtmosphere> = {
-  crypt: { background:0x080b0b,fog:0x111716,fogMultiplier:0.94,sky:0x8d928b,ground:0x1b1d1a,ambient:1.12,key:0xc0beb4,keyIntensity:0.84,exposure:1.1,bloomStrength:0.4,bloomRadius:0.38,bloomThreshold:0.84,floor:0x454a45,wall:0x565b55,wallDark:0x363a35,corridorFloor:0x3e433f,corridorWall:0x4a504a,seam:0x252a26,torch:0xffa15b,torchIntensity:3.25,dust:0x777a73,mist:0x737e79,boss:0x9c4350,shrine:0x70aaa0,treasure:0xc7a45f },
+  crypt: { background:0x05080c,fog:0x0b1118,fogMultiplier:0.84,sky:0x50677c,ground:0x07090c,ambient:0.86,key:0x7892aa,keyIntensity:0.64,exposure:1.08,bloomStrength:0.26,bloomRadius:0.3,bloomThreshold:0.9,floor:0x1d252c,wall:0x29323a,wallDark:0x12181e,corridorFloor:0x192127,corridorWall:0x222b32,seam:0x0d1216,torch:0xff914d,torchIntensity:2.55,dust:0x4e5963,mist:0x35434f,boss:0x6f3039,shrine:0x4e7480,treasure:0x8c713f },
   castle: { background:0x0a0d10,fog:0x151b20,fogMultiplier:0.98,sky:0x7e909f,ground:0x141516,ambient:0.98,key:0xd0dbe2,keyIntensity:1.02,exposure:1.08,bloomStrength:0.43,bloomRadius:0.36,bloomThreshold:0.83,floor:0x4d504c,wall:0x606563,wallDark:0x353939,corridorFloor:0x414540,corridorWall:0x4d5350,seam:0x292d2b,torch:0xffaa60,torchIntensity:3.8,dust:0x8b8a83,mist:0x929b9b,boss:0xb64b50,shrine:0x7fb7d8,treasure:0xe9bf5c },
   cave: { background:0x060908,fog:0x0d1312,fogMultiplier:1.02,sky:0x66736e,ground:0x121512,ambient:0.98,key:0xa4aaa0,keyIntensity:0.78,exposure:1.03,bloomStrength:0.45,bloomRadius:0.48,bloomThreshold:0.8,floor:0x363b37,wall:0x454b46,wallDark:0x292d29,corridorFloor:0x303531,corridorWall:0x3d433e,seam:0x1e221f,torch:0xff9252,torchIntensity:3.5,dust:0x6f746c,mist:0x71837c,boss:0xad3b49,shrine:0x61c2b6,treasure:0xd8aa4f },
   cathedral: { background:0x080b12,fog:0x151d2c,fogMultiplier:0.86,sky:0x8499ba,ground:0x13141a,ambient:1.0,key:0xcbd9f2,keyIntensity:1.12,exposure:1.1,bloomStrength:0.62,bloomRadius:0.5,bloomThreshold:0.75,floor:0x464c54,wall:0x5e6672,wallDark:0x333943,corridorFloor:0x3c424a,corridorWall:0x4d5561,seam:0x272d34,torch:0xffc078,torchIntensity:3.4,dust:0x8f9294,mist:0x8e99aa,boss:0xb34f65,shrine:0x8ad4e4,treasure:0xedd07b },
@@ -39,6 +39,9 @@ const THEMES: Record<DungeonTheme, DungeonAtmosphere> = {
   void: { background:0x06040d,fog:0x160d2b,fogMultiplier:1.2,sky:0x705da4,ground:0x0d0816,ambient:0.75,key:0xa18edb,keyIntensity:0.8,exposure:1.04,bloomStrength:0.86,bloomRadius:0.58,bloomThreshold:0.65,floor:0x302a40,wall:0x44395c,wallDark:0x231b31,corridorFloor:0x2a2339,corridorWall:0x392f50,seam:0x171024,torch:0xbc76ff,torchIntensity:4.1,dust:0x8068a7,mist:0x6f5594,boss:0xee5792,shrine:0x80aaff,treasure:0xd39bff },
 }
 
-export function dungeonAtmosphere(theme: DungeonTheme): DungeonAtmosphere { return THEMES[theme] ?? THEMES.crypt }
+export function dungeonAtmosphere(theme: DungeonTheme): DungeonAtmosphere {
+  if (typeof document !== 'undefined') document.documentElement.dataset.forgeDungeonTheme = theme
+  return THEMES[theme] ?? THEMES.crypt
+}
 export function roomAccent(type: DungeonRoomType, atmosphere: DungeonAtmosphere): number | undefined { if(type==='boss'||type==='elite')return atmosphere.boss;if(type==='shrine')return atmosphere.shrine;if(type==='treasure')return atmosphere.treasure;return undefined }
-export function tintRoomFloor(base:number,type:DungeonRoomType,atmosphere:DungeonAtmosphere){const color=new THREE.Color(base);const accent=roomAccent(type,atmosphere);if(accent!==undefined)color.lerp(new THREE.Color(accent),type==='boss'?0.12:0.065);if(type==='entrance')color.offsetHSL(0,-0.025,0.045);return color}
+export function tintRoomFloor(base:number,type:DungeonRoomType,atmosphere:DungeonAtmosphere){const color=new THREE.Color(base);const accent=roomAccent(type,atmosphere);if(accent!==undefined)color.lerp(new THREE.Color(accent),type==='boss'?0.095:0.05);if(type==='entrance')color.offsetHSL(0,-0.02,0.025);return color}
