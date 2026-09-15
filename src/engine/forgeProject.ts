@@ -101,6 +101,37 @@ export type ForgeEnemyDefinition = {
 
 export type ForgeItemSlot = 'weapon'
 export type ForgeItemRarity = 'common' | 'magic' | 'rare'
+export type ForgeItemSocket = 'RightHand' | 'LeftHand' | 'Back' | 'HipLeft' | 'HipRight'
+export type ForgeItemCameraPreset = 'three-quarter' | 'front' | 'side'
+
+export type ForgeItemTransform = {
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: number
+}
+
+export type ForgeItemVisualDefinition = {
+  masterAssetId?: string
+  inventory: {
+    autoIcon: boolean
+    iconAssetId?: string
+    cameraPreset: ForgeItemCameraPreset
+    rotation: [number, number, number]
+    scale: number
+  }
+  drop: {
+    useMaster: boolean
+    modelAssetId?: string
+    transform: ForgeItemTransform
+    groundOffset: number
+  }
+  equipped: {
+    useMaster: boolean
+    modelAssetId?: string
+    socket: ForgeItemSocket
+    transform: ForgeItemTransform
+  }
+}
 
 export type ForgeItemDefinition = {
   format: 'forge-item'
@@ -111,7 +142,10 @@ export type ForgeItemDefinition = {
   rarity: ForgeItemRarity
   damageBonus: number
   color: string
+  /** Legacy master visual binding kept for Phase 2.1 runtime compatibility. */
   modelAssetId?: string
+  /** Forge v1.18: one item visual drives inventory, world-drop and equipped presentations. */
+  visual?: ForgeItemVisualDefinition
 }
 
 export type ForgeLootEntry = {
