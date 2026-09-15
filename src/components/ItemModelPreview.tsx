@@ -8,6 +8,7 @@ import { isWearableArmor, itemClassification, wearableAnchor, type ForgeItemEqui
 import type { ForgeItemDefinition, ForgeItemTransform } from '../engine/forgeProject'
 
 type Mode = 'inventory' | 'drop' | 'equipped'
+type InventoryCameraPreset = 'three-quarter' | 'front' | 'side'
 
 export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefinition; mode: Mode }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -79,19 +80,20 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
 
     const load = async () => {
       try {
+        const visual = itemVisual(item)
         const assetId = resolveItemModelAssetId(item, mode)
         const classification = itemClassification(item)
         if (!assetId) {
           setMessage('Assign a master model')
           if (mode === 'equipped' && classification.itemType === 'armor') frameWearableCamera(camera, controls, classification.equipSlot)
-          else frameCamera(camera, controls, mode, mannequin)
+          else frameCamera(camera, controls, mode, mannequin, visual.inventory.cameraPreset)
           return
         }
         const asset = await getAsset(assetId)
         if (!asset) {
           setMessage('Model is missing from Shared Library')
           if (mode === 'equipped' && classification.itemType === 'armor') frameWearableCamera(camera, controls, classification.equipSlot)
-          else frameCamera(camera, controls, mode, mannequin)
+          else frameCamera(camera, controls, mode, mannequin, visual.inventory.cameraPreset)
           return
         }
         objectUrl = URL.createObjectURL(asset.blob)
@@ -99,7 +101,6 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
         if (disposed) return
         const root = gltf.scene
         presentation.add(root)
-        const visual = itemVisual(item)
 
         if (mode === 'inventory') {
           applyTransform(root, { position: [0, 0, 0], rotation: visual.inventory.rotation, scale: visual.inventory.scale })
@@ -127,7 +128,7 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
 
         normalizeObjectPivot(root, mode)
         if (mode === 'equipped' && isWearableArmor(item)) frameWearableCamera(camera, controls, classification.equipSlot)
-        else frameCamera(camera, controls, mode, mode === 'equipped' ? presentation : root)
+        else frameCamera(camera, controls, mode, mode === 'equipped' ? presentation : root, visual.inventory.cameraPreset)
         setMessage('')
       } catch (error) {
         setMessage(error instanceof Error ? error.message : 'Could not render model')
@@ -173,15 +174,18 @@ function normalizeObjectPivot(root: THREE.Object3D, mode: Mode) {
   if (mode === 'drop') root.position.y -= box.min.y
 }
 
-function frameCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, mode: Mode, target?: THREE.Object3D) {
+function frameCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, mode: Mode, target?: THREE.Object3D, inventoryPreset: InventoryCameraPreset = 'three-quarter') {
   const box = target ? new THREE.Box3().setFromObject(target) : new THREE.Box3(new THREE.Vector3(-.5, 0, -.5), new THREE.Vector3(.5, 1.8, .5))
   const center = box.getCenter(new THREE.Vector3())
   const size = box.getSize(new THREE.Vector3())
   const span = Math.max(size.x, size.y, size.z, mode === 'equipped' ? 1.8 : .5)
   controls.target.copy(center)
 
-  if (mode === 'inventory') camera.position.set(center.x + span * 1.18, center.y + span * .68, center.z + span * 1.58)
-  else if (mode === 'drop') camera.position.set(center.x + span * 1.15, center.y + span * .82, center.z + span * 1.28)
+  if (mode === 'inventory') {
+    if (inventoryPreset === 'front') camera.position.set(center.x, center.y + span * .03, center.z + span * 2.05)
+    else if (inventoryPreset === 'side') camera.position.set(center.x + span * 2.05, center.y + span * .03, center.z)
+    else camera.position.set(center.x + span * 1.18, center.y + span * .68, center.z + span * 1.58)
+  } else if (mode === 'drop') camera.position.set(center.x + span * 1.15, center.y + span * .82, center.z + span * 1.28)
   else camera.position.set(center.x + span * 1.02, center.y + span * .34, center.z + span * 1.72)
 
   camera.lookAt(center)
