@@ -13,6 +13,7 @@ import {
   Home,
   Layers3,
   LayoutGrid,
+  Link2,
   MapPinned,
   PackagePlus,
   Play,
@@ -44,6 +45,7 @@ import CharacterStudio from './pages/CharacterStudio'
 import CharacterForge from './pages/CharacterForge'
 import DestructionLab from './pages/DestructionLab'
 import AnimationStudio from './pages/AnimationStudio'
+import AnimationBindings from './pages/AnimationBindings'
 import AssetLibrary from './pages/AssetLibrary'
 import TextureLab from './pages/TextureLab'
 import GamePreview from './pages/GamePreview'
@@ -73,7 +75,7 @@ import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'itemforge' | 'encounterforge' | 'bossforge'
+type Page = ForgeContentPage | 'gameplay' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -101,6 +103,7 @@ const navGroups: NavGroup[] = [
       { id: 'characterforge', label: 'Character Forge', icon: Skull },
       { id: 'characters', label: 'Character Assembly', icon: UserRoundCog },
       { id: 'animations', label: 'Animations', icon: Clapperboard },
+      { id: 'animationbindings', label: 'Action Bindings', icon: Link2 },
       { id: 'mocap', label: 'Mocap', icon: ScanLine },
     ],
   },
@@ -241,6 +244,7 @@ export default function App() {
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <CharacterStudio />}
           {page === 'animations' && <AnimationStudio />}
+          {page === 'animationbindings' && <AnimationBindings />}
           {page === 'textures' && <TextureLab />}
           {page === 'audio' && <AudioStudioWorkspace />}
           {page === 'vfx' && <VfxStudio />}
