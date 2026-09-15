@@ -42,7 +42,7 @@ export type ForgeBossDefinition = {
   phases: ForgeBossPhaseDefinition[]
 }
 
-export function createEncounterProfile(id = crypto.randomUUID()): ForgeEncounterProfile {
+export function createEncounterProfile(id: string = crypto.randomUUID()): ForgeEncounterProfile {
   return {
     format: 'forge-encounter-profile',
     version: 1,
@@ -57,7 +57,7 @@ export function createEncounterProfile(id = crypto.randomUUID()): ForgeEncounter
   }
 }
 
-export function createBossDefinition(id = crypto.randomUUID()): ForgeBossDefinition {
+export function createBossDefinition(id: string = crypto.randomUUID()): ForgeBossDefinition {
   return {
     format: 'forge-boss',
     version: 1,
@@ -77,7 +77,7 @@ export function createBossDefinition(id = crypto.randomUUID()): ForgeBossDefinit
   }
 }
 
-export function createBossPhase(id = crypto.randomUUID(), name = 'New Phase', startsAtHealth = 0.5): ForgeBossPhaseDefinition {
+export function createBossPhase(id: string = crypto.randomUUID(), name = 'New Phase', startsAtHealth = 0.5): ForgeBossPhaseDefinition {
   return {
     id,
     name,
