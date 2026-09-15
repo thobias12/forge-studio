@@ -29,10 +29,10 @@ export function createConceptCharacter(config: ForgeCharacterConfig): ForgeChara
   base.root.userData.forgeCharacter = {
     ...base.root.userData.forgeCharacter,
     format: 'ForgeCharacter',
-    version: 4,
-    archetypeVersion: 4,
+    version: 5,
+    archetypeVersion: 5,
     source: 'ConceptForge',
-    conceptTarget: 'CryptSkeletonApprovedV1',
+    conceptTarget: 'CryptSkeletonApprovedV2',
     assembly: 'curated-modular',
   }
 
@@ -89,15 +89,15 @@ function makeMaterials(config: ForgeCharacterConfig): MaterialSet {
   const accent = new THREE.Color(config.accent)
   const metal = new THREE.Color('#55514d')
   return {
-    bone: standard(bone, 0.93),
-    boneDark: standard(bone.clone().multiplyScalar(0.53), 1),
-    cloth: standard(cloth, 0.98),
-    clothDark: standard(cloth.clone().multiplyScalar(0.5), 1),
-    leather: standard(accent.clone().multiplyScalar(0.68), 0.91),
-    leatherDark: standard(accent.clone().multiplyScalar(0.38), 0.98),
-    metal: standard(metal, 0.58, 0.52),
-    metalDark: standard(metal.clone().multiplyScalar(0.42), 0.72, 0.42),
-    socket: standard(new THREE.Color('#0b0d0f'), 1),
+    bone: standard(bone, 0.9),
+    boneDark: standard(bone.clone().multiplyScalar(0.5), 1),
+    cloth: standard(cloth, 0.97),
+    clothDark: standard(cloth.clone().multiplyScalar(0.44), 1),
+    leather: standard(accent.clone().multiplyScalar(0.72), 0.9),
+    leatherDark: standard(accent.clone().multiplyScalar(0.34), 0.98),
+    metal: standard(metal.clone().multiplyScalar(1.08), 0.5, 0.58),
+    metalDark: standard(metal.clone().multiplyScalar(0.36), 0.72, 0.48),
+    socket: standard(new THREE.Color('#07090b'), 1),
   }
 }
 
@@ -133,7 +133,8 @@ function buildCryptSkeleton(
   addCowl(root, p, shoulderWidth, skeleton, index, m, scale)
   addWaistKit(root, p, shoulderWidth, skeleton, index, m, scale)
   addArmor(root, p, shoulderWidth, skeleton, index, m, scale)
-  addConceptSword(bones.Hand_R, m, scale)
+  addHarness(root, p, shoulderWidth, skeleton, index, m, scale)
+  addConceptSword(root, p.Hand_R, skeleton, index, m, scale)
 }
 
 function addSpine(root: THREE.Group, p: Record<string, THREE.Vector3>, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
@@ -178,16 +179,21 @@ function addConceptRibcage(root: THREE.Group, p: Record<string, THREE.Vector3>, 
 }
 
 function addConceptSkull(root: THREE.Group, center: THREE.Vector3, r: number, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet) {
-  addIco(root, center.clone().add(new THREE.Vector3(0, r * 0.16, 0.02)), r * 1.02, m.bone, 'Head', skeleton, index, new THREE.Vector3(0.88, 1.0, 0.86), 2)
-  addFrustum(root, center.clone().add(new THREE.Vector3(0, -r * 0.4, -r * 0.18)), r * 1.02, r * 0.72, r * 0.68, r * 0.5, r * 0.5, m.bone, 'Head', skeleton, index, new THREE.Euler(0.05, 0, 0))
+  addIco(root, center.clone().add(new THREE.Vector3(0, r * 0.17, 0.035)), r * 1.02, m.bone, 'Head', skeleton, index, new THREE.Vector3(0.9, 1.02, 0.88), 2)
+  addFrustum(root, center.clone().add(new THREE.Vector3(0, -r * 0.38, -r * 0.2)), r * 1.0, r * 0.7, r * 0.66, r * 0.48, r * 0.48, m.bone, 'Head', skeleton, index, new THREE.Euler(0.05, 0, 0))
+
   for (const side of [-1, 1]) {
-    addIco(root, center.clone().add(new THREE.Vector3(side * r * 0.34, r * 0.1, -r * 0.76)), r * 0.21, m.socket, 'Head', skeleton, index, new THREE.Vector3(1.0, 0.72, 0.38), 1)
-    addFrustum(root, center.clone().add(new THREE.Vector3(side * r * 0.48, -r * 0.12, -r * 0.5)), r * 0.3, r * 0.22, r * 0.2, r * 0.16, r * 0.34, m.boneDark, 'Head', skeleton, index, new THREE.Euler(0, side * -0.18, side * 0.14))
+    addIco(root, center.clone().add(new THREE.Vector3(side * r * 0.34, r * 0.08, -r * 0.77)), r * 0.215, m.socket, 'Head', skeleton, index, new THREE.Vector3(1.05, 0.74, 0.4), 1)
+    addFrustum(root, center.clone().add(new THREE.Vector3(side * r * 0.38, r * 0.28, -r * 0.68)), r * 0.46, r * 0.16, r * 0.26, r * 0.12, r * 0.17, m.boneDark, 'Head', skeleton, index, new THREE.Euler(-0.05, side * 0.08, side * 0.2))
+    addFrustum(root, center.clone().add(new THREE.Vector3(side * r * 0.5, -r * 0.16, -r * 0.51)), r * 0.32, r * 0.2, r * 0.17, r * 0.14, r * 0.37, m.boneDark, 'Head', skeleton, index, new THREE.Euler(0, side * -0.2, side * 0.15))
+    addBoneBetween(root, center.clone().add(new THREE.Vector3(side * r * 0.44, -r * 0.24, -r * 0.55)), center.clone().add(new THREE.Vector3(side * r * 0.32, -r * 0.55, -r * 0.42)), r * 0.09, r * 0.065, m.bone, 'Head', skeleton, index, 5)
   }
-  addFrustum(root, center.clone().add(new THREE.Vector3(0, -r * 0.02, -r * 0.87)), r * 0.2, r * 0.16, r * 0.1, r * 0.12, r * 0.3, m.boneDark, 'Head', skeleton, index)
-  addFrustum(root, center.clone().add(new THREE.Vector3(0, -r * 0.65, -r * 0.22)), r * 0.78, r * 0.55, r * 0.58, r * 0.4, r * 0.28, m.boneDark, 'Head', skeleton, index, new THREE.Euler(-0.06, 0, 0))
+
+  addFrustum(root, center.clone().add(new THREE.Vector3(0, -r * 0.03, -r * 0.9)), r * 0.21, r * 0.16, r * 0.09, r * 0.1, r * 0.31, m.boneDark, 'Head', skeleton, index)
+  addFrustum(root, center.clone().add(new THREE.Vector3(0, -r * 0.65, -r * 0.24)), r * 0.76, r * 0.54, r * 0.54, r * 0.38, r * 0.27, m.boneDark, 'Head', skeleton, index, new THREE.Euler(-0.08, 0, 0))
+  addBox(root, center.clone().add(new THREE.Vector3(0, -r * 0.49, -r * 0.7)), new THREE.Vector3(r * 0.72, r * 0.06, r * 0.07), m.boneDark, 'Head', skeleton, index, new THREE.Euler(0.04, 0, 0))
   for (let i = -3; i <= 3; i += 1) {
-    addBox(root, center.clone().add(new THREE.Vector3(i * r * 0.14, -r * 0.53, -r * 0.69)), new THREE.Vector3(r * 0.085, r * 0.18, r * 0.08), m.bone, 'Head', skeleton, index, new THREE.Euler(0.03, 0, i * 0.015))
+    addBox(root, center.clone().add(new THREE.Vector3(i * r * 0.13, -r * 0.55, -r * 0.73)), new THREE.Vector3(r * 0.072, r * 0.16, r * 0.07), m.bone, 'Head', skeleton, index, new THREE.Euler(0.03, 0, i * 0.018))
   }
 }
 
@@ -234,20 +240,23 @@ function addFootBones(root: THREE.Group, foot: THREE.Vector3, side: number, r: n
 }
 
 function addCowl(root: THREE.Group, p: Record<string, THREE.Vector3>, width: number, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
-  addTorus(root, p.Neck.clone().add(new THREE.Vector3(0, 0.02 * scale, 0)), width * 0.31, 0.055 * scale, m.cloth, 'Chest', skeleton, index, new THREE.Euler(Math.PI / 2, 0, 0), new THREE.Vector3(1.0, 0.76, 0.86))
-  addClothStrip(root, p.Chest.clone().add(new THREE.Vector3(-width * 0.22, 0.07 * scale, -0.07)), 0.2 * scale, 0.42 * scale, m.cloth, 'Chest', skeleton, index, -0.16)
-  addClothStrip(root, p.Chest.clone().add(new THREE.Vector3(width * 0.22, 0.02 * scale, -0.05)), 0.15 * scale, 0.34 * scale, m.clothDark, 'Chest', skeleton, index, 0.14)
+  addTorus(root, p.Neck.clone().add(new THREE.Vector3(0, 0.02 * scale, 0)), width * 0.29, 0.045 * scale, m.clothDark, 'Chest', skeleton, index, new THREE.Euler(Math.PI / 2, 0, 0), new THREE.Vector3(1.0, 0.7, 0.82))
+  addClothStrip(root, p.Chest.clone().add(new THREE.Vector3(-width * 0.2, 0.035 * scale, -0.08)), 0.16 * scale, 0.45 * scale, m.cloth, 'Chest', skeleton, index, -0.17)
+  addClothStrip(root, p.Chest.clone().add(new THREE.Vector3(width * 0.21, 0.005 * scale, -0.065)), 0.13 * scale, 0.35 * scale, m.clothDark, 'Chest', skeleton, index, 0.13)
+  addClothStrip(root, p.Chest.clone().add(new THREE.Vector3(-width * 0.05, 0.015 * scale, 0.09)), 0.18 * scale, 0.32 * scale, m.clothDark, 'Chest', skeleton, index, 0.04)
 }
 
 function addWaistKit(root: THREE.Group, p: Record<string, THREE.Vector3>, width: number, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
-  addBox(root, p.Hips.clone().add(new THREE.Vector3(0, 0.02, -0.11 * scale)), new THREE.Vector3(width * 0.62, 0.085 * scale, 0.08 * scale), m.leatherDark, 'Hips', skeleton, index)
+  addBox(root, p.Hips.clone().add(new THREE.Vector3(0, 0.02, -0.11 * scale)), new THREE.Vector3(width * 0.64, 0.075 * scale, 0.075 * scale), m.leatherDark, 'Hips', skeleton, index)
+  addBox(root, p.Hips.clone().add(new THREE.Vector3(0, 0.01, -0.155 * scale)), new THREE.Vector3(width * 0.18, 0.095 * scale, 0.03 * scale), m.metalDark, 'Hips', skeleton, index)
   for (let i = -2; i <= 2; i += 1) {
-    const x = i * width * 0.1
-    const h = (0.36 + (Math.abs(i) % 2) * 0.08) * scale
-    addClothStrip(root, p.Hips.clone().add(new THREE.Vector3(x, -h * 0.48, -0.06)), width * 0.13, h, i % 2 ? m.clothDark : m.cloth, 'Hips', skeleton, index, i * 0.035)
+    const x = i * width * 0.095
+    const h = (0.34 + (Math.abs(i) % 2) * 0.09 + (i === 0 ? 0.08 : 0)) * scale
+    addClothStrip(root, p.Hips.clone().add(new THREE.Vector3(x, -h * 0.49, -0.068)), width * (i === 0 ? 0.16 : 0.125), h, i % 2 ? m.clothDark : m.cloth, 'Hips', skeleton, index, i * 0.034)
   }
+  addClothStrip(root, p.Hips.clone().add(new THREE.Vector3(-width * 0.16, -0.18 * scale, 0.075)), width * 0.19, 0.42 * scale, m.clothDark, 'Hips', skeleton, index, -0.08)
   for (const side of [-1, 1]) {
-    addFrustum(root, p.Hips.clone().add(new THREE.Vector3(side * width * 0.26, -0.07 * scale, -0.02)), width * 0.22, 0.09 * scale, width * 0.14, 0.07 * scale, 0.22 * scale, m.leather, 'Hips', skeleton, index, new THREE.Euler(0.02, 0, side * 0.18))
+    addFrustum(root, p.Hips.clone().add(new THREE.Vector3(side * width * 0.26, -0.07 * scale, -0.02)), width * 0.21, 0.085 * scale, width * 0.13, 0.065 * scale, 0.2 * scale, m.leather, 'Hips', skeleton, index, new THREE.Euler(0.02, 0, side * 0.18))
   }
 }
 
@@ -255,22 +264,27 @@ function addArmor(root: THREE.Group, p: Record<string, THREE.Vector3>, width: nu
   for (const side of [-1, 1]) {
     const shoulder = side < 0 ? p.UpperArm_L : p.UpperArm_R
     const boneName = side < 0 ? 'UpperArm_L' : 'UpperArm_R'
-    const size = side < 0 ? 1.0 : 0.82
+    const size = side < 0 ? 1.08 : 0.8
+    addFrustum(root, shoulder.clone().add(new THREE.Vector3(side * 0.025, 0.035, 0.012)), 0.28 * scale * size, 0.22 * scale * size, 0.19 * scale * size, 0.14 * scale * size, 0.08 * scale, m.leatherDark, boneName, skeleton, index, new THREE.Euler(0.06, side * -0.12, side * 0.22))
     for (let layer = 0; layer < 3; layer += 1) {
+      const outward = side * (0.014 + layer * 0.025)
       addFrustum(
         root,
-        shoulder.clone().add(new THREE.Vector3(side * (0.015 + layer * 0.018), 0.04 - layer * 0.035, 0.005 + layer * 0.006)),
-        0.25 * scale * size,
-        0.23 * scale * size,
-        0.16 * scale * size,
-        0.17 * scale * size,
-        0.095 * scale,
+        shoulder.clone().add(new THREE.Vector3(outward, 0.075 - layer * 0.045, -0.012 + layer * 0.01)),
+        (0.27 - layer * 0.025) * scale * size,
+        (0.2 - layer * 0.018) * scale * size,
+        (0.16 - layer * 0.018) * scale * size,
+        (0.13 - layer * 0.014) * scale * size,
+        0.065 * scale,
         layer === 0 ? m.metal : m.metalDark,
         boneName,
         skeleton,
         index,
-        new THREE.Euler(0.04, side * -0.12, side * (0.22 + layer * 0.07)),
+        new THREE.Euler(0.08 + layer * 0.03, side * -0.16, side * (0.18 + layer * 0.1)),
       )
+    }
+    if (side < 0) {
+      addFrustum(root, shoulder.clone().add(new THREE.Vector3(side * 0.17 * scale, 0.12 * scale, 0.005)), 0.055 * scale, 0.05 * scale, 0.012 * scale, 0.012 * scale, 0.25 * scale, m.metalDark, boneName, skeleton, index, new THREE.Euler(0, 0, side * 0.48))
     }
   }
 
@@ -280,6 +294,14 @@ function addArmor(root: THREE.Group, p: Record<string, THREE.Vector3>, width: nu
   addGreave(root, p, 1, skeleton, index, m, scale)
 }
 
+function addHarness(root: THREE.Group, p: Record<string, THREE.Vector3>, width: number, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
+  const chestY = p.Chest.y - 0.02 * scale
+  const top = new THREE.Vector3(-width * 0.27, chestY + 0.17 * scale, -0.155 * scale)
+  const bottom = new THREE.Vector3(width * 0.22, p.Hips.y + 0.12 * scale, -0.145 * scale)
+  addBoneBetween(root, top, bottom, 0.035 * scale, 0.03 * scale, m.leather, 'Chest', skeleton, index, 6)
+  addBox(root, new THREE.Vector3(width * 0.04, chestY - 0.01 * scale, -0.175 * scale), new THREE.Vector3(0.095 * scale, 0.095 * scale, 0.025 * scale), m.metalDark, 'Chest', skeleton, index, new THREE.Euler(0, 0, 0.12))
+}
+
 function addBracerStack(root: THREE.Group, p: Record<string, THREE.Vector3>, side: number, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
   const elbow = side < 0 ? p.LowerArm_L : p.LowerArm_R
   const hand = side < 0 ? p.Hand_L : p.Hand_R
@@ -287,6 +309,7 @@ function addBracerStack(root: THREE.Group, p: Record<string, THREE.Vector3>, sid
   const center = elbow.clone().lerp(hand, 0.58)
   addFrustum(root, center, 0.13 * scale, 0.12 * scale, 0.095 * scale, 0.09 * scale, 0.19 * scale, m.metalDark, boneName, skeleton, index, new THREE.Euler(0, 0, side * 0.05))
   addBox(root, center.clone().add(new THREE.Vector3(0, 0, -0.07 * scale)), new THREE.Vector3(0.14 * scale, 0.16 * scale, 0.025 * scale), m.metal, boneName, skeleton, index, new THREE.Euler(0, 0, side * 0.04))
+  addBox(root, center.clone().add(new THREE.Vector3(0, -0.07 * scale, -0.073 * scale)), new THREE.Vector3(0.12 * scale, 0.025 * scale, 0.03 * scale), m.leather, boneName, skeleton, index)
 }
 
 function addGreave(root: THREE.Group, p: Record<string, THREE.Vector3>, side: number, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
@@ -299,21 +322,19 @@ function addGreave(root: THREE.Group, p: Record<string, THREE.Vector3>, side: nu
   addIco(root, knee.clone().add(new THREE.Vector3(0, 0, -0.04)), 0.09 * scale, m.metal, boneName, skeleton, index, new THREE.Vector3(1.0, 0.72, 0.52), 1)
 }
 
-function addConceptSword(hand: THREE.Bone, m: MaterialSet, scale: number) {
-  const group = new THREE.Group()
-  group.name = 'WeaponSocket_R'
-  group.position.set(0.025, -0.01, -0.012)
-  group.rotation.set(0.04, 0, 0.07)
-  hand.add(group)
+function addConceptSword(root: THREE.Group, hand: THREE.Vector3, skeleton: THREE.Skeleton, index: Map<string, number>, m: MaterialSet, scale: number) {
+  const gripTop = hand.clone().add(new THREE.Vector3(0.015 * scale, 0.045 * scale, -0.01 * scale))
+  const gripBottom = gripTop.clone().add(new THREE.Vector3(0.015 * scale, -0.2 * scale, -0.012 * scale))
+  const bladeStart = gripBottom.clone().add(new THREE.Vector3(0.015 * scale, -0.08 * scale, 0))
+  const bladeEnd = bladeStart.clone().add(new THREE.Vector3(0.12 * scale, -0.82 * scale, 0.035 * scale))
+  const direction = bladeEnd.clone().sub(bladeStart).normalize()
+  const guardCenter = gripBottom.clone().add(new THREE.Vector3(0, -0.025 * scale, 0))
 
-  childBox(group, new THREE.Vector3(0, -0.12 * scale, 0), new THREE.Vector3(0.055 * scale, 0.24 * scale, 0.055 * scale), m.leatherDark, 'CryptSwordGrip')
-  childBox(group, new THREE.Vector3(0, -0.255 * scale, 0), new THREE.Vector3(0.34 * scale, 0.05 * scale, 0.08 * scale), m.metalDark, 'CryptSwordGuard')
-  childFrustum(group, new THREE.Vector3(0, -0.72 * scale, 0), 0.105 * scale, 0.05 * scale, 0.07 * scale, 0.035 * scale, 0.92 * scale, m.metal, 'CryptSwordBlade')
-  childFrustum(group, new THREE.Vector3(0, -1.205 * scale, 0), 0.07 * scale, 0.035 * scale, 0.012 * scale, 0.014 * scale, 0.11 * scale, m.metal, 'CryptSwordTip')
-  const pommel = new THREE.Mesh(new THREE.OctahedronGeometry(0.06 * scale, 0), m.metalDark)
-  pommel.name = 'CryptSwordPommel'
-  pommel.position.set(0, 0.035 * scale, 0)
-  group.add(pommel)
+  addBoneBetween(root, gripTop, gripBottom, 0.034 * scale, 0.03 * scale, m.leatherDark, 'Hand_R', skeleton, index, 8)
+  addBox(root, guardCenter, new THREE.Vector3(0.31 * scale, 0.045 * scale, 0.075 * scale), m.metalDark, 'Hand_R', skeleton, index, new THREE.Euler(0.02, -0.04, -0.05))
+  addBoneBetween(root, bladeStart, bladeEnd, 0.07 * scale, 0.034 * scale, m.metal, 'Hand_R', skeleton, index, 4)
+  addFrustum(root, bladeEnd.clone().add(direction.clone().multiplyScalar(0.055 * scale)), 0.055 * scale, 0.034 * scale, 0.008 * scale, 0.01 * scale, 0.12 * scale, m.metal, 'Hand_R', skeleton, index, new THREE.Euler(0.06, 0, -0.12))
+  addIco(root, gripTop.clone().add(new THREE.Vector3(-0.005 * scale, 0.045 * scale, 0)), 0.055 * scale, m.metalDark, 'Hand_R', skeleton, index, new THREE.Vector3(0.85, 1.15, 0.85), 0)
 }
 
 function addClothStrip(root: THREE.Group, center: THREE.Vector3, width: number, height: number, material: THREE.Material, boneName: string, skeleton: THREE.Skeleton, index: Map<string, number>, tilt: number) {
