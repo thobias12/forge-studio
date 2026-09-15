@@ -2,6 +2,18 @@ import type { ForgeDungeonPackage } from './dungeonPackage'
 
 export type BuiltinDungeonProp = 'pillar' | 'torch' | 'statue' | 'barrel' | 'crate' | 'rubble' | 'spikes'
 
+export type DungeonDestructible = {
+  enabled: true
+  template?: string
+  health: number
+  mass: number
+  impulse: number
+  bounce: number
+  fragmentLifetime: number
+  lootEnabled: boolean
+  lootChance: number
+}
+
 export type DungeonProp = {
   id: string
   name: string
@@ -14,6 +26,7 @@ export type DungeonProp = {
   scale: number
   roomId?: string
   collision: boolean
+  destructible?: DungeonDestructible
 }
 
 export type DungeonWithProps = ForgeDungeonPackage & { props?: DungeonProp[] }
@@ -22,6 +35,7 @@ export type PropLibraryAsset = {
   id: string
   name: string
   blob: Blob
+  destructible?: DungeonDestructible
 }
 
 export const BUILTIN_DUNGEON_PROPS: Array<{ id: BuiltinDungeonProp; name: string; hint: string }> = [
@@ -52,6 +66,7 @@ export function createDungeonProp(input: {
   scale?: number
   rotationY?: number
   collision?: boolean
+  destructible?: DungeonDestructible
 }): DungeonProp {
   return {
     id: crypto.randomUUID(),
@@ -65,5 +80,6 @@ export function createDungeonProp(input: {
     scale: input.scale ?? 1,
     rotationY: input.rotationY ?? 0,
     collision: input.collision ?? input.assetRef !== 'rubble',
+    destructible: input.destructible,
   }
 }
