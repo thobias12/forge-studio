@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { buildProceduralItemGroup } from '../engine/proceduralItemGeometry'
+import { buildProceduralItemGroupV2 } from '../engine/proceduralItemGeometryV2'
 import type { ForgeItemGeneratorRecipe } from '../engine/itemGeneratorTypes'
 
 export default function ProceduralItemRecipePreview({ recipe }: { recipe: ForgeItemGeneratorRecipe }) {
@@ -32,7 +32,7 @@ export default function ProceduralItemRecipePreview({ recipe }: { recipe: ForgeI
     rim.position.set(-4, 2, -3)
     scene.add(rim)
 
-    const root = buildProceduralItemGroup(recipe)
+    const root = buildProceduralItemGroupV2(recipe)
     scene.add(root)
     const box = new THREE.Box3().setFromObject(root)
     const center = box.getCenter(new THREE.Vector3())
