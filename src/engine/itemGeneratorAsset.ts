@@ -2,11 +2,11 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import type { ForgeItemDefinition } from './forgeProject'
 import type { ForgeItemGeneratorRecipe } from './itemGeneratorTypes'
-import { buildProceduralItemGroup } from './proceduralItemGeometry'
+import { buildProceduralItemGroupV2 } from './proceduralItemGeometryV2'
 import { saveAsset, type LibraryAsset } from '../lib/library'
 
 export async function generateProceduralItemMaster(item: Pick<ForgeItemDefinition, 'id' | 'name'>, recipe: ForgeItemGeneratorRecipe): Promise<LibraryAsset> {
-  const root = buildProceduralItemGroup(recipe)
+  const root = buildProceduralItemGroupV2(recipe)
   root.name = `${item.name} Procedural Master`
   const blob = await exportGroupGlb(root)
   disposeGroup(root)
