@@ -201,7 +201,7 @@ export default function ItemForgeV2({ onOpenModelCreator }: Props) {
     const next: ForgeProjectWorkspace = {
       ...workspace,
       manifest: { ...workspace.manifest, content: { ...workspace.manifest.content, items: [...workspace.manifest.content.items, path] } },
-      gameplay: { ...workspace.gameplay, items: [...workspace.gameplay.items, created] },
+      gameplay: { ...workspace.gameplay, items: [...workspace.gameplay.items, created as ForgeItemDefinition] },
     }
     const saved = commit(next, `${created.name} created. Forge is building and fitting a sword starter…`)
     setSelectedId(id)
@@ -436,7 +436,7 @@ export default function ItemForgeV2({ onOpenModelCreator }: Props) {
               <Toggle label="Use master model" checked={visual.equipped.useMaster} onChange={(useMaster) => patchVisual({ equipped: { ...visual.equipped, useMaster } })}/>
               {!visual.equipped.useMaster && <AssetSelect label="Equipped override" value={visual.equipped.modelAssetId ?? ''} assets={modelAssets} onChange={(modelAssetId) => patchVisual({ equipped: { ...visual.equipped, modelAssetId: modelAssetId || undefined } })}/>} 
               {classification.itemType === 'armor'
-                ? <div className="item-wearable-summary"><span>Wearable target</span><strong>{taxonomyLabel(classification.equipSlot)} · {taxonomyLabel(classification.armorFitMode)}</strong><small>{classification.bodyMask.length ? `Masks ${classification.bodyMask.map(taxonomyLabel).join(', ')}` : 'No body regions masked'}</small></div>
+                ? <div className="item-wearable-summary"><span>Wearable target</span><strong>{taxonomyLabel(classification.equipSlot)} · {taxonomyLabel(classification.armorFitMode)}</strong><small>{classification.bodyMask.length ? `Masks ${classification.bodyMask.map((region) => taxonomyLabel(region)).join(', ')}` : 'No body regions masked'}</small></div>
                 : <SelectField label="Socket" value={visual.equipped.socket} options={['RightHand','LeftHand','Back','HipLeft','HipRight']} labeler={taxonomyLabel} onChange={(socket) => patchVisual({ equipped: { ...visual.equipped, socket: socket as ForgeItemVisualDefinition['equipped']['socket'] } })}/>} 
               <TransformFields value={visual.equipped.transform} onChange={(transform) => patchVisual({ equipped: { ...visual.equipped, transform } })}/>
             </div>
