@@ -37,7 +37,7 @@ export default function AnimationBindings() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('Select a character to bind gameplay actions to its animation clips.')
 
-  const characters = useMemo(() => assets.filter((asset) => asset.category === 'characters'), [assets])
+  const characters = useMemo(() => assets.filter((asset) => asset.category === 'characters' && (asset.kind === 'glb' || asset.mime.includes('forge-character'))), [assets])
   const animationAssets = useMemo(() => assets.filter((asset) => asset.category === 'animations' && asset.kind === 'glb'), [assets])
   const character = characters.find((asset) => asset.id === characterId)
   const selectedBinding = set?.actions[selectedAction]
@@ -50,7 +50,7 @@ export default function AnimationBindings() {
       if (cancelled) return
       setAssets(items)
       setWeaponItems(workspace.gameplay.items.filter((item) => item.slot === 'weapon'))
-      const first = items.find((asset) => asset.category === 'characters')
+      const first = items.find((asset) => asset.category === 'characters' && (asset.kind === 'glb' || asset.mime.includes('forge-character')))
       if (first) setCharacterId((current) => current || first.id)
     }).catch(() => setStatus('Could not read the Shared Asset Library or Skillbound workspace.'))
     return () => { cancelled = true }
