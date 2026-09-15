@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import ArpgDungeonViewportCore from './ArpgDungeonViewportCore'
+import ArpgDungeonViewportCore from './ArpgDungeonViewportCoreV2'
 import type { DungeonWithProps } from '../lib/dungeonProps'
 import { withCryptRuntimeCollision } from '../lib/cryptCollision'
 
