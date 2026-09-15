@@ -3,7 +3,16 @@ import { Boxes, Dices, Save, Sparkles } from 'lucide-react'
 import ProceduralItemRecipePreview from './ProceduralItemRecipePreview'
 import { loadSkillboundWorkspace, saveSkillboundWorkspace, type ForgeItemDefinition, type ForgeProjectWorkspace } from '../engine/forgeProject'
 import { autoFitItemPresentation } from '../engine/itemAutoFit'
-import { applyGeneratorPreset, generatorForItem, itemGeneratorRecipe, randomizeGeneratorRecipe, updateGeneratorMaterial, updateGeneratorParam, variationRecipes } from '../engine/itemGenerator'
+import {
+  applyGeneratorPreset,
+  generatorForItem,
+  itemGeneratorRecipe,
+  randomizeGeneratorRecipe,
+  updateGeneratorMaterial,
+  updateGeneratorParam,
+  variationRecipes,
+  variationSummary,
+} from '../engine/itemGeneratorV2'
 import { generateProceduralItemMaster } from '../engine/itemGeneratorAsset'
 import type { ForgeItemGeneratorRecipe } from '../engine/itemGeneratorTypes'
 import { itemVisual, renderItemIconBlob } from '../engine/itemPresentation'
@@ -61,13 +70,13 @@ export default function ProceduralItemGeneratorPanel() {
       setStatus('Rendering the inventory icon…')
       const iconId = `skillbound:item-icon:${item.id}`
       const blob = await renderItemIconBlob(next, 256)
-      await saveAsset({ id: iconId, name: `${item.name} Inventory Icon`, category: 'textures', kind: 'image', mime: 'image/png', tags: ['skillbound','item-icon',item.id,'procedural'], source: `Item Forge generator · seed ${draft.seed}`, blob })
+      await saveAsset({ id: iconId, name: `${item.name} Inventory Icon`, category: 'textures', kind: 'image', mime: 'image/png', tags: ['skillbound','item-icon',item.id,'procedural'], source: `Item Forge generator · ${draft.generatorId} · seed ${draft.seed}`, blob })
       next = { ...next, visual: { ...next.visual!, inventory: { ...next.visual!.inventory, iconAssetId: iconId, autoIcon: true } } }
 
       const items = workspace.gameplay.items.map((entry) => entry.id === item.id ? next : entry)
       const saved = saveSkillboundWorkspace({ ...workspace, gameplay: { ...workspace.gameplay, items } })
       setWorkspace(saved)
-      setStatus(`Applied to ${item.name} · master GLB replaced, presentations fitted and inventory icon regenerated.`)
+      setStatus(`Applied ${generator?.label ?? 'generator'} to ${item.name} · master GLB, presentations and inventory icon updated.`)
 
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('forge:item-generator-applied', { detail: { itemId: item.id, assetId: asset.id } }))
@@ -78,15 +87,15 @@ export default function ProceduralItemGeneratorPanel() {
   }
 
   if (!workspace) return <section className="item-generator-panel compact"><Sparkles size={14}/><span>{status}</span></section>
-  if (!supported.length) return <section className="item-generator-panel compact"><Sparkles size={14}/><span>Create a Weapon → Sword item to use the procedural generator.</span></section>
+  if (!supported.length) return <section className="item-generator-panel compact"><Sparkles size={14}/><span>Create a Weapon or Armor item to use the procedural generator.</span></section>
   if (!item || !generator || !draft) return null
 
   const groups = Array.from(new Set(generator.fields.map((field) => field.group)))
   return <section className="item-generator-panel">
     <header>
-      <div><span>PROCEDURAL MODEL GENERATOR</span><strong>{generator.label}</strong><small>Edit the recipe live. Apply only when the preview is the model you want this item to use.</small></div>
+      <div><span>PROCEDURAL MODEL GENERATOR</span><strong>{generator.label}</strong><small>{generator.description}</small></div>
       <div className="item-generator-actions">
-        <select value={selectedId} onChange={(e) => choose(e.target.value)}>{supported.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select>
+        <select value={selectedId} onChange={(event) => choose(event.target.value)}>{supported.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select>
         <button onClick={saveRecipe} title="Save the editable recipe without replacing the current item model"><Save size={12}/>Save recipe</button>
         <button className="primary" disabled={busy} onClick={() => void applyToItem()} title="Create the GLB, assign it as this item's master model, auto-fit all presentations and regenerate its inventory icon"><Boxes size={12}/>{busy ? 'Applying…' : 'Apply to item'}</button>
       </div>
@@ -95,19 +104,19 @@ export default function ProceduralItemGeneratorPanel() {
     <div className="item-generator-body">
       <div className="item-generator-preview">
         <ProceduralItemRecipePreview recipe={draft}/>
-        <div className="seed-row"><input type="number" min="1" value={draft.seed} onChange={(e) => setDraft({ ...draft, seed: Math.max(1, Math.floor(Number(e.target.value) || 1)), preset: 'custom' })}/><button onClick={() => setDraft(randomizeGeneratorRecipe(draft))}><Dices size={12}/>Randomize</button><button onClick={() => setVariations(variationRecipes(draft, 12))}><Sparkles size={12}/>Generate 12</button></div>
+        <div className="seed-row"><input type="number" min="1" value={draft.seed} onChange={(event) => setDraft({ ...draft, seed: Math.max(1, Math.floor(Number(event.target.value) || 1)), preset: 'custom' })}/><button onClick={() => setDraft(randomizeGeneratorRecipe(draft))}><Dices size={12}/>Randomize</button><button onClick={() => setVariations(variationRecipes(draft, 12))}><Sparkles size={12}/>Generate 12</button></div>
         <p><strong>Preview only.</strong> Randomize and sliders do not alter the item until you press <b>Apply to item</b>.</p>
       </div>
 
       <div className="item-generator-controls">
-        <label className="preset"><span>Preset</span><select value={draft.preset} onChange={(e) => setDraft(applyGeneratorPreset(draft, e.target.value))}><option value="custom">Custom</option>{generator.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
-        {groups.map((group) => <fieldset key={group}><legend>{group}</legend>{generator.fields.filter((field) => field.group === group).map((field) => field.kind === 'range' ? <label key={field.key}><span>{field.label}<b>{Number(draft.params[field.key] ?? field.min).toFixed(2)}</b></span><input type="range" min={field.min} max={field.max} step={field.step} value={Number(draft.params[field.key] ?? field.min)} onChange={(e) => setDraft(updateGeneratorParam(draft, field.key, Number(e.target.value)))}/></label> : <label key={field.key}><span>{field.label}</span><select value={String(draft.params[field.key] ?? '')} onChange={(e) => setDraft(updateGeneratorParam(draft, field.key, e.target.value))}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</fieldset>)}
-        <fieldset><legend>Materials</legend>{generator.materials.map((field) => <label key={field.key}><span>{field.label}</span><select value={draft.materials[field.key] ?? ''} onChange={(e) => setDraft(updateGeneratorMaterial(draft, field.key, e.target.value))}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</fieldset>
+        <label className="preset"><span>Preset</span><select value={draft.preset} onChange={(event) => setDraft(applyGeneratorPreset(draft, event.target.value))}><option value="custom">Custom</option>{generator.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
+        {groups.map((group) => <fieldset key={group}><legend>{group}</legend>{generator.fields.filter((field) => field.group === group).map((field) => field.kind === 'range' ? <label key={field.key}><span>{field.label}<b>{Number(draft.params[field.key] ?? field.min).toFixed(field.step >= 1 ? 0 : 2)}</b></span><input type="range" min={field.min} max={field.max} step={field.step} value={Number(draft.params[field.key] ?? field.min)} onChange={(event) => setDraft(updateGeneratorParam(draft, field.key, Number(event.target.value)))}/></label> : <label key={field.key}><span>{field.label}</span><select value={String(draft.params[field.key] ?? '')} onChange={(event) => setDraft(updateGeneratorParam(draft, field.key, event.target.value))}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</fieldset>)}
+        <fieldset><legend>Materials</legend>{generator.materials.map((field) => <label key={field.key}><span>{field.label}</span><select value={draft.materials[field.key] ?? ''} onChange={(event) => setDraft(updateGeneratorMaterial(draft, field.key, event.target.value))}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</fieldset>
       </div>
     </div>
 
-    {variations.length > 0 && <div className="item-generator-variations">{variations.map((recipe, index) => <button className={draft.seed === recipe.seed ? 'active' : ''} aria-pressed={draft.seed === recipe.seed} key={`${recipe.seed}-${index}`} onClick={() => setDraft(recipe)}><b>#{index + 1}</b><span>Seed {recipe.seed}</span><small>{String(recipe.params.bladeStyle)} · {Number(recipe.params.bladeLength).toFixed(2)} · {String(recipe.params.guardStyle)}</small></button>)}</div>}
+    {variations.length > 0 && <div className="item-generator-variations">{variations.map((recipe, index) => <button className={draft.seed === recipe.seed ? 'active' : ''} aria-pressed={draft.seed === recipe.seed} key={`${recipe.seed}-${index}`} onClick={() => setDraft(recipe)}><b>#{index + 1}</b><span>Seed {recipe.seed}</span><small>{variationSummary(recipe)}</small></button>)}</div>}
 
-    <footer><span>{status}</span><strong>Apply to item = master GLB + auto-fit + inventory icon</strong></footer>
+    <footer><span>{status}</span><strong>Recipe → master GLB → auto-fit → inventory icon</strong></footer>
   </section>
 }
