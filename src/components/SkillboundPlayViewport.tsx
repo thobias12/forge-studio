@@ -7,6 +7,7 @@ import { mergeAdventurePlayerState, type ForgeAdventurePlayerState } from '../en
 import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { getAsset } from '../lib/library'
+import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import { skillboundUiCssVariables } from '../lib/uiForge'
 import '../skillbound-runtime.css'
 import '../skillbound-adventure.css'
@@ -40,12 +41,14 @@ export default function SkillboundPlayViewport({ region }: Props) {
   const gameplay = workspace?.gameplay
   const projectId = workspace?.manifest.id ?? ''
   const uiTheme = workspace?.ui.theme
+  const hudLayout = useMemo(() => normalizeHudLayout(workspace?.ui.hud), [workspace?.ui.hud])
   const primaryAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.basicAbility), [gameplay])
   const skillAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0]), [gameplay])
   const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
   const uiClasses = uiTheme
     ? `panel-${uiTheme.panelStyle} ornament-${uiTheme.ornamentLevel} corner-${uiTheme.cornerStyle} slots-${uiTheme.slotStyle} buttons-${uiTheme.buttonStyle} density-${uiTheme.density}`
     : ''
+  const moduleStyle = (id: SkillboundHudModuleId) => hudModuleStyle(hudLayout.modules[id], uiTheme?.uiScale ?? 1) as CSSProperties
   const dungeonAnchor = useMemo(() => region.nodes.find((node) => node.contentType === 'dungeon' && node.contentRef), [region])
   const activeDungeon = activeDungeonId ? workspace?.dungeons.find((dungeon) => dungeon.id === activeDungeonId) : undefined
 
@@ -156,6 +159,7 @@ export default function SkillboundPlayViewport({ region }: Props) {
       projectId={projectId}
       initialState={dungeonPlayerState}
       uiTheme={uiTheme}
+      hudLayout={hudLayout}
       itemIcons={itemIcons}
       onExit={returnToOverworld}
     />
@@ -173,13 +177,13 @@ export default function SkillboundPlayViewport({ region }: Props) {
   return <div className={`skillbound-runtime-host ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>FORGE PLAY MODE · PHASE 3.1 SEAMLESS ADVENTURE</strong>
+      <strong>FORGE PLAY MODE · HUD FORGE 2.0</strong>
       <span>WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
     </div>
 
-    <div className="skillbound-objective">{objective}</div>
-    {snapshot.target && <TargetBar target={snapshot.target}/>} 
-    {nearDungeon && dungeonAnchor && <div className="skillbound-interaction-prompt ready"><kbd>E</kbd><strong>Enter {dungeonAnchor.label}</strong></div>}
+    {hudModuleVisible(hudLayout, 'objective') && <div className="skillbound-objective" style={moduleStyle('objective')}>{objective}</div>}
+    {snapshot.target && hudModuleVisible(hudLayout, 'target') && <TargetBar target={snapshot.target} style={moduleStyle('target')}/>} 
+    {nearDungeon && dungeonAnchor && hudModuleVisible(hudLayout, 'interaction') && <div className="skillbound-interaction-prompt ready" style={moduleStyle('interaction')}><kbd>E</kbd><strong>Enter {dungeonAnchor.label}</strong></div>}
 
     <div className="skillbound-runtime-actions">
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
@@ -187,21 +191,19 @@ export default function SkillboundPlayViewport({ region }: Props) {
     </div>
 
     {dungeonAnchor && <div className={`skillbound-dungeon-available ${nearDungeon ? 'near' : ''}`}><span>DUNGEON ENTRANCE</span><strong>{dungeonAnchor.label}</strong><small>{nearDungeon ? 'Press E to enter' : 'Travel to the generated entrance · authored in Map Studio'}</small></div>}
-    {snapshot.message && <div className="skillbound-runtime-message">{snapshot.message}</div>}
+    {snapshot.message && hudModuleVisible(hudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
 
-    <div className="skillbound-hud">
-      <div className="skillbound-health-orb" style={{ '--health': `${healthPercent}%` } as CSSProperties}>
-        <strong>{Math.ceil(snapshot.health)}</strong>
-        <span>/{snapshot.maxHealth}</span>
-      </div>
-      <div className="skillbound-skillbar">
-        <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
-        <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
-        <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
-      </div>
-    </div>
+    {hudModuleVisible(hudLayout, 'health') && <div className="skillbound-health-orb" style={{ ...moduleStyle('health'), '--health': `${healthPercent}%` } as CSSProperties}>
+      <strong>{Math.ceil(snapshot.health)}</strong>
+      <span>/{snapshot.maxHealth}</span>
+    </div>}
+    {hudModuleVisible(hudLayout, 'hotbar') && <div className="skillbound-skillbar" style={moduleStyle('hotbar')}>
+      <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
+      <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
+      <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
+    </div>}
 
-    <aside className="skillbound-inventory">
+    {hudModuleVisible(hudLayout, 'inventory') && <aside className="skillbound-inventory" style={moduleStyle('inventory')}>
       <header><span>INVENTORY</span><small>{snapshot.inventory.length} item{snapshot.inventory.length === 1 ? '' : 's'}</small></header>
       <div className="skillbound-inventory-items">
         {snapshot.inventory.length === 0 && <p>Defeat the encounter and walk over the loot.</p>}
@@ -218,13 +220,13 @@ export default function SkillboundPlayViewport({ region }: Props) {
         })}
       </div>
       <footer>{snapshot.savedAt ? `Autosaved ${new Date(snapshot.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Autosave every 5 seconds'}</footer>
-    </aside>
+    </aside>}
   </div>
 }
 
-function TargetBar({ target }: { target: NonNullable<ForgeRuntimeSnapshot['target']> }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']>; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
-  return <div className="skillbound-target-bar">
+  return <div className="skillbound-target-bar" style={style}>
     <div><strong>{target.name}</strong><span>{Math.ceil(target.health)} / {target.maxHealth}</span></div>
     <i><b style={{ width: `${percent}%` }}/></i>
   </div>
