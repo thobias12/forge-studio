@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Hammer, Home, Layers3, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles, Skull } from 'lucide-react'
+import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Hammer, Home, Layers3, LayoutGrid, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles, Skull } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
+import UIForge from './pages/UIForge'
 import CharacterStudio from './pages/CharacterStudio'
 import CharacterForge from './pages/CharacterForge'
 import DestructionLab from './pages/DestructionLab'
@@ -22,7 +23,7 @@ import './retarget.css'
 import './texture-v071.css'
 import './character.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'destruction' | 'conceptforge' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
+type Page = 'home' | 'mocap' | 'models' | 'destruction' | 'conceptforge' | 'uiforge' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
@@ -30,6 +31,7 @@ const nav = [
   { id: 'models' as const, label: 'Models', icon: Box },
   { id: 'destruction' as const, label: 'Destruction Lab', icon: Hammer },
   { id: 'conceptforge' as const, label: 'Concept Forge', icon: Sparkles },
+  { id: 'uiforge' as const, label: 'UI Forge', icon: LayoutGrid },
   { id: 'characterforge' as const, label: 'Character Forge', icon: Skull },
   { id: 'characters' as const, label: 'Character Assembly', icon: UserRoundCog },
   { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
@@ -83,6 +85,7 @@ export default function App() {
           {page === 'models' && <Models />}
           {page === 'destruction' && <DestructionLab />}
           {page === 'conceptforge' && <ConceptForge />}
+          {page === 'uiforge' && <UIForge />}
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <CharacterStudio />}
           {page === 'animations' && <AnimationStudio />}
