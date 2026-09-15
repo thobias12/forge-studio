@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { ForgeGameplayContent, ForgeProjectDungeonDefinition } from '../engine/forgeProject'
 import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine/runtime/ForgeDungeonRuntime'
+import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
+
+installDungeonRewardMethods(ForgeDungeonRuntime)
 
 const EMPTY: ForgeDungeonRuntimeSnapshot = {
   health: 1,
