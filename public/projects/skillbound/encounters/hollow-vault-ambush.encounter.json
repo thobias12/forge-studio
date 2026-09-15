@@ -1,0 +1,13 @@
+{
+  "format": "forge-encounter-profile",
+  "version": 1,
+  "id": "hollow-vault-ambush",
+  "name": "Drowned Crossroads Ambush",
+  "enemyId": "road-wretch",
+  "family": "road-wretch",
+  "count": 6,
+  "eliteChance": 0.12,
+  "difficulty": 1,
+  "introMessage": "Road Wretches surge from the flooded crypt passages.",
+  "rewardLootTableId": "road-wretch-drops"
+}

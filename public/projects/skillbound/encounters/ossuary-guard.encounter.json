@@ -1,0 +1,13 @@
+{
+  "format": "forge-encounter-profile",
+  "version": 1,
+  "id": "ossuary-guard",
+  "name": "Ossuary Guard",
+  "enemyId": "road-wretch",
+  "family": "road-wretch",
+  "count": 4,
+  "eliteChance": 0.75,
+  "difficulty": 2,
+  "introMessage": "The Ossuary Guard closes in.",
+  "rewardLootTableId": "road-wretch-drops"
+}

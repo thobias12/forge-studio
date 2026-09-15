@@ -4,6 +4,8 @@ import {
   Box,
   Boxes,
   Clapperboard,
+  Crown,
+  Crosshair,
   FolderKanban,
   Gamepad2,
   Globe2,
@@ -32,6 +34,8 @@ import ProjectValidation from './pages/ProjectValidation'
 import WorldForge from './pages/WorldForge'
 import GameplayForge from './pages/GameplayForge'
 import ItemForge from './pages/ItemForge'
+import EncounterForge from './pages/EncounterForge'
+import BossForge from './pages/BossForge'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
@@ -65,10 +69,11 @@ import './character.css'
 import './world-forge.css'
 import './gameplay-forge.css'
 import './item-forge.css'
+import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'itemforge'
+type Page = ForgeContentPage | 'gameplay' | 'itemforge' | 'encounterforge' | 'bossforge'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -103,6 +108,8 @@ const navGroups: NavGroup[] = [
     label: 'GAMEPLAY',
     items: [
       { id: 'gameplay', label: 'Gameplay Forge', icon: Swords },
+      { id: 'encounterforge', label: 'Encounter Forge', icon: Crosshair },
+      { id: 'bossforge', label: 'Boss Forge', icon: Crown },
       { id: 'itemforge', label: 'Item Forge', icon: PackagePlus },
       { id: 'uiforge', label: 'UI Forge', icon: LayoutGrid },
       { id: 'vfx', label: 'VFX Studio', icon: WandSparkles },
@@ -127,7 +134,7 @@ const navGroups: NavGroup[] = [
 ]
 
 const nav: NavItem[] = navGroups.flatMap((group) => group.items)
-const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'itemforge', 'uiforge', 'play', 'validation'])
+const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'play', 'validation'])
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -221,6 +228,8 @@ export default function App() {
           {page === 'projects' && <ProjectManager onOpenWorld={() => navigate('world')} onOpenGameplay={() => navigate('gameplay')} />}
           {page === 'world' && <WorldForge />}
           {page === 'gameplay' && <GameplayForge onOpenTool={(target) => navigate(target)} />}
+          {page === 'encounterforge' && <EncounterForge />}
+          {page === 'bossforge' && <BossForge />}
           {page === 'itemforge' && <ItemForge />}
           {page === 'play' && <ProjectPlay onOpenWorld={() => navigate('world')} onBackHome={() => navigate('home')} />}
           {page === 'validation' && <ProjectValidation registry={registry} onNavigate={(target) => navigate(target)} />}

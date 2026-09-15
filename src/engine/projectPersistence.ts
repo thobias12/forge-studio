@@ -1,4 +1,5 @@
 import { createDefaultSkillboundUiDefinition, type ForgeUiThemeDefinition } from '../lib/uiForge'
+import type { ForgeBossDefinition, ForgeEncounterProfile } from './encounterForge'
 import type {
   ForgeAbilityDefinition,
   ForgeEnemyDefinition,
@@ -82,13 +83,15 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
   const manifest = await readJson<ForgeProjectManifest>(handle, 'project.forge.json')
   validateManifest(manifest)
 
-  const [worlds, regions, dungeons, player, abilities, enemies, items, lootTables, ui] = await Promise.all([
+  const [worlds, regions, dungeons, encounterProfiles, bossProfiles, player, abilities, enemies, items, lootTables, ui] = await Promise.all([
     Promise.all(manifest.content.worlds.map((path) => readJson<ForgeWorldDefinition>(handle, path))),
     Promise.all(manifest.content.regions.map((path) => readJson<ForgeRegionDefinition>(handle, path))),
     Promise.all((manifest.content.dungeons ?? []).map(async (path) => {
       const value = await readJson<ForgeProjectDungeonDefinition & { id?: string }>(handle, path)
       return { ...value, id: value.id ?? definitionIdFromPath(path, '.dungeon.json') } as ForgeProjectDungeonDefinition
     })),
+    Promise.all((manifest.content.encounters ?? []).map((path) => readJson<ForgeEncounterProfile>(handle, path))),
+    Promise.all((manifest.content.bosses ?? []).map((path) => readJson<ForgeBossDefinition>(handle, path))),
     readJson<ForgePlayerDefinition>(handle, manifest.content.player),
     Promise.all(manifest.content.abilities.map((path) => readJson<ForgeAbilityDefinition>(handle, path))),
     Promise.all(manifest.content.enemies.map((path) => readJson<ForgeEnemyDefinition>(handle, path))),
@@ -105,6 +108,8 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
     worlds,
     regions,
     dungeons,
+    encounterProfiles,
+    bossProfiles,
     gameplay: { player, abilities, enemies, items, lootTables },
     ui,
     editor: {
@@ -138,6 +143,18 @@ export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgePro
     if (!value) throw new Error(`Could not resolve authored dungeon for ${path}.`)
     await writeJson(handle, path, value)
   }
+  for (let index = 0; index < (workspace.manifest.content.encounters ?? []).length; index += 1) {
+    const path = workspace.manifest.content.encounters![index]
+    const value = findDefinitionForPath(path, workspace.encounterProfiles, index, '.encounter.json')
+    if (!value) throw new Error(`Could not resolve authored encounter profile for ${path}.`)
+    await writeJson(handle, path, value)
+  }
+  for (let index = 0; index < (workspace.manifest.content.bosses ?? []).length; index += 1) {
+    const path = workspace.manifest.content.bosses![index]
+    const value = findDefinitionForPath(path, workspace.bossProfiles, index, '.boss.json')
+    if (!value) throw new Error(`Could not resolve authored boss profile for ${path}.`)
+    await writeJson(handle, path, value)
+  }
 
   await writeJson(handle, workspace.manifest.content.player, workspace.gameplay.player)
 
@@ -166,9 +183,7 @@ export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgePro
     await writeJson(handle, path, value)
   }
 
-  if (workspace.manifest.content.ui) {
-    await writeJson(handle, workspace.manifest.content.ui, workspace.ui)
-  }
+  if (workspace.manifest.content.ui) await writeJson(handle, workspace.manifest.content.ui, workspace.ui)
 
   const manifest = {
     ...workspace.manifest,
@@ -180,13 +195,7 @@ export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgePro
 }
 
 async function resolveSkillboundProjectRoot(selected: any) {
-  const candidates: string[][] = [
-    [],
-    ['public', 'projects', 'skillbound'],
-    ['projects', 'skillbound'],
-    ['skillbound'],
-  ]
-
+  const candidates: string[][] = [[], ['public', 'projects', 'skillbound'], ['projects', 'skillbound'], ['skillbound']]
   for (const path of candidates) {
     try {
       let handle = selected
@@ -194,7 +203,7 @@ async function resolveSkillboundProjectRoot(selected: any) {
       const manifest = await readJson<ForgeProjectManifest>(handle, 'project.forge.json')
       if (manifest?.format === 'forge-project' && manifest.id === SKILLBOUND_ID) return handle
     } catch {
-      // Try the next common project-root shape.
+      // Try next project-root shape.
     }
   }
   throw new Error('Forge could not find public/projects/skillbound/project.forge.json in the selected folder. Select the forge-studio repository root or the Skillbound project folder itself.')
@@ -221,11 +230,7 @@ async function ensurePermission(handle: any, mode: 'read' | 'readwrite', request
 
 async function queryPermission(handle: any, mode: 'read' | 'readwrite'): Promise<'granted' | 'prompt' | 'denied' | 'unsupported'> {
   if (!handle || typeof handle.queryPermission !== 'function') return 'unsupported'
-  try {
-    return await handle.queryPermission({ mode })
-  } catch {
-    return 'denied'
-  }
+  try { return await handle.queryPermission({ mode }) } catch { return 'denied' }
 }
 
 async function readJson<T>(root: any, path: string): Promise<T> {

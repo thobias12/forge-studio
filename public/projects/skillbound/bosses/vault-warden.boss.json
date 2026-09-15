@@ -1,0 +1,51 @@
+{
+  "format": "forge-boss",
+  "version": 1,
+  "id": "vault-warden",
+  "name": "Vault Warden",
+  "enemyId": "road-wretch",
+  "healthMultiplier": 5.5,
+  "damageMultiplier": 1.9,
+  "moveSpeedMultiplier": 0.92,
+  "attackCooldownMultiplier": 0.95,
+  "scale": 1.18,
+  "rewardLootTableId": "road-wretch-drops",
+  "guaranteedItemId": "rusted-sword",
+  "phases": [
+    {
+      "id": "warden-awakens",
+      "name": "Warden Awakens",
+      "startsAtHealth": 1,
+      "damageMultiplier": 1,
+      "moveSpeedMultiplier": 1,
+      "attackCooldownMultiplier": 1,
+      "windupMultiplier": 1,
+      "message": "The Vault Warden awakens.",
+      "summonCount": 0
+    },
+    {
+      "id": "flooded-fury",
+      "name": "Flooded Fury",
+      "startsAtHealth": 0.65,
+      "damageMultiplier": 1.15,
+      "moveSpeedMultiplier": 1.08,
+      "attackCooldownMultiplier": 0.88,
+      "windupMultiplier": 0.9,
+      "message": "The Warden calls the drowned guard to its side.",
+      "summonEnemyId": "road-wretch",
+      "summonCount": 2
+    },
+    {
+      "id": "warden-unbound",
+      "name": "Warden Unbound",
+      "startsAtHealth": 0.3,
+      "damageMultiplier": 1.35,
+      "moveSpeedMultiplier": 1.16,
+      "attackCooldownMultiplier": 0.7,
+      "windupMultiplier": 0.72,
+      "message": "The Vault Warden breaks its chains and enters a frenzy.",
+      "summonEnemyId": "road-wretch",
+      "summonCount": 3
+    }
+  ]
+}

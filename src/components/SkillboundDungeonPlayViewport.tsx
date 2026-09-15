@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { ForgeGameplayContent, ForgeProjectDungeonDefinition } from '../engine/forgeProject'
+import { loadSkillboundWorkspace, type ForgeGameplayContent, type ForgeProjectDungeonDefinition } from '../engine/forgeProject'
+import type { ForgeBossDefinition, ForgeEncounterProfile } from '../engine/encounterForge'
 import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine/runtime/ForgeDungeonRuntime'
 import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
+import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
 
 installDungeonRewardMethods(ForgeDungeonRuntime)
+installEncounterBossRuntime(ForgeDungeonRuntime)
 
 const EMPTY: ForgeDungeonRuntimeSnapshot = {
   health: 1,
@@ -31,10 +34,16 @@ type Props = {
   onExit: (state: ForgeAdventurePlayerState) => void
 }
 
+type AuthoredCombatProfiles = {
+  encounters: ForgeEncounterProfile[]
+  bosses: ForgeBossDefinition[]
+}
+
 export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, projectId, initialState, uiTheme, itemIcons, onExit }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const runtimeRef = useRef<ForgeDungeonRuntime | null>(null)
   const [snapshot, setSnapshot] = useState<ForgeDungeonRuntimeSnapshot>({ ...EMPTY, ...initialState, maxHealth: gameplay.player.maxHealth })
+  const [profiles, setProfiles] = useState<AuthoredCombatProfiles>()
   const primaryAbility = gameplay.abilities.find((ability) => ability.id === gameplay.player.basicAbility)
   const skillAbility = gameplay.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0])
   const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
@@ -43,23 +52,40 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     : ''
 
   useEffect(() => {
+    let cancelled = false
+    void loadSkillboundWorkspace().then((workspace) => {
+      if (!cancelled) setProfiles({ encounters: workspace.encounterProfiles, bosses: workspace.bossProfiles })
+    }).catch(() => {
+      if (!cancelled) setProfiles({ encounters: [], bosses: [] })
+    })
+    return () => { cancelled = true }
+  }, [dungeon.id])
+
+  useEffect(() => {
     const host = hostRef.current
-    if (!host) return
-    const runtime = new ForgeDungeonRuntime(host, dungeon, gameplay, initialState, { projectId, onState: setSnapshot, onExit })
+    if (!host || !profiles) return
+    const runtime = new ForgeDungeonRuntime(host, dungeon, gameplay, initialState, {
+      projectId,
+      onState: setSnapshot,
+      onExit,
+      encounterProfiles: profiles.encounters,
+      bossProfiles: profiles.bosses,
+    } as any)
     runtimeRef.current = runtime
     setSnapshot(runtime.getSnapshot())
     return () => {
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
-  }, [dungeon, gameplay, initialState, onExit, projectId])
+  }, [dungeon, gameplay, initialState, onExit, profiles, projectId])
 
   const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
 
   return <div className={`skillbound-runtime-host skillbound-dungeon-runtime ${uiClasses}`} ref={hostRef} style={uiStyle}>
+    {!profiles && <div className="skillbound-runtime-loading">Loading Encounter Forge + Boss Forge definitions…</div>}
     <div className="skillbound-runtime-hint">
       <strong>HOLLOW VAULT · SKILLBOUND RUNTIME</strong>
-      <span>Same Skillbound camera · WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
+      <span>Encounter Forge + Boss Forge · Skillbound camera · WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
     </div>
 
     <div className="skillbound-objective">{snapshot.bossCleared ? 'Vault Warden defeated · find the active return portal' : snapshot.encounter}</div>

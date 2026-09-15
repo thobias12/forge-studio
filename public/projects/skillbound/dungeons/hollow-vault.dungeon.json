@@ -8,7 +8,7 @@
   "gridSize": 1,
   "seed": 513902,
   "createdAt": "2026-09-15T18:20:00.000Z",
-  "updatedAt": "2026-09-15T18:20:00.000Z",
+  "updatedAt": "2026-09-15T19:12:00.000Z",
   "rooms": [
     { "id": "hv-entrance", "name": "Flooded Threshold", "type": "entrance", "x": -38, "z": 0, "width": 14, "depth": 12, "height": 4.8, "rotation": 0, "floorLevel": 0, "tags": ["entry"] },
     { "id": "hv-crossroads", "name": "Drowned Crossroads", "type": "combat", "x": -10, "z": 0, "width": 18, "depth": 15, "height": 4.9, "rotation": 0, "floorLevel": 0, "tags": ["combat"] },
@@ -38,9 +38,9 @@
   ],
   "logic": {
     "encounters": [
-      { "id": "hv-cross-enc", "name": "Drowned Crossroads Ambush", "roomId": "hv-crossroads", "trigger": "marker", "triggerMarkerId": "hv-cross-trigger", "spawnMarkerIds": ["hv-cross-spawn"], "lockDoorIds": [], "rewardMarkerIds": [], "family": "road-wretch", "count": 6, "eliteChance": 0.12, "difficulty": 1, "boss": false, "once": true },
-      { "id": "hv-elite-enc", "name": "Ossuary Guard", "roomId": "hv-ossuary", "trigger": "marker", "triggerMarkerId": "hv-elite-trigger", "spawnMarkerIds": ["hv-elite-spawn"], "lockDoorIds": ["hv-elite-gate"], "rewardMarkerIds": [], "family": "road-wretch", "count": 4, "eliteChance": 0.75, "difficulty": 2, "boss": false, "once": true },
-      { "id": "hv-boss-enc", "name": "Vault Warden", "roomId": "hv-sanctum", "trigger": "marker", "triggerMarkerId": "hv-boss-trigger", "spawnMarkerIds": ["hv-boss-spawn"], "lockDoorIds": ["hv-boss-gate"], "rewardMarkerIds": ["hv-boss-reward"], "family": "road-wretch", "count": 1, "eliteChance": 1, "difficulty": 3, "boss": true, "once": true }
+      { "id": "hv-cross-enc", "name": "Drowned Crossroads Ambush", "roomId": "hv-crossroads", "trigger": "marker", "triggerMarkerId": "hv-cross-trigger", "spawnMarkerIds": ["hv-cross-spawn"], "lockDoorIds": [], "rewardMarkerIds": [], "family": "road-wretch", "count": 6, "eliteChance": 0.12, "difficulty": 1, "boss": false, "once": true, "encounterProfileId": "hollow-vault-ambush" },
+      { "id": "hv-elite-enc", "name": "Ossuary Guard", "roomId": "hv-ossuary", "trigger": "marker", "triggerMarkerId": "hv-elite-trigger", "spawnMarkerIds": ["hv-elite-spawn"], "lockDoorIds": ["hv-elite-gate"], "rewardMarkerIds": [], "family": "road-wretch", "count": 4, "eliteChance": 0.75, "difficulty": 2, "boss": false, "once": true, "encounterProfileId": "ossuary-guard" },
+      { "id": "hv-boss-enc", "name": "Vault Warden", "roomId": "hv-sanctum", "trigger": "marker", "triggerMarkerId": "hv-boss-trigger", "spawnMarkerIds": ["hv-boss-spawn"], "lockDoorIds": ["hv-boss-gate"], "rewardMarkerIds": ["hv-boss-reward"], "family": "road-wretch", "count": 1, "eliteChance": 1, "difficulty": 3, "boss": true, "once": true, "bossProfileId": "vault-warden" }
     ],
     "completionPortalId": "hv-exit"
   },
