@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Backpack, Download, Grid3X3, LayoutGrid, Monitor, Palette, RotateCcw, Save, Shield, Sparkles, Swords, UserRound } from 'lucide-react'
+import { HudForgeEditor, HudForgeInspector } from '../components/HudForgeEditor'
 import { loadSkillboundWorkspace, patchUi, saveSkillboundWorkspace, type ForgeProjectWorkspace } from '../engine/forgeProject'
+import { createDefaultHudLayout, normalizeHudLayout, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import {
   UI_FORGE_ACCENTS,
   UI_FORGE_PRESETS,
@@ -26,6 +28,8 @@ const RARITIES = ['Common', 'Magic', 'Rare', 'Epic', 'Legendary']
 export default function UIForge() {
   const [presetId, setPresetId] = useState('dark-arpg')
   const [theme, setTheme] = useState<SkillboundUiTheme>(() => cloneUiForgePreset('dark-arpg'))
+  const [hudLayout, setHudLayout] = useState<SkillboundHudLayout>(() => createDefaultHudLayout())
+  const [selectedHudModule, setSelectedHudModule] = useState<SkillboundHudModuleId>('hotbar')
   const [screen, setScreen] = useState<UiForgeScreen>('hud')
   const [viewportId, setViewportId] = useState('fhd')
   const [workspace, setWorkspace] = useState<ForgeProjectWorkspace>()
@@ -39,6 +43,7 @@ export default function UIForge() {
         if (cancelled) return
         setWorkspace(project)
         setTheme({ ...project.ui.theme })
+        setHudLayout(normalizeHudLayout(project.ui.hud))
         setPresetId(UI_FORGE_PRESETS.some((preset) => preset.id === project.ui.theme.id) ? project.ui.theme.id : 'dark-arpg')
         setStatus('Loaded from projects/skillbound UI data. Save changes to update Play Mode.')
       })
@@ -49,7 +54,7 @@ export default function UIForge() {
   }, [])
 
   const patch = <K extends keyof SkillboundUiTheme>(key: K, value: SkillboundUiTheme[K]) => setTheme((current) => ({ ...current, [key]: value }))
-  const loadPreset = (id: string) => { setPresetId(id); setTheme(cloneUiForgePreset(id)); setStatus('Preset loaded in the editor. Save to apply it to Skillbound Runtime.') }
+  const loadPreset = (id: string) => { setPresetId(id); setTheme(cloneUiForgePreset(id)); setStatus('Theme preset loaded in the editor. Save to apply it to Skillbound Runtime.') }
   const style = useMemo(() => ({
     ...skillboundUiCssVariables(theme),
     '--sb-aspect': `${viewport.width} / ${viewport.height}`,
@@ -60,16 +65,16 @@ export default function UIForge() {
       setStatus('Skillbound project is still loading.')
       return
     }
-    const updatedUi = { ...workspace.ui, theme: { ...theme } }
+    const updatedUi = { ...workspace.ui, theme: { ...theme }, hud: hudLayout }
     const next = saveSkillboundWorkspace(patchUi(workspace, updatedUi))
     setWorkspace(next)
-    setStatus(`Saved "${theme.name}" to the active Skillbound project. World Forge and Play Project now use this theme.`)
+    setStatus(`Saved "${theme.name}" + HUD layout to Skillbound. Play Project now consumes both.`)
   }
 
   const exportTheme = () => {
     const definition = workspace?.ui
-      ? { ...workspace.ui, theme: { ...theme } }
-      : { format: 'forge-ui-theme', version: 1, id: 'skillbound-ui', projectId: 'skillbound', theme }
+      ? { ...workspace.ui, theme: { ...theme }, hud: hudLayout }
+      : { format: 'forge-ui-theme', version: 1, id: 'skillbound-ui', projectId: 'skillbound', theme, hud: hudLayout }
     const blob = new Blob([JSON.stringify(definition, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
@@ -82,7 +87,7 @@ export default function UIForge() {
   return <div className="uiforge" style={style}>
     <aside className="uiforge-left">
       <header className="uiforge-panel-heading"><Palette size={16}/><div><span>UI FORGE</span><strong>Skillbound Design System</strong></div></header>
-      <p className="uiforge-intro">One project theme now drives both this design canvas and the live Skillbound HUD, inventory and runtime controls.</p>
+      <p className="uiforge-intro">One project UI definition drives the design canvas and the live Skillbound runtime. HUD Forge now stores responsive module anchors alongside the visual theme.</p>
 
       <section className="uiforge-control-section">
         <h3>Theme preset</h3>
@@ -121,63 +126,52 @@ export default function UIForge() {
 
       <div className="uiforge-stage">
         <div className={`skillbound-preview panel-${theme.panelStyle} ornament-${theme.ornamentLevel} corner-${theme.cornerStyle} slots-${theme.slotStyle} buttons-${theme.buttonStyle} density-${theme.density}`}>
-          {screen === 'hud' && <HudPreview/>}
+          {screen === 'hud' && <HudForgeEditor layout={hudLayout} selected={selectedHudModule} onSelect={setSelectedHudModule} onChange={setHudLayout}/>} 
           {screen === 'inventory' && <InventoryPreview/>}
           {screen === 'character' && <CharacterPreview/>}
           {screen === 'skills' && <SkillsPreview/>}
         </div>
       </div>
-      <footer className="uiforge-canvas-footer"><Shield size={13}/><span>Responsive anchors are previewed at {viewport.label}. Saved tokens are consumed by Skillbound Play Mode.</span></footer>
+      <footer className="uiforge-canvas-footer"><Shield size={13}/><span>{screen === 'hud' ? `Drag HUD modules directly at ${viewport.label}; anchors keep the composition responsive.` : `Responsive preview at ${viewport.label}. Saved tokens are consumed by Skillbound Play Mode.`}</span></footer>
     </main>
 
     <aside className="uiforge-right">
-      <header className="uiforge-panel-heading"><Grid3X3 size={16}/><div><span>COMPONENT SYSTEM</span><strong>Shared primitives</strong></div></header>
-
-      <section className="uiforge-control-section">
-        <h3>Component language</h3>
-        <Field label="Item slots"><select value={theme.slotStyle} onChange={(event) => patch('slotStyle', event.target.value as SkillboundUiTheme['slotStyle'])}><option value="inset">Dark inset</option><option value="etched">Etched frame</option><option value="clean">Clean frame</option></select></Field>
-        <Field label="Buttons"><select value={theme.buttonStyle} onChange={(event) => patch('buttonStyle', event.target.value as SkillboundUiTheme['buttonStyle'])}><option value="solid">Solid</option><option value="ghost">Ghost</option></select></Field>
-        <Field label="Density"><select value={theme.density} onChange={(event) => patch('density', event.target.value as SkillboundUiTheme['density'])}><option value="compact">Compact</option><option value="comfortable">Comfortable</option></select></Field>
-      </section>
-
-      <section className="uiforge-component-demo">
-        <h3>Live components</h3>
-        <div className="sb-panel demo-panel"><span className="sb-kicker">PANEL</span><strong>Ancient Reliquary</strong><p>Shared surface, header and border language.</p></div>
-        <div className="uiforge-demo-row"><button className="sb-button">Primary</button><button className="sb-button subtle">Secondary</button></div>
-        <div className="uiforge-demo-slots">{RARITIES.map((rarity, index) => <div className={`sb-slot rarity-${index}`} key={rarity}><span>{index + 1}</span><small>{rarity[0]}</small></div>)}</div>
-        <div className="sb-tooltip"><span className="legendary">Ashen Vanguard Blade</span><small>Two-Handed Sword</small><b>142–188 Damage</b><p>+12% attack speed<br/>+34 strength</p></div>
-      </section>
-
-      <section className="uiforge-token-summary">
-        <h3>System coverage</h3>
-        <Token label="Panel / Window" value="Runtime + menus"/>
-        <Token label="Item / Gear slot" value="Inventory + loot"/>
-        <Token label="Button / Tab" value="Global"/>
-        <Token label="Tooltip" value="Items + skills"/>
-        <Token label="Resource orb" value="Combat HUD"/>
-        <Token label="Project file" value="ui/skillbound.ui.json"/>
-      </section>
+      {screen === 'hud' ? <>
+        <header className="uiforge-panel-heading"><Grid3X3 size={16}/><div><span>HUD FORGE 2.0</span><strong>Runtime layout</strong></div></header>
+        <HudForgeInspector layout={hudLayout} selected={selectedHudModule} onSelect={setSelectedHudModule} onChange={setHudLayout}/>
+      </> : <>
+        <header className="uiforge-panel-heading"><Grid3X3 size={16}/><div><span>COMPONENT SYSTEM</span><strong>Shared primitives</strong></div></header>
+        <section className="uiforge-control-section">
+          <h3>Component language</h3>
+          <Field label="Item slots"><select value={theme.slotStyle} onChange={(event) => patch('slotStyle', event.target.value as SkillboundUiTheme['slotStyle'])}><option value="inset">Dark inset</option><option value="etched">Etched frame</option><option value="clean">Clean frame</option></select></Field>
+          <Field label="Buttons"><select value={theme.buttonStyle} onChange={(event) => patch('buttonStyle', event.target.value as SkillboundUiTheme['buttonStyle'])}><option value="solid">Solid</option><option value="ghost">Ghost</option></select></Field>
+          <Field label="Density"><select value={theme.density} onChange={(event) => patch('density', event.target.value as SkillboundUiTheme['density'])}><option value="compact">Compact</option><option value="comfortable">Comfortable</option></select></Field>
+        </section>
+        <section className="uiforge-component-demo">
+          <h3>Live components</h3>
+          <div className="sb-panel demo-panel"><span className="sb-kicker">PANEL</span><strong>Ancient Reliquary</strong><p>Shared surface, header and border language.</p></div>
+          <div className="uiforge-demo-row"><button className="sb-button">Primary</button><button className="sb-button subtle">Secondary</button></div>
+          <div className="uiforge-demo-slots">{RARITIES.map((rarity, index) => <div className={`sb-slot rarity-${index}`} key={rarity}><span>{index + 1}</span><small>{rarity[0]}</small></div>)}</div>
+          <div className="sb-tooltip"><span className="legendary">Ashen Vanguard Blade</span><small>Two-Handed Sword</small><b>142–188 Damage</b><p>+12% attack speed<br/>+34 strength</p></div>
+        </section>
+        <section className="uiforge-token-summary">
+          <h3>System coverage</h3>
+          <Token label="Panel / Window" value="Runtime + menus"/>
+          <Token label="Item / Gear slot" value="Inventory + loot"/>
+          <Token label="Button / Tab" value="Global"/>
+          <Token label="Tooltip" value="Items + skills"/>
+          <Token label="Resource orb" value="Combat HUD"/>
+          <Token label="Project file" value="ui/skillbound.ui.json"/>
+        </section>
+      </>}
 
       <div className="uiforge-actions">
-        <button onClick={() => loadPreset(presetId)}><RotateCcw size={14}/> Reset preset</button>
+        <button onClick={() => loadPreset(presetId)}><RotateCcw size={14}/> Reset theme</button>
         <button onClick={exportTheme}><Download size={14}/> Export JSON</button>
         <button className="primary" disabled={!workspace} onClick={saveTheme}><Save size={14}/> Save to Skillbound</button>
       </div>
       <div className="uiforge-project-status">{status}</div>
     </aside>
-  </div>
-}
-
-function HudPreview() {
-  return <div className="sb-world sb-hud-world">
-    <WorldBackdrop/>
-    <div className="sb-party sb-panel"><span className="sb-kicker">PARTY</span><PartyRow name="Thobias" hp={0.84}/><PartyRow name="Kael" hp={0.62}/><PartyRow name="Mira" hp={0.93}/></div>
-    <div className="sb-minimap sb-panel"><div className="sb-map-disc"><i/><b>CRYPT HOLLOW</b></div><div className="sb-objectives"><span className="sb-kicker">OBJECTIVES</span><strong>Break the Bone Seal</strong><small>Reach the lower sanctum</small></div></div>
-    <div className="sb-combat-hud">
-      <ResourceOrb type="health" label="1,248" sub="Life"/>
-      <div className="sb-hotbar"><div className="sb-hotbar-slots">{['Q','W','E','R','1','2','3'].map((key, index) => <div className={`sb-skill-slot skill-${index}`} key={key}><i/><kbd>{key}</kbd></div>)}</div><div className="sb-xp"><i/><span>Level 18 · 64%</span></div></div>
-      <ResourceOrb type="mana" label="438" sub="Mana"/>
-    </div>
   </div>
 }
 
@@ -217,12 +211,10 @@ function SkillsPreview() {
 
 function WorldBackdrop() { return <><div className="world-vignette"/><div className="world-floor"/><div className="world-ruin ruin-a"/><div className="world-ruin ruin-b"/><div className="world-player"><i/><b/></div><div className="world-enemy enemy-a"/><div className="world-enemy enemy-b"/></> }
 function WindowHeader({ title, tabs }: { title: string; tabs: string[] }) { return <div className="sb-window-header"><div><span className="sb-kicker">SKILLBOUND</span><strong>{title}</strong></div><nav>{tabs.map((tab, index) => <button className={index === 0 ? 'active' : ''} key={tab}>{tab}</button>)}</nav><button className="window-close">×</button></div> }
-function PartyRow({ name, hp }: { name: string; hp: number }) { return <div className="party-row"><div className="party-avatar"/><div><strong>{name}</strong><span><i style={{ width: `${hp * 100}%` }}/></span></div></div> }
-function ResourceOrb({ type, label, sub }: { type: 'health' | 'mana'; label: string; sub: string }) { return <div className={`sb-orb ${type}`}><div className="orb-liquid"/><div className="orb-gloss"/><strong>{label}</strong><span>{sub}</span></div> }
 function EquipmentSlots() { return <>{['helm','chest','gloves','boots','weapon','ring'].map((slot, index) => <div className={`sb-slot equipment-slot equip-${slot} ${index < 4 ? `rarity-${(index + 1) % 5}` : ''}`} key={slot}><small>{slot[0].toUpperCase()}</small>{index < 4 && <i/>}</div>)}</> }
 function Stat({ name, value }: { name: string; value: string }) { return <div className="stat-row"><span>{name}</span><strong>{value}</strong></div> }
 function Resist({ name, value }: { name: string; value: number }) { return <div className="resist-row"><div><span>{name}</span><strong>{value}%</strong></div><i><b style={{ width: `${value}%` }}/></i></div> }
 function Token({ label, value }: { label: string; value: string }) { return <div className="token-row"><span>{label}</span><strong>{value}</strong></div> }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="uiforge-field"><span>{label}</span>{children}</label> }
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="uiforge-field"><span>{label}</span>{children}</label> }
 function Range({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) { return <label className="uiforge-range"><span><b>{label}</b><code>{suffix}</code></span><input type="range" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))}/></label> }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') }
