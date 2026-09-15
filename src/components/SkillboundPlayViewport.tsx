@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { loadSkillboundWorkspace, type ForgeGameplayContent } from '../engine/forgeProject'
+import { itemVisual } from '../engine/itemPresentation'
 import type { GeneratedRegion } from '../engine/guidedWorld'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
+import { getAsset } from '../lib/library'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
 import '../skillbound-runtime.css'
 
@@ -27,6 +29,7 @@ export default function SkillboundPlayViewport({ region }: Props) {
   const [gameplay, setGameplay] = useState<ForgeGameplayContent>()
   const [projectId, setProjectId] = useState('')
   const [uiTheme, setUiTheme] = useState<SkillboundUiTheme>()
+  const [itemIcons, setItemIcons] = useState<Record<string, string>>({})
 
   const primaryAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.basicAbility), [gameplay])
   const skillAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0]), [gameplay])
@@ -42,6 +45,29 @@ export default function SkillboundPlayViewport({ region }: Props) {
       setUiTheme(workspace.ui.theme)
     })
   }, [])
+
+  useEffect(() => {
+    if (!gameplay) return
+    let cancelled = false
+    const urls: string[] = []
+    const load = async () => {
+      const entries = await Promise.all(gameplay.items.map(async (item) => {
+        const iconId = itemVisual(item).inventory.iconAssetId
+        if (!iconId) return undefined
+        const asset = await getAsset(iconId).catch(() => undefined)
+        if (!asset) return undefined
+        const url = URL.createObjectURL(asset.blob)
+        urls.push(url)
+        return [item.id, url] as const
+      }))
+      if (!cancelled) setItemIcons(Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, string]>))
+    }
+    void load()
+    return () => {
+      cancelled = true
+      urls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [gameplay])
 
   useEffect(() => {
     if (!hostRef.current || !gameplay || !projectId) return
@@ -69,11 +95,12 @@ export default function SkillboundPlayViewport({ region }: Props) {
   return <div className={`skillbound-runtime-host ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>FORGE PLAY MODE · UI FORGE CONNECTED</strong>
+      <strong>FORGE PLAY MODE · AUTHORED PRESENTATION</strong>
       <span>WASD move · LMB attack · Q skill · Space dodge · red ring = enemy wind-up</span>
     </div>
 
     <div className="skillbound-objective">{objective}</div>
+    {snapshot.target && <TargetBar target={snapshot.target}/>} 
 
     <div className="skillbound-runtime-actions">
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
@@ -102,15 +129,24 @@ export default function SkillboundPlayViewport({ region }: Props) {
           const item = gameplay?.items.find((candidate) => candidate.id === itemId)
           if (!item) return null
           const equipped = snapshot.equippedWeaponId === item.id
-          return <button key={`${itemId}-${index}`} className={equipped ? 'equipped' : ''} onClick={() => runtimeRef.current?.equipItem(item.id)}>
-            <i style={{ background: item.color }}/>
-            <span><strong>{item.name}</strong><small>Weapon · +{item.damageBonus} damage</small></span>
+          const icon = itemIcons[item.id]
+          return <button key={`${itemId}-${index}`} className={`${equipped ? 'equipped ' : ''}rarity-${item.rarity}`} onClick={() => runtimeRef.current?.equipItem(item.id)}>
+            <span className="skillbound-item-icon">{icon ? <img src={icon} alt=""/> : <i style={{ background: item.color }}/>}</span>
+            <span><strong>{item.name}</strong><small>{item.rarity} weapon · +{item.damageBonus} damage</small></span>
             <em>{equipped ? 'Equipped' : 'Equip'}</em>
           </button>
         })}
       </div>
       <footer>{snapshot.savedAt ? `Autosaved ${new Date(snapshot.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Autosave every 5 seconds'}</footer>
     </aside>
+  </div>
+}
+
+function TargetBar({ target }: { target: NonNullable<ForgeRuntimeSnapshot['target']> }) {
+  const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
+  return <div className="skillbound-target-bar">
+    <div><strong>{target.name}</strong><span>{Math.ceil(target.health)} / {target.maxHealth}</span></div>
+    <i><b style={{ width: `${percent}%` }}/></i>
   </div>
 }
 

@@ -7,6 +7,8 @@
 .skillbound-runtime-canvas{position:absolute;inset:0;z-index:0;display:block;width:100%;height:100%;cursor:crosshair}
 .skillbound-runtime-hint{z-index:3}
 .skillbound-objective{position:absolute;z-index:3;top:14px;left:50%;transform:translateX(-50%);padding:7px 12px;border:var(--sb-border-width,1px) solid var(--sb-border,#3d473c);background:var(--sb-panel,#0b0e0cdd);color:var(--sb-text,#cfd6cf);border-radius:var(--sb-radius,4px);font-size:10px;letter-spacing:.03em;pointer-events:none;white-space:nowrap;box-shadow:0 8px 28px rgba(0,0,0,.62)}
+.skillbound-target-bar{position:absolute;z-index:3;top:48px;left:50%;transform:translateX(-50%) scale(var(--sb-ui-scale,1));transform-origin:top center;width:min(340px,42vw);padding:8px 10px;border:var(--sb-border-width,1px) solid var(--sb-border,#4a4435);background:var(--sb-panel,#11100ddd);border-radius:var(--sb-radius,4px);box-shadow:0 10px 30px rgba(0,0,0,.56);pointer-events:none}
+.skillbound-target-bar>div{display:flex;align-items:center;justify-content:space-between;gap:14px}.skillbound-target-bar strong{font-size:10px;letter-spacing:.06em;color:var(--sb-text,#eadfd3)}.skillbound-target-bar span{font-size:8px;color:var(--sb-muted,#958a82)}.skillbound-target-bar>i{display:block;height:5px;margin-top:6px;overflow:hidden;border-radius:999px;background:color-mix(in srgb,var(--sb-panel-alt,#241716) 80%,black 20%);border:1px solid color-mix(in srgb,var(--sb-border,#6b403a) 60%,transparent)}.skillbound-target-bar>i>b{display:block;height:100%;background:linear-gradient(90deg,#8f2626,#d05b4d);box-shadow:0 0 8px rgba(196,63,52,.35);transition:width .12s linear}
 .skillbound-runtime-actions{position:absolute;z-index:4;right:14px;top:14px;display:flex;gap:6px;transform:scale(var(--sb-ui-scale,1));transform-origin:top right}
 .world-forge-page .skillbound-runtime-actions button,.skillbound-runtime-host .skillbound-runtime-actions button{padding:6px 8px;background:var(--sb-panel,#111613dd);border:var(--sb-border-width,1px) solid var(--sb-border,#343d36);border-radius:var(--sb-radius,4px);font-size:9px;color:var(--sb-text,#aeb8b1)}
 .buttons-ghost .skillbound-runtime-actions button{background:transparent}
@@ -25,26 +27,28 @@
 .skillbound-skill-slot span{font-size:9px;font-weight:700;text-align:center;padding:0 4px}
 .skillbound-skill-slot em{position:absolute;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--sb-panel,#070807) 84%,black 16%);font-style:normal;font-size:16px;color:var(--sb-text,#f0eee8)}
 .skillbound-skill-slot.cooling{filter:saturate(.55)}
-.skillbound-inventory{position:absolute;z-index:4;right:14px;top:52px;width:218px;border:var(--sb-border-width,1px) solid var(--sb-border,#383d35);background:var(--sb-panel,#0d110eee);border-radius:var(--sb-radius,5px);box-shadow:0 12px 36px rgba(0,0,0,.68);overflow:hidden;transform:scale(var(--sb-ui-scale,1));transform-origin:top right}
+.skillbound-inventory{position:absolute;z-index:4;right:14px;top:52px;width:236px;border:var(--sb-border-width,1px) solid var(--sb-border,#383d35);background:var(--sb-panel,#0d110eee);border-radius:var(--sb-radius,5px);box-shadow:0 12px 36px rgba(0,0,0,.68);overflow:hidden;transform:scale(var(--sb-ui-scale,1));transform-origin:top right}
 .skillbound-inventory header{display:flex;align-items:center;justify-content:space-between;padding:8px 9px;border-bottom:var(--sb-border-width,1px) solid var(--sb-border,#2b302a);background:var(--sb-panel-alt,#121712)}
 .skillbound-inventory header span{font-size:9px;letter-spacing:.12em;font-weight:800;color:var(--sb-text,#bfc9c0)}
 .skillbound-inventory header small{font-size:8px;color:var(--sb-muted,#69766e)}
-.skillbound-inventory-items{padding:7px;display:flex;flex-direction:column;gap:5px;max-height:180px;overflow:auto}
+.skillbound-inventory-items{padding:7px;display:flex;flex-direction:column;gap:5px;max-height:220px;overflow:auto}
 .skillbound-inventory-items p{margin:4px 3px 6px;color:var(--sb-muted,#6f7b73);font-size:9px;line-height:1.45}
-.world-forge-page .skillbound-inventory-items button,.skillbound-runtime-host .skillbound-inventory-items button{width:100%;padding:6px;display:grid;grid-template-columns:9px minmax(0,1fr) auto;align-items:center;gap:7px;text-align:left;background:var(--sb-panel-alt,#111713);border:var(--sb-border-width,1px) solid color-mix(in srgb,var(--sb-border,#2b342d) 75%,transparent);border-radius:var(--sb-radius,3px);color:var(--sb-text)}
+.world-forge-page .skillbound-inventory-items button,.skillbound-runtime-host .skillbound-inventory-items button{width:100%;padding:6px;display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:7px;text-align:left;background:var(--sb-panel-alt,#111713);border:var(--sb-border-width,1px) solid color-mix(in srgb,var(--sb-border,#2b342d) 75%,transparent);border-radius:var(--sb-radius,3px);color:var(--sb-text)}
 .buttons-ghost .skillbound-inventory-items button{background:transparent}
 .world-forge-page .skillbound-inventory-items button.equipped,.skillbound-runtime-host .skillbound-inventory-items button.equipped{background:color-mix(in srgb,var(--sb-accent,#4a6c55) 12%,var(--sb-panel-alt));border-color:var(--sb-accent,#4a6c55)}
-.skillbound-inventory-items button i{width:8px;height:28px;border-radius:2px;box-shadow:0 0 10px currentColor}
-.skillbound-inventory-items button span{display:flex;min-width:0;flex-direction:column;gap:1px}
+.skillbound-item-icon{width:36px;height:36px;border:1px solid color-mix(in srgb,var(--sb-border,#3d473c) 80%,transparent);border-radius:var(--sb-radius,3px);display:grid!important;place-items:center!important;overflow:hidden;background:color-mix(in srgb,var(--sb-panel,#0b0e0c) 84%,black 16%)}
+.skillbound-item-icon img{width:100%;height:100%;display:block;object-fit:contain}.skillbound-item-icon i{width:9px;height:28px;border-radius:2px;box-shadow:0 0 10px currentColor}
+.skillbound-inventory-items button.rarity-magic .skillbound-item-icon{border-color:#5978a8}.skillbound-inventory-items button.rarity-rare .skillbound-item-icon{border-color:#b9954c;box-shadow:inset 0 0 12px rgba(185,149,76,.12)}
+.skillbound-inventory-items button>span:not(.skillbound-item-icon){display:flex;min-width:0;flex-direction:column;gap:1px}
 .skillbound-inventory-items button strong{font-size:9px;color:var(--sb-text,#d3dbd5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.skillbound-inventory-items button small{font-size:8px;color:var(--sb-muted,#69786e)}
+.skillbound-inventory-items button small{font-size:8px;color:var(--sb-muted,#69786e);text-transform:capitalize}
 .skillbound-inventory-items button em{font-style:normal;font-size:8px;color:var(--sb-accent,#95ad9d)}
 .skillbound-inventory footer{padding:6px 9px;border-top:var(--sb-border-width,1px) solid var(--sb-border,#262d27);color:var(--sb-muted,#59665e);font-size:8px}
-.panel-glass .skillbound-skillbar,.panel-glass .skillbound-inventory,.panel-glass .skillbound-objective{backdrop-filter:blur(12px)}
+.panel-glass .skillbound-skillbar,.panel-glass .skillbound-inventory,.panel-glass .skillbound-objective,.panel-glass .skillbound-target-bar{backdrop-filter:blur(12px)}
 .panel-leather .skillbound-skillbar,.panel-leather .skillbound-inventory{background-image:linear-gradient(135deg,rgba(115,74,42,.08),transparent 55%)}
 .panel-stone .skillbound-skillbar,.panel-stone .skillbound-inventory{background-image:linear-gradient(135deg,rgba(255,255,255,.025),rgba(0,0,0,.08))}
-.ornament-ornate .skillbound-skillbar,.ornament-ornate .skillbound-inventory{outline:1px solid color-mix(in srgb,var(--sb-accent) 30%,transparent);outline-offset:2px}
+.ornament-ornate .skillbound-skillbar,.ornament-ornate .skillbound-inventory,.ornament-ornate .skillbound-target-bar{outline:1px solid color-mix(in srgb,var(--sb-accent) 30%,transparent);outline-offset:2px}
 .density-compact .skillbound-skillbar{padding:6px 7px}.density-compact .skillbound-skill-slot{height:52px;width:70px}.density-compact .skillbound-inventory-items{padding:5px}
-.skillbound-runtime-host .skillbound-runtime-hint,.skillbound-objective,.skillbound-runtime-message,.skillbound-hud{user-select:none}
-@media(max-width:900px){.skillbound-inventory{width:190px}.skillbound-health-orb{width:68px;height:68px}.skillbound-skill-slot{width:62px;height:52px}.skillbound-objective{top:52px}.skillbound-runtime-hint{display:none}}
+.skillbound-runtime-host .skillbound-runtime-hint,.skillbound-objective,.skillbound-target-bar,.skillbound-runtime-message,.skillbound-hud{user-select:none}
+@media(max-width:900px){.skillbound-inventory{width:205px}.skillbound-health-orb{width:68px;height:68px}.skillbound-skill-slot{width:62px;height:52px}.skillbound-objective{top:52px}.skillbound-target-bar{top:82px;width:min(300px,62vw)}.skillbound-runtime-hint{display:none}}
 .skillbound-runtime-loading{position:absolute;z-index:5;inset:0;display:grid;place-items:center;background:#07110d;color:var(--sb-muted,#8da194);font-size:11px;letter-spacing:.08em}

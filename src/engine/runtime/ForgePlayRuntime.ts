@@ -6,15 +6,21 @@ import type {
   ForgeItemDefinition,
   ForgePlayerDefinition,
 } from '../forgeProject'
+import { itemVisual } from '../itemPresentation'
 import type { GeneratedRegion, GeneratedRegionNode } from '../guidedWorld'
 import {
   bindCharacterAsset,
-  bindModelAsset,
   disposeBoundObject,
   ForgeCharacterVisualBinding,
   ForgeLibraryVfxInstance,
+  loadLibraryAnimationClips,
   spawnLibraryVfx,
 } from './ForgeAssetRuntime'
+import {
+  bindRuntimeItemModel,
+  fallbackSocketPosition,
+  findRuntimeItemSocket,
+} from './ForgeItemRuntime'
 import {
   clearRuntimeSave,
   loadRuntimeSave,
@@ -23,6 +29,13 @@ import {
   type ForgeRuntimeLootSave,
 } from './ForgeGameSave'
 import { ForgeNavigationGrid, type ForgeNavigationObstacle } from './ForgeNavigation'
+
+export type ForgeRuntimeTargetSnapshot = {
+  id: string
+  name: string
+  health: number
+  maxHealth: number
+}
 
 export type ForgeRuntimeSnapshot = {
   health: number
@@ -34,6 +47,7 @@ export type ForgeRuntimeSnapshot = {
   dodgeCooldown: number
   inventory: string[]
   equippedWeaponId?: string
+  target?: ForgeRuntimeTargetSnapshot
   message: string
   savedAt?: string
 }
@@ -64,7 +78,21 @@ type RuntimeEnemy = {
   moving: boolean
 }
 
-type RuntimeLoot = { save: ForgeRuntimeLootSave; group: THREE.Group; age: number }
+type RuntimeLoot = {
+  save: ForgeRuntimeLootSave
+  group: THREE.Group
+  fallback: THREE.Mesh
+  model?: THREE.Object3D
+  age: number
+}
+
+type RuntimeCorpse = {
+  group: THREE.Group
+  visual?: ForgeCharacterVisualBinding
+  age: number
+  duration: number
+}
+
 type RuntimeEffect = { mesh: THREE.Mesh; age: number; duration: number; maxScale: number }
 type RuntimeTextEffect = { sprite: THREE.Sprite; age: number; duration: number }
 
@@ -91,11 +119,13 @@ export class ForgePlayRuntime {
   private readonly obstacles: CircleObstacle[] = []
   private readonly enemies: RuntimeEnemy[] = []
   private readonly loot: RuntimeLoot[] = []
+  private readonly corpses: RuntimeCorpse[] = []
   private readonly effects: RuntimeEffect[] = []
   private readonly libraryVfx: ForgeLibraryVfxInstance[] = []
   private readonly textEffects: RuntimeTextEffect[] = []
   private readonly defeatedEnemyIds = new Set<string>()
   private readonly cooldowns = new Map<string, number>()
+  private readonly abilityAnimationClipNames = new Map<string, string>()
   private readonly playerDefinition: ForgePlayerDefinition
   private readonly saveKey: string
   private readonly resizeObserver: ResizeObserver
@@ -108,6 +138,7 @@ export class ForgePlayRuntime {
   private equippedModel?: THREE.Object3D
   private inventory: string[] = []
   private equippedWeaponId: string | undefined
+  private focusEnemyId: string | undefined
   private cameraDistance = 31
   private playerHealth = 100
   private dodgeRemaining = 0
@@ -194,10 +225,15 @@ export class ForgePlayRuntime {
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown)
     this.renderer.domElement.removeEventListener('wheel', this.onWheel)
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu)
+    if (this.equippedModel) {
+      this.equippedModel.parent?.remove(this.equippedModel)
+      disposeBoundObject(this.equippedModel)
+      this.equippedModel = undefined
+    }
     this.playerVisual?.dispose()
     this.enemies.forEach((enemy) => enemy.visual?.dispose())
+    this.corpses.forEach((corpse) => corpse.visual?.dispose())
     this.libraryVfx.forEach((effect) => effect.dispose())
-    if (this.equippedModel) disposeBoundObject(this.equippedModel)
     this.scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Sprite)) return
       if (object instanceof THREE.Mesh) object.geometry.dispose()
@@ -255,22 +291,53 @@ export class ForgePlayRuntime {
       const binding = await bindCharacterAsset(this.player, this.playerDefinition.characterAssetId, this.playerDefinition.animationAssetId, 1.95)
       if (this.disposed) { binding?.dispose(); return }
       this.playerVisual = binding
+      if (binding) await this.preloadAbilityAnimations(binding)
+      if (!this.disposed) void this.refreshEquippedModel()
     } catch {
       // Asset bindings are optional; placeholders remain a valid development fallback.
     }
   }
 
+  private async preloadAbilityAnimations(binding: ForgeCharacterVisualBinding) {
+    const boundIds = new Set<string>()
+    for (const ability of this.gameplay.abilities) {
+      if (!ability.animationAssetId || boundIds.has(ability.animationAssetId)) continue
+      boundIds.add(ability.animationAssetId)
+      const clips = await loadLibraryAnimationClips(ability.animationAssetId)
+      if (this.disposed || !clips.length) continue
+      binding.addAnimations(clips)
+      for (const candidate of this.gameplay.abilities.filter((entry) => entry.animationAssetId === ability.animationAssetId)) {
+        const clip = chooseAbilityClip(candidate, clips)
+        if (clip) this.abilityAnimationClipNames.set(candidate.id, clip.name)
+      }
+    }
+  }
+
   private async refreshEquippedModel() {
     if (this.equippedModel) {
-      this.equippedModelAnchor.remove(this.equippedModel)
+      this.equippedModel.parent?.remove(this.equippedModel)
       disposeBoundObject(this.equippedModel)
       this.equippedModel = undefined
     }
     const item = this.getEquippedItem()
-    if (!item?.modelAssetId) return
+    if (!item) return
+    const itemId = item.id
+    const visual = itemVisual(item)
+    const boundCharacter = this.player.getObjectByName('__forge_bound_character')
+    let target = boundCharacter ? findRuntimeItemSocket(boundCharacter, visual.equipped.socket) : undefined
+    if (!target) {
+      this.equippedModelAnchor.position.set(...fallbackSocketPosition(visual.equipped.socket))
+      this.equippedModelAnchor.rotation.set(0, 0, 0)
+      target = this.equippedModelAnchor
+    }
     try {
-      const model = await bindModelAsset(this.equippedModelAnchor, item.modelAssetId, 0.85)
-      if (this.disposed && model) { this.equippedModelAnchor.remove(model); disposeBoundObject(model); return }
+      const model = await bindRuntimeItemModel(target, item, 'equipped')
+      if (!model) return
+      if (this.disposed || this.equippedWeaponId !== itemId) {
+        model.parent?.remove(model)
+        disposeBoundObject(model)
+        return
+      }
       this.equippedModel = model
     } catch {
       // Item models are optional and never block gameplay.
@@ -321,8 +388,7 @@ export class ForgePlayRuntime {
     facing.position.set(0, 1.05, -0.7)
     this.playerPlaceholder.add(body, head, facing)
     this.player.add(this.playerPlaceholder)
-    this.equippedModelAnchor.position.set(0.56, 0.95, -0.3)
-    this.equippedModelAnchor.rotation.set(0, 0, -0.3)
+    this.equippedModelAnchor.position.set(...fallbackSocketPosition('RightHand'))
     this.player.add(this.equippedModelAnchor)
     const entry = this.region.nodes.find((node) => node.kind === 'entry') ?? this.region.nodes[0]
     const x = savedPlayer?.x ?? entry?.x ?? 0
@@ -476,6 +542,7 @@ export class ForgePlayRuntime {
     this.updateCooldowns(delta)
     this.updatePlayer(simulationDelta)
     this.updateEnemies(simulationDelta)
+    this.updateCorpses(delta)
     this.updateLoot(simulationDelta)
     this.updateEffects(delta)
     this.updateLibraryVfx(delta)
@@ -543,6 +610,7 @@ export class ForgePlayRuntime {
     this.dodgeDirection.copy(direction)
     this.dodgeRemaining = DODGE_DURATION
     this.dodgeCooldown = this.playerDefinition.dodgeCooldown
+    this.playerVisual?.play('dodge', false)
     this.spawnPulse(this.player.position, '#8ebaa0', 2.2, 0.28)
     this.emitState()
   }
@@ -553,7 +621,8 @@ export class ForgePlayRuntime {
     if (aim.lengthSq() < 0.01) aim.set(0, 0, -1)
     aim.normalize()
     const damage = ability.damage + this.getEquippedDamageBonus()
-    this.playerVisual?.play('attack', false)
+    const clipName = this.abilityAnimationClipNames.get(ability.id)
+    if (!clipName || !this.playerVisual?.playClipName(clipName, false)) this.playerVisual?.play('attack', false)
     if (ability.kind === 'melee') {
       const impact = this.player.position.clone().addScaledVector(aim, Math.max(1, ability.range * 0.5))
       this.spawnPulse(impact, ability.color, ability.radius, 0.24)
@@ -584,8 +653,11 @@ export class ForgePlayRuntime {
   }
 
   private damageEnemy(enemy: RuntimeEnemy, damage: number, direction: THREE.Vector3, color: string) {
+    this.focusEnemyId = enemy.id
     enemy.health = Math.max(0, enemy.health - damage)
-    enemy.knockback.addScaledVector(direction.clone().setY(0).normalize(), Math.min(5.5, 2.7 + damage * 0.025))
+    const normalized = direction.clone().setY(0)
+    if (normalized.lengthSq() > 0.001) normalized.normalize()
+    enemy.knockback.addScaledVector(normalized, Math.min(5.5, 2.7 + damage * 0.025))
     enemy.windupRemaining = 0
     enemy.telegraph.visible = false
     enemy.visual?.play('hit', false)
@@ -604,18 +676,37 @@ export class ForgePlayRuntime {
   private killEnemy(enemy: RuntimeEnemy) {
     const index = this.enemies.indexOf(enemy)
     if (index >= 0) this.enemies.splice(index, 1)
+    if (this.focusEnemyId === enemy.id) this.focusEnemyId = undefined
     this.defeatedEnemyIds.add(enemy.id)
     const position = enemy.group.position.clone()
+    enemy.windupRemaining = 0
+    enemy.telegraph.visible = false
+    enemy.healthFill.visible = false
+    enemy.group.children.forEach((child) => {
+      if (child !== enemy.group.getObjectByName('__forge_bound_character') && child instanceof THREE.Mesh && child.position.y > 2.2) child.visible = false
+    })
+    enemy.visual?.play('death', false)
+    this.corpses.push({ group: enemy.group, visual: enemy.visual, age: 0, duration: 1.15 })
     void this.spawnBoundVfx(enemy.definition.deathVfxAssetId, position)
     this.spawnPulse(position, '#b65e4c', 2.5, 0.45)
-    this.scene.remove(enemy.group)
-    enemy.visual?.dispose()
-    this.disposeObject(enemy.group)
     this.rollLoot(enemy, position)
     this.setMessage(this.enemies.length === 0 ? 'Encounter cleared. Pick up the loot and equip it from the inventory.' : `${enemy.definition.name} defeated.`, 3.2)
     this.cameraShake = Math.max(this.cameraShake, 0.34)
     this.saveGame(false)
     this.emitState()
+  }
+
+  private updateCorpses(delta: number) {
+    for (const corpse of [...this.corpses]) {
+      corpse.age += delta
+      corpse.visual?.update(delta)
+      if (corpse.age < corpse.duration) continue
+      const index = this.corpses.indexOf(corpse)
+      if (index >= 0) this.corpses.splice(index, 1)
+      this.scene.remove(corpse.group)
+      corpse.visual?.dispose()
+      this.disposeObject(corpse.group)
+    }
   }
 
   private rollLoot(enemy: RuntimeEnemy, position: THREE.Vector3) {
@@ -641,17 +732,35 @@ export class ForgePlayRuntime {
     const group = new THREE.Group()
     const glow = new THREE.PointLight(item.color, 1.2, 4)
     glow.position.y = 0.8
-    const mesh = new THREE.Mesh(
+    const fallback = new THREE.Mesh(
       new THREE.OctahedronGeometry(0.34, 0),
       new THREE.MeshStandardMaterial({ color: item.color, emissive: item.color, emissiveIntensity: 0.45, roughness: 0.45, metalness: 0.15 }),
     )
-    mesh.position.y = 0.55
-    mesh.castShadow = true
-    group.add(mesh, glow)
+    fallback.position.y = 0.55
+    fallback.castShadow = true
+    group.add(fallback, glow)
     group.position.set(save.x, 0, save.z)
     this.scene.add(group)
-    this.loot.push({ save: { ...save }, group, age: 0 })
+    const drop: RuntimeLoot = { save: { ...save }, group, fallback, age: 0 }
+    this.loot.push(drop)
+    void this.bindLootPresentation(drop, item)
     if (persist) this.saveGame(false)
+  }
+
+  private async bindLootPresentation(drop: RuntimeLoot, item: ForgeItemDefinition) {
+    try {
+      const model = await bindRuntimeItemModel(drop.group, item, 'drop')
+      if (!model) return
+      if (this.disposed || !this.loot.includes(drop)) {
+        model.parent?.remove(model)
+        disposeBoundObject(model)
+        return
+      }
+      drop.model = model
+      drop.fallback.visible = false
+    } catch {
+      // Keep the colored drop fallback when a Library model is unavailable.
+    }
   }
 
   private updateEnemies(delta: number) {
@@ -722,6 +831,7 @@ export class ForgePlayRuntime {
   }
 
   private beginEnemyAttack(enemy: RuntimeEnemy) {
+    if (!this.focusEnemyId) this.focusEnemyId = enemy.id
     enemy.windupDuration = THREE.MathUtils.clamp(enemy.definition.attackWindup ?? 0.42, 0.12, 1.5)
     enemy.windupRemaining = enemy.windupDuration
     enemy.telegraph.visible = true
@@ -759,6 +869,7 @@ export class ForgePlayRuntime {
     const entry = this.region.nodes.find((node) => node.kind === 'entry') ?? this.region.nodes[0]
     this.player.position.set(entry?.x ?? 0, 0, entry?.z ?? 0)
     this.playerHealth = this.playerDefinition.maxHealth
+    this.focusEnemyId = undefined
     this.setMessage('You fell in battle and returned to the region entry. Enemy progress is preserved.', 4)
     this.saveGame(false)
   }
@@ -766,7 +877,7 @@ export class ForgePlayRuntime {
   private updateLoot(delta: number) {
     for (const drop of [...this.loot]) {
       drop.age += delta
-      drop.group.rotation.y += delta * 1.8
+      drop.fallback.rotation.y += delta * 1.8
       drop.group.position.y = Math.sin(drop.age * 3.2) * 0.08
       if (drop.group.position.distanceTo(this.player.position) > 1.35) continue
       const item = this.gameplay.items.find((candidate) => candidate.id === drop.save.itemId)
@@ -923,6 +1034,7 @@ export class ForgePlayRuntime {
   private makeSnapshot(): ForgeRuntimeSnapshot {
     const primary = this.getPrimaryAbility()
     const skill = this.getSkillAbility()
+    const focused = this.enemies.find((enemy) => enemy.id === this.focusEnemyId)
     return {
       health: this.playerHealth,
       maxHealth: this.playerDefinition.maxHealth,
@@ -933,6 +1045,7 @@ export class ForgePlayRuntime {
       dodgeCooldown: this.dodgeCooldown,
       inventory: [...this.inventory],
       equippedWeaponId: this.equippedWeaponId,
+      target: focused ? { id: focused.id, name: focused.definition.name, health: focused.health, maxHealth: focused.definition.maxHealth } : undefined,
       message: this.message,
       savedAt: this.savedAt,
     }
@@ -946,6 +1059,13 @@ export class ForgePlayRuntime {
       materials.forEach((material) => material.dispose())
     })
   }
+}
+
+function chooseAbilityClip(ability: ForgeAbilityDefinition, clips: THREE.AnimationClip[]) {
+  const tokens = `${ability.id} ${ability.name}`.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2)
+  return clips.find((clip) => tokens.some((token) => clip.name.toLowerCase().includes(token)))
+    ?? clips.find((clip) => /attack|cast|slash|strike|swing|skill/i.test(clip.name))
+    ?? clips[0]
 }
 
 function makePath(from: GeneratedRegionNode, to: GeneratedRegionNode, width: number) {

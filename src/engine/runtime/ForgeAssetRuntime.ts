@@ -4,7 +4,7 @@ import { characterPackageDataToBlob, parseCharacterPackage } from '../../lib/cha
 import { getAsset, type LibraryAsset } from '../../lib/library'
 import { parseVfxPackage, type ForgeVfxEmitter, type ForgeVfxPackage } from '../../lib/vfxPackage'
 
-export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death'
+export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge'
 
 type LoadedScene = { root: THREE.Object3D; animations: THREE.AnimationClip[] }
 const vfxPackageCache = new Map<string, ForgeVfxPackage | null>()
@@ -13,7 +13,7 @@ export class ForgeCharacterVisualBinding {
   private mixer?: THREE.AnimationMixer
   private clips: THREE.AnimationClip[] = []
   private active?: THREE.AnimationAction
-  private activeCue: ForgeAnimationCue = 'idle'
+  private activeKey = 'idle'
   private fallbackCue: 'idle' | 'move' = 'idle'
   private oneShot = false
   private disposed = false
@@ -21,11 +21,18 @@ export class ForgeCharacterVisualBinding {
   constructor(private readonly root: THREE.Object3D) {}
 
   setAnimations(clips: THREE.AnimationClip[]) {
-    this.clips = clips
+    this.clips = uniqueClips(clips)
     this.mixer?.stopAllAction()
-    this.mixer = clips.length ? new THREE.AnimationMixer(this.root) : undefined
+    this.mixer = this.clips.length ? new THREE.AnimationMixer(this.root) : undefined
     this.active = undefined
+    this.activeKey = ''
     this.play('idle', true)
+  }
+
+  addAnimations(clips: THREE.AnimationClip[]) {
+    if (!clips.length) return
+    this.clips = uniqueClips([...this.clips, ...clips])
+    if (!this.mixer) this.mixer = new THREE.AnimationMixer(this.root)
   }
 
   update(delta: number) {
@@ -33,19 +40,39 @@ export class ForgeCharacterVisualBinding {
     if (this.oneShot && this.active && !this.active.isRunning()) {
       this.oneShot = false
       this.active = undefined
+      this.activeKey = ''
       this.play(this.fallbackCue, true)
     }
   }
 
   play(cue: ForgeAnimationCue, loop = cue === 'idle' || cue === 'move') {
-    if (!this.mixer || !this.clips.length) return
+    if (!this.mixer || !this.clips.length) return false
     if (cue === 'idle' || cue === 'move') {
       this.fallbackCue = cue
-      if (this.oneShot && this.active?.isRunning()) return
+      if (this.oneShot && this.active?.isRunning()) return false
     }
-    if (this.activeCue === cue && this.active?.isRunning()) return
     const clip = findCueClip(this.clips, cue)
-    if (!clip) return
+    if (!clip) return false
+    return this.playClip(clip, `cue:${cue}`, loop)
+  }
+
+  playClipName(name: string, loop = false) {
+    if (!this.mixer || !this.clips.length) return false
+    const clip = this.clips.find((entry) => entry.name === name)
+    if (!clip) return false
+    return this.playClip(clip, `clip:${name}`, loop)
+  }
+
+  dispose() {
+    if (this.disposed) return
+    this.disposed = true
+    this.mixer?.stopAllAction()
+    disposeBoundObject(this.root)
+  }
+
+  private playClip(clip: THREE.AnimationClip, key: string, loop: boolean) {
+    if (!this.mixer) return false
+    if (this.activeKey === key && this.active?.isRunning()) return true
     const next = this.mixer.clipAction(clip)
     next.reset()
     next.enabled = true
@@ -54,15 +81,9 @@ export class ForgeCharacterVisualBinding {
     next.fadeIn(0.08).play()
     if (this.active && this.active !== next) this.active.fadeOut(0.08)
     this.active = next
-    this.activeCue = cue
+    this.activeKey = key
     this.oneShot = !loop
-  }
-
-  dispose() {
-    if (this.disposed) return
-    this.disposed = true
-    this.mixer?.stopAllAction()
-    disposeBoundObject(this.root)
+    return true
   }
 }
 
@@ -91,13 +112,22 @@ export async function bindCharacterAsset(
   const binding = new ForgeCharacterVisualBinding(loaded.root)
   let clips = loaded.animations
   if (animationAssetId) {
-    const animationAsset = await getAsset(animationAssetId)
-    const external = animationAsset ? await loadGlbAsset(animationAsset).catch(() => undefined) : undefined
-    if (external?.animations.length) clips = external.animations
-    if (external) disposeBoundObject(external.root)
+    const external = await loadLibraryAnimationClips(animationAssetId)
+    if (external.length) clips = external
   }
   binding.setAnimations(clips)
   return binding
+}
+
+export async function loadLibraryAnimationClips(animationAssetId?: string) {
+  if (!animationAssetId) return [] as THREE.AnimationClip[]
+  const animationAsset = await getAsset(animationAssetId)
+  if (!animationAsset) return [] as THREE.AnimationClip[]
+  const external = await loadGlbAsset(animationAsset).catch(() => undefined)
+  if (!external) return [] as THREE.AnimationClip[]
+  const clips = external.animations.map((clip) => clip.clone())
+  disposeBoundObject(external.root)
+  return clips
 }
 
 export async function bindModelAsset(target: THREE.Object3D, modelAssetId?: string, desiredHeight = 0.9) {
@@ -285,12 +315,19 @@ function findCueClip(clips: THREE.AnimationClip[], cue: ForgeAnimationCue) {
     attack: [/attack/i, /slash/i, /strike/i, /swing/i, /cast/i],
     hit: [/hit/i, /hurt/i, /impact/i, /damage/i],
     death: [/death/i, /die/i, /dead/i],
+    dodge: [/dodge/i, /roll/i, /evade/i, /dash/i],
   }
   for (const pattern of aliases[cue]) {
     const match = clips.find((clip) => pattern.test(clip.name))
     if (match) return match
   }
   return cue === 'idle' ? clips[0] : undefined
+}
+
+function uniqueClips(clips: THREE.AnimationClip[]) {
+  const map = new Map<string, THREE.AnimationClip>()
+  for (const clip of clips) map.set(clip.name || `clip-${map.size}`, clip)
+  return [...map.values()]
 }
 
 function geometryForStyle(style: ForgeVfxEmitter['style']) {
