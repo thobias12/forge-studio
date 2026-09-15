@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { createProceduralCharacter, disposeForgeCharacter, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
-import { createConceptCharacter } from '../lib/conceptCryptSkeleton'
+import { createConceptForgeCharacter } from '../engine/conceptCharacterV2'
 
 type Props = {
   config: ForgeCharacterConfig
@@ -87,7 +87,7 @@ export default function CharacterForgePreview({ config, animation, playing, show
     if (state.hitbox) { state.scene.remove(state.hitbox); state.hitbox.geometry.dispose(); const mat = state.hitbox.material; if (!Array.isArray(mat)) mat.dispose(); state.hitbox = undefined }
     if (state.root) { state.scene.remove(state.root); disposeForgeCharacter(state.root) }
 
-    const build = conceptMode ? createConceptCharacter(config) : createProceduralCharacter(config)
+    const build = conceptMode ? createConceptForgeCharacter(config) : createProceduralCharacter(config)
     state.root = build.root; state.clips = build.clips; state.scene.add(build.root); callbackRef.current?.(build.stats)
     state.mixer = new THREE.AnimationMixer(build.root)
     const clip = build.clips.find((entry) => entry.name === animation) ?? build.clips[0]
