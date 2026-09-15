@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import ArpgDungeonViewport from './ArpgDungeonViewport'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import SkillboundDungeonPlayViewport from './SkillboundDungeonPlayViewport'
 import { loadSkillboundWorkspace, type ForgeProjectWorkspace } from '../engine/forgeProject'
 import { itemVisual } from '../engine/itemPresentation'
 import type { GeneratedRegion } from '../engine/guidedWorld'
+import { mergeAdventurePlayerState, type ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
+import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { getAsset } from '../lib/library'
 import { skillboundUiCssVariables } from '../lib/uiForge'
@@ -26,10 +28,13 @@ const EMPTY_STATE: ForgeRuntimeSnapshot = {
 export default function SkillboundPlayViewport({ region }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const runtimeRef = useRef<ForgePlayRuntime | null>(null)
+  const nearDungeonRef = useRef(false)
   const [snapshot, setSnapshot] = useState<ForgeRuntimeSnapshot>(EMPTY_STATE)
   const [session, setSession] = useState(0)
   const [workspace, setWorkspace] = useState<ForgeProjectWorkspace>()
   const [activeDungeonId, setActiveDungeonId] = useState<string>()
+  const [dungeonPlayerState, setDungeonPlayerState] = useState<ForgeAdventurePlayerState>()
+  const [nearDungeon, setNearDungeon] = useState(false)
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({})
 
   const gameplay = workspace?.gameplay
@@ -82,34 +87,78 @@ export default function SkillboundPlayViewport({ region }: Props) {
     }
   }, [region, gameplay, projectId, session, activeDungeonId])
 
+  useEffect(() => {
+    if (!dungeonAnchor || activeDungeonId) {
+      nearDungeonRef.current = false
+      setNearDungeon(false)
+      return
+    }
+    let frame = 0
+    const tick = () => {
+      const runtime = runtimeRef.current as unknown as { player?: { position?: { x: number; z: number } } } | null
+      const position = runtime?.player?.position
+      const next = Boolean(position && Math.hypot(position.x - dungeonAnchor.x, position.z - dungeonAnchor.z) <= 3.35)
+      if (next !== nearDungeonRef.current) {
+        nearDungeonRef.current = next
+        setNearDungeon(next)
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [activeDungeonId, dungeonAnchor])
+
   const reset = () => {
     runtimeRef.current?.resetProgress()
     setSession((value) => value + 1)
   }
 
-  const enterDungeon = () => {
+  const enterDungeon = useCallback(() => {
     const dungeonId = dungeonAnchor?.contentRef
-    if (!dungeonId) return
+    if (!dungeonId || !nearDungeonRef.current) return
     runtimeRef.current?.saveGame(false)
+    setDungeonPlayerState({
+      health: snapshot.health,
+      inventory: [...snapshot.inventory],
+      equippedWeaponId: snapshot.equippedWeaponId,
+    })
     setActiveDungeonId(dungeonId)
-  }
+    nearDungeonRef.current = false
+    setNearDungeon(false)
+  }, [dungeonAnchor, snapshot])
 
-  const returnToOverworld = () => {
+  useEffect(() => {
+    if (activeDungeonId || !dungeonAnchor) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat || event.key.toLowerCase() !== 'e' || isTextInput(event.target) || !nearDungeonRef.current) return
+      enterDungeon()
+      event.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeDungeonId, dungeonAnchor, enterDungeon])
+
+  const returnToOverworld = useCallback((state: ForgeAdventurePlayerState) => {
+    if (!projectId) return
+    const key = runtimeSaveKey(projectId, region.regionId, region.seed, region.generationVersion)
+    mergeAdventurePlayerState(key, state)
+    setDungeonPlayerState(undefined)
     setActiveDungeonId(undefined)
     setSession((value) => value + 1)
-  }
+  }, [projectId, region.generationVersion, region.regionId, region.seed])
 
   if (activeDungeonId) {
-    if (!workspace) return <div className="skillbound-runtime-loading">Loading Skillbound dungeon…</div>
-    if (!activeDungeon) return <div className="skillbound-dungeon-session missing"><strong>Dungeon unavailable</strong><span>{activeDungeonId} is referenced by this region but is missing from the Skillbound project.</span><button onClick={returnToOverworld}>Return to {region.regionName}</button></div>
-    return <div className="skillbound-dungeon-session">
-      <ArpgDungeonViewport value={activeDungeon}/>
-      <div className="skillbound-dungeon-session-bar">
-        <div><span>SKILLBOUND DUNGEON</span><strong>{activeDungeon.name}</strong><small>{activeDungeon.theme} · Map Studio package · seed {activeDungeon.seed}</small></div>
-        <button onClick={returnToOverworld}>Return to {region.regionName}</button>
-      </div>
-      <div className="skillbound-dungeon-session-note">Clear encounters and test the authored dungeon. Returning remounts the same overworld seed and restores its saved combat state.</div>
-    </div>
+    if (!workspace || !gameplay || !dungeonPlayerState) return <div className="skillbound-runtime-loading">Loading Skillbound dungeon session…</div>
+    if (!activeDungeon) return <div className="skillbound-dungeon-session missing"><strong>Dungeon unavailable</strong><span>{activeDungeonId} is referenced by this region but is missing from the Skillbound project.</span><button onClick={() => returnToOverworld(dungeonPlayerState)}>Return to {region.regionName}</button></div>
+    return <SkillboundDungeonPlayViewport
+      dungeon={activeDungeon}
+      gameplay={gameplay}
+      projectId={projectId}
+      initialState={dungeonPlayerState}
+      uiTheme={uiTheme}
+      itemIcons={itemIcons}
+      onExit={returnToOverworld}
+    />
   }
 
   const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
@@ -118,26 +167,26 @@ export default function SkillboundPlayViewport({ region }: Props) {
     : snapshot.enemiesAlive > 0
       ? `Clear the encounter · ${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies remaining`
       : dungeonAnchor
-        ? `Encounter cleared · ${dungeonAnchor.label} is available from this region`
+        ? `Encounter cleared · travel to ${dungeonAnchor.label}`
         : 'Encounter cleared · collect and equip the drop'
 
   return <div className={`skillbound-runtime-host ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>FORGE PLAY MODE · PHASE 3 WORLD BRIDGE</strong>
-      <span>WASD move · LMB attack · Q skill · Space dodge · authored dungeons now transition from the generated world</span>
+      <strong>FORGE PLAY MODE · PHASE 3.1 SEAMLESS ADVENTURE</strong>
+      <span>WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
     </div>
 
     <div className="skillbound-objective">{objective}</div>
     {snapshot.target && <TargetBar target={snapshot.target}/>} 
+    {nearDungeon && dungeonAnchor && <div className="skillbound-interaction-prompt ready"><kbd>E</kbd><strong>Enter {dungeonAnchor.label}</strong></div>}
 
     <div className="skillbound-runtime-actions">
-      {dungeonAnchor && <button className="dungeon-entry-action" onClick={enterDungeon}>Enter {dungeonAnchor.label}</button>}
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
       <button onClick={reset}>Reset run</button>
     </div>
 
-    {dungeonAnchor && <div className="skillbound-dungeon-available"><span>DUNGEON ENTRANCE</span><strong>{dungeonAnchor.label}</strong><small>Authored in Map Studio · transition preserves this overworld run</small></div>}
+    {dungeonAnchor && <div className={`skillbound-dungeon-available ${nearDungeon ? 'near' : ''}`}><span>DUNGEON ENTRANCE</span><strong>{dungeonAnchor.label}</strong><small>{nearDungeon ? 'Press E to enter' : 'Travel to the generated entrance · authored in Map Studio'}</small></div>}
     {snapshot.message && <div className="skillbound-runtime-message">{snapshot.message}</div>}
 
     <div className="skillbound-hud">
@@ -188,4 +237,8 @@ function SkillSlot({ hotkey, name, cooldown }: { hotkey: string; name: string; c
     <span>{name}</span>
     {cooling && <em>{cooldown.toFixed(1)}</em>}
   </div>
+}
+
+function isTextInput(target: EventTarget | null) {
+  return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || target instanceof HTMLButtonElement || (target instanceof HTMLElement && target.isContentEditable)
 }
