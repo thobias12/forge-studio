@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { getAsset } from '../lib/library'
 import { itemVisual, resolveItemModelAssetId } from '../engine/itemPresentation'
+import { isWearableArmor, itemClassification, wearableAnchor, type ForgeItemEquipSlot } from '../engine/itemTaxonomy'
 import type { ForgeItemDefinition, ForgeItemTransform } from '../engine/forgeProject'
 
 type Mode = 'inventory' | 'drop' | 'equipped'
@@ -79,15 +80,18 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
     const load = async () => {
       try {
         const assetId = resolveItemModelAssetId(item, mode)
+        const classification = itemClassification(item)
         if (!assetId) {
           setMessage('Assign a master model')
-          frameCamera(camera, controls, mode, mannequin)
+          if (mode === 'equipped' && classification.itemType === 'armor') frameWearableCamera(camera, controls, classification.equipSlot)
+          else frameCamera(camera, controls, mode, mannequin)
           return
         }
         const asset = await getAsset(assetId)
         if (!asset) {
           setMessage('Model is missing from Shared Library')
-          frameCamera(camera, controls, mode, mannequin)
+          if (mode === 'equipped' && classification.itemType === 'armor') frameWearableCamera(camera, controls, classification.equipSlot)
+          else frameCamera(camera, controls, mode, mannequin)
           return
         }
         objectUrl = URL.createObjectURL(asset.blob)
@@ -105,6 +109,13 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
             ...transform,
             position: [transform.position[0], transform.position[1] + visual.drop.groundOffset, transform.position[2]],
           })
+        } else if (isWearableArmor(item)) {
+          const transform = visual.equipped.transform
+          const base = wearableAnchor(classification.equipSlot)
+          applyTransform(root, {
+            ...transform,
+            position: [base[0] + transform.position[0], base[1] + transform.position[1], base[2] + transform.position[2]],
+          })
         } else {
           const transform = visual.equipped.transform
           const socketBase = socketPosition(visual.equipped.socket)
@@ -115,7 +126,8 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
         }
 
         normalizeObjectPivot(root, mode)
-        frameCamera(camera, controls, mode, mode === 'equipped' ? presentation : root)
+        if (mode === 'equipped' && isWearableArmor(item)) frameWearableCamera(camera, controls, classification.equipSlot)
+        else frameCamera(camera, controls, mode, mode === 'equipped' ? presentation : root)
         setMessage('')
       } catch (error) {
         setMessage(error instanceof Error ? error.message : 'Could not render model')
@@ -176,6 +188,16 @@ function frameCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, m
   controls.update()
 }
 
+function frameWearableCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, slot: ForgeItemEquipSlot) {
+  const [x, y, z] = wearableAnchor(slot)
+  const center = new THREE.Vector3(x, y, z)
+  const span = slot === 'Head' ? .72 : slot === 'Chest' ? 1.05 : slot === 'Hands' ? 1.35 : slot === 'Legs' ? 1.08 : .85
+  controls.target.copy(center)
+  camera.position.set(center.x + span * .86, center.y + span * .16, center.z + span * 1.58)
+  camera.lookAt(center)
+  controls.update()
+}
+
 function socketPosition(socket: string): [number, number, number] {
   if (socket === 'LeftHand') return [-.58, 1.12, 0]
   if (socket === 'Back') return [0, 1.45, .2]
@@ -186,8 +208,8 @@ function socketPosition(socket: string): [number, number, number] {
 
 function createMannequin() {
   const group = new THREE.Group()
-  const material = new THREE.MeshStandardMaterial({ color: 0x465361, roughness: .78, metalness: .05 })
-  const handMaterial = new THREE.MeshStandardMaterial({ color: 0x607080, roughness: .72 })
+  const material = new THREE.MeshStandardMaterial({ color: 0x465361, roughness: .78, metalness: .05, transparent: true, opacity: .82 })
+  const jointMaterial = new THREE.MeshStandardMaterial({ color: 0x607080, roughness: .72, transparent: true, opacity: .82 })
   const add = (geometry: THREE.BufferGeometry, position: [number, number, number], rotation?: [number, number, number], materialOverride = material) => {
     const mesh = new THREE.Mesh(geometry, materialOverride)
     mesh.position.set(...position)
@@ -198,10 +220,12 @@ function createMannequin() {
   add(new THREE.SphereGeometry(.18, 16, 12), [0, 1.82, 0])
   add(new THREE.CapsuleGeometry(.08, .48, 5, 8), [-.37, 1.3, 0], [0, 0, -.18])
   add(new THREE.CapsuleGeometry(.08, .48, 5, 8), [.37, 1.3, 0], [0, 0, .18])
-  add(new THREE.SphereGeometry(.09, 10, 8), [-.58, 1.12, 0], undefined, handMaterial)
-  add(new THREE.SphereGeometry(.09, 10, 8), [.58, 1.12, 0], undefined, handMaterial)
+  add(new THREE.SphereGeometry(.09, 10, 8), [-.58, 1.12, 0], undefined, jointMaterial)
+  add(new THREE.SphereGeometry(.09, 10, 8), [.58, 1.12, 0], undefined, jointMaterial)
   add(new THREE.CapsuleGeometry(.09, .58, 5, 8), [-.15, .55, 0])
   add(new THREE.CapsuleGeometry(.09, .58, 5, 8), [.15, .55, 0])
+  add(new THREE.BoxGeometry(.16, .1, .28), [-.15, .08, -.08], undefined, jointMaterial)
+  add(new THREE.BoxGeometry(.16, .1, .28), [.15, .08, -.08], undefined, jointMaterial)
   group.position.y = .05
   return group
 }
