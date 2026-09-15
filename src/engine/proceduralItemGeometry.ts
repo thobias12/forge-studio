@@ -51,7 +51,6 @@ function buildSword(recipe: ForgeItemGeneratorRecipe) {
     seed: recipe.seed,
   }), bladeMaterial)
   blade.name = 'Blade'
-  blade.position.y = 0.025
   root.add(blade)
 
   addFuller(root, fuller, bladeLength, bladeWidth, bladeThickness, grooveMaterial)
@@ -105,7 +104,8 @@ type BladeRow = { y: number; left: number; right: number }
 
 function buildBladeGeometry(options: BladeGeometryOptions) {
   const { length, width, thickness, taper, style, tip, crossSection, wearStyle, wearAmount, seed } = options
-  const shoulderY = 0.08
+  // Start the blade inside the guard core so every generated silhouette reads as one assembled weapon.
+  const shoulderY = -0.045
   const fractions = [0, 0.16, 0.34, 0.54, 0.72, 0.86, 0.94]
   const rows: BladeRow[] = fractions.map((t, index) => {
     const half = Math.max(width * 0.09, width * 0.5 * bladeWidthFactor(style, t, taper))
