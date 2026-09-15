@@ -1,0 +1,16 @@
+{
+  "format": "forge-project",
+  "version": 1,
+  "id": "skillbound",
+  "name": "Skillbound",
+  "generationVersion": 1,
+  "runtime": {
+    "renderer": "three",
+    "entryWorld": "act1",
+    "mode": "single-player"
+  },
+  "content": {
+    "worlds": ["worlds/act1.world.json"],
+    "regions": ["regions/deadwood.region.json", "regions/drowned-march.region.json"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "format": "forge-world",
+  "version": 1,
+  "id": "act1",
+  "name": "Act I",
+  "act": 1,
+  "nodes": [
+    { "id": "deadwood", "label": "Deadwood", "type": "procedural-region", "ref": "deadwood", "required": true },
+    { "id": "bellwick", "label": "Bellwick", "type": "town", "required": true },
+    { "id": "drowned-march", "label": "Drowned March", "type": "procedural-region", "ref": "drowned-march", "required": true },
+    { "id": "hollow-vault", "label": "Hollow Vault", "type": "dungeon", "required": true }
+  ]
+}

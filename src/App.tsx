@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Hammer, Home, Layers3, LayoutGrid, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles, Skull } from 'lucide-react'
+import { AudioLines, Box, Boxes, Clapperboard, FolderKanban, Gamepad2, Globe2, Hammer, Home, Layers3, LayoutGrid, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles, Skull } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
+import ProjectManager from './pages/ProjectManager'
+import WorldForge from './pages/WorldForge'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
@@ -22,24 +24,27 @@ import './styles.css'
 import './retarget.css'
 import './texture-v071.css'
 import './character.css'
+import './world-forge.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'destruction' | 'conceptforge' | 'uiforge' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
+type Page = 'home' | 'projects' | 'world' | 'mocap' | 'models' | 'destruction' | 'conceptforge' | 'uiforge' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
-  { id: 'mocap' as const, label: 'Mocap', icon: ScanLine },
-  { id: 'models' as const, label: 'Models', icon: Box },
-  { id: 'destruction' as const, label: 'Destruction Lab', icon: Hammer },
-  { id: 'conceptforge' as const, label: 'Concept Forge', icon: Sparkles },
+  { id: 'projects' as const, label: 'Project Manager', icon: FolderKanban },
+  { id: 'world' as const, label: 'World Forge', icon: Globe2 },
+  { id: 'maps' as const, label: 'Map Studio', icon: MapPinned },
   { id: 'uiforge' as const, label: 'UI Forge', icon: LayoutGrid },
   { id: 'characterforge' as const, label: 'Character Forge', icon: Skull },
   { id: 'characters' as const, label: 'Character Assembly', icon: UserRoundCog },
   { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
+  { id: 'vfx' as const, label: 'VFX Studio', icon: WandSparkles },
+  { id: 'mocap' as const, label: 'Mocap', icon: ScanLine },
+  { id: 'models' as const, label: 'Models', icon: Box },
+  { id: 'destruction' as const, label: 'Destruction Lab', icon: Hammer },
+  { id: 'conceptforge' as const, label: 'Concept Forge', icon: Sparkles },
   { id: 'textures' as const, label: 'Textures', icon: Layers3 },
   { id: 'audio' as const, label: 'Voice & Audio', icon: AudioLines },
-  { id: 'vfx' as const, label: 'VFX Studio', icon: WandSparkles },
-  { id: 'maps' as const, label: 'Map Studio', icon: MapPinned },
-  { id: 'preview' as const, label: 'Game Preview', icon: Gamepad2 },
+  { id: 'preview' as const, label: 'Asset Preview', icon: Gamepad2 },
   { id: 'assets' as const, label: 'Asset Library', icon: Boxes },
 ]
 
@@ -69,7 +74,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-spacer" />
-        <div className="project-card"><div className="project-icon"><Sparkles size={16} /></div><div><span>Workspace</span><strong>Shared Library</strong></div></div>
+        <button className="project-card" onClick={() => setPage('projects')}><div className="project-icon"><Sparkles size={16} /></div><div><span>Active project</span><strong>Skillbound</strong></div></button>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
         <div className="build-tag">FORGE v{FORGE_VERSION}</div>
       </aside>
@@ -77,10 +82,12 @@ export default function App() {
       <div className="studio-body">
         <header className="topbar">
           <div className="breadcrumb"><span>FORGE</span><b>/</b><strong>{nav.find((item) => item.id === page)?.label}</strong></div>
-          <div className="topbar-right"><span className="engine-pill">THREE.JS</span><span className="session-dot" /> GitHub workspace</div>
+          <div className="topbar-right"><span className="engine-pill">FORGE RUNTIME · THREE.JS</span><span className="session-dot" /> Skillbound project</div>
         </header>
         <div className="content-area">
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
+          {page === 'projects' && <ProjectManager onOpenWorld={() => setPage('world')} />}
+          {page === 'world' && <WorldForge />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
           {page === 'destruction' && <DestructionLab />}

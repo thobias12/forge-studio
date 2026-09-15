@@ -1,0 +1,15 @@
+{
+  "format": "forge-region",
+  "version": 1,
+  "id": "deadwood",
+  "name": "Deadwood",
+  "biome": "Dead Forest",
+  "chunkRange": [5, 7],
+  "mainPath": "winding",
+  "branchRange": [2, 4],
+  "landmarkRange": [1, 3],
+  "enemyDensity": "medium",
+  "optionalDungeonChance": 0.35,
+  "settlementChance": 0.1,
+  "features": ["roads", "clearings", "grave clusters", "ruins", "fallen trees"]
+}
