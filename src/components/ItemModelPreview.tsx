@@ -21,6 +21,10 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
 
     const scene = new THREE.Scene()
     if (mode !== 'inventory') scene.background = new THREE.Color(0x0b1017)
+    const presentation = new THREE.Group()
+    presentation.name = 'ItemPresentation'
+    scene.add(presentation)
+
     const camera = new THREE.PerspectiveCamera(mode === 'inventory' ? 31 : 38, 1, 0.01, 120)
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: mode === 'inventory' })
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -43,7 +47,7 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
     scene.add(rim)
 
     if (mode === 'drop' || mode === 'equipped') {
-      const grid = new THREE.GridHelper(8, 16, 0x2c3a4b, 0x18212c)
+      const grid = new THREE.GridHelper(6, 12, 0x2c3a4b, 0x18212c)
       grid.position.y = -0.001
       scene.add(grid)
     }
@@ -51,7 +55,7 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
     let mannequin: THREE.Group | undefined
     if (mode === 'equipped') {
       mannequin = createMannequin()
-      scene.add(mannequin)
+      presentation.add(mannequin)
     }
 
     const resize = () => {
@@ -90,7 +94,7 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
         const gltf = await new GLTFLoader().loadAsync(objectUrl)
         if (disposed) return
         const root = gltf.scene
-        scene.add(root)
+        presentation.add(root)
         const visual = itemVisual(item)
 
         if (mode === 'inventory') {
@@ -111,7 +115,7 @@ export default function ItemModelPreview({ item, mode }: { item: ForgeItemDefini
         }
 
         normalizeObjectPivot(root, mode)
-        frameCamera(camera, controls, mode, mode === 'equipped' ? scene : root)
+        frameCamera(camera, controls, mode, mode === 'equipped' ? presentation : root)
         setMessage('')
       } catch (error) {
         setMessage(error instanceof Error ? error.message : 'Could not render model')
@@ -161,11 +165,13 @@ function frameCamera(camera: THREE.PerspectiveCamera, controls: OrbitControls, m
   const box = target ? new THREE.Box3().setFromObject(target) : new THREE.Box3(new THREE.Vector3(-.5, 0, -.5), new THREE.Vector3(.5, 1.8, .5))
   const center = box.getCenter(new THREE.Vector3())
   const size = box.getSize(new THREE.Vector3())
-  const span = Math.max(size.x, size.y, size.z, 1)
+  const span = Math.max(size.x, size.y, size.z, mode === 'equipped' ? 1.8 : .5)
   controls.target.copy(center)
-  if (mode === 'inventory') camera.position.set(center.x + span * 1.25, center.y + span * .72, center.z + span * 1.7)
-  else if (mode === 'drop') camera.position.set(center.x + span * 1.5, center.y + span * 1.15, center.z + span * 1.7)
-  else camera.position.set(center.x + span * 1.25, center.y + span * .55, center.z + span * 2.25)
+
+  if (mode === 'inventory') camera.position.set(center.x + span * 1.18, center.y + span * .68, center.z + span * 1.58)
+  else if (mode === 'drop') camera.position.set(center.x + span * 1.15, center.y + span * .82, center.z + span * 1.28)
+  else camera.position.set(center.x + span * 1.02, center.y + span * .34, center.z + span * 1.72)
+
   camera.lookAt(center)
   controls.update()
 }
@@ -180,9 +186,10 @@ function socketPosition(socket: string): [number, number, number] {
 
 function createMannequin() {
   const group = new THREE.Group()
-  const material = new THREE.MeshStandardMaterial({ color: 0x3b4653, roughness: .78, metalness: .05 })
-  const add = (geometry: THREE.BufferGeometry, position: [number, number, number], rotation?: [number, number, number]) => {
-    const mesh = new THREE.Mesh(geometry, material)
+  const material = new THREE.MeshStandardMaterial({ color: 0x465361, roughness: .78, metalness: .05 })
+  const handMaterial = new THREE.MeshStandardMaterial({ color: 0x607080, roughness: .72 })
+  const add = (geometry: THREE.BufferGeometry, position: [number, number, number], rotation?: [number, number, number], materialOverride = material) => {
+    const mesh = new THREE.Mesh(geometry, materialOverride)
     mesh.position.set(...position)
     if (rotation) mesh.rotation.set(...rotation)
     group.add(mesh)
@@ -191,6 +198,8 @@ function createMannequin() {
   add(new THREE.SphereGeometry(.18, 16, 12), [0, 1.82, 0])
   add(new THREE.CapsuleGeometry(.08, .48, 5, 8), [-.37, 1.3, 0], [0, 0, -.18])
   add(new THREE.CapsuleGeometry(.08, .48, 5, 8), [.37, 1.3, 0], [0, 0, .18])
+  add(new THREE.SphereGeometry(.09, 10, 8), [-.58, 1.12, 0], undefined, handMaterial)
+  add(new THREE.SphereGeometry(.09, 10, 8), [.58, 1.12, 0], undefined, handMaterial)
   add(new THREE.CapsuleGeometry(.09, .58, 5, 8), [-.15, .55, 0])
   add(new THREE.CapsuleGeometry(.09, .58, 5, 8), [.15, .55, 0])
   group.position.y = .05
