@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { characterPackageDataToBlob, parseCharacterPackage } from '../../lib/characterPackage'
 import { getAsset, type LibraryAsset } from '../../lib/library'
 import { parseVfxPackage, type ForgeVfxEmitter, type ForgeVfxPackage } from '../../lib/vfxPackage'
+import { animationBindingAssetId, parseAnimationSet, resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
 
 export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge'
 
@@ -12,6 +13,7 @@ const vfxPackageCache = new Map<string, ForgeVfxPackage | null>()
 export class ForgeCharacterVisualBinding {
   private mixer?: THREE.AnimationMixer
   private clips: THREE.AnimationClip[] = []
+  private animationSet?: ForgeAnimationSet
   private active?: THREE.AnimationAction
   private activeKey = 'idle'
   private fallbackCue: 'idle' | 'move' = 'idle'
@@ -19,6 +21,10 @@ export class ForgeCharacterVisualBinding {
   private disposed = false
 
   constructor(private readonly root: THREE.Object3D) {}
+
+  setAnimationSet(set: ForgeAnimationSet | undefined) {
+    this.animationSet = set
+  }
 
   setAnimations(clips: THREE.AnimationClip[]) {
     this.clips = uniqueClips(clips)
@@ -51,16 +57,17 @@ export class ForgeCharacterVisualBinding {
       this.fallbackCue = cue
       if (this.oneShot && this.active?.isRunning()) return false
     }
-    const clip = findCueClip(this.clips, cue)
+    const authored = resolveRuntimeBinding(this.animationSet, cue)
+    const clip = authored?.clip ? findClipByName(this.clips, authored.clip) ?? findCueClip(this.clips, cue) : findCueClip(this.clips, cue)
     if (!clip) return false
-    return this.playClip(clip, `cue:${cue}`, loop)
+    return this.playClip(clip, `cue:${cue}:${clip.name}`, authored?.loop ?? loop, authored?.speed ?? 1)
   }
 
-  playClipName(name: string, loop = false) {
+  playClipName(name: string, loop = false, speed = 1) {
     if (!this.mixer || !this.clips.length) return false
-    const clip = this.clips.find((entry) => entry.name === name)
+    const clip = findClipByName(this.clips, name)
     if (!clip) return false
-    return this.playClip(clip, `clip:${name}`, loop)
+    return this.playClip(clip, `clip:${name}`, loop, speed)
   }
 
   dispose() {
@@ -70,12 +77,13 @@ export class ForgeCharacterVisualBinding {
     disposeBoundObject(this.root)
   }
 
-  private playClip(clip: THREE.AnimationClip, key: string, loop: boolean) {
+  private playClip(clip: THREE.AnimationClip, key: string, loop: boolean, speed = 1) {
     if (!this.mixer) return false
     if (this.activeKey === key && this.active?.isRunning()) return true
     const next = this.mixer.clipAction(clip)
     next.reset()
     next.enabled = true
+    next.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed)))
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
     next.clampWhenFinished = !loop
     next.fadeIn(0.08).play()
@@ -110,6 +118,7 @@ export async function bindCharacterAsset(
   hidePlaceholder(target)
 
   const binding = new ForgeCharacterVisualBinding(loaded.root)
+  binding.setAnimationSet(await loadAnimationSetForCharacter(characterAssetId))
   let clips = loaded.animations
   if (animationAssetId) {
     const external = await loadLibraryAnimationClips(animationAssetId)
@@ -182,7 +191,7 @@ export class ForgeLibraryVfxInstance {
       material.color.copy(particle.startColor).lerp(particle.endColor, t)
       material.opacity = THREE.MathUtils.lerp(particle.startAlpha, particle.endAlpha, t)
       if (t < 1) continue
-      this.scene.remove(particle.mesh)
+      particle.mesh.parent?.remove(particle.mesh)
       particle.mesh.geometry.dispose()
       material.dispose()
       this.particles.splice(this.particles.indexOf(particle), 1)
@@ -195,7 +204,7 @@ export class ForgeLibraryVfxInstance {
     if (this.disposed && !this.particles.length) return
     this.disposed = true
     for (const particle of this.particles) {
-      this.scene.remove(particle.mesh)
+      particle.mesh.parent?.remove(particle.mesh)
       particle.mesh.geometry.dispose()
       const material = particle.mesh.material as THREE.Material
       material.dispose()
@@ -256,6 +265,11 @@ export async function spawnLibraryVfx(scene: THREE.Scene, assetId: string | unde
   return new ForgeLibraryVfxInstance(scene, pkg, position)
 }
 
+async function loadAnimationSetForCharacter(characterAssetId: string) {
+  const asset = await getAsset(animationBindingAssetId(characterAssetId))
+  return asset ? await parseAnimationSet(asset.blob, characterAssetId) : undefined
+}
+
 async function loadCharacterLibraryAsset(asset: LibraryAsset): Promise<LoadedScene | undefined> {
   const pkg = await parseCharacterPackage(asset.blob)
   if (!pkg) return loadGlbAsset(asset).catch(() => undefined)
@@ -306,6 +320,10 @@ function normalizeCharacter(root: THREE.Object3D, desiredHeight: number) {
 
 function hidePlaceholder(target: THREE.Object3D) {
   target.children.filter((child) => child.name === '__forge_placeholder').forEach((child) => { child.visible = false })
+}
+
+function findClipByName(clips: THREE.AnimationClip[], name: string) {
+  return clips.find((clip) => clip.name === name) ?? clips.find((clip) => clip.name.toLowerCase() === name.toLowerCase())
 }
 
 function findCueClip(clips: THREE.AnimationClip[], cue: ForgeAnimationCue) {
