@@ -11,12 +11,13 @@ type Props = {
   className?: string
   playing: boolean
   loop: boolean
+  speed?: number
   seekRequest?: SeekRequest
   onTime?: (time: number) => void
   onEnded?: () => void
 }
 
-export default function AnimationPreview({ src, clip, className, playing, loop, seekRequest, onTime, onEnded }: Props) {
+export default function AnimationPreview({ src, clip, className, playing, loop, speed = 1, seekRequest, onTime, onEnded }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const mixerRef = useRef<THREE.AnimationMixer | undefined>(undefined)
   const actionRef = useRef<THREE.AnimationAction | undefined>(undefined)
@@ -166,6 +167,7 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
     const action = mixer.clipAction(clip)
     action.reset()
     action.enabled = true
+    action.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed)))
     action.clampWhenFinished = !loop
     action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
     action.play()
@@ -176,11 +178,15 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
     return () => {
       action.stop()
     }
-  }, [clip, loop])
+  }, [clip, loop, speed])
 
   useEffect(() => {
     if (actionRef.current) actionRef.current.paused = !playing
   }, [playing])
+
+  useEffect(() => {
+    if (actionRef.current) actionRef.current.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed)))
+  }, [speed])
 
   useEffect(() => {
     if (!seekRequest || !actionRef.current) return
