@@ -106,7 +106,7 @@ export default function ProceduralItemGeneratorPanel() {
       </div>
     </div>
 
-    {variations.length > 0 && <div className="item-generator-variations">{variations.map((recipe, index) => <button key={`${recipe.seed}-${index}`} onClick={() => { setDraft(recipe); setVariations([]) }}><b>#{index + 1}</b><span>Seed {recipe.seed}</span><small>{String(recipe.params.bladeStyle)} · {Number(recipe.params.bladeLength).toFixed(2)} · {String(recipe.params.guardStyle)}</small></button>)}</div>}
+    {variations.length > 0 && <div className="item-generator-variations">{variations.map((recipe, index) => <button className={draft.seed === recipe.seed ? 'active' : ''} aria-pressed={draft.seed === recipe.seed} key={`${recipe.seed}-${index}`} onClick={() => setDraft(recipe)}><b>#{index + 1}</b><span>Seed {recipe.seed}</span><small>{String(recipe.params.bladeStyle)} · {Number(recipe.params.bladeLength).toFixed(2)} · {String(recipe.params.guardStyle)}</small></button>)}</div>}
 
     <footer><span>{status}</span><strong>Apply to item = master GLB + auto-fit + inventory icon</strong></footer>
   </section>
