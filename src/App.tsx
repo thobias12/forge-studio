@@ -12,6 +12,7 @@ import {
   Layers3,
   LayoutGrid,
   MapPinned,
+  PackagePlus,
   Play,
   ScanLine,
   Search,
@@ -30,6 +31,7 @@ import ProjectPlay from './pages/ProjectPlay'
 import ProjectValidation from './pages/ProjectValidation'
 import WorldForge from './pages/WorldForge'
 import GameplayForge from './pages/GameplayForge'
+import ItemForge from './pages/ItemForge'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
@@ -62,9 +64,10 @@ import './texture-v071.css'
 import './character.css'
 import './world-forge.css'
 import './gameplay-forge.css'
+import './item-forge.css'
 import './project-control-center.css'
 
-type Page = ForgeContentPage | 'gameplay'
+type Page = ForgeContentPage | 'gameplay' | 'itemforge'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -99,6 +102,7 @@ const navGroups: NavGroup[] = [
     label: 'GAMEPLAY',
     items: [
       { id: 'gameplay', label: 'Gameplay Forge', icon: Swords },
+      { id: 'itemforge', label: 'Item Forge', icon: PackagePlus },
       { id: 'uiforge', label: 'UI Forge', icon: LayoutGrid },
       { id: 'vfx', label: 'VFX Studio', icon: WandSparkles },
       { id: 'audio', label: 'Voice & Audio', icon: AudioLines },
@@ -214,6 +218,7 @@ export default function App() {
           {page === 'projects' && <ProjectManager onOpenWorld={() => navigate('world')} onOpenGameplay={() => navigate('gameplay')} />}
           {page === 'world' && <WorldForge />}
           {page === 'gameplay' && <GameplayForge onOpenTool={(target) => navigate(target)} />}
+          {page === 'itemforge' && <ItemForge />}
           {page === 'play' && <ProjectPlay onOpenWorld={() => navigate('world')} onBackHome={() => navigate('home')} />}
           {page === 'validation' && <ProjectValidation registry={registry} onNavigate={(target) => navigate(target)} />}
           {page === 'mocap' && <MocapStudio />}
