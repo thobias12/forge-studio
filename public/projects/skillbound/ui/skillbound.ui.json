@@ -29,5 +29,20 @@
     "transparency": 0.94,
     "borderWidth": 1,
     "shadowStrength": 0.7
+  },
+  "hud": {
+    "format": "forge-hud-layout",
+    "version": 1,
+    "preset": "classic-arpg",
+    "modules": {
+      "health": { "id": "health", "visible": true, "anchor": "bottom-center", "offsetX": -15.5, "offsetY": -2.1, "scale": 1, "opacity": 1 },
+      "hotbar": { "id": "hotbar", "visible": true, "anchor": "bottom-center", "offsetX": 3.2, "offsetY": -2.2, "scale": 1, "opacity": 1 },
+      "objective": { "id": "objective", "visible": true, "anchor": "top-center", "offsetX": 0, "offsetY": 1.4, "scale": 1, "opacity": 1 },
+      "target": { "id": "target", "visible": true, "anchor": "top-center", "offsetX": 0, "offsetY": 5.4, "scale": 1, "opacity": 1 },
+      "boss": { "id": "boss", "visible": true, "anchor": "top-center", "offsetX": 0, "offsetY": 10.8, "scale": 1.08, "opacity": 1 },
+      "interaction": { "id": "interaction", "visible": true, "anchor": "bottom-center", "offsetX": 0, "offsetY": -12.5, "scale": 1, "opacity": 1 },
+      "loot": { "id": "loot", "visible": true, "anchor": "bottom-center", "offsetX": 0, "offsetY": -19.5, "scale": 1, "opacity": 1 },
+      "inventory": { "id": "inventory", "visible": true, "anchor": "top-right", "offsetX": -1.2, "offsetY": 5.1, "scale": 1, "opacity": 1 }
+    }
   }
 }
