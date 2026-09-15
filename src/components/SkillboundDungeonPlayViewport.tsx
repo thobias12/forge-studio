@@ -5,6 +5,7 @@ import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventure
 import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine/runtime/ForgeDungeonRuntime'
 import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
 import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
+import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
 
 installDungeonRewardMethods(ForgeDungeonRuntime)
@@ -30,6 +31,7 @@ type Props = {
   projectId: string
   initialState: ForgeAdventurePlayerState
   uiTheme?: SkillboundUiTheme
+  hudLayout?: SkillboundHudLayout
   itemIcons: Record<string, string>
   onExit: (state: ForgeAdventurePlayerState) => void
 }
@@ -39,17 +41,19 @@ type AuthoredCombatProfiles = {
   bosses: ForgeBossDefinition[]
 }
 
-export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, projectId, initialState, uiTheme, itemIcons, onExit }: Props) {
+export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, projectId, initialState, uiTheme, hudLayout, itemIcons, onExit }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const runtimeRef = useRef<ForgeDungeonRuntime | null>(null)
   const [snapshot, setSnapshot] = useState<ForgeDungeonRuntimeSnapshot>({ ...EMPTY, ...initialState, maxHealth: gameplay.player.maxHealth })
   const [profiles, setProfiles] = useState<AuthoredCombatProfiles>()
   const primaryAbility = gameplay.abilities.find((ability) => ability.id === gameplay.player.basicAbility)
   const skillAbility = gameplay.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0])
+  const normalizedHudLayout = useMemo(() => normalizeHudLayout(hudLayout), [hudLayout])
   const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
   const uiClasses = uiTheme
     ? `panel-${uiTheme.panelStyle} ornament-${uiTheme.ornamentLevel} corner-${uiTheme.cornerStyle} slots-${uiTheme.slotStyle} buttons-${uiTheme.buttonStyle} density-${uiTheme.density}`
     : ''
+  const moduleStyle = (id: SkillboundHudModuleId) => hudModuleStyle(normalizedHudLayout.modules[id], uiTheme?.uiScale ?? 1) as CSSProperties
 
   useEffect(() => {
     let cancelled = false
@@ -80,31 +84,30 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   }, [dungeon, gameplay, initialState, onExit, profiles, projectId])
 
   const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
+  const targetModule: SkillboundHudModuleId = snapshot.target?.boss ? 'boss' : 'target'
 
   return <div className={`skillbound-runtime-host skillbound-dungeon-runtime ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!profiles && <div className="skillbound-runtime-loading">Loading Encounter Forge + Boss Forge definitions…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>HOLLOW VAULT · SKILLBOUND RUNTIME</strong>
+      <strong>HOLLOW VAULT · HUD FORGE 2.0</strong>
       <span>Encounter Forge + Boss Forge · Skillbound camera · WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
     </div>
 
-    <div className="skillbound-objective">{snapshot.bossCleared ? 'Vault Warden defeated · find the active return portal' : snapshot.encounter}</div>
-    {snapshot.target && <TargetBar target={snapshot.target}/>} 
-    {snapshot.interaction && <div className={`skillbound-interaction-prompt ${snapshot.interaction.ready ? 'ready' : 'locked'}`}><kbd>E</kbd><strong>{snapshot.interaction.label.replace(/^E · /, '')}</strong></div>}
-    {snapshot.message && <div className="skillbound-runtime-message">{snapshot.message}</div>}
+    {hudModuleVisible(normalizedHudLayout, 'objective') && <div className="skillbound-objective" style={moduleStyle('objective')}>{snapshot.bossCleared ? 'Vault Warden defeated · find the active return portal' : snapshot.encounter}</div>}
+    {snapshot.target && hudModuleVisible(normalizedHudLayout, targetModule) && <TargetBar target={snapshot.target} style={moduleStyle(targetModule)}/>} 
+    {snapshot.interaction && hudModuleVisible(normalizedHudLayout, 'interaction') && <div className={`skillbound-interaction-prompt ${snapshot.interaction.ready ? 'ready' : 'locked'}`} style={moduleStyle('interaction')}><kbd>E</kbd><strong>{snapshot.interaction.label.replace(/^E · /, '')}</strong></div>}
+    {snapshot.message && hudModuleVisible(normalizedHudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
 
-    <div className="skillbound-hud">
-      <div className="skillbound-health-orb" style={{ '--health': `${healthPercent}%` } as CSSProperties}>
-        <strong>{Math.ceil(snapshot.health)}</strong><span>/{snapshot.maxHealth}</span>
-      </div>
-      <div className="skillbound-skillbar">
-        <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
-        <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
-        <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
-      </div>
-    </div>
+    {hudModuleVisible(normalizedHudLayout, 'health') && <div className="skillbound-health-orb" style={{ ...moduleStyle('health'), '--health': `${healthPercent}%` } as CSSProperties}>
+      <strong>{Math.ceil(snapshot.health)}</strong><span>/{snapshot.maxHealth}</span>
+    </div>}
+    {hudModuleVisible(normalizedHudLayout, 'hotbar') && <div className="skillbound-skillbar" style={moduleStyle('hotbar')}>
+      <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
+      <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
+      <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
+    </div>}
 
-    <aside className="skillbound-inventory">
+    {hudModuleVisible(normalizedHudLayout, 'inventory') && <aside className="skillbound-inventory" style={moduleStyle('inventory')}>
       <header><span>INVENTORY</span><small>{snapshot.inventory.length} item{snapshot.inventory.length === 1 ? '' : 's'}</small></header>
       <div className="skillbound-inventory-items">
         {snapshot.inventory.length === 0 && <p>Drops collected in Hollow Vault will carry back to Drowned March.</p>}
@@ -121,13 +124,13 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
         })}
       </div>
       <footer>{snapshot.bossCleared ? 'Return portal active' : `${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies alive`}</footer>
-    </aside>
+    </aside>}
   </div>
 }
 
-function TargetBar({ target }: { target: NonNullable<ForgeDungeonRuntimeSnapshot['target']> }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeSnapshot['target']>; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
-  return <div className={`skillbound-target-bar ${target.boss ? 'boss' : ''}`}>
+  return <div className={`skillbound-target-bar ${target.boss ? 'boss' : ''}`} style={style}>
     <div><strong>{target.name}</strong><span>{Math.ceil(target.health)} / {target.maxHealth}</span></div>
     <i><b style={{ width: `${percent}%` }}/></i>
   </div>
