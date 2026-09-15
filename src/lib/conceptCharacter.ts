@@ -104,11 +104,11 @@ export function buildConfigFromConcept(analysis: ConceptAnalysis): ForgeCharacte
   const config = cloneForgeCharacterConfig(analysis.species)
   const palette = analysis.palette
   if (analysis.species === 'skeleton') {
-    Object.assign(config, { name: 'Crypt Skeleton Concept', height: 1.05, bulk: 1.07, shoulders: 1.12, headScale: 0.94, armLength: 1.03, legLength: 1.01, asymmetry: 0.08, armor: 'scrap', headwear: 'none', weapon: 'sword' })
+    Object.assign(config, { name: 'Crypt Skeleton Concept', height: 1.05, bulk: 1.07, shoulders: 1.12, headScale: 0.94, armLength: 1.03, legLength: 1.01, asymmetry: 0.08, armor: 'scrap', headwear: 'none', weapon: 'none' })
   } else if (analysis.species === 'zombie') {
-    Object.assign(config, { name: 'Crypt Zombie Concept', height: 1.08, bulk: 1.22, shoulders: 1.13, headScale: 1.02, armLength: 1.06, legLength: 0.98, asymmetry: 0.4, armor: 'none', headwear: 'none', weapon: 'axe' })
+    Object.assign(config, { name: 'Crypt Zombie Concept', height: 1.08, bulk: 1.22, shoulders: 1.13, headScale: 1.02, armLength: 1.06, legLength: 0.98, asymmetry: 0.4, armor: 'none', headwear: 'none', weapon: 'none' })
   } else {
-    Object.assign(config, { name: 'Dungeon Bandit Concept', height: 1.02, bulk: 1.12, shoulders: 1.14, headScale: 0.94, armLength: 1, legLength: 1, asymmetry: 0.04, armor: 'scrap', headwear: 'hood', weapon: 'sword' })
+    Object.assign(config, { name: 'Dungeon Bandit Concept', height: 1.02, bulk: 1.12, shoulders: 1.14, headScale: 0.94, armLength: 1, legLength: 1, asymmetry: 0.04, armor: 'scrap', headwear: 'hood', weapon: 'none' })
   }
   config.primary = palette.primary
   config.secondary = palette.secondary
@@ -130,9 +130,9 @@ export function validateConceptBuild(config: ForgeCharacterConfig): ConceptValid
 }
 
 export function conceptRecipe(species: ForgeCharacterSpecies) {
-  if (species === 'skeleton') return ['Skull + jaw', 'Rib cage + pelvis', 'Bone limbs + hands', 'Rusted armor shells', 'Tattered cloth', 'Long sword']
-  if (species === 'zombie') return ['Hunched body', 'Damaged head', 'Asymmetric limbs', 'Torn cloth layers', 'Wounds + wraps', 'Crude axe']
-  return ['Human base', 'Hood + face wrap', 'Leather chest layers', 'Bracers + belt', 'Boots + cloth panels', 'Short sword']
+  if (species === 'skeleton') return ['Skull + jaw', 'Rib cage + pelvis', 'Bone limbs + hands', 'Armor shells', 'Tattered cloth', 'Item Forge hand socket']
+  if (species === 'zombie') return ['Hunched body', 'Damaged head', 'Asymmetric limbs', 'Torn cloth layers', 'Wounds + wraps', 'External weapon socket']
+  return ['Human base', 'Headwear + face', 'Chest layers', 'Bracers + belt', 'Boots + cloth panels', 'External weapon socket']
 }
 
 function inferSpecies(filename: string, metrics: ConceptAnalysis['metrics']): ForgeCharacterSpecies {
