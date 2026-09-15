@@ -1,3 +1,5 @@
+import type { ForgeWeaponAnimationProfile } from './weaponAnimationProfiles'
+
 export type ForgeAnimationActionId =
   | 'idle'
   | 'walk'
@@ -24,6 +26,8 @@ export type ForgeAnimationSet = {
   version: 1
   targetAssetId: string
   rig: 'ForgeHumanoidV1'
+  weaponProfile: ForgeWeaponAnimationProfile
+  previewItemId?: string
   actions: Partial<Record<ForgeAnimationActionId, ForgeAnimationActionBinding>>
 }
 
@@ -61,7 +65,7 @@ export function createAnimationSet(targetAssetId: string, clipNames: string[]): 
     const clip = findBestClip(clipNames, definition.aliases)
     if (clip) actions[definition.id] = { clip, loop: definition.loop, speed: 1 }
   }
-  return { format: 'forge-animation-set', version: 1, targetAssetId, rig: 'ForgeHumanoidV1', actions }
+  return { format: 'forge-animation-set', version: 1, targetAssetId, rig: 'ForgeHumanoidV1', weaponProfile: 'one-hand-sword', actions }
 }
 
 export function normalizeAnimationSet(value: Partial<ForgeAnimationSet> | undefined, targetAssetId: string, clipNames: string[] = []): ForgeAnimationSet {
@@ -79,7 +83,15 @@ export function normalizeAnimationSet(value: Partial<ForgeAnimationSet> | undefi
       speed: clampSpeed(raw?.speed),
     }
   }
-  return { format: 'forge-animation-set', version: 1, targetAssetId, rig: 'ForgeHumanoidV1', actions }
+  return {
+    format: 'forge-animation-set',
+    version: 1,
+    targetAssetId,
+    rig: 'ForgeHumanoidV1',
+    weaponProfile: value?.weaponProfile ?? 'one-hand-sword',
+    previewItemId: value?.previewItemId,
+    actions,
+  }
 }
 
 export async function parseAnimationSet(blob: Blob, targetAssetId = ''): Promise<ForgeAnimationSet | undefined> {
