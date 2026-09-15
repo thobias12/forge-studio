@@ -9,10 +9,11 @@ type Props = {
   playing: boolean
   showRig: boolean
   showHitbox: boolean
+  cameraMode?: 'studio' | 'arpg'
   onStats?: (stats: { bones: number; skinnedMeshes: number; triangles: number }) => void
 }
 
-export default function CharacterForgePreview({ config, animation, playing, showRig, showHitbox, onStats }: Props) {
+export default function CharacterForgePreview({ config, animation, playing, showRig, showHitbox, cameraMode = 'studio', onStats }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<{ root?: THREE.Group; helper?: THREE.SkeletonHelper; hitbox?: THREE.Mesh; mixer?: THREE.AnimationMixer; action?: THREE.AnimationAction; clips?: THREE.AnimationClip[] }>({})
   const callbackRef = useRef(onStats)
@@ -39,7 +40,7 @@ export default function CharacterForgePreview({ config, animation, playing, show
     controls.enableDamping = true
     controls.target.set(0, 0.95, 0)
     controls.minDistance = 1.4
-    controls.maxDistance = 8
+    controls.maxDistance = 10
     scene.add(new THREE.HemisphereLight(0xd7e6f3, 0x151b22, 2.3))
     const key = new THREE.DirectionalLight(0xfff3df, 3.5); key.position.set(3.8, 5.5, 4.4); key.castShadow = true; scene.add(key)
     const rim = new THREE.DirectionalLight(0x718fb0, 2); rim.position.set(-3.5, 3, -4); scene.add(rim)
@@ -91,8 +92,25 @@ export default function CharacterForgePreview({ config, animation, playing, show
 
     const box = new THREE.Box3().setFromObject(build.root)
     const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()), radius = Math.max(size.x, size.y, size.z)
-    if (state.controls && state.camera) { state.controls.target.set(center.x, Math.max(0.8, center.y), center.z); state.camera.position.set(center.x + radius * 1.2, center.y + size.y * 0.08, center.z + radius * 1.9); state.controls.update() }
-  }, [config])
+    if (state.controls && state.camera) {
+      if (cameraMode === 'arpg') {
+        const distance = Math.max(4.6, size.y * 2.65)
+        state.camera.fov = 35
+        state.camera.updateProjectionMatrix()
+        state.controls.enabled = false
+        state.controls.target.set(center.x, Math.max(0.72, center.y * 0.74), center.z)
+        state.camera.position.set(center.x + distance * 0.62, center.y + distance * 0.74, center.z + distance * 0.78)
+        state.camera.lookAt(state.controls.target)
+      } else {
+        state.camera.fov = 38
+        state.camera.updateProjectionMatrix()
+        state.controls.enabled = true
+        state.controls.target.set(center.x, Math.max(0.8, center.y), center.z)
+        state.camera.position.set(center.x + radius * 1.2, center.y + size.y * 0.08, center.z + radius * 1.9)
+        state.controls.update()
+      }
+    }
+  }, [config, cameraMode])
 
   useEffect(() => {
     const state = stateRef.current

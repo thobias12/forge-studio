@@ -3,6 +3,7 @@ import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Hammer, Home, Layers3, 
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
+import ConceptForge from './pages/ConceptForge'
 import CharacterStudio from './pages/CharacterStudio'
 import CharacterForge from './pages/CharacterForge'
 import DestructionLab from './pages/DestructionLab'
@@ -21,13 +22,14 @@ import './retarget.css'
 import './texture-v071.css'
 import './character.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'destruction' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
+type Page = 'home' | 'mocap' | 'models' | 'destruction' | 'conceptforge' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
   { id: 'mocap' as const, label: 'Mocap', icon: ScanLine },
   { id: 'models' as const, label: 'Models', icon: Box },
   { id: 'destruction' as const, label: 'Destruction Lab', icon: Hammer },
+  { id: 'conceptforge' as const, label: 'Concept Forge', icon: Sparkles },
   { id: 'characterforge' as const, label: 'Character Forge', icon: Skull },
   { id: 'characters' as const, label: 'Character Assembly', icon: UserRoundCog },
   { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
@@ -80,6 +82,7 @@ export default function App() {
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
           {page === 'destruction' && <DestructionLab />}
+          {page === 'conceptforge' && <ConceptForge />}
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <CharacterStudio />}
           {page === 'animations' && <AnimationStudio />}

@@ -29,6 +29,8 @@ const DEFAULT_PALETTES: Record<ForgeCharacterSpecies, ConceptAnalysis['palette']
 
 export async function analyzeConceptFile(file: File, hint: ConceptSpeciesHint = 'auto'): Promise<ConceptAnalysis> {
   const bitmap = await createImageBitmap(file)
+  const sourceWidth = bitmap.width
+  const sourceHeight = bitmap.height
   const canvas = document.createElement('canvas')
   canvas.width = 96
   canvas.height = 96
@@ -44,6 +46,7 @@ export async function analyzeConceptFile(file: File, hint: ConceptSpeciesHint = 
   let warm = 0
   let green = 0
   let neutralLight = 0
+  let sampled = 0
 
   for (let i = 0; i < data.length; i += 16) {
     const r = data[i] / 255
@@ -53,13 +56,14 @@ export async function analyzeConceptFile(file: File, hint: ConceptSpeciesHint = 
     const luminance = hsl.l
     luminanceTotal += luminance
     saturationTotal += hsl.s
+    sampled += 1
     if ((hsl.h < 48 || hsl.h > 330) && hsl.s > 0.18 && luminance > 0.12 && luminance < 0.76) warm += 1
     if (hsl.h > 65 && hsl.h < 175 && hsl.s > 0.08 && luminance > 0.12 && luminance < 0.72) green += 1
     if (hsl.s < 0.24 && luminance > 0.43 && luminance < 0.9) neutralLight += 1
     if (luminance > 0.08 && luminance < 0.92) samples.push({ r, g, b, ...hsl })
   }
 
-  const total = Math.max(1, data.length / 16)
+  const total = Math.max(1, sampled)
   const metrics = {
     averageLuminance: luminanceTotal / total,
     averageSaturation: saturationTotal / total,
@@ -75,9 +79,9 @@ export async function analyzeConceptFile(file: File, hint: ConceptSpeciesHint = 
     sourceName: file.name,
     species,
     confidence,
-    width: bitmapWidth(file, canvas.width),
-    height: bitmapHeight(file, canvas.height),
-    aspect: file.type ? canvas.width / canvas.height : 1,
+    width: sourceWidth,
+    height: sourceHeight,
+    aspect: sourceHeight > 0 ? sourceWidth / sourceHeight : 1,
     palette,
     metrics,
   }
@@ -204,5 +208,3 @@ function rgbHex(r: number, g: number, b: number) {
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)) }
 function label(species: ForgeCharacterSpecies) { return species === 'skeleton' ? 'Crypt Skeleton' : species === 'zombie' ? 'Crypt Zombie' : 'Dungeon Bandit' }
-function bitmapWidth(_file: File, fallback: number) { return fallback }
-function bitmapHeight(_file: File, fallback: number) { return fallback }
