@@ -1,4 +1,16 @@
-export type ForgeItemGeneratorId = 'weapon.sword'
+export type ForgeItemGeneratorId =
+  | 'weapon.sword'
+  | 'weapon.dagger'
+  | 'weapon.axe'
+  | 'weapon.mace'
+  | 'weapon.staff'
+  | 'weapon.spear'
+  | 'weapon.bow'
+  | 'armor.helmet'
+  | 'armor.chest'
+  | 'armor.gloves'
+  | 'armor.legs'
+  | 'armor.boots'
 
 export type ForgeGeneratorValue = string | number | boolean
 
