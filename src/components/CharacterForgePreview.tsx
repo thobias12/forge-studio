@@ -27,7 +27,7 @@ export default function CharacterForgePreview({ config, animation, playing, show
     scene.background = new THREE.Color(0x070b10)
     scene.fog = new THREE.Fog(0x070b10, 7, 18)
     const camera = new THREE.PerspectiveCamera(38, 1, 0.02, 80)
-    camera.position.set(2.55, 1.65, 3.7)
+    camera.position.set(2.55, 1.65, -3.7)
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -39,6 +39,9 @@ export default function CharacterForgePreview({ config, animation, playing, show
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
+    controls.enablePan = false
+    controls.rotateSpeed = 0.72
+    controls.zoomSpeed = 0.85
     controls.target.set(0, 0.95, 0)
     controls.minDistance = 1.4
     controls.maxDistance = 10
@@ -95,22 +98,21 @@ export default function CharacterForgePreview({ config, animation, playing, show
     const box = new THREE.Box3().setFromObject(build.root)
     const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()), radius = Math.max(size.x, size.y, size.z)
     if (state.controls && state.camera) {
+      state.controls.enabled = true
       if (cameraMode === 'arpg') {
         const distance = Math.max(4.6, size.y * 2.65)
         state.camera.fov = 35
         state.camera.updateProjectionMatrix()
-        state.controls.enabled = false
         state.controls.target.set(center.x, Math.max(0.72, center.y * 0.74), center.z)
-        state.camera.position.set(center.x + distance * 0.62, center.y + distance * 0.74, center.z + distance * 0.78)
-        state.camera.lookAt(state.controls.target)
+        state.camera.position.set(center.x + distance * 0.62, center.y + distance * 0.74, center.z - distance * 0.78)
       } else {
         state.camera.fov = 38
         state.camera.updateProjectionMatrix()
-        state.controls.enabled = true
         state.controls.target.set(center.x, Math.max(0.8, center.y), center.z)
-        state.camera.position.set(center.x + radius * 1.2, center.y + size.y * 0.08, center.z + radius * 1.9)
-        state.controls.update()
+        state.camera.position.set(center.x + radius * 1.2, center.y + size.y * 0.08, center.z - radius * 1.9)
       }
+      state.camera.lookAt(state.controls.target)
+      state.controls.update()
     }
   }, [config, cameraMode])
 
