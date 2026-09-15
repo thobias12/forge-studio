@@ -1,9 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { applyRuntimeItemTransform, findRuntimeItemSocket } from '../engine/runtime/ForgeItemRuntime'
+import type { ForgeItemSocket, ForgeItemTransform } from '../engine/forgeProject'
 
 type SeekRequest = { id: number; time: number }
+export type AnimationPreviewAttachment = { src: string; socket: ForgeItemSocket; transform: ForgeItemTransform }
 
 type Props = {
   src: string
@@ -12,15 +15,19 @@ type Props = {
   playing: boolean
   loop: boolean
   speed?: number
+  attachment?: AnimationPreviewAttachment
   seekRequest?: SeekRequest
   onTime?: (time: number) => void
   onEnded?: () => void
 }
 
-export default function AnimationPreview({ src, clip, className, playing, loop, speed = 1, seekRequest, onTime, onEnded }: Props) {
+export default function AnimationPreview({ src, clip, className, playing, loop, speed = 1, attachment, seekRequest, onTime, onEnded }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const mixerRef = useRef<THREE.AnimationMixer | undefined>(undefined)
   const actionRef = useRef<THREE.AnimationAction | undefined>(undefined)
+  const modelRef = useRef<THREE.Object3D | undefined>(undefined)
+  const attachmentRef = useRef<THREE.Object3D | undefined>(undefined)
+  const [modelRevision, setModelRevision] = useState(0)
   const onTimeRef = useRef(onTime)
   const onEndedRef = useRef(onEnded)
   const playingRef = useRef(playing)
@@ -103,6 +110,8 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
       camera.position.set(maxSize * 1.35, size.y * 0.65, maxSize * 2.2)
       controls.target.set(0, Math.max(0.8, size.y * 0.48), 0)
 
+      modelRef.current = model
+      setModelRevision((value) => value + 1)
       mixer = new THREE.AnimationMixer(model)
       mixerRef.current = mixer
     })
@@ -124,9 +133,7 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
             endedSent = true
             onEndedRef.current?.()
           }
-        } else {
-          endedSent = false
-        }
+        } else endedSent = false
       }
 
       controls.update()
@@ -154,11 +161,44 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
       mixer?.stopAllAction()
       mixerRef.current = undefined
       actionRef.current = undefined
+      modelRef.current = undefined
+      attachmentRef.current = undefined
       if (model) scene.remove(model)
       renderer.dispose()
       if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement)
     }
   }, [src])
+
+  useEffect(() => {
+    const model = modelRef.current
+    if (!model || !attachment?.src) return
+    let disposed = false
+    let attached: THREE.Object3D | undefined
+    const loader = new GLTFLoader()
+    void loader.loadAsync(attachment.src).then((gltf) => {
+      if (disposed) { disposeObject(gltf.scene); return }
+      const target = findRuntimeItemSocket(model, attachment.socket)
+      if (!target) { disposeObject(gltf.scene); return }
+      attached = gltf.scene
+      attached.name = '__forge_animation_preview_weapon'
+      attached.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return
+        object.castShadow = true
+        object.receiveShadow = true
+      })
+      applyRuntimeItemTransform(attached, attachment.transform)
+      target.add(attached)
+      attachmentRef.current = attached
+    }).catch(() => undefined)
+    return () => {
+      disposed = true
+      if (attached) {
+        attached.removeFromParent()
+        disposeObject(attached)
+      }
+      if (attachmentRef.current === attached) attachmentRef.current = undefined
+    }
+  }, [modelRevision, attachment?.src, attachment?.socket, attachment?.transform.position.join(','), attachment?.transform.rotation.join(','), attachment?.transform.scale])
 
   useEffect(() => {
     const mixer = mixerRef.current
@@ -175,18 +215,11 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
     actionRef.current = action
     mixer.setTime(0)
     onTimeRef.current?.(0)
-    return () => {
-      action.stop()
-    }
-  }, [clip, loop, speed])
+    return () => { action.stop() }
+  }, [clip, loop, speed, modelRevision])
 
-  useEffect(() => {
-    if (actionRef.current) actionRef.current.paused = !playing
-  }, [playing])
-
-  useEffect(() => {
-    if (actionRef.current) actionRef.current.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed)))
-  }, [speed])
+  useEffect(() => { if (actionRef.current) actionRef.current.paused = !playing }, [playing])
+  useEffect(() => { if (actionRef.current) actionRef.current.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed))) }, [speed])
 
   useEffect(() => {
     if (!seekRequest || !actionRef.current) return
@@ -198,4 +231,13 @@ export default function AnimationPreview({ src, clip, className, playing, loop, 
   }, [seekRequest])
 
   return <div className={className} ref={mountRef} />
+}
+
+function disposeObject(root: THREE.Object3D) {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return
+    object.geometry?.dispose()
+    const materials = Array.isArray(object.material) ? object.material : [object.material]
+    materials.forEach((material) => material.dispose())
+  })
 }
