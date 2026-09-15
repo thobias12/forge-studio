@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { loadSkillboundWorkspace, type ForgeGameplayContent } from '../engine/forgeProject'
 import type { GeneratedRegion } from '../engine/guidedWorld'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
+import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
 import '../skillbound-runtime.css'
 
 type Props = { region: GeneratedRegion }
@@ -25,14 +26,20 @@ export default function SkillboundPlayViewport({ region }: Props) {
   const [session, setSession] = useState(0)
   const [gameplay, setGameplay] = useState<ForgeGameplayContent>()
   const [projectId, setProjectId] = useState('')
+  const [uiTheme, setUiTheme] = useState<SkillboundUiTheme>()
 
   const primaryAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.basicAbility), [gameplay])
   const skillAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0]), [gameplay])
+  const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
+  const uiClasses = uiTheme
+    ? `panel-${uiTheme.panelStyle} ornament-${uiTheme.ornamentLevel} corner-${uiTheme.cornerStyle} slots-${uiTheme.slotStyle} buttons-${uiTheme.buttonStyle} density-${uiTheme.density}`
+    : ''
 
   useEffect(() => {
     void loadSkillboundWorkspace().then((workspace) => {
       setGameplay(workspace.gameplay)
       setProjectId(workspace.manifest.id)
+      setUiTheme(workspace.ui.theme)
     })
   }, [])
 
@@ -59,10 +66,10 @@ export default function SkillboundPlayViewport({ region }: Props) {
       ? `Clear the encounter · ${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies remaining`
       : 'Encounter cleared · collect and equip the drop'
 
-  return <div className="skillbound-runtime-host" ref={hostRef}>
+  return <div className={`skillbound-runtime-host ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>FORGE PLAY MODE · PHASE 2.1</strong>
+      <strong>FORGE PLAY MODE · UI FORGE CONNECTED</strong>
       <span>WASD move · LMB attack · Q skill · Space dodge · red ring = enemy wind-up</span>
     </div>
 

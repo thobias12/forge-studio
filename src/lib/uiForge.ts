@@ -36,6 +36,14 @@ export type SkillboundUiTheme = {
   shadowStrength: number
 }
 
+export type ForgeUiThemeDefinition = {
+  format: 'forge-ui-theme'
+  version: 1
+  id: string
+  projectId: string
+  theme: SkillboundUiTheme
+}
+
 export type UiForgeViewport = {
   id: string
   label: string
@@ -96,6 +104,16 @@ export function cloneUiForgePreset(id: string): SkillboundUiTheme {
   return { ...preset }
 }
 
+export function createDefaultSkillboundUiDefinition(): ForgeUiThemeDefinition {
+  return {
+    format: 'forge-ui-theme',
+    version: 1,
+    id: 'skillbound-ui',
+    projectId: 'skillbound',
+    theme: cloneUiForgePreset('dark-arpg'),
+  }
+}
+
 export function withAccent(theme: SkillboundUiTheme, accent: UiForgeAccent): SkillboundUiTheme {
   const next = UI_FORGE_ACCENTS[accent]
   return { ...theme, accent, accentColor: next.color, accentSoft: next.soft, borderColor: next.soft }
@@ -105,4 +123,35 @@ export function uiForgeFontStack(style: UiForgeFontStyle) {
   if (style === 'serif') return 'Georgia, Cambria, "Times New Roman", serif'
   if (style === 'sans') return 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
   return 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+}
+
+export function skillboundUiCssVariables(theme: SkillboundUiTheme): Record<string, string> {
+  return {
+    '--sb-accent': theme.accentColor,
+    '--sb-accent-soft': theme.accentSoft,
+    '--sb-border': theme.borderColor,
+    '--sb-panel': hexAlpha(theme.panelColor, theme.transparency),
+    '--sb-panel-alt': hexAlpha(theme.panelColorAlt, Math.min(1, theme.transparency + 0.03)),
+    '--sb-text': theme.textColor,
+    '--sb-muted': theme.mutedTextColor,
+    '--sb-health': theme.healthColor,
+    '--sb-mana': theme.manaColor,
+    '--sb-poison': theme.poisonColor,
+    '--sb-border-width': `${theme.borderWidth}px`,
+    '--sb-shadow': `${theme.shadowStrength}`,
+    '--sb-ui-scale': `${theme.uiScale}`,
+    '--sb-font-scale': `${theme.fontScale}`,
+    '--sb-font': uiForgeFontStack(theme.fontStyle),
+    '--sb-gap': theme.density === 'compact' ? '8px' : '12px',
+    '--sb-radius': theme.cornerStyle === 'sharp' ? '2px' : theme.cornerStyle === 'runes' ? '9px' : '6px',
+  }
+}
+
+function hexAlpha(hex: string, alpha: number) {
+  const clean = hex.replace('#', '')
+  const value = clean.length === 3 ? clean.split('').map((item) => item + item).join('') : clean
+  const r = parseInt(value.slice(0, 2), 16)
+  const g = parseInt(value.slice(2, 4), 16)
+  const b = parseInt(value.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }

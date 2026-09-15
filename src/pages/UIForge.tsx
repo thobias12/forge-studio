@@ -1,11 +1,12 @@
-import { useMemo, useState, type CSSProperties } from 'react'
-import { Backpack, Download, Grid3X3, LayoutGrid, Monitor, Palette, RotateCcw, Shield, Sparkles, Swords, UserRound } from 'lucide-react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Backpack, Download, Grid3X3, LayoutGrid, Monitor, Palette, RotateCcw, Save, Shield, Sparkles, Swords, UserRound } from 'lucide-react'
+import { loadSkillboundWorkspace, patchUi, saveSkillboundWorkspace, type ForgeProjectWorkspace } from '../engine/forgeProject'
 import {
   UI_FORGE_ACCENTS,
   UI_FORGE_PRESETS,
   UI_FORGE_VIEWPORTS,
   cloneUiForgePreset,
-  uiForgeFontStack,
+  skillboundUiCssVariables,
   withAccent,
   type SkillboundUiTheme,
   type UiForgeAccent,
@@ -27,33 +28,49 @@ export default function UIForge() {
   const [theme, setTheme] = useState<SkillboundUiTheme>(() => cloneUiForgePreset('dark-arpg'))
   const [screen, setScreen] = useState<UiForgeScreen>('hud')
   const [viewportId, setViewportId] = useState('fhd')
+  const [workspace, setWorkspace] = useState<ForgeProjectWorkspace>()
+  const [status, setStatus] = useState('Loading the active Skillbound UI theme…')
   const viewport = UI_FORGE_VIEWPORTS.find((item) => item.id === viewportId) ?? UI_FORGE_VIEWPORTS[1]
 
+  useEffect(() => {
+    let cancelled = false
+    void loadSkillboundWorkspace()
+      .then((project) => {
+        if (cancelled) return
+        setWorkspace(project)
+        setTheme({ ...project.ui.theme })
+        setPresetId(UI_FORGE_PRESETS.some((preset) => preset.id === project.ui.theme.id) ? project.ui.theme.id : 'dark-arpg')
+        setStatus('Loaded from projects/skillbound UI data. Save changes to update Play Mode.')
+      })
+      .catch((error) => {
+        if (!cancelled) setStatus(error instanceof Error ? error.message : 'Could not load the Skillbound UI theme.')
+      })
+    return () => { cancelled = true }
+  }, [])
+
   const patch = <K extends keyof SkillboundUiTheme>(key: K, value: SkillboundUiTheme[K]) => setTheme((current) => ({ ...current, [key]: value }))
-  const loadPreset = (id: string) => { setPresetId(id); setTheme(cloneUiForgePreset(id)) }
+  const loadPreset = (id: string) => { setPresetId(id); setTheme(cloneUiForgePreset(id)); setStatus('Preset loaded in the editor. Save to apply it to Skillbound Runtime.') }
   const style = useMemo(() => ({
-    '--sb-accent': theme.accentColor,
-    '--sb-accent-soft': theme.accentSoft,
-    '--sb-border': theme.borderColor,
-    '--sb-panel': hexAlpha(theme.panelColor, theme.transparency),
-    '--sb-panel-alt': hexAlpha(theme.panelColorAlt, Math.min(1, theme.transparency + 0.03)),
-    '--sb-text': theme.textColor,
-    '--sb-muted': theme.mutedTextColor,
-    '--sb-health': theme.healthColor,
-    '--sb-mana': theme.manaColor,
-    '--sb-poison': theme.poisonColor,
-    '--sb-border-width': `${theme.borderWidth}px`,
-    '--sb-shadow': `${theme.shadowStrength}`,
-    '--sb-ui-scale': `${theme.uiScale}`,
-    '--sb-font-scale': `${theme.fontScale}`,
-    '--sb-font': uiForgeFontStack(theme.fontStyle),
-    '--sb-gap': theme.density === 'compact' ? '8px' : '12px',
-    '--sb-radius': theme.cornerStyle === 'sharp' ? '2px' : theme.cornerStyle === 'runes' ? '9px' : '6px',
+    ...skillboundUiCssVariables(theme),
     '--sb-aspect': `${viewport.width} / ${viewport.height}`,
   } as CSSProperties), [theme, viewport])
 
+  const saveTheme = () => {
+    if (!workspace) {
+      setStatus('Skillbound project is still loading.')
+      return
+    }
+    const updatedUi = { ...workspace.ui, theme: { ...theme } }
+    const next = saveSkillboundWorkspace(patchUi(workspace, updatedUi))
+    setWorkspace(next)
+    setStatus(`Saved "${theme.name}" to the active Skillbound project. World Forge and Play Project now use this theme.`)
+  }
+
   const exportTheme = () => {
-    const blob = new Blob([JSON.stringify({ format: 'SkillboundUITheme', version: 1, viewport, theme }, null, 2)], { type: 'application/json' })
+    const definition = workspace?.ui
+      ? { ...workspace.ui, theme: { ...theme } }
+      : { format: 'forge-ui-theme', version: 1, id: 'skillbound-ui', projectId: 'skillbound', theme }
+    const blob = new Blob([JSON.stringify(definition, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
@@ -65,7 +82,7 @@ export default function UIForge() {
   return <div className="uiforge" style={style}>
     <aside className="uiforge-left">
       <header className="uiforge-panel-heading"><Palette size={16}/><div><span>UI FORGE</span><strong>Skillbound Design System</strong></div></header>
-      <p className="uiforge-intro">One theme drives every HUD element, menu, slot, tooltip and responsive layout.</p>
+      <p className="uiforge-intro">One project theme now drives both this design canvas and the live Skillbound HUD, inventory and runtime controls.</p>
 
       <section className="uiforge-control-section">
         <h3>Theme preset</h3>
@@ -110,7 +127,7 @@ export default function UIForge() {
           {screen === 'skills' && <SkillsPreview/>}
         </div>
       </div>
-      <footer className="uiforge-canvas-footer"><Shield size={13}/><span>Responsive anchors are being previewed at {viewport.label}. Theme changes affect every screen immediately.</span></footer>
+      <footer className="uiforge-canvas-footer"><Shield size={13}/><span>Responsive anchors are previewed at {viewport.label}. Saved tokens are consumed by Skillbound Play Mode.</span></footer>
     </main>
 
     <aside className="uiforge-right">
@@ -133,18 +150,20 @@ export default function UIForge() {
 
       <section className="uiforge-token-summary">
         <h3>System coverage</h3>
-        <Token label="Panel / Window" value="8 screens"/>
+        <Token label="Panel / Window" value="Runtime + menus"/>
         <Token label="Item / Gear slot" value="Inventory + loot"/>
         <Token label="Button / Tab" value="Global"/>
         <Token label="Tooltip" value="Items + skills"/>
         <Token label="Resource orb" value="Combat HUD"/>
-        <Token label="Progress bar" value="XP + cast"/>
+        <Token label="Project file" value="ui/skillbound.ui.json"/>
       </section>
 
       <div className="uiforge-actions">
         <button onClick={() => loadPreset(presetId)}><RotateCcw size={14}/> Reset preset</button>
-        <button className="primary" onClick={exportTheme}><Download size={14}/> Export Skillbound theme</button>
+        <button onClick={exportTheme}><Download size={14}/> Export JSON</button>
+        <button className="primary" disabled={!workspace} onClick={saveTheme}><Save size={14}/> Save to Skillbound</button>
       </div>
+      <div className="uiforge-project-status">{status}</div>
     </aside>
   </div>
 }
@@ -206,5 +225,4 @@ function Resist({ name, value }: { name: string; value: number }) { return <div 
 function Token({ label, value }: { label: string; value: string }) { return <div className="token-row"><span>{label}</span><strong>{value}</strong></div> }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="uiforge-field"><span>{label}</span>{children}</label> }
 function Range({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) { return <label className="uiforge-range"><span><b>{label}</b><code>{suffix}</code></span><input type="range" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))}/></label> }
-function hexAlpha(hex: string, alpha: number) { const clean = hex.replace('#',''); const value = clean.length === 3 ? clean.split('').map((item) => item + item).join('') : clean; const r = parseInt(value.slice(0,2),16), g = parseInt(value.slice(2,4),16), b = parseInt(value.slice(4,6),16); return `rgba(${r}, ${g}, ${b}, ${alpha})` }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') }

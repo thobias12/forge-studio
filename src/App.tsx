@@ -66,6 +66,7 @@ import './world-forge.css'
 import './gameplay-forge.css'
 import './item-forge.css'
 import './project-control-center.css'
+import './project-theme.css'
 
 type Page = ForgeContentPage | 'gameplay' | 'itemforge'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
@@ -126,6 +127,7 @@ const navGroups: NavGroup[] = [
 ]
 
 const nav: NavItem[] = navGroups.flatMap((group) => group.items)
+const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'itemforge', 'uiforge', 'play', 'validation'])
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -138,6 +140,7 @@ export default function App() {
   const [registry, setRegistry] = useState<ForgeContentEntry[]>(CORE_REGISTRY_ENTRIES)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
+  const projectContext = SKILLBOUND_CONTEXT_PAGES.has(page)
 
   useEffect(() => { window.location.hash = `/${page}` }, [page])
   useEffect(() => installHistoryShortcuts(), [])
@@ -169,7 +172,7 @@ export default function App() {
   }
 
   return (
-    <div className="studio-shell">
+    <div className={`studio-shell ${projectContext ? 'project-context-skillbound' : 'forge-context-default'}`} data-project-context={projectContext ? 'skillbound' : 'forge'}>
       <aside className="sidebar">
         <button className="forge-brand" onClick={() => navigate('home')}>
           <div className="forge-logo">F</div><div><strong>FORGE</strong><span>STUDIO</span></div>
@@ -211,7 +214,7 @@ export default function App() {
               {!searchResults.length && <div className="global-search-empty">No Forge tools or content found.</div>}
             </div>}
           </div>
-          <div className="topbar-right"><span className="engine-pill">FORGE RUNTIME · THREE.JS</span><span className="session-dot" /> Skillbound project</div>
+          <div className="topbar-right"><span className="engine-pill">{projectContext ? 'SKILLBOUND · PROJECT CONTEXT' : 'FORGE RUNTIME · THREE.JS'}</span><span className="session-dot" /> Skillbound project</div>
         </header>
         <div className="content-area">
           {page === 'home' && <Dashboard registry={registry} onNavigate={(target) => navigate(target)} />}

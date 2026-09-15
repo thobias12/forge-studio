@@ -4,7 +4,7 @@
   "id": "skillbound",
   "name": "Skillbound",
   "generationVersion": 1,
-  "contentRevision": 2,
+  "contentRevision": 3,
   "runtime": {
     "renderer": "three",
     "entryWorld": "act1",
@@ -17,6 +17,7 @@
     "abilities": ["abilities/iron-cleave.ability.json", "abilities/ember-burst.ability.json"],
     "enemies": ["enemies/road-wretch.enemy.json"],
     "items": ["items/rusted-sword.item.json"],
-    "lootTables": ["loot/road-wretch.loot.json"]
+    "lootTables": ["loot/road-wretch.loot.json"],
+    "ui": "ui/skillbound.ui.json"
   }
 }

@@ -1,0 +1,33 @@
+{
+  "format": "forge-ui-theme",
+  "version": 1,
+  "id": "skillbound-ui",
+  "projectId": "skillbound",
+  "theme": {
+    "id": "dark-arpg",
+    "name": "Dark ARPG",
+    "panelStyle": "metal",
+    "accent": "bronze",
+    "accentColor": "#a77a3c",
+    "accentSoft": "#6f542f",
+    "borderColor": "#6f542f",
+    "panelColor": "#11161c",
+    "panelColorAlt": "#181e25",
+    "textColor": "#e8e0d2",
+    "mutedTextColor": "#8f98a2",
+    "healthColor": "#861f26",
+    "manaColor": "#245c8f",
+    "poisonColor": "#53734b",
+    "ornamentLevel": "medium",
+    "cornerStyle": "bevel",
+    "slotStyle": "inset",
+    "buttonStyle": "solid",
+    "density": "comfortable",
+    "fontStyle": "hybrid",
+    "uiScale": 1,
+    "fontScale": 1,
+    "transparency": 0.94,
+    "borderWidth": 1,
+    "shadowStrength": 0.7
+  }
+}

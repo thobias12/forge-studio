@@ -1,3 +1,5 @@
+import { createDefaultSkillboundUiDefinition, type ForgeUiThemeDefinition } from '../lib/uiForge'
+
 export type ForgeProjectManifest = {
   format: 'forge-project'
   version: 1
@@ -18,6 +20,7 @@ export type ForgeProjectManifest = {
     enemies: string[]
     items: string[]
     lootTables: string[]
+    ui?: string
   }
 }
 
@@ -144,7 +147,7 @@ export type ForgeItemDefinition = {
   color: string
   /** Legacy master visual binding kept for Phase 2.1 runtime compatibility. */
   modelAssetId?: string
-  /** Forge v1.18: one item visual drives inventory, world-drop and equipped presentations. */
+  /** Forge v1.18+: one item visual drives inventory, world-drop and equipped presentations. */
   visual?: ForgeItemVisualDefinition
 }
 
@@ -190,6 +193,7 @@ export type ForgeProjectWorkspace = {
   worlds: ForgeWorldDefinition[]
   regions: ForgeRegionDefinition[]
   gameplay: ForgeGameplayContent
+  ui: ForgeUiThemeDefinition
   editor: {
     previewSeed: number
     selectedWorldId: string
@@ -207,7 +211,11 @@ export async function loadSkillboundWorkspace(forceBundled = false): Promise<For
   if (!forceBundled) {
     const current = readCachedWorkspace(WORKSPACE_KEY)
     if (current?.worlds?.length && current.regions?.length && current.editor && current.gameplay) {
-      return { ...current, manifest } as ForgeProjectWorkspace
+      return {
+        ...current,
+        manifest,
+        ui: current.ui ?? await loadUi(manifest),
+      } as ForgeProjectWorkspace
     }
 
     const legacy = readCachedWorkspace(LEGACY_WORKSPACE_KEY)
@@ -217,16 +225,18 @@ export async function loadSkillboundWorkspace(forceBundled = false): Promise<For
         worlds: legacy.worlds,
         regions: legacy.regions,
         gameplay: await loadGameplay(manifest),
+        ui: await loadUi(manifest),
         editor: legacy.editor,
         updatedAt: legacy.updatedAt ?? new Date().toISOString(),
       }
     }
   }
 
-  const [worlds, regions, gameplay] = await Promise.all([
+  const [worlds, regions, gameplay, ui] = await Promise.all([
     Promise.all(manifest.content.worlds.map((path) => fetchJson<ForgeWorldDefinition>(`${PROJECT_ROOT}${path}`))),
     Promise.all(manifest.content.regions.map((path) => fetchJson<ForgeRegionDefinition>(`${PROJECT_ROOT}${path}`))),
     loadGameplay(manifest),
+    loadUi(manifest),
   ])
   const firstWorld = worlds[0]
   const firstRegion = regions[0]
@@ -236,6 +246,7 @@ export async function loadSkillboundWorkspace(forceBundled = false): Promise<For
     worlds,
     regions,
     gameplay,
+    ui,
     editor: {
       previewSeed: 8472152,
       selectedWorldId: firstWorld?.id ?? '',
@@ -269,6 +280,10 @@ export function patchGameplay(workspace: ForgeProjectWorkspace, gameplay: ForgeG
   return { ...workspace, gameplay, updatedAt: new Date().toISOString() }
 }
 
+export function patchUi(workspace: ForgeProjectWorkspace, ui: ForgeUiThemeDefinition): ForgeProjectWorkspace {
+  return { ...workspace, ui, updatedAt: new Date().toISOString() }
+}
+
 type CachedWorkspace = Partial<ForgeProjectWorkspace> & Pick<ForgeProjectWorkspace, 'manifest'>
 
 function readCachedWorkspace(key: string): CachedWorkspace | undefined {
@@ -293,6 +308,19 @@ async function loadGameplay(manifest: ForgeProjectManifest): Promise<ForgeGamepl
     Promise.all(manifest.content.lootTables.map((path) => fetchJson<ForgeLootTableDefinition>(`${PROJECT_ROOT}${path}`))),
   ])
   return { player, abilities, enemies, items, lootTables }
+}
+
+async function loadUi(manifest: ForgeProjectManifest): Promise<ForgeUiThemeDefinition> {
+  if (!manifest.content.ui) return createDefaultSkillboundUiDefinition()
+  try {
+    const value = await fetchJson<ForgeUiThemeDefinition>(`${PROJECT_ROOT}${manifest.content.ui}`)
+    if (value.format !== 'forge-ui-theme' || value.version !== 1 || value.projectId !== manifest.id || !value.theme) {
+      throw new Error('Invalid Forge UI theme definition.')
+    }
+    return value
+  } catch {
+    return createDefaultSkillboundUiDefinition()
+  }
 }
 
 async function fetchJson<T>(url: string): Promise<T> {

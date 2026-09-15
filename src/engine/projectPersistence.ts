@@ -1,3 +1,4 @@
+import { createDefaultSkillboundUiDefinition, type ForgeUiThemeDefinition } from '../lib/uiForge'
 import type {
   ForgeAbilityDefinition,
   ForgeEnemyDefinition,
@@ -80,7 +81,7 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
   const manifest = await readJson<ForgeProjectManifest>(handle, 'project.forge.json')
   validateManifest(manifest)
 
-  const [worlds, regions, player, abilities, enemies, items, lootTables] = await Promise.all([
+  const [worlds, regions, player, abilities, enemies, items, lootTables, ui] = await Promise.all([
     Promise.all(manifest.content.worlds.map((path) => readJson<ForgeWorldDefinition>(handle, path))),
     Promise.all(manifest.content.regions.map((path) => readJson<ForgeRegionDefinition>(handle, path))),
     readJson<ForgePlayerDefinition>(handle, manifest.content.player),
@@ -88,6 +89,7 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
     Promise.all(manifest.content.enemies.map((path) => readJson<ForgeEnemyDefinition>(handle, path))),
     Promise.all(manifest.content.items.map((path) => readJson<ForgeItemDefinition>(handle, path))),
     Promise.all(manifest.content.lootTables.map((path) => readJson<ForgeLootTableDefinition>(handle, path))),
+    manifest.content.ui ? readJson<ForgeUiThemeDefinition>(handle, manifest.content.ui) : Promise.resolve(createDefaultSkillboundUiDefinition()),
   ])
 
   const selectedWorldId = worlds.some((world) => world.id === editor?.selectedWorldId) ? editor!.selectedWorldId : worlds[0]?.id ?? ''
@@ -98,6 +100,7 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
     worlds,
     regions,
     gameplay: { player, abilities, enemies, items, lootTables },
+    ui,
     editor: {
       previewSeed: editor?.previewSeed ?? 8472152,
       selectedWorldId,
@@ -149,6 +152,10 @@ export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgePro
     const value = findDefinitionForPath(path, workspace.gameplay.lootTables, index, '.loot.json')
     if (!value) throw new Error(`Could not resolve authored loot table for ${path}.`)
     await writeJson(handle, path, value)
+  }
+
+  if (workspace.manifest.content.ui) {
+    await writeJson(handle, workspace.manifest.content.ui, workspace.ui)
   }
 
   const manifest = {
