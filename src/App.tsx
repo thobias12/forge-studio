@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Home, Layers3, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles, Skull } from 'lucide-react'
+import { AudioLines, Box, Boxes, Clapperboard, Gamepad2, Hammer, Home, Layers3, MapPinned, ScanLine, Settings, Sparkles, UserRoundCog, WandSparkles, Skull } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import CharacterStudio from './pages/CharacterStudio'
 import CharacterForge from './pages/CharacterForge'
+import DestructionLab from './pages/DestructionLab'
 import AnimationStudio from './pages/AnimationStudio'
 import AssetLibrary from './pages/AssetLibrary'
 import TextureLab from './pages/TextureLab'
@@ -20,12 +21,13 @@ import './retarget.css'
 import './texture-v071.css'
 import './character.css'
 
-type Page = 'home' | 'mocap' | 'models' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
+type Page = 'home' | 'mocap' | 'models' | 'destruction' | 'characterforge' | 'characters' | 'animations' | 'textures' | 'audio' | 'vfx' | 'maps' | 'preview' | 'assets'
 
 const nav = [
   { id: 'home' as const, label: 'Home', icon: Home },
   { id: 'mocap' as const, label: 'Mocap', icon: ScanLine },
   { id: 'models' as const, label: 'Models', icon: Box },
+  { id: 'destruction' as const, label: 'Destruction Lab', icon: Hammer },
   { id: 'characterforge' as const, label: 'Character Forge', icon: Skull },
   { id: 'characters' as const, label: 'Character Assembly', icon: UserRoundCog },
   { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
@@ -77,6 +79,7 @@ export default function App() {
           {page === 'home' && <Dashboard onOpenMocap={() => setPage('mocap')} />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
+          {page === 'destruction' && <DestructionLab />}
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <CharacterStudio />}
           {page === 'animations' && <AnimationStudio />}
