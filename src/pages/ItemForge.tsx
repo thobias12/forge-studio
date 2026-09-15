@@ -18,6 +18,7 @@ import {
 } from '../engine/itemMasterModel'
 import { getSkillboundProjectConnection, saveSkillboundWorkspaceToProjectFolder } from '../engine/projectPersistence'
 import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import '../item-master-flow.css'
 
 type Props = { onOpenModelCreator?: () => void }
 
@@ -244,7 +245,7 @@ export default function ItemForge({ onOpenModelCreator }: Props) {
           </div>
         </section>
 
-        <section className={`item-master-workbench item-panel ${visual.masterAssetId ? 'has-master' : 'needs-master'}`}
+        <section className={`item-master-workbench item-panel ${visual.masterAssetId ? 'has-master' : 'needs-master'}`}>
           <div className="item-master-heading">
             <div className="item-master-icon">{visual.masterAssetId ? <Check size={19}/> : <Sparkles size={19}/>}</div>
             <div><span>MASTER 3D MODEL</span><strong>{masterAsset?.name ?? (visual.masterAssetId ? 'Assigned Library model' : 'No model needed beforehand')}</strong><small>{visual.masterAssetId ? 'This one model feeds inventory, world drop and equipped views.' : 'Start here. Forge can create a usable placeholder, import your GLB, or hand off to Model Creator.'}</small></div>
@@ -357,5 +358,5 @@ function slug(value: string) {
 }
 
 function titleCase(value: string) {
-  return value.split('-').filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')
+  return value.split('-').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 }
