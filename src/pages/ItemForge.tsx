@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Box, Check, Copy, FolderSync, Image, PackagePlus, Save, Sword, WandSparkles } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Box, Check, Copy, FolderSync, Hammer, Image, PackagePlus, Save, Sparkles, Sword, Upload, WandSparkles } from 'lucide-react'
 import ItemModelPreview from '../components/ItemModelPreview'
 import {
   loadSkillboundWorkspace,
@@ -10,27 +10,48 @@ import {
   type ForgeProjectWorkspace,
 } from '../engine/forgeProject'
 import { defaultItemVisual, itemVisual, renderItemIconBlob } from '../engine/itemPresentation'
+import {
+  beginItemModelCreator,
+  consumeItemModelCreatorResult,
+  createStarterItemMaster,
+  importItemMasterGlb,
+} from '../engine/itemMasterModel'
 import { getSkillboundProjectConnection, saveSkillboundWorkspaceToProjectFolder } from '../engine/projectPersistence'
 import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 
-export default function ItemForge() {
+type Props = { onOpenModelCreator?: () => void }
+
+export default function ItemForge({ onOpenModelCreator }: Props) {
   const [workspace, setWorkspace] = useState<ForgeProjectWorkspace>()
   const [assets, setAssets] = useState<LibraryAsset[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [status, setStatus] = useState('Opening Skillbound items…')
   const [sourceConnected, setSourceConnected] = useState(false)
+  const [masterBusy, setMasterBusy] = useState(false)
+  const importInput = useRef<HTMLInputElement>(null)
 
   const refresh = async () => {
-    const [project, library, connection] = await Promise.all([
+    const [loadedProject, library, connection] = await Promise.all([
       loadSkillboundWorkspace(),
       listAssets(),
       getSkillboundProjectConnection().catch(() => undefined),
     ])
+
+    let project = loadedProject
+    const result = consumeItemModelCreatorResult()
+    if (result && project.gameplay.items.some((entry) => entry.id === result.itemId)) {
+      project = assignMasterInWorkspace(project, result.itemId, result.assetId)
+      project = saveSkillboundWorkspace(project)
+      setSelectedId(result.itemId)
+      setStatus('Model Creator output assigned as the item master model. All three presentations now use it.')
+    } else {
+      setStatus('One master visual drives inventory, world drop and equipped presentation.')
+    }
+
     setWorkspace(project)
     setAssets(library)
-    setSelectedId((current) => current && project.gameplay.items.some((item) => item.id === current) ? current : project.gameplay.items[0]?.id ?? '')
+    setSelectedId((current) => current && project.gameplay.items.some((entry) => entry.id === current) ? current : project.gameplay.items[0]?.id ?? '')
     setSourceConnected(connection?.permission === 'granted' || connection?.permission === 'prompt')
-    setStatus('One master visual drives inventory, world drop and equipped presentation.')
   }
 
   useEffect(() => { void refresh().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not open Item Forge.')) }, [])
@@ -42,6 +63,7 @@ export default function ItemForge() {
     const saved = saveSkillboundWorkspace(next)
     setWorkspace(saved)
     setStatus(message)
+    return saved
   }
 
   const patchItem = (patch: Partial<ForgeItemDefinition>) => {
@@ -55,7 +77,12 @@ export default function ItemForge() {
     patchItem({ visual: { ...itemVisual(item), ...patch } })
   }
 
-  const createItem = () => {
+  const assignMaster = (targetItemId: string, assetId: string, message: string) => {
+    if (!workspace) return
+    commit(assignMasterInWorkspace(workspace, targetItemId, assetId), message)
+  }
+
+  const createItem = async () => {
     if (!workspace) return
     const raw = window.prompt('Item ID', `new-item-${workspace.gameplay.items.length + 1}`)
     const id = slug(raw ?? '')
@@ -64,6 +91,7 @@ export default function ItemForge() {
       setStatus(`Item ${id} already exists.`)
       return
     }
+
     const created: ForgeItemDefinition = {
       format: 'forge-item', version: 1, id, name: titleCase(id), slot: 'weapon', rarity: 'common', damageBonus: 0, color: '#8e8a80', visual: defaultItemVisual(),
     }
@@ -73,8 +101,18 @@ export default function ItemForge() {
       manifest: { ...workspace.manifest, content: { ...workspace.manifest.content, items: [...workspace.manifest.content.items, path] } },
       gameplay: { ...workspace.gameplay, items: [...workspace.gameplay.items, created] },
     }
-    commit(next, `${created.name} created. Assign a master model to derive all presentations.`)
+    const saved = commit(next, `${created.name} created. Forge is building a starter master model…`)
     setSelectedId(id)
+    setMasterBusy(true)
+    try {
+      const asset = await createStarterItemMaster(created)
+      setAssets(await listAssets())
+      commit(assignMasterInWorkspace(saved, id, asset.id), `${created.name} created with a starter sword master model. Replace or edit it whenever you are ready.`)
+    } catch (error) {
+      setStatus(error instanceof Error ? `${created.name} was created, but its starter model failed: ${error.message}` : `${created.name} was created without a starter model.`)
+    } finally {
+      setMasterBusy(false)
+    }
   }
 
   const duplicateItem = () => {
@@ -89,8 +127,49 @@ export default function ItemForge() {
       manifest: { ...workspace.manifest, content: { ...workspace.manifest.content, items: [...workspace.manifest.content.items, `items/${id}.item.json`] } },
       gameplay: { ...workspace.gameplay, items: [...workspace.gameplay.items, copy] },
     }
-    commit(next, `${copy.name} created from ${item.name}.`)
+    commit(next, `${copy.name} created from ${item.name}. It currently shares the same master model.`)
     setSelectedId(id)
+  }
+
+  const createStarter = async () => {
+    if (!item) return
+    setMasterBusy(true)
+    setStatus(`Building a low-poly starter master model for ${item.name}…`)
+    try {
+      const asset = await createStarterItemMaster(item)
+      setAssets(await listAssets())
+      assignMaster(item.id, asset.id, 'Starter master model created. Inventory, drop and equipped previews now share it.')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not create the starter model.')
+    } finally {
+      setMasterBusy(false)
+    }
+  }
+
+  const importMaster = async (file?: File) => {
+    if (!item || !file) return
+    setMasterBusy(true)
+    setStatus(`Importing ${file.name} as the master model…`)
+    try {
+      const asset = await importItemMasterGlb(file, item)
+      setAssets(await listAssets())
+      assignMaster(item.id, asset.id, `${file.name} imported and assigned. The same GLB now drives all item presentations.`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not import this master model.')
+    } finally {
+      setMasterBusy(false)
+      if (importInput.current) importInput.current.value = ''
+    }
+  }
+
+  const openModelCreator = () => {
+    if (!item) return
+    beginItemModelCreator({ itemId: item.id, itemName: item.name })
+    if (onOpenModelCreator) onOpenModelCreator()
+    else {
+      window.location.hash = '/models'
+      window.location.reload()
+    }
   }
 
   const generateIcon = async () => {
@@ -133,12 +212,13 @@ export default function ItemForge() {
 
   if (!workspace || !item) return <div className="item-forge-loading"><Sword size={28}/><strong>Opening Item Forge</strong><span>{status}</span></div>
   const visual = itemVisual(item)
+  const masterAsset = modelAssets.find((asset) => asset.id === visual.masterAssetId)
 
   return <div className="item-forge-page">
     <header className="item-forge-toolbar">
-      <div><span className="eyebrow">SKILLBOUND / ITEM AUTHORING</span><strong>Item Forge</strong><small>One authoritative item → inventory icon · world drop · equipped presentation</small></div>
+      <div><span className="eyebrow">SKILLBOUND / ITEM AUTHORING</span><strong>Item Forge</strong><small>Create the item and its master 3D asset in one workflow</small></div>
       <div className="item-forge-actions">
-        <button onClick={createItem}><PackagePlus size={14}/> New Item</button>
+        <button onClick={() => void createItem()}><PackagePlus size={14}/> New Item</button>
         <button onClick={duplicateItem}><Copy size={14}/> Duplicate</button>
         <button onClick={() => commit(workspace)}><Save size={14}/> Save Workspace</button>
         <button className="primary" disabled={!sourceConnected} onClick={() => void writeSource()}><FolderSync size={14}/> Write Source</button>
@@ -162,18 +242,41 @@ export default function ItemForge() {
             <NumberField label="Damage bonus" value={item.damageBonus} step={1} onChange={(damageBonus) => patchItem({ damageBonus })}/>
             <ColorField label="Fallback color" value={item.color} onChange={(color) => patchItem({ color })}/>
           </div>
-          <AssetSelect label="Master visual · GLB" value={visual.masterAssetId ?? ''} assets={modelAssets} onChange={(masterAssetId) => patchItem({ modelAssetId: masterAssetId || undefined, visual: { ...visual, masterAssetId: masterAssetId || undefined } })}/>
-          <p className="item-system-note"><Check size={13}/> Inventory, ground loot and equipment reuse this model by default. Overrides are optional, not separate items.</p>
+        </section>
+
+        <section className={`item-master-workbench item-panel ${visual.masterAssetId ? 'has-master' : 'needs-master'}`}
+          <div className="item-master-heading">
+            <div className="item-master-icon">{visual.masterAssetId ? <Check size={19}/> : <Sparkles size={19}/>}</div>
+            <div><span>MASTER 3D MODEL</span><strong>{masterAsset?.name ?? (visual.masterAssetId ? 'Assigned Library model' : 'No model needed beforehand')}</strong><small>{visual.masterAssetId ? 'This one model feeds inventory, world drop and equipped views.' : 'Start here. Forge can create a usable placeholder, import your GLB, or hand off to Model Creator.'}</small></div>
+            <b>{visual.masterAssetId ? 'READY' : 'CREATE'}</b>
+          </div>
+
+          <div className="item-master-actions">
+            <button disabled={masterBusy} onClick={() => void createStarter()}><Sparkles size={16}/><span><strong>{visual.masterAssetId ? 'Replace with starter' : 'Create starter model'}</strong><small>Instant low-poly sword GLB</small></span></button>
+            <button disabled={masterBusy} onClick={openModelCreator}><Hammer size={16}/><span><strong>Build in Model Creator</strong><small>Returns here and assigns it</small></span></button>
+            <button disabled={masterBusy} onClick={() => importInput.current?.click()}><Upload size={16}/><span><strong>Import GLB</strong><small>Use your own finished model</small></span></button>
+            <input ref={importInput} className="item-master-file-input" type="file" accept=".glb,model/gltf-binary" onChange={(event) => void importMaster(event.target.files?.[0])}/>
+          </div>
+
+          <div className="item-master-dropzone" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={(event) => { event.preventDefault(); void importMaster(event.dataTransfer.files?.[0]) }}>
+            <Upload size={15}/><span>Drop a .glb here to make it the master model</span>
+          </div>
+
+          <AssetSelect label="Or choose an existing GLB from Shared Library" value={visual.masterAssetId ?? ''} assets={modelAssets} onChange={(masterAssetId) => {
+            if (!masterAssetId) patchItem({ modelAssetId: undefined, visual: { ...visual, masterAssetId: undefined } })
+            else assignMaster(item.id, masterAssetId, 'Existing Library model assigned as the master item model.')
+          }}/>
+          <p className="item-system-note"><Check size={13}/> You never need separate inventory, drop and equipped models unless you deliberately enable an override.</p>
         </section>
 
         <section className="item-presentation-grid">
-          <PresentationCard title="Inventory" badge={visual.inventory.iconAssetId ? 'ICON READY' : 'AUTO'} icon={<Image size={15}/>}>
+          <PresentationCard title="Inventory" badge={visual.inventory.iconAssetId ? 'ICON READY' : visual.masterAssetId ? 'READY TO RENDER' : 'NEEDS MASTER'} icon={<Image size={15}/>}>
             <ItemModelPreview item={item} mode="inventory"/>
             <div className="item-card-controls">
               <SelectField label="Camera" value={visual.inventory.cameraPreset} options={['three-quarter','front','side']} onChange={(cameraPreset) => patchVisual({ inventory: { ...visual.inventory, cameraPreset: cameraPreset as ForgeItemVisualDefinition['inventory']['cameraPreset'] } })}/>
               <VectorField label="Rotation" value={visual.inventory.rotation} onChange={(rotation) => patchVisual({ inventory: { ...visual.inventory, rotation } })}/>
               <NumberField label="Scale" value={visual.inventory.scale} step={0.05} onChange={(scale) => patchVisual({ inventory: { ...visual.inventory, scale } })}/>
-              <button className="item-generate-icon" onClick={() => void generateIcon()}><WandSparkles size={13}/> Generate 256px icon</button>
+              <button className="item-generate-icon" disabled={!visual.masterAssetId} onClick={() => void generateIcon()}><WandSparkles size={13}/> Generate 256px icon</button>
             </div>
           </PresentationCard>
 
@@ -204,6 +307,15 @@ export default function ItemForge() {
   </div>
 }
 
+function assignMasterInWorkspace(workspace: ForgeProjectWorkspace, itemId: string, assetId: string): ForgeProjectWorkspace {
+  const items = workspace.gameplay.items.map((entry) => {
+    if (entry.id !== itemId) return entry
+    const visual = itemVisual(entry)
+    return { ...entry, modelAssetId: assetId, visual: { ...visual, masterAssetId: assetId } }
+  })
+  return { ...workspace, gameplay: { ...workspace.gameplay, items } }
+}
+
 function PresentationCard({ title, badge, icon, children }: { title: string; badge: string; icon: React.ReactNode; children: React.ReactNode }) {
   return <article className="item-presentation-card"><header>{icon}<strong>{title}</strong><span>{badge}</span></header>{children}</article>
 }
@@ -229,7 +341,7 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 }
 
 function AssetSelect({ label, value, assets, onChange }: { label: string; value: string; assets: LibraryAsset[]; onChange: (value: string) => void }) {
-  return <label className="item-field item-asset-select"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}><option value="">Unassigned</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select><small>{value ? value : 'Forge Runtime will use its placeholder until a model is assigned.'}</small></label>
+  return <label className="item-field item-asset-select"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}><option value="">Unassigned</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select><small>{value ? value : 'No master GLB assigned yet.'}</small></label>
 }
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
@@ -240,5 +352,10 @@ function VectorField({ label, value, onChange }: { label: string; value: [number
   return <label className="item-vector"><span>{label}</span><div>{(['X','Y','Z'] as const).map((axis, index) => <label key={axis}><i>{axis}</i><input type="number" step="0.05" value={value[index]} onChange={(event) => { const next = [...value] as [number, number, number]; next[index] = Number(event.target.value) || 0; onChange(next) }}/></label>)}</div></label>
 }
 
-function slug(value: string) { return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
-function titleCase(value: string) { return value.split('-').map((part) => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ') }
+function slug(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+function titleCase(value: string) {
+  return value.split('-').filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')
+}
