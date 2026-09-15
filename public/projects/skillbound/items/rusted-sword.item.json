@@ -1,0 +1,10 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "rusted-sword",
+  "name": "Rusted Sword",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 12,
+  "color": "#b7a27a"
+}

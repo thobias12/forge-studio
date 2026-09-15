@@ -1,0 +1,13 @@
+{
+  "format": "forge-ability",
+  "version": 1,
+  "id": "iron-cleave",
+  "name": "Iron Cleave",
+  "kind": "melee",
+  "input": "primary",
+  "damage": 28,
+  "cooldown": 0.38,
+  "range": 2.7,
+  "radius": 1.65,
+  "color": "#c7d4c9"
+}

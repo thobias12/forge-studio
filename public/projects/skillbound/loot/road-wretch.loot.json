@@ -1,0 +1,9 @@
+{
+  "format": "forge-loot-table",
+  "version": 1,
+  "id": "road-wretch-drops",
+  "name": "Road Wretch Drops",
+  "entries": [
+    { "itemId": "rusted-sword", "chance": 1.0 }
+  ]
+}

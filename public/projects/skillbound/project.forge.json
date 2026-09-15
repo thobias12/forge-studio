@@ -11,6 +11,11 @@
   },
   "content": {
     "worlds": ["worlds/act1.world.json"],
-    "regions": ["regions/deadwood.region.json", "regions/drowned-march.region.json"]
+    "regions": ["regions/deadwood.region.json", "regions/drowned-march.region.json"],
+    "player": "players/skillbound-player.player.json",
+    "abilities": ["abilities/iron-cleave.ability.json", "abilities/ember-burst.ability.json"],
+    "enemies": ["enemies/road-wretch.enemy.json"],
+    "items": ["items/rusted-sword.item.json"],
+    "lootTables": ["loot/road-wretch.loot.json"]
   }
 }

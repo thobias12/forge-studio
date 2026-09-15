@@ -1,0 +1,13 @@
+{
+  "format": "forge-ability",
+  "version": 1,
+  "id": "ember-burst",
+  "name": "Ember Burst",
+  "kind": "area",
+  "input": "skill-1",
+  "damage": 45,
+  "cooldown": 3.2,
+  "range": 7.5,
+  "radius": 3.3,
+  "color": "#e46d3f"
+}

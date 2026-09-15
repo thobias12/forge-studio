@@ -1,0 +1,13 @@
+{
+  "format": "forge-player",
+  "version": 1,
+  "id": "skillbound-player",
+  "name": "Wanderer",
+  "maxHealth": 100,
+  "moveSpeed": 9.2,
+  "dodgeDistance": 5.2,
+  "dodgeCooldown": 1.0,
+  "basicAbility": "iron-cleave",
+  "activeAbilities": ["ember-burst"],
+  "startingItems": []
+}

@@ -1,0 +1,14 @@
+{
+  "format": "forge-enemy",
+  "version": 1,
+  "id": "road-wretch",
+  "name": "Road Wretch",
+  "maxHealth": 85,
+  "moveSpeed": 4.1,
+  "aggroRange": 11,
+  "attackRange": 1.5,
+  "attackDamage": 14,
+  "attackCooldown": 1.15,
+  "lootTable": "road-wretch-drops",
+  "color": "#745044"
+}
