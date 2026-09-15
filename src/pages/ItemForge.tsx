@@ -1,1 +1,1 @@
-export { default } from './ItemForgeAutoFit'
+export { default } from './ItemForgeV2'
