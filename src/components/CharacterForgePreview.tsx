@@ -11,10 +11,11 @@ type Props = {
   showRig: boolean
   showHitbox: boolean
   cameraMode?: 'studio' | 'arpg'
+  conceptMode?: boolean
   onStats?: (stats: { bones: number; skinnedMeshes: number; triangles: number }) => void
 }
 
-export default function CharacterForgePreview({ config, animation, playing, showRig, showHitbox, cameraMode = 'studio', onStats }: Props) {
+export default function CharacterForgePreview({ config, animation, playing, showRig, showHitbox, cameraMode = 'studio', conceptMode = false, onStats }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<{ root?: THREE.Group; helper?: THREE.SkeletonHelper; hitbox?: THREE.Mesh; mixer?: THREE.AnimationMixer; action?: THREE.AnimationAction; clips?: THREE.AnimationClip[] }>({})
   const callbackRef = useRef(onStats)
@@ -86,8 +87,7 @@ export default function CharacterForgePreview({ config, animation, playing, show
     if (state.hitbox) { state.scene.remove(state.hitbox); state.hitbox.geometry.dispose(); const mat = state.hitbox.material; if (!Array.isArray(mat)) mat.dispose(); state.hitbox = undefined }
     if (state.root) { state.scene.remove(state.root); disposeForgeCharacter(state.root) }
 
-    const conceptBuild = config.name.toLowerCase().includes('concept')
-    const build = conceptBuild ? createConceptCharacter(config) : createProceduralCharacter(config)
+    const build = conceptMode ? createConceptCharacter(config) : createProceduralCharacter(config)
     state.root = build.root; state.clips = build.clips; state.scene.add(build.root); callbackRef.current?.(build.stats)
     state.mixer = new THREE.AnimationMixer(build.root)
     const clip = build.clips.find((entry) => entry.name === animation) ?? build.clips[0]
@@ -114,7 +114,7 @@ export default function CharacterForgePreview({ config, animation, playing, show
       state.camera.lookAt(state.controls.target)
       state.controls.update()
     }
-  }, [config, cameraMode])
+  }, [config, cameraMode, conceptMode])
 
   useEffect(() => {
     const state = stateRef.current
