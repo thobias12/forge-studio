@@ -22,6 +22,7 @@ import {
   WandSparkles,
   Skull,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import ProjectManager from './pages/ProjectManager'
 import ProjectPlay from './pages/ProjectPlay'
@@ -61,60 +62,62 @@ import './world-forge.css'
 import './project-control-center.css'
 
 type Page = ForgeContentPage
+type NavItem = { id: Page; label: string; icon: LucideIcon }
+type NavGroup = { label: string; items: NavItem[] }
 
-const navGroups = [
+const navGroups: NavGroup[] = [
   {
     label: 'PROJECT',
     items: [
-      { id: 'home' as const, label: 'Control Center', icon: Home },
-      { id: 'projects' as const, label: 'Project Manager', icon: FolderKanban },
-      { id: 'world' as const, label: 'World Forge', icon: Globe2 },
-      { id: 'play' as const, label: 'Play Project', icon: Play },
+      { id: 'home', label: 'Control Center', icon: Home },
+      { id: 'projects', label: 'Project Manager', icon: FolderKanban },
+      { id: 'world', label: 'World Forge', icon: Globe2 },
+      { id: 'play', label: 'Play Project', icon: Play },
     ],
   },
   {
     label: 'WORLD',
     items: [
-      { id: 'maps' as const, label: 'Map Studio', icon: MapPinned },
-      { id: 'destruction' as const, label: 'Destruction Lab', icon: Hammer },
+      { id: 'maps', label: 'Map Studio', icon: MapPinned },
+      { id: 'destruction', label: 'Destruction Lab', icon: Hammer },
     ],
   },
   {
     label: 'CHARACTERS',
     items: [
-      { id: 'conceptforge' as const, label: 'Concept Forge', icon: Sparkles },
-      { id: 'characterforge' as const, label: 'Character Forge', icon: Skull },
-      { id: 'characters' as const, label: 'Character Assembly', icon: UserRoundCog },
-      { id: 'animations' as const, label: 'Animations', icon: Clapperboard },
-      { id: 'mocap' as const, label: 'Mocap', icon: ScanLine },
+      { id: 'conceptforge', label: 'Concept Forge', icon: Sparkles },
+      { id: 'characterforge', label: 'Character Forge', icon: Skull },
+      { id: 'characters', label: 'Character Assembly', icon: UserRoundCog },
+      { id: 'animations', label: 'Animations', icon: Clapperboard },
+      { id: 'mocap', label: 'Mocap', icon: ScanLine },
     ],
   },
   {
     label: 'GAMEPLAY',
     items: [
-      { id: 'uiforge' as const, label: 'UI Forge', icon: LayoutGrid },
-      { id: 'vfx' as const, label: 'VFX Studio', icon: WandSparkles },
-      { id: 'audio' as const, label: 'Voice & Audio', icon: AudioLines },
+      { id: 'uiforge', label: 'UI Forge', icon: LayoutGrid },
+      { id: 'vfx', label: 'VFX Studio', icon: WandSparkles },
+      { id: 'audio', label: 'Voice & Audio', icon: AudioLines },
     ],
   },
   {
     label: 'ASSETS',
     items: [
-      { id: 'models' as const, label: 'Models', icon: Box },
-      { id: 'textures' as const, label: 'Textures', icon: Layers3 },
-      { id: 'assets' as const, label: 'Asset Library', icon: Boxes },
-      { id: 'preview' as const, label: 'Asset Preview', icon: Gamepad2 },
+      { id: 'models', label: 'Models', icon: Box },
+      { id: 'textures', label: 'Textures', icon: Layers3 },
+      { id: 'assets', label: 'Asset Library', icon: Boxes },
+      { id: 'preview', label: 'Asset Preview', icon: Gamepad2 },
     ],
   },
   {
     label: 'ENGINE',
     items: [
-      { id: 'validation' as const, label: 'Validation', icon: ShieldCheck },
+      { id: 'validation', label: 'Validation', icon: ShieldCheck },
     ],
   },
 ]
 
-const nav = navGroups.flatMap((group) => group.items)
+const nav: NavItem[] = navGroups.flatMap((group) => group.items)
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -145,9 +148,9 @@ export default function App() {
     if (!needle) return []
     const toolResults = nav
       .filter((item) => item.label.toLowerCase().includes(needle) || item.id.includes(needle))
-      .map((item) => ({ key: `tool:${item.id}`, name: item.label, detail: 'Forge tool', page: item.id as Page }))
+      .map((item) => ({ key: `tool:${item.id}`, name: item.label, detail: 'Forge tool', page: item.id }))
     const contentResults = searchForgeRegistry(registry, searchQuery)
-      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: entry.page as Page }))
+      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: entry.page }))
     return [...toolResults, ...contentResults].slice(0, 9)
   }, [registry, searchQuery])
 
