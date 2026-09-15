@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Circle, Cylinder, Download, Grid3X3, Library, MousePointer2, Redo2, Scaling, Square, Undo2, Waypoints } from 'lucide-react'
 import ModelCreatorViewport, { type ModelCreatorHandle, type ModelCreatorStats, type TransformTool } from '../components/ModelCreatorViewport'
+import { completeItemModelCreator, itemMasterAssetId, readItemModelCreatorIntent } from '../engine/itemMasterModel'
 import { registerHistoryScope } from '../lib/historyShortcuts'
 import { saveAsset } from '../lib/library'
 import type { EditMode, PrimitiveKind } from '../lib/modelCreator'
@@ -18,14 +19,17 @@ const emptyStats: ModelCreatorStats = {
 
 export default function Models() {
   const editor = useRef<ModelCreatorHandle>(null)
-  const [name, setName] = useState('Forge Model')
+  const [itemIntent] = useState(() => readItemModelCreatorIntent())
+  const [name, setName] = useState(() => itemIntent ? `${itemIntent.itemName} Master Model` : 'Forge Model')
   const [primitive, setPrimitive] = useState<PrimitiveKind>('cube')
   const [mode, setMode] = useState<EditMode>('object')
   const [tool, setTool] = useState<TransformTool>('translate')
   const [snap, setSnap] = useState(0.1)
   const [flatShading, setFlatShading] = useState(true)
   const [stats, setStats] = useState<ModelCreatorStats>(emptyStats)
-  const [status, setStatus] = useState('Create a primitive, then switch between Object, Vertex and Face editing.')
+  const [status, setStatus] = useState(() => itemIntent
+    ? `Creating the master model for ${itemIntent.itemName}. Save to Library when finished and Forge will return to Item Forge automatically.`
+    : 'Create a primitive, then switch between Object, Vertex and Face editing.')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => registerHistoryScope({
@@ -60,16 +64,26 @@ export default function Models() {
     try {
       const blob = await editor.current.exportGlb(name)
       if (saveToLibrary) {
-        await saveAsset({
-          name: name.trim() || 'Forge Model',
+        const asset = await saveAsset({
+          id: itemIntent ? itemMasterAssetId(itemIntent.itemId) : undefined,
+          name: itemIntent ? `${itemIntent.itemName} Master Model` : name.trim() || 'Forge Model',
           category: 'props',
           kind: 'glb',
           mime: 'model/gltf-binary',
-          tags: ['forge-created'],
-          source: 'Forge Model Creator',
+          tags: itemIntent ? ['forge-created', 'skillbound', 'item-master', itemIntent.itemId] : ['forge-created'],
+          source: itemIntent ? 'Forge Model Creator · Item Forge handoff' : 'Forge Model Creator',
           blob,
         })
-        setStatus(`${name || 'Forge Model'} saved to the Shared Asset Library.`)
+        if (itemIntent) {
+          completeItemModelCreator(asset.id)
+          setStatus(`${itemIntent.itemName} master model saved. Returning to Item Forge…`)
+          window.setTimeout(() => {
+            window.location.hash = '/itemforge'
+            window.location.reload()
+          }, 220)
+        } else {
+          setStatus(`${name || 'Forge Model'} saved to the Shared Asset Library.`)
+        }
       } else {
         download(blob, `${safeName(name)}.glb`)
         setStatus(`${name || 'Forge Model'} exported as GLB.`)
@@ -88,7 +102,7 @@ export default function Models() {
   return (
     <div className="model-creator-page">
       <aside className="model-creator-left">
-        <div className="creator-panel-title"><Waypoints size={15} /><span>MODEL CREATOR</span></div>
+        <div className="creator-panel-title"><Waypoints size={15} /><span>{itemIntent ? 'ITEM MASTER MODEL' : 'MODEL CREATOR'}</span></div>
 
         <section className="creator-section">
           <div className="creator-section-title">NEW PRIMITIVE</div>
@@ -103,7 +117,7 @@ export default function Models() {
         <section className="creator-section">
           <div className="creator-section-title">EDIT MODE</div>
           <div className="creator-segmented">
-            {(['object', 'vertex', 'face'] as EditMode[]).map((item) => <button key={item} className={mode === item ? 'active' : ''} onClick={() => changeMode(item)}>{item}</button>)}
+            {(['object', 'vertex', 'face'] as EditMode[]).map((entry) => <button key={entry} className={mode === entry ? 'active' : ''} onClick={() => changeMode(entry)}>{entry}</button>)}
           </div>
           {mode === 'object' && (
             <div className="creator-tool-row">
@@ -151,7 +165,7 @@ export default function Models() {
 
       <main className="model-creator-main">
         <header className="model-creator-toolbar">
-          <div><span className="eyebrow">MODEL LAB / CREATE</span><input value={name} onChange={(event) => setName(event.target.value)} /></div>
+          <div><span className="eyebrow">{itemIntent ? 'ITEM FORGE / MASTER MODEL' : 'MODEL LAB / CREATE'}</span><input value={name} onChange={(event) => setName(event.target.value)} /></div>
           <div className="model-creator-toolbar-actions">
             <button title="Undo · Ctrl+Z" onClick={() => editor.current?.undo()}><Undo2 size={15} /></button>
             <button title="Redo · Ctrl+Y" onClick={() => editor.current?.redo()}><Redo2 size={15} /></button>
@@ -183,9 +197,9 @@ export default function Models() {
         </section>
         <section className="creator-section creator-export-section">
           <div className="creator-section-title">OUTPUT</div>
-          <button className="primary-button" disabled={busy} onClick={() => void exportModel(true)}><Library size={14} /> {busy ? 'Working…' : 'Save to Library'}</button>
+          <button className="primary-button" disabled={busy} onClick={() => void exportModel(true)}><Library size={14} /> {busy ? 'Working…' : itemIntent ? 'Save & Return to Item Forge' : 'Save to Library'}</button>
           <button className="secondary-button" disabled={busy} onClick={() => void exportModel(false)}><Download size={14} /> Export GLB</button>
-          <p>Saved models immediately become available in Character Studio, Asset Library and Game Preview.</p>
+          <p>{itemIntent ? `Saving replaces the current master asset for ${itemIntent.itemName} and assigns it automatically.` : 'Saved models immediately become available in Character Studio, Asset Library and Game Preview.'}</p>
         </section>
       </aside>
     </div>
