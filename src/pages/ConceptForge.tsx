@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Activity, Bone, Box, CheckCircle2, Circle, Download, Eye, EyeOff, Gamepad2, Image as ImageIcon,
+  Activity, Bone, Box, CheckCircle2, Circle, Download, Eye, EyeOff, Gamepad2,
   Library, Loader2, Monitor, Palette, Pause, Play, Shield, SlidersHorizontal, Sparkles, Swords, Upload,
   UserRound, WandSparkles,
 } from 'lucide-react'
 import CharacterForgePreview from '../components/CharacterForgePreview'
 import { analyzeConceptFile, buildConfigFromConcept, conceptRecipe, createFallbackConceptAnalysis, type ConceptAnalysis, type ConceptSpeciesHint, type ConceptValidation } from '../lib/conceptCharacter'
 import { disposeForgeCharacter } from '../lib/proceduralCharacter'
-import { createConceptCharacter, exportConceptCharacterGlb } from '../lib/conceptCryptSkeleton'
+import { createConceptForgeCharacter, exportConceptForgeCharacterGlb } from '../engine/conceptCharacterV2'
 import { saveAsset } from '../lib/library'
 import {
   CHARACTER_BLUEPRINT_PRESETS,
@@ -137,7 +137,7 @@ export default function ConceptForge() {
       updateStage('assemble', 'done'); await frame()
 
       currentStage = 'rig'; updateStage('rig', 'working')
-      const build = createConceptCharacter(nextConfig)
+      const build = createConceptForgeCharacter(nextConfig)
       const checked: ConceptValidation = {
         bones: build.stats.bones,
         skinnedMeshes: build.stats.skinnedMeshes,
@@ -163,7 +163,7 @@ export default function ConceptForge() {
     if (!validation) { setStatus('Build and validate the blueprint first.'); return }
     setBusy(true)
     try {
-      const glb = await exportConceptCharacterGlb(config)
+      const glb = await exportConceptForgeCharacterGlb(config)
       const character = await saveAsset({
         name: blueprint.name, category: 'characters', kind: 'glb', mime: 'model/gltf-binary',
         tags: ['concept-forge-2', blueprint.entityKind, blueprint.lineage, blueprint.role, blueprint.faction, 'rigged', 'ForgeHumanoidV1', 'weaponless'],
@@ -186,7 +186,7 @@ export default function ConceptForge() {
     if (!validation) { setStatus('Build and validate the blueprint first.'); return }
     setBusy(true)
     try {
-      const blob = await exportConceptCharacterGlb(config)
+      const blob = await exportConceptForgeCharacterGlb(config)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
