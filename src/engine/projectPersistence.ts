@@ -1,5 +1,6 @@
 import { createDefaultSkillboundUiDefinition, type ForgeUiThemeDefinition } from '../lib/uiForge'
 import type { ForgeBossDefinition, ForgeEncounterProfile } from './encounterForge'
+import { findStaleSkillboundSourcePaths, removeSkillboundSourcePaths } from './projectSourceCleanup'
 import type {
   ForgeAbilityDefinition,
   ForgeEnemyDefinition,
@@ -124,6 +125,7 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
 export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgeProjectWorkspace): Promise<ForgeProjectWorkspace> {
   const handle = await getConnectedHandle(true)
   validateManifest(workspace.manifest)
+  const stalePaths = await findStaleSkillboundSourcePaths(workspace.manifest)
 
   for (let index = 0; index < workspace.manifest.content.worlds.length; index += 1) {
     const path = workspace.manifest.content.worlds[index]
@@ -190,6 +192,7 @@ export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgePro
     contentRevision: Math.max(1, workspace.manifest.contentRevision ?? 1) + 1,
   }
   await writeJson(handle, 'project.forge.json', manifest)
+  await removeSkillboundSourcePaths(stalePaths)
 
   return { ...workspace, manifest, updatedAt: new Date().toISOString() }
 }

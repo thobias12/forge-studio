@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Save, Trash2, Upload, Swords, Link2, RefreshCw } from 'lucide-react'
+import { Copy, Plus, Save, Trash2, Upload, Swords, Link2, RefreshCw } from 'lucide-react'
 import { createEncounterProfile, validateEncounterProfile, type ForgeEncounterProfile } from '../engine/encounterForge'
+import { duplicateName, uniqueContentId } from '../engine/contentManagement'
 import {
   loadSkillboundWorkspace,
   patchEncounterProfiles,
@@ -70,8 +71,25 @@ export default function EncounterForge() {
     setWorkspace(next)
   }
 
+  const duplicateProfile = () => {
+    if (!workspace || !profile) return
+    const id = uniqueContentId(`${profile.id}-copy`, workspace.encounterProfiles.map((entry) => entry.id))
+    const copy: ForgeEncounterProfile = { ...profile, id, name: duplicateName(profile.name) }
+    const manifest = {
+      ...workspace.manifest,
+      content: {
+        ...workspace.manifest.content,
+        encounters: [...(workspace.manifest.content.encounters ?? []), `encounters/${id}.encounter.json`],
+      },
+    }
+    const next = commit({ ...workspace, manifest, encounterProfiles: [...workspace.encounterProfiles, copy] }, `${copy.name} duplicated from ${profile.name}.`)
+    setWorkspace(next)
+    setSelectedId(id)
+  }
+
   const removeProfile = () => {
     if (!workspace || !profile) return
+    if (!window.confirm(`Delete ${profile.name}? Dungeon bindings using it will fall back to their inline Map Studio values.`)) return
     const encounterProfiles = workspace.encounterProfiles.filter((entry) => entry.id !== profile.id)
     const dungeons = workspace.dungeons.map((dungeon) => ({
       ...dungeon,
@@ -144,7 +162,7 @@ export default function EncounterForge() {
 
     <div className="forge-authoring-grid">
       <aside className="forge-definition-list">
-        <div className="forge-list-title"><span>Profiles</span><button onClick={addProfile}><Plus size={14}/></button></div>
+        <div className="forge-list-title"><span>Profiles</span><button title="New encounter profile" onClick={addProfile}><Plus size={14}/></button></div>
         {workspace.encounterProfiles.map((entry) => <button key={entry.id} className={entry.id === selectedId ? 'active' : ''} onClick={() => setSelectedId(entry.id)}>
           <Swords size={15}/><span><strong>{entry.name}</strong><small>{entry.count} × {workspace.gameplay.enemies.find((enemy) => enemy.id === entry.enemyId)?.name ?? entry.enemyId ?? 'unbound enemy'}</small></span>
         </button>)}
@@ -152,9 +170,9 @@ export default function EncounterForge() {
       </aside>
 
       <main className="forge-definition-editor">
-        {!profile ? <div className="forge-empty-editor"><Swords size={28}/><strong>Create an encounter profile</strong><span>Profiles keep enemy composition separate from dungeon geometry.</span></div> : <>
+        {!profile ? <div className="forge-empty-editor"><Swords size={28}/><strong>Create an encounter profile</strong><span>Profiles keep enemy composition separate from dungeon geometry.</span><button onClick={addProfile}><Plus size={14}/> New Encounter</button></div> : <>
           <section className="forge-editor-card hero-card">
-            <div className="forge-card-heading"><div><span>ENCOUNTER PROFILE</span><h2>{profile.name}</h2></div><button className="danger" onClick={removeProfile}><Trash2 size={14}/> Delete</button></div>
+            <div className="forge-card-heading"><div><span>ENCOUNTER PROFILE</span><h2>{profile.name}</h2></div><div className="forge-heading-actions"><button onClick={duplicateProfile}><Copy size={14}/> Duplicate</button><button className="danger" onClick={removeProfile}><Trash2 size={14}/> Delete</button></div></div>
             <div className="forge-form-grid two">
               <label><span>Name</span><input value={profile.name} onChange={(e) => updateProfile({ name: e.target.value })}/></label>
               <label><span>ID</span><input value={profile.id} disabled/></label>

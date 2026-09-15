@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Crown, Link2, Plus, Save, Sparkles, Trash2, Upload } from 'lucide-react'
+import { Copy, Crown, Link2, Plus, Save, Sparkles, Trash2, Upload } from 'lucide-react'
 import {
   createBossDefinition,
   createBossPhase,
@@ -8,6 +8,7 @@ import {
   type ForgeBossDefinition,
   type ForgeBossPhaseDefinition,
 } from '../engine/encounterForge'
+import { duplicateName, uniqueContentId } from '../engine/contentManagement'
 import {
   loadSkillboundWorkspace,
   patchBossProfiles,
@@ -83,8 +84,25 @@ export default function BossForge() {
     setSelectedId(id)
   }
 
+  const duplicateBoss = () => {
+    if (!workspace || !boss) return
+    const id = uniqueContentId(`${boss.id}-copy`, workspace.bossProfiles.map((entry) => entry.id))
+    const copy = { ...JSON.parse(JSON.stringify(boss)) as ForgeBossDefinition, id, name: duplicateName(boss.name) }
+    const manifest = {
+      ...workspace.manifest,
+      content: {
+        ...workspace.manifest.content,
+        bosses: [...(workspace.manifest.content.bosses ?? []), `bosses/${id}.boss.json`],
+      },
+    }
+    const next = commit({ ...workspace, manifest, bossProfiles: [...workspace.bossProfiles, copy] }, `${copy.name} duplicated from ${boss.name}.`)
+    setWorkspace(next)
+    setSelectedId(id)
+  }
+
   const removeBoss = () => {
     if (!workspace || !boss) return
+    if (!window.confirm(`Delete ${boss.name}? Dungeon bindings using it will fall back to their inline Map Studio boss settings.`)) return
     const bossProfiles = workspace.bossProfiles.filter((entry) => entry.id !== boss.id)
     const dungeons = workspace.dungeons.map((dungeon) => ({
       ...dungeon,
@@ -174,7 +192,7 @@ export default function BossForge() {
 
     <div className="forge-authoring-grid">
       <aside className="forge-definition-list boss-list">
-        <div className="forge-list-title"><span>Boss Profiles</span><button onClick={addBoss}><Plus size={14}/></button></div>
+        <div className="forge-list-title"><span>Boss Profiles</span><button title="New boss profile" onClick={addBoss}><Plus size={14}/></button></div>
         {workspace.bossProfiles.map((entry) => <button key={entry.id} className={entry.id === selectedId ? 'active' : ''} onClick={() => setSelectedId(entry.id)}>
           <Crown size={15}/><span><strong>{entry.name}</strong><small>{entry.phases.length} phase{entry.phases.length === 1 ? '' : 's'} · ×{entry.healthMultiplier.toFixed(1)} HP</small></span>
         </button>)}
@@ -182,9 +200,9 @@ export default function BossForge() {
       </aside>
 
       <main className="forge-definition-editor">
-        {!boss ? <div className="forge-empty-editor"><Crown size={28}/><strong>Create a boss profile</strong><span>Boss Forge definitions are reusable across any dungeon or arena.</span></div> : <>
+        {!boss ? <div className="forge-empty-editor"><Crown size={28}/><strong>Create a boss profile</strong><span>Boss Forge definitions are reusable across any dungeon or arena.</span><button onClick={addBoss}><Plus size={14}/> New Boss</button></div> : <>
           <section className="forge-editor-card hero-card boss-hero">
-            <div className="forge-card-heading"><div><span>BOSS PROFILE</span><h2>{boss.name}</h2></div><button className="danger" onClick={removeBoss}><Trash2 size={14}/> Delete</button></div>
+            <div className="forge-card-heading"><div><span>BOSS PROFILE</span><h2>{boss.name}</h2></div><div className="forge-heading-actions"><button onClick={duplicateBoss}><Copy size={14}/> Duplicate</button><button className="danger" onClick={removeBoss}><Trash2 size={14}/> Delete</button></div></div>
             <div className="forge-form-grid two">
               <label><span>Name</span><input value={boss.name} onChange={(e) => updateBoss({ name: e.target.value })}/></label>
               <label><span>ID</span><input value={boss.id} disabled/></label>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Boxes, Check, CircleGauge, Library, PackageOpen, Save, Shield, Sparkles, Swords, UserRoundCog, WandSparkles } from 'lucide-react'
+import { Boxes, Check, CircleGauge, Copy, FolderSync, Library, PackageOpen, Plus, Save, Shield, Sparkles, Swords, Trash2, UserRoundCog, WandSparkles } from 'lucide-react'
 import {
   loadSkillboundWorkspace,
   saveSkillboundWorkspace,
@@ -11,10 +11,24 @@ import {
   type ForgePlayerDefinition,
   type ForgeProjectWorkspace,
 } from '../engine/forgeProject'
+import {
+  addManagedManifestPath,
+  createAbilityDefinition,
+  createEnemyDefinition,
+  createItemDefinition,
+  createLootTableDefinition,
+  duplicateName,
+  findGameplayReferences,
+  removeManagedManifestPath,
+  slugContentId,
+  uniqueContentId,
+  type ManagedGameplayKind,
+} from '../engine/contentManagement'
+import { getSkillboundProjectConnection, saveSkillboundWorkspaceToProjectFolder } from '../engine/projectPersistence'
 import { listAssets, saveAsset, type AssetCategory, type LibraryAsset } from '../lib/library'
 
 type Tab = 'player' | 'enemies' | 'abilities' | 'items' | 'loot'
-type ToolTarget = 'world' | 'characterforge' | 'animations' | 'vfx' | 'assets'
+type ToolTarget = 'world' | 'characterforge' | 'animations' | 'vfx' | 'assets' | 'itemforge'
 type Props = { onOpenTool: (target: ToolTarget) => void }
 
 export default function GameplayForge({ onOpenTool }: Props) {
@@ -25,27 +39,34 @@ export default function GameplayForge({ onOpenTool }: Props) {
   const [selectedAbility, setSelectedAbility] = useState('')
   const [selectedItem, setSelectedItem] = useState('')
   const [selectedLoot, setSelectedLoot] = useState('')
+  const [sourceConnected, setSourceConnected] = useState(false)
   const [status, setStatus] = useState('Loading Skillbound gameplay…')
 
   const refreshAssets = async () => setAssets(await listAssets())
 
   useEffect(() => {
-    void Promise.all([loadSkillboundWorkspace(), listAssets()]).then(([project, library]) => {
+    void Promise.all([loadSkillboundWorkspace(), listAssets(), getSkillboundProjectConnection().catch(() => undefined)]).then(([project, library, connection]) => {
       setWorkspace(project)
       setAssets(library)
       setSelectedEnemy(project.gameplay.enemies[0]?.id ?? '')
       setSelectedAbility(project.gameplay.abilities[0]?.id ?? '')
       setSelectedItem(project.gameplay.items[0]?.id ?? '')
       setSelectedLoot(project.gameplay.lootTables[0]?.id ?? '')
-      setStatus('Live save enabled · edits are written to the active Skillbound workspace.')
+      setSourceConnected(connection?.permission === 'granted' || connection?.permission === 'prompt')
+      setStatus('Live save enabled · create, duplicate and remove definitions directly in the active Skillbound project.')
     }).catch((error) => setStatus(error instanceof Error ? error.message : 'Could not open Gameplay Forge.'))
   }, [])
 
-  const commitGameplay = (gameplay: ForgeGameplayContent, message = 'Saved to the active Skillbound workspace.') => {
-    if (!workspace) return
-    const next = saveSkillboundWorkspace({ ...workspace, gameplay })
-    setWorkspace(next)
+  const commitWorkspace = (next: ForgeProjectWorkspace, message = 'Saved to the active Skillbound workspace.') => {
+    const saved = saveSkillboundWorkspace(next)
+    setWorkspace(saved)
     setStatus(message)
+    return saved
+  }
+
+  const commitGameplay = (gameplay: ForgeGameplayContent, message?: string) => {
+    if (!workspace) return
+    return commitWorkspace({ ...workspace, gameplay }, message)
   }
 
   const patchPlayer = (patch: Partial<ForgePlayerDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, player: { ...workspace.gameplay.player, ...patch } })
@@ -53,6 +74,148 @@ export default function GameplayForge({ onOpenTool }: Props) {
   const patchAbility = (id: string, patch: Partial<ForgeAbilityDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, abilities: workspace.gameplay.abilities.map((item) => item.id === id ? { ...item, ...patch } : item) })
   const patchItem = (id: string, patch: Partial<ForgeItemDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, items: workspace.gameplay.items.map((item) => item.id === id ? { ...item, ...patch } : item) })
   const patchLoot = (id: string, patch: Partial<ForgeLootTableDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, lootTables: workspace.gameplay.lootTables.map((item) => item.id === id ? { ...item, ...patch } : item) })
+
+  const createEnemy = () => {
+    if (!workspace) return
+    const name = promptName('Enemy name', 'New Enemy')
+    if (!name) return
+    const id = uniqueContentId(slugContentId(name), workspace.gameplay.enemies.map((entry) => entry.id))
+    const created = createEnemyDefinition(name, id, workspace)
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'enemy', id), gameplay: { ...workspace.gameplay, enemies: [...workspace.gameplay.enemies, created] } }, `${created.name} created.`)
+    setSelectedEnemy(id)
+    setWorkspace(next)
+  }
+
+  const duplicateEnemy = () => {
+    if (!workspace) return
+    const source = workspace.gameplay.enemies.find((entry) => entry.id === selectedEnemy)
+    if (!source) return
+    const id = uniqueContentId(`${source.id}-copy`, workspace.gameplay.enemies.map((entry) => entry.id))
+    const copy = { ...source, id, name: duplicateName(source.name) }
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'enemy', id), gameplay: { ...workspace.gameplay, enemies: [...workspace.gameplay.enemies, copy] } }, `${copy.name} duplicated from ${source.name}.`)
+    setSelectedEnemy(id)
+    setWorkspace(next)
+  }
+
+  const deleteEnemy = () => deleteDefinition('enemy', selectedEnemy, workspace?.gameplay.enemies.find((entry) => entry.id === selectedEnemy)?.name, () => {
+    if (!workspace) return
+    const remaining = workspace.gameplay.enemies.filter((entry) => entry.id !== selectedEnemy)
+    commitWorkspace({ ...workspace, manifest: removeManagedManifestPath(workspace.manifest, 'enemy', selectedEnemy), gameplay: { ...workspace.gameplay, enemies: remaining } }, 'Enemy removed from the Skillbound project.')
+    setSelectedEnemy(remaining[0]?.id ?? '')
+  })
+
+  const createAbility = () => {
+    if (!workspace) return
+    const name = promptName('Ability name', 'New Ability')
+    if (!name) return
+    const id = uniqueContentId(slugContentId(name), workspace.gameplay.abilities.map((entry) => entry.id))
+    const created = createAbilityDefinition(name, id)
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'ability', id), gameplay: { ...workspace.gameplay, abilities: [...workspace.gameplay.abilities, created] } }, `${created.name} created. Assign it to the player from the Player tab when you want it on the skill bar.`)
+    setSelectedAbility(id)
+    setWorkspace(next)
+  }
+
+  const duplicateAbility = () => {
+    if (!workspace) return
+    const source = workspace.gameplay.abilities.find((entry) => entry.id === selectedAbility)
+    if (!source) return
+    const id = uniqueContentId(`${source.id}-copy`, workspace.gameplay.abilities.map((entry) => entry.id))
+    const copy = { ...source, id, name: duplicateName(source.name) }
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'ability', id), gameplay: { ...workspace.gameplay, abilities: [...workspace.gameplay.abilities, copy] } }, `${copy.name} duplicated from ${source.name}.`)
+    setSelectedAbility(id)
+    setWorkspace(next)
+  }
+
+  const deleteAbility = () => deleteDefinition('ability', selectedAbility, workspace?.gameplay.abilities.find((entry) => entry.id === selectedAbility)?.name, () => {
+    if (!workspace) return
+    const remaining = workspace.gameplay.abilities.filter((entry) => entry.id !== selectedAbility)
+    commitWorkspace({ ...workspace, manifest: removeManagedManifestPath(workspace.manifest, 'ability', selectedAbility), gameplay: { ...workspace.gameplay, abilities: remaining } }, 'Ability removed from the Skillbound project.')
+    setSelectedAbility(remaining[0]?.id ?? '')
+  })
+
+  const createItem = () => {
+    if (!workspace) return
+    const name = promptName('Item name', 'New Item')
+    if (!name) return
+    const id = uniqueContentId(slugContentId(name), workspace.gameplay.items.map((entry) => entry.id))
+    const created = createItemDefinition(name, id)
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'item', id), gameplay: { ...workspace.gameplay, items: [...workspace.gameplay.items, created] } }, `${created.name} created. Open Item Forge to build its model and presentations.`)
+    setSelectedItem(id)
+    setWorkspace(next)
+  }
+
+  const duplicateItem = () => {
+    if (!workspace) return
+    const source = workspace.gameplay.items.find((entry) => entry.id === selectedItem)
+    if (!source) return
+    const id = uniqueContentId(`${source.id}-copy`, workspace.gameplay.items.map((entry) => entry.id))
+    const copy = cloneDefinition(source, id, duplicateName(source.name))
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'item', id), gameplay: { ...workspace.gameplay, items: [...workspace.gameplay.items, copy] } }, `${copy.name} duplicated. It currently shares any assigned Library presentation assets.`)
+    setSelectedItem(id)
+    setWorkspace(next)
+  }
+
+  const deleteItem = () => deleteDefinition('item', selectedItem, workspace?.gameplay.items.find((entry) => entry.id === selectedItem)?.name, () => {
+    if (!workspace) return
+    const remaining = workspace.gameplay.items.filter((entry) => entry.id !== selectedItem)
+    commitWorkspace({ ...workspace, manifest: removeManagedManifestPath(workspace.manifest, 'item', selectedItem), gameplay: { ...workspace.gameplay, items: remaining } }, 'Item removed from the Skillbound project. Shared Library assets were left intact.')
+    setSelectedItem(remaining[0]?.id ?? '')
+  })
+
+  const openItemForge = () => onOpenTool('itemforge')
+
+  const createLoot = () => {
+    if (!workspace) return
+    const name = promptName('Loot table name', 'New Loot Table')
+    if (!name) return
+    const id = uniqueContentId(slugContentId(name), workspace.gameplay.lootTables.map((entry) => entry.id))
+    const created = createLootTableDefinition(name, id, workspace)
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'loot', id), gameplay: { ...workspace.gameplay, lootTables: [...workspace.gameplay.lootTables, created] } }, `${created.name} created.`)
+    setSelectedLoot(id)
+    setWorkspace(next)
+  }
+
+  const duplicateLoot = () => {
+    if (!workspace) return
+    const source = workspace.gameplay.lootTables.find((entry) => entry.id === selectedLoot)
+    if (!source) return
+    const id = uniqueContentId(`${source.id}-copy`, workspace.gameplay.lootTables.map((entry) => entry.id))
+    const copy = cloneDefinition(source, id, duplicateName(source.name))
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'loot', id), gameplay: { ...workspace.gameplay, lootTables: [...workspace.gameplay.lootTables, copy] } }, `${copy.name} duplicated from ${source.name}.`)
+    setSelectedLoot(id)
+    setWorkspace(next)
+  }
+
+  const deleteLoot = () => deleteDefinition('loot', selectedLoot, workspace?.gameplay.lootTables.find((entry) => entry.id === selectedLoot)?.name, () => {
+    if (!workspace) return
+    const remaining = workspace.gameplay.lootTables.filter((entry) => entry.id !== selectedLoot)
+    commitWorkspace({ ...workspace, manifest: removeManagedManifestPath(workspace.manifest, 'loot', selectedLoot), gameplay: { ...workspace.gameplay, lootTables: remaining } }, 'Loot table removed from the Skillbound project.')
+    setSelectedLoot(remaining[0]?.id ?? '')
+  })
+
+  const deleteDefinition = (kind: ManagedGameplayKind, id: string, name: string | undefined, remove: () => void) => {
+    if (!workspace || !id || !name) return
+    const references = findGameplayReferences(workspace, kind, id)
+    if (references.length) {
+      setStatus(`Cannot delete ${name}. Still used by: ${references.join(' · ')}`)
+      return
+    }
+    if (!window.confirm(`Delete ${name} from the Skillbound project?`)) return
+    remove()
+  }
+
+  const writeSource = async () => {
+    if (!workspace) return
+    try {
+      setStatus('Writing Gameplay Forge definitions and project manifest to connected source…')
+      const written = await saveSkillboundWorkspaceToProjectFolder(workspace)
+      const saved = saveSkillboundWorkspace(written)
+      setWorkspace(saved)
+      setStatus(`Source written · project content revision ${written.manifest.contentRevision ?? 1}.`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not write project source.')
+    }
+  }
 
   if (!workspace) return <div className="gameplay-forge-loading"><Swords size={28}/><strong>Opening Gameplay Forge</strong><span>{status}</span></div>
 
@@ -63,11 +226,12 @@ export default function GameplayForge({ onOpenTool }: Props) {
 
   return <div className="gameplay-forge-page">
     <header className="gameplay-forge-toolbar">
-      <div><span className="eyebrow">SKILLBOUND / RUNTIME CONTENT</span><strong>Gameplay Forge</strong><small>Author once → save workspace → World Forge Play Mode consumes the same data</small></div>
+      <div><span className="eyebrow">SKILLBOUND / RUNTIME CONTENT</span><strong>Gameplay Forge</strong><small>Create definitions here → author presentation in specialized Forge tools → runtime consumes the same project data</small></div>
       <div className="gameplay-forge-toolbar-actions">
         <button onClick={() => void refreshAssets()}><Library size={14}/> Refresh Library</button>
         <button onClick={() => onOpenTool('world')}><CircleGauge size={14}/> Play in World Forge</button>
-        <button className="primary" onClick={() => { setWorkspace(saveSkillboundWorkspace(workspace)); setStatus('Skillbound gameplay workspace saved.') }}><Save size={14}/> Save</button>
+        <button onClick={() => { setWorkspace(saveSkillboundWorkspace(workspace)); setStatus('Skillbound gameplay workspace saved.') }}><Save size={14}/> Save Workspace</button>
+        <button className="primary" disabled={!sourceConnected} onClick={() => void writeSource()}><FolderSync size={14}/> Write Source</button>
       </div>
     </header>
 
@@ -83,28 +247,17 @@ export default function GameplayForge({ onOpenTool }: Props) {
           <button onClick={() => onOpenTool('characterforge')}>Character Forge</button>
           <button onClick={() => onOpenTool('animations')}>Animation Studio</button>
           <button onClick={() => onOpenTool('vfx')}>VFX Studio</button>
+          <button onClick={() => onOpenTool('itemforge')}>Item Forge</button>
           <button onClick={() => onOpenTool('assets')}>Asset Library</button>
         </div>
       </aside>
 
       <main className="gameplay-forge-editor">
-        {tab === 'player' && <PlayerEditor value={workspace.gameplay.player} assets={assets} onPatch={patchPlayer} onImportAnimation={async (file) => { const saved = await importAnimation(file); await refreshAssets(); patchPlayer({ animationAssetId: saved.id }); setStatus(`${saved.name} imported and assigned to the player.`) }}/>} 
-        {tab === 'enemies' && enemy && <>
-          <ContentPicker label="ENEMY DEFINITIONS" items={workspace.gameplay.enemies} value={enemy.id} onChange={setSelectedEnemy}/>
-          <EnemyEditor value={enemy} gameplay={workspace.gameplay} assets={assets} onPatch={(patch) => patchEnemy(enemy.id, patch)}/>
-        </>}
-        {tab === 'abilities' && ability && <>
-          <ContentPicker label="ABILITY DEFINITIONS" items={workspace.gameplay.abilities} value={ability.id} onChange={setSelectedAbility}/>
-          <AbilityEditor value={ability} assets={assets} onPatch={(patch) => patchAbility(ability.id, patch)}/>
-        </>}
-        {tab === 'items' && item && <>
-          <ContentPicker label="ITEM DEFINITIONS" items={workspace.gameplay.items} value={item.id} onChange={setSelectedItem}/>
-          <ItemEditor value={item} assets={assets} onPatch={(patch) => patchItem(item.id, patch)}/>
-        </>}
-        {tab === 'loot' && loot && <>
-          <ContentPicker label="LOOT TABLES" items={workspace.gameplay.lootTables} value={loot.id} onChange={setSelectedLoot}/>
-          <LootEditor value={loot} gameplay={workspace.gameplay} onPatch={(patch) => patchLoot(loot.id, patch)}/>
-        </>}
+        {tab === 'player' && <PlayerEditor value={workspace.gameplay.player} gameplay={workspace.gameplay} assets={assets} onPatch={patchPlayer} onImportAnimation={async (file) => { const saved = await importAnimation(file); await refreshAssets(); patchPlayer({ animationAssetId: saved.id }); setStatus(`${saved.name} imported and assigned to the player.`) }}/>} 
+        {tab === 'enemies' && <><ContentPicker label="ENEMY DEFINITIONS" items={workspace.gameplay.enemies} value={enemy?.id ?? ''} onChange={setSelectedEnemy}/><DefinitionActions onNew={createEnemy} onDuplicate={enemy ? duplicateEnemy : undefined} onDelete={enemy ? deleteEnemy : undefined}/>{enemy ? <EnemyEditor value={enemy} gameplay={workspace.gameplay} assets={assets} onPatch={(patch) => patchEnemy(enemy.id, patch)}/> : <EmptyDefinition label="enemy" onCreate={createEnemy}/>}</>}
+        {tab === 'abilities' && <><ContentPicker label="ABILITY DEFINITIONS" items={workspace.gameplay.abilities} value={ability?.id ?? ''} onChange={setSelectedAbility}/><DefinitionActions onNew={createAbility} onDuplicate={ability ? duplicateAbility : undefined} onDelete={ability ? deleteAbility : undefined}/>{ability ? <AbilityEditor value={ability} assets={assets} onPatch={(patch) => patchAbility(ability.id, patch)}/> : <EmptyDefinition label="ability" onCreate={createAbility}/>}</>}
+        {tab === 'items' && <><ContentPicker label="ITEM DEFINITIONS" items={workspace.gameplay.items} value={item?.id ?? ''} onChange={setSelectedItem}/><DefinitionActions onNew={createItem} onDuplicate={item ? duplicateItem : undefined} onDelete={item ? deleteItem : undefined} extra={<button onClick={openItemForge}><PackageOpen size={13}/> Open Item Forge</button>}/>{item ? <ItemEditor value={item} assets={assets} onPatch={(patch) => patchItem(item.id, patch)}/> : <EmptyDefinition label="item" onCreate={createItem}/>}</>}
+        {tab === 'loot' && <><ContentPicker label="LOOT TABLES" items={workspace.gameplay.lootTables} value={loot?.id ?? ''} onChange={setSelectedLoot}/><DefinitionActions onNew={createLoot} onDuplicate={loot ? duplicateLoot : undefined} onDelete={loot ? deleteLoot : undefined}/>{loot ? <LootEditor value={loot} gameplay={workspace.gameplay} onPatch={(patch) => patchLoot(loot.id, patch)}/> : <EmptyDefinition label="loot table" onCreate={createLoot}/>}</>}
       </main>
 
       <aside className="gameplay-forge-diagnostics">
@@ -116,24 +269,37 @@ export default function GameplayForge({ onOpenTool }: Props) {
         <BindingRow label="Ability VFX" bound={workspace.gameplay.abilities.some((entry) => Boolean(entry.vfxAssetId))}/>
         <BindingRow label="Enemy VFX" bound={workspace.gameplay.enemies.some((entry) => Boolean(entry.attackVfxAssetId || entry.hitVfxAssetId || entry.deathVfxAssetId))}/>
         <BindingRow label="Item models" bound={workspace.gameplay.items.some((entry) => Boolean(entry.modelAssetId))}/>
-        <div className="gameplay-forge-runtime-note"><strong>Safe fallback</strong><p>Unassigned or missing Library assets use Forge Runtime placeholders. AI, collision, combat and save data remain testable.</p></div>
-        <div className="gameplay-forge-runtime-note"><strong>Navigation</strong><p>Phase 2.1 runtime uses obstacle-aware A* pathfinding, attack wind-ups and separation rather than straight-line chase.</p></div>
+        <div className="gameplay-forge-runtime-note"><strong>Safe deletion</strong><p>Forge blocks deletion while another player, encounter, boss or loot definition still references the selected content.</p></div>
+        <div className="gameplay-forge-runtime-note"><strong>Source paths</strong><p>New definitions automatically receive the correct project manifest path. Write Source creates the JSON and removes stale definition files in the connected Skillbound folder.</p></div>
         <div className="gameplay-forge-library-count"><Boxes size={15}/><span><strong>{assets.length}</strong> shared Library assets</span></div>
       </aside>
     </div>
 
-    <footer className="gameplay-forge-status"><span>{status}</span><strong>Working data persists in this browser workspace; source-controlled project JSON remains the bundled baseline.</strong></footer>
+    <footer className="gameplay-forge-status"><span>{status}</span><strong>{sourceConnected ? 'Connected source folder available' : 'Workspace mode · connect source folder in Project Manager to write JSON'}</strong></footer>
   </div>
 }
 
-function PlayerEditor({ value, assets, onPatch, onImportAnimation }: { value: ForgePlayerDefinition; assets: LibraryAsset[]; onPatch: (patch: Partial<ForgePlayerDefinition>) => void; onImportAnimation: (file: File) => Promise<void> }) {
-  return <EditorSection title="Player runtime" subtitle="Movement, survivability and visual bindings used by Forge Play Mode.">
+function DefinitionActions({ onNew, onDuplicate, onDelete, extra }: { onNew: () => void; onDuplicate?: () => void; onDelete?: () => void; extra?: ReactNode }) {
+  return <div className="gameplay-definition-actions"><button className="primary" onClick={onNew}><Plus size={13}/> New</button><button disabled={!onDuplicate} onClick={onDuplicate}><Copy size={13}/> Duplicate</button><button className="danger" disabled={!onDelete} onClick={onDelete}><Trash2 size={13}/> Delete</button>{extra}</div>
+}
+
+function EmptyDefinition({ label, onCreate }: { label: string; onCreate: () => void }) {
+  return <section className="gameplay-empty-definition"><Plus size={24}/><strong>No {label} definitions</strong><span>Create the first one without touching project JSON.</span><button className="primary" onClick={onCreate}><Plus size={13}/> Create {label}</button></section>
+}
+
+function PlayerEditor({ value, gameplay, assets, onPatch, onImportAnimation }: { value: ForgePlayerDefinition; gameplay: ForgeGameplayContent; assets: LibraryAsset[]; onPatch: (patch: Partial<ForgePlayerDefinition>) => void; onImportAnimation: (file: File) => Promise<void> }) {
+  const abilityOptions = gameplay.abilities.map((ability) => [ability.id, ability.name] as [string, string])
+  const itemOptions = gameplay.items.map((item) => [item.id, item.name] as [string, string])
+  return <EditorSection title="Player runtime" subtitle="Movement, survivability, ability loadout, starting item and visual bindings used by Forge Play Mode.">
     <FieldGrid>
       <TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/>
       <NumberField label="Max health" value={value.maxHealth} min={1} max={5000} step={5} onChange={(maxHealth) => onPatch({ maxHealth })}/>
       <NumberField label="Move speed" value={value.moveSpeed} min={1} max={30} step={0.1} onChange={(moveSpeed) => onPatch({ moveSpeed })}/>
       <NumberField label="Dodge distance" value={value.dodgeDistance} min={1} max={15} step={0.1} onChange={(dodgeDistance) => onPatch({ dodgeDistance })}/>
       <NumberField label="Dodge cooldown" value={value.dodgeCooldown} min={0.1} max={10} step={0.05} onChange={(dodgeCooldown) => onPatch({ dodgeCooldown })}/>
+      <SelectField label="Primary ability · LMB" value={value.basicAbility} options={abilityOptions} onChange={(basicAbility) => onPatch({ basicAbility })}/>
+      <SelectField label="Active ability · Q" value={value.activeAbilities[0] ?? ''} options={[["","None"], ...abilityOptions]} onChange={(abilityId) => onPatch({ activeAbilities: abilityId ? [abilityId] : [] })}/>
+      <SelectField label="Starting item" value={value.startingItems[0] ?? ''} options={[["","None"], ...itemOptions]} onChange={(itemId) => onPatch({ startingItems: itemId ? [itemId] : [] })}/>
     </FieldGrid>
     <AssetBinding title="Character Forge rig" value={value.characterAssetId} assets={assets} categories={['characters']} onChange={(characterAssetId) => onPatch({ characterAssetId })}/>
     <AssetBinding title="Animation set" value={value.animationAssetId} assets={assets} categories={['animations']} onChange={(animationAssetId) => onPatch({ animationAssetId })}>
@@ -158,66 +324,27 @@ function EnemyEditor({ value, gameplay, assets, onPatch }: { value: ForgeEnemyDe
     </FieldGrid>
     <AssetBinding title="Character Forge rig" value={value.characterAssetId} assets={assets} categories={['characters']} onChange={(characterAssetId) => onPatch({ characterAssetId })}/>
     <AssetBinding title="Animation set" value={value.animationAssetId} assets={assets} categories={['animations']} onChange={(animationAssetId) => onPatch({ animationAssetId })}/>
-    <div className="gameplay-vfx-bindings">
-      <AssetBinding title="Attack wind-up VFX" value={value.attackVfxAssetId} assets={assets} categories={['vfx']} onChange={(attackVfxAssetId) => onPatch({ attackVfxAssetId })}/>
-      <AssetBinding title="Hit VFX" value={value.hitVfxAssetId} assets={assets} categories={['vfx']} onChange={(hitVfxAssetId) => onPatch({ hitVfxAssetId })}/>
-      <AssetBinding title="Death VFX" value={value.deathVfxAssetId} assets={assets} categories={['vfx']} onChange={(deathVfxAssetId) => onPatch({ deathVfxAssetId })}/>
-    </div>
+    <div className="gameplay-vfx-bindings"><AssetBinding title="Attack wind-up VFX" value={value.attackVfxAssetId} assets={assets} categories={['vfx']} onChange={(attackVfxAssetId) => onPatch({ attackVfxAssetId })}/><AssetBinding title="Hit VFX" value={value.hitVfxAssetId} assets={assets} categories={['vfx']} onChange={(hitVfxAssetId) => onPatch({ hitVfxAssetId })}/><AssetBinding title="Death VFX" value={value.deathVfxAssetId} assets={assets} categories={['vfx']} onChange={(deathVfxAssetId) => onPatch({ deathVfxAssetId })}/></div>
   </EditorSection>
 }
 
 function AbilityEditor({ value, assets, onPatch }: { value: ForgeAbilityDefinition; assets: LibraryAsset[]; onPatch: (patch: Partial<ForgeAbilityDefinition>) => void }) {
   return <EditorSection title={value.name} subtitle="Combat numbers, hit shape, animation cue and Forge VFX binding.">
-    <FieldGrid>
-      <TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/>
-      <SelectField label="Kind" value={value.kind} options={[["melee","Melee"],["area","Area"]]} onChange={(kind) => onPatch({ kind: kind as ForgeAbilityDefinition['kind'] })}/>
-      <SelectField label="Input" value={value.input} options={[["primary","LMB / Primary"],["skill-1","Q / Skill 1"]]} onChange={(input) => onPatch({ input: input as ForgeAbilityDefinition['input'] })}/>
-      <NumberField label="Damage" value={value.damage} min={0} max={5000} step={1} onChange={(damage) => onPatch({ damage })}/>
-      <NumberField label="Cooldown" value={value.cooldown} min={0} max={30} step={0.05} onChange={(cooldown) => onPatch({ cooldown })}/>
-      <NumberField label="Range" value={value.range} min={0.5} max={30} step={0.1} onChange={(range) => onPatch({ range })}/>
-      <NumberField label="Radius" value={value.radius} min={0.2} max={20} step={0.1} onChange={(radius) => onPatch({ radius })}/>
-      <ColorField label="Fallback VFX color" value={value.color} onChange={(color) => onPatch({ color })}/>
-    </FieldGrid>
+    <FieldGrid><TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/><SelectField label="Kind" value={value.kind} options={[["melee","Melee"],["area","Area"]]} onChange={(kind) => onPatch({ kind: kind as ForgeAbilityDefinition['kind'] })}/><SelectField label="Input" value={value.input} options={[["primary","LMB / Primary"],["skill-1","Q / Skill 1"]]} onChange={(input) => onPatch({ input: input as ForgeAbilityDefinition['input'] })}/><NumberField label="Damage" value={value.damage} min={0} max={5000} step={1} onChange={(damage) => onPatch({ damage })}/><NumberField label="Cooldown" value={value.cooldown} min={0} max={30} step={0.05} onChange={(cooldown) => onPatch({ cooldown })}/><NumberField label="Range" value={value.range} min={0.5} max={30} step={0.1} onChange={(range) => onPatch({ range })}/><NumberField label="Radius" value={value.radius} min={0.2} max={20} step={0.1} onChange={(radius) => onPatch({ radius })}/><ColorField label="Fallback VFX color" value={value.color} onChange={(color) => onPatch({ color })}/></FieldGrid>
     <AssetBinding title="VFX Studio effect" value={value.vfxAssetId} assets={assets} categories={['vfx']} onChange={(vfxAssetId) => onPatch({ vfxAssetId })}/>
   </EditorSection>
 }
 
 function ItemEditor({ value, assets, onPatch }: { value: ForgeItemDefinition; assets: LibraryAsset[]; onPatch: (patch: Partial<ForgeItemDefinition>) => void }) {
-  return <EditorSection title={value.name} subtitle="Equipment stats and optional runtime model binding.">
-    <FieldGrid>
-      <TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/>
-      <SelectField label="Rarity" value={value.rarity} options={[["common","Common"],["magic","Magic"],["rare","Rare"]]} onChange={(rarity) => onPatch({ rarity: rarity as ForgeItemDefinition['rarity'] })}/>
-      <NumberField label="Damage bonus" value={value.damageBonus} min={0} max={2000} step={1} onChange={(damageBonus) => onPatch({ damageBonus })}/>
-      <ColorField label="Drop color" value={value.color} onChange={(color) => onPatch({ color })}/>
-    </FieldGrid>
-    <AssetBinding title="Equipped model" value={value.modelAssetId} assets={assets} categories={['props']} onChange={(modelAssetId) => onPatch({ modelAssetId })}/>
-  </EditorSection>
+  return <EditorSection title={value.name} subtitle="Quick stat editing here; use Item Forge for taxonomy, master model, icon, drop and equipped presentation."><FieldGrid><TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/><SelectField label="Rarity" value={value.rarity} options={[["common","Common"],["magic","Magic"],["rare","Rare"]]} onChange={(rarity) => onPatch({ rarity: rarity as ForgeItemDefinition['rarity'] })}/><NumberField label="Damage bonus" value={value.damageBonus} min={0} max={2000} step={1} onChange={(damageBonus) => onPatch({ damageBonus })}/><ColorField label="Drop color" value={value.color} onChange={(color) => onPatch({ color })}/></FieldGrid><AssetBinding title="Compatibility model" value={value.modelAssetId} assets={assets} categories={['props']} onChange={(modelAssetId) => onPatch({ modelAssetId })}/></EditorSection>
 }
 
 function LootEditor({ value, gameplay, onPatch }: { value: ForgeLootTableDefinition; gameplay: ForgeGameplayContent; onPatch: (patch: Partial<ForgeLootTableDefinition>) => void }) {
-  return <EditorSection title={value.name} subtitle="Deterministic per-enemy loot rolls. Chance is evaluated independently for each entry.">
-    <FieldGrid><TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/></FieldGrid>
-    <div className="gameplay-loot-list">
-      {value.entries.map((entry, index) => <div className="gameplay-loot-row" key={`${entry.itemId}-${index}`}>
-        <select value={entry.itemId} onChange={(event) => { const entries = [...value.entries]; entries[index] = { ...entry, itemId: event.target.value }; onPatch({ entries }) }}>{gameplay.items.map((gameItem) => <option key={gameItem.id} value={gameItem.id}>{gameItem.name}</option>)}</select>
-        <input type="range" min="0" max="1" step="0.05" value={entry.chance} onChange={(event) => { const entries = [...value.entries]; entries[index] = { ...entry, chance: Number(event.target.value) }; onPatch({ entries }) }}/>
-        <b>{Math.round(entry.chance * 100)}%</b>
-        <button onClick={() => onPatch({ entries: value.entries.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button>
-      </div>)}
-      <button className="gameplay-add-row" disabled={!gameplay.items.length} onClick={() => onPatch({ entries: [...value.entries, { itemId: gameplay.items[0].id, chance: 0.5 }] })}>+ Add loot entry</button>
-    </div>
-  </EditorSection>
+  return <EditorSection title={value.name} subtitle="Visual loot authoring. Every row independently rolls its configured drop chance."><FieldGrid><TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/></FieldGrid><div className="gameplay-loot-list">{value.entries.map((entry, index) => <div className="gameplay-loot-row" key={`${entry.itemId}-${index}`}><select value={entry.itemId} onChange={(event) => { const entries = [...value.entries]; entries[index] = { ...entry, itemId: event.target.value }; onPatch({ entries }) }}>{gameplay.items.map((gameItem) => <option key={gameItem.id} value={gameItem.id}>{gameItem.name}</option>)}</select><input type="range" min="0" max="1" step="0.05" value={entry.chance} onChange={(event) => { const entries = [...value.entries]; entries[index] = { ...entry, chance: Number(event.target.value) }; onPatch({ entries }) }}/><b>{Math.round(entry.chance * 100)}%</b><button onClick={() => onPatch({ entries: value.entries.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button></div>)}<button className="gameplay-add-row" disabled={!gameplay.items.length} onClick={() => onPatch({ entries: [...value.entries, { itemId: gameplay.items[0].id, chance: 0.5 }] })}>+ Add loot entry</button></div></EditorSection>
 }
 
-function ContentPicker({ label, items, value, onChange }: { label: string; items: Array<{ id: string; name: string }>; value: string; onChange: (value: string) => void }) {
-  return <div className="gameplay-content-picker"><span>{label}</span>{items.map((entry) => <button key={entry.id} className={entry.id === value ? 'active' : ''} onClick={() => onChange(entry.id)}>{entry.name}<small>{entry.id}</small></button>)}</div>
-}
-
-function AssetBinding({ title, value, assets, categories, onChange, children }: { title: string; value?: string; assets: LibraryAsset[]; categories: AssetCategory[]; onChange: (value: string | undefined) => void; children?: ReactNode }) {
-  const options = assets.filter((asset) => categories.includes(asset.category))
-  return <section className="gameplay-asset-binding"><div><strong>{title}</strong><small>{value ? 'Bound to Shared Asset Library' : 'Runtime placeholder / fallback'}</small></div><select value={value ?? ''} onChange={(event) => onChange(event.target.value || undefined)}><option value="">None / fallback</option>{options.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select>{children}</section>
-}
-
+function ContentPicker({ label, items, value, onChange }: { label: string; items: Array<{ id: string; name: string }>; value: string; onChange: (value: string) => void }) { return <div className="gameplay-content-picker"><span>{label}</span>{items.map((entry) => <button key={entry.id} className={entry.id === value ? 'active' : ''} onClick={() => onChange(entry.id)}>{entry.name}<small>{entry.id}</small></button>)}</div> }
+function AssetBinding({ title, value, assets, categories, onChange, children }: { title: string; value?: string; assets: LibraryAsset[]; categories: AssetCategory[]; onChange: (value: string | undefined) => void; children?: ReactNode }) { const options = assets.filter((asset) => categories.includes(asset.category)); return <section className="gameplay-asset-binding"><div><strong>{title}</strong><small>{value ? 'Bound to Shared Asset Library' : 'Runtime placeholder / fallback'}</small></div><select value={value ?? ''} onChange={(event) => onChange(event.target.value || undefined)}><option value="">None / fallback</option>{options.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select>{children}</section> }
 function EditorSection({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) { return <section className="gameplay-editor-card"><header><div><span className="eyebrow">ACTIVE DEFINITION</span><h2>{title}</h2><p>{subtitle}</p></div></header>{children}</section> }
 function FieldGrid({ children }: { children: ReactNode }) { return <div className="gameplay-field-grid">{children}</div> }
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="gameplay-field"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)}/></label> }
@@ -226,9 +353,7 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
 function SelectField({ label, value, options, onChange }: { label: string; value: string; options: Array<[string,string]>; onChange: (value: string) => void }) { return <label className="gameplay-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label> }
 function BindingRow({ label, bound }: { label: string; bound: boolean }) { return <div className={bound ? 'gameplay-binding-row bound' : 'gameplay-binding-row'}><i/><span>{label}</span><strong>{bound ? 'Bound' : 'Fallback'}</strong></div> }
 function TabButton({ icon: Icon, label, count, active, onClick }: { icon: typeof Swords; label: string; count?: number; active: boolean; onClick: () => void }) { return <button className={active ? 'active' : ''} onClick={onClick}><Icon size={15}/><span>{label}</span>{count !== undefined && <b>{count}</b>}</button> }
-
-async function importAnimation(file: File) {
-  return await saveAsset({ name: file.name.replace(/\.glb$/i, ''), category: 'animations', kind: 'glb', mime: file.type || 'model/gltf-binary', tags: ['animation', 'skillbound'], source: 'Gameplay Forge animation import', blob: file })
-}
-
+async function importAnimation(file: File) { return await saveAsset({ name: file.name.replace(/\.glb$/i, ''), category: 'animations', kind: 'glb', mime: file.type || 'model/gltf-binary', tags: ['animation', 'skillbound'], source: 'Gameplay Forge animation import', blob: file }) }
+function promptName(label: string, fallback: string) { const value = window.prompt(label, fallback)?.trim(); return value || undefined }
+function cloneDefinition<T extends { id: string; name: string }>(value: T, id: string, name: string): T { return { ...JSON.parse(JSON.stringify(value)) as T, id, name } }
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, Number.isFinite(value) ? value : min)) }
