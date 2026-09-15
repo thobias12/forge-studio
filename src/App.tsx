@@ -18,6 +18,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Swords,
   UserRoundCog,
   WandSparkles,
   Skull,
@@ -28,6 +29,7 @@ import ProjectManager from './pages/ProjectManager'
 import ProjectPlay from './pages/ProjectPlay'
 import ProjectValidation from './pages/ProjectValidation'
 import WorldForge from './pages/WorldForge'
+import GameplayForge from './pages/GameplayForge'
 import MocapStudio from './pages/MocapStudio'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
@@ -59,9 +61,10 @@ import './retarget.css'
 import './texture-v071.css'
 import './character.css'
 import './world-forge.css'
+import './gameplay-forge.css'
 import './project-control-center.css'
 
-type Page = ForgeContentPage
+type Page = ForgeContentPage | 'gameplay'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -95,6 +98,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'GAMEPLAY',
     items: [
+      { id: 'gameplay', label: 'Gameplay Forge', icon: Swords },
       { id: 'uiforge', label: 'UI Forge', icon: LayoutGrid },
       { id: 'vfx', label: 'VFX Studio', icon: WandSparkles },
       { id: 'audio', label: 'Voice & Audio', icon: AudioLines },
@@ -150,11 +154,11 @@ export default function App() {
       .filter((item) => item.label.toLowerCase().includes(needle) || item.id.includes(needle))
       .map((item) => ({ key: `tool:${item.id}`, name: item.label, detail: 'Forge tool', page: item.id }))
     const contentResults = searchForgeRegistry(registry, searchQuery)
-      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: entry.page }))
+      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: entry.page as Page }))
     return [...toolResults, ...contentResults].slice(0, 9)
   }, [registry, searchQuery])
 
-  const navigate = (next: ForgeContentPage) => {
+  const navigate = (next: Page) => {
     setPage(next)
     setSearchQuery('')
     setSearchFocused(false)
@@ -206,11 +210,12 @@ export default function App() {
           <div className="topbar-right"><span className="engine-pill">FORGE RUNTIME · THREE.JS</span><span className="session-dot" /> Skillbound project</div>
         </header>
         <div className="content-area">
-          {page === 'home' && <Dashboard registry={registry} onNavigate={navigate} />}
-          {page === 'projects' && <ProjectManager onOpenWorld={() => navigate('world')} />}
+          {page === 'home' && <Dashboard registry={registry} onNavigate={(target) => navigate(target)} />}
+          {page === 'projects' && <ProjectManager onOpenWorld={() => navigate('world')} onOpenGameplay={() => navigate('gameplay')} />}
           {page === 'world' && <WorldForge />}
+          {page === 'gameplay' && <GameplayForge onOpenTool={(target) => navigate(target)} />}
           {page === 'play' && <ProjectPlay onOpenWorld={() => navigate('world')} onBackHome={() => navigate('home')} />}
-          {page === 'validation' && <ProjectValidation registry={registry} onNavigate={navigate} />}
+          {page === 'validation' && <ProjectValidation registry={registry} onNavigate={(target) => navigate(target)} />}
           {page === 'mocap' && <MocapStudio />}
           {page === 'models' && <Models />}
           {page === 'destruction' && <DestructionLab />}

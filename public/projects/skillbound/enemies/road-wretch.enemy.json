@@ -9,6 +9,7 @@
   "attackRange": 1.5,
   "attackDamage": 14,
   "attackCooldown": 1.15,
+  "attackWindup": 0.42,
   "lootTable": "road-wretch-drops",
   "color": "#745044"
 }

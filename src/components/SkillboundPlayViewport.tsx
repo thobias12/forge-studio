@@ -62,8 +62,8 @@ export default function SkillboundPlayViewport({ region }: Props) {
   return <div className="skillbound-runtime-host" ref={hostRef}>
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>FORGE PLAY MODE · PHASE 2</strong>
-      <span>WASD camera-relative move · LMB attack · Q skill · Space dodge · wheel zoom</span>
+      <strong>FORGE PLAY MODE · PHASE 2.1</strong>
+      <span>WASD move · LMB attack · Q skill · Space dodge · red ring = enemy wind-up</span>
     </div>
 
     <div className="skillbound-objective">{objective}</div>

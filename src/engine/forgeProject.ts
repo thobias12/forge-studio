@@ -4,6 +4,7 @@ export type ForgeProjectManifest = {
   id: string
   name: string
   generationVersion: number
+  contentRevision?: number
   runtime: {
     renderer: 'three'
     entryWorld: string
@@ -73,6 +74,8 @@ export type ForgeAbilityDefinition = {
   range: number
   radius: number
   color: string
+  animationAssetId?: string
+  vfxAssetId?: string
 }
 
 export type ForgeEnemyDefinition = {
@@ -86,8 +89,14 @@ export type ForgeEnemyDefinition = {
   attackRange: number
   attackDamage: number
   attackCooldown: number
+  attackWindup?: number
   lootTable: string
   color: string
+  characterAssetId?: string
+  animationAssetId?: string
+  attackVfxAssetId?: string
+  hitVfxAssetId?: string
+  deathVfxAssetId?: string
 }
 
 export type ForgeItemSlot = 'weapon'
@@ -102,6 +111,7 @@ export type ForgeItemDefinition = {
   rarity: ForgeItemRarity
   damageBonus: number
   color: string
+  modelAssetId?: string
 }
 
 export type ForgeLootEntry = {
@@ -129,6 +139,8 @@ export type ForgePlayerDefinition = {
   basicAbility: string
   activeAbilities: string[]
   startingItems: string[]
+  characterAssetId?: string
+  animationAssetId?: string
 }
 
 export type ForgeGameplayContent = {
@@ -152,29 +164,27 @@ export type ForgeProjectWorkspace = {
   updatedAt: string
 }
 
-const WORKSPACE_KEY = 'forge-project:skillbound:v1'
+const WORKSPACE_KEY = 'forge-project:skillbound:v2'
+const LEGACY_WORKSPACE_KEY = 'forge-project:skillbound:v1'
 const PROJECT_ROOT = './projects/skillbound/'
 
 export async function loadSkillboundWorkspace(forceBundled = false): Promise<ForgeProjectWorkspace> {
   const manifest = await fetchJson<ForgeProjectManifest>(`${PROJECT_ROOT}project.forge.json`)
-
   if (!forceBundled) {
-    const cached = localStorage.getItem(WORKSPACE_KEY)
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached) as Partial<ForgeProjectWorkspace>
-        if (parsed.manifest?.format === 'forge-project' && parsed.manifest.id === 'skillbound' && parsed.worlds?.length && parsed.regions?.length && parsed.editor) {
-          return {
-            manifest,
-            worlds: parsed.worlds,
-            regions: parsed.regions,
-            gameplay: await loadGameplay(manifest),
-            editor: parsed.editor,
-            updatedAt: parsed.updatedAt ?? new Date().toISOString(),
-          }
-        }
-      } catch {
-        // Fall through to the bundled project if the editor cache is invalid.
+    const current = readCachedWorkspace(WORKSPACE_KEY)
+    if (current?.worlds?.length && current.regions?.length && current.editor && current.gameplay) {
+      return { ...current, manifest } as ForgeProjectWorkspace
+    }
+
+    const legacy = readCachedWorkspace(LEGACY_WORKSPACE_KEY)
+    if (legacy?.worlds?.length && legacy.regions?.length && legacy.editor) {
+      return {
+        manifest,
+        worlds: legacy.worlds,
+        regions: legacy.regions,
+        gameplay: await loadGameplay(manifest),
+        editor: legacy.editor,
+        updatedAt: legacy.updatedAt ?? new Date().toISOString(),
       }
     }
   }
@@ -210,6 +220,7 @@ export function saveSkillboundWorkspace(workspace: ForgeProjectWorkspace) {
 
 export function clearSkillboundWorkspace() {
   localStorage.removeItem(WORKSPACE_KEY)
+  localStorage.removeItem(LEGACY_WORKSPACE_KEY)
 }
 
 export function patchRegion(workspace: ForgeProjectWorkspace, region: ForgeRegionDefinition): ForgeProjectWorkspace {
@@ -217,6 +228,25 @@ export function patchRegion(workspace: ForgeProjectWorkspace, region: ForgeRegio
     ...workspace,
     regions: workspace.regions.map((item) => item.id === region.id ? region : item),
     updatedAt: new Date().toISOString(),
+  }
+}
+
+export function patchGameplay(workspace: ForgeProjectWorkspace, gameplay: ForgeGameplayContent): ForgeProjectWorkspace {
+  return { ...workspace, gameplay, updatedAt: new Date().toISOString() }
+}
+
+type CachedWorkspace = Partial<ForgeProjectWorkspace> & Pick<ForgeProjectWorkspace, 'manifest'>
+
+function readCachedWorkspace(key: string): CachedWorkspace | undefined {
+  const cached = localStorage.getItem(key)
+  if (!cached) return undefined
+  try {
+    const parsed = JSON.parse(cached) as CachedWorkspace
+    if (parsed.manifest?.format !== 'forge-project' || parsed.manifest.id !== 'skillbound') return undefined
+    if (!parsed.worlds?.length || !parsed.regions?.length || !parsed.editor) return undefined
+    return parsed
+  } catch {
+    return undefined
   }
 }
 
