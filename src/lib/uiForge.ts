@@ -1,3 +1,5 @@
+import { createDefaultHudLayout, type SkillboundHudLayout } from './hudForge'
+
 export type UiForgeScreen = 'hud' | 'inventory' | 'character' | 'skills'
 export type UiForgePanelStyle = 'metal' | 'leather' | 'stone' | 'glass'
 export type UiForgeAccent = 'bronze' | 'gold' | 'crimson' | 'arcane' | 'poison'
@@ -42,6 +44,7 @@ export type ForgeUiThemeDefinition = {
   id: string
   projectId: string
   theme: SkillboundUiTheme
+  hud?: SkillboundHudLayout
 }
 
 export type UiForgeViewport = {
@@ -111,6 +114,7 @@ export function createDefaultSkillboundUiDefinition(): ForgeUiThemeDefinition {
     id: 'skillbound-ui',
     projectId: 'skillbound',
     theme: cloneUiForgePreset('dark-arpg'),
+    hud: createDefaultHudLayout(),
   }
 }
 
