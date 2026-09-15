@@ -10,6 +10,9 @@ export type GeneratedRegionNode = {
   radius: number
   label: string
   parentId?: string
+  /** Optional authored content reached through this generated landmark. */
+  contentType?: 'dungeon'
+  contentRef?: string
 }
 
 export type GeneratedRegionConnection = {
@@ -116,6 +119,29 @@ export function generateGuidedRegion(region: ForgeRegionDefinition, worldSeed: n
     })
   }
 
+  if (region.linkedDungeonId) {
+    const currentBranchEnds = nodes.filter((item) => item.kind === 'branch' && !connections.some((link) => link.kind === 'branch' && link.from === item.id))
+    const fallback = nodes.filter((item) => item.kind === 'route')
+    const candidates = currentBranchEnds.length ? currentBranchEnds : fallback
+    const anchor = candidates.length ? candidates[Math.floor(random() * candidates.length)] : nodes.find((item) => item.kind === 'exit') ?? nodes[0]
+    if (anchor) {
+      const direction = anchor.z >= 0 ? 1 : -1
+      const id = `dungeon-${region.linkedDungeonId}`
+      nodes.push({
+        id,
+        kind: 'landmark',
+        x: anchor.x + 7 + random() * 4,
+        z: anchor.z + direction * (9 + random() * 4),
+        radius: 6.5,
+        label: titleCase(region.linkedDungeonId),
+        parentId: anchor.id,
+        contentType: 'dungeon',
+        contentRef: region.linkedDungeonId,
+      })
+      connections.push({ id: `dungeon-link-${region.linkedDungeonId}`, from: anchor.id, to: id, kind: 'branch' })
+    }
+  }
+
   const bounds = calculateBounds(nodes)
   const validation = validateGeneratedRegion(nodes, connections)
   return {
@@ -158,6 +184,9 @@ export function validateGeneratedRegion(nodes: GeneratedRegionNode[], connection
       }
     }
     if (!seen.has(exit.id)) issues.push('Entry cannot reach exit.')
+    for (const dungeon of nodes.filter((node) => node.contentType === 'dungeon')) {
+      if (!seen.has(dungeon.id)) issues.push(`${dungeon.label} dungeon entrance is unreachable from the region entry.`)
+    }
   }
 
   for (const link of connections) {

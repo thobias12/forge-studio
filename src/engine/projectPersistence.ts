@@ -5,6 +5,7 @@ import type {
   ForgeItemDefinition,
   ForgeLootTableDefinition,
   ForgePlayerDefinition,
+  ForgeProjectDungeonDefinition,
   ForgeProjectManifest,
   ForgeProjectWorkspace,
   ForgeRegionDefinition,
@@ -81,9 +82,13 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
   const manifest = await readJson<ForgeProjectManifest>(handle, 'project.forge.json')
   validateManifest(manifest)
 
-  const [worlds, regions, player, abilities, enemies, items, lootTables, ui] = await Promise.all([
+  const [worlds, regions, dungeons, player, abilities, enemies, items, lootTables, ui] = await Promise.all([
     Promise.all(manifest.content.worlds.map((path) => readJson<ForgeWorldDefinition>(handle, path))),
     Promise.all(manifest.content.regions.map((path) => readJson<ForgeRegionDefinition>(handle, path))),
+    Promise.all((manifest.content.dungeons ?? []).map(async (path) => {
+      const value = await readJson<ForgeProjectDungeonDefinition & { id?: string }>(handle, path)
+      return { ...value, id: value.id ?? definitionIdFromPath(path, '.dungeon.json') } as ForgeProjectDungeonDefinition
+    })),
     readJson<ForgePlayerDefinition>(handle, manifest.content.player),
     Promise.all(manifest.content.abilities.map((path) => readJson<ForgeAbilityDefinition>(handle, path))),
     Promise.all(manifest.content.enemies.map((path) => readJson<ForgeEnemyDefinition>(handle, path))),
@@ -99,6 +104,7 @@ export async function loadSkillboundWorkspaceFromProjectFolder(editor?: ForgePro
     manifest,
     worlds,
     regions,
+    dungeons,
     gameplay: { player, abilities, enemies, items, lootTables },
     ui,
     editor: {
@@ -124,6 +130,12 @@ export async function saveSkillboundWorkspaceToProjectFolder(workspace: ForgePro
     const path = workspace.manifest.content.regions[index]
     const value = findDefinitionForPath(path, workspace.regions, index, '.region.json')
     if (!value) throw new Error(`Could not resolve authored region for ${path}.`)
+    await writeJson(handle, path, value)
+  }
+  for (let index = 0; index < (workspace.manifest.content.dungeons ?? []).length; index += 1) {
+    const path = workspace.manifest.content.dungeons![index]
+    const value = findDefinitionForPath(path, workspace.dungeons, index, '.dungeon.json')
+    if (!value) throw new Error(`Could not resolve authored dungeon for ${path}.`)
     await writeJson(handle, path, value)
   }
 
@@ -239,9 +251,13 @@ async function getFileHandleAtPath(root: any, path: string, create: boolean) {
 }
 
 function findDefinitionForPath<T extends { id: string }>(path: string, values: T[], index: number, suffix: string) {
-  const filename = path.split('/').pop() ?? ''
-  const expectedId = filename.endsWith(suffix) ? filename.slice(0, -suffix.length) : filename.split('.')[0]
+  const expectedId = definitionIdFromPath(path, suffix)
   return values.find((value) => value.id === expectedId) ?? values[index]
+}
+
+function definitionIdFromPath(path: string, suffix: string) {
+  const filename = path.split('/').pop() ?? ''
+  return filename.endsWith(suffix) ? filename.slice(0, -suffix.length) : filename.split('.')[0]
 }
 
 function validateManifest(manifest: ForgeProjectManifest) {

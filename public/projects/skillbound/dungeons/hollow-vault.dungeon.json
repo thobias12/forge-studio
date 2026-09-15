@@ -1,0 +1,57 @@
+{
+  "format": "forge-dungeon-package",
+  "version": 2,
+  "id": "hollow-vault",
+  "name": "Hollow Vault",
+  "targetGame": "skillbound",
+  "theme": "crypt",
+  "gridSize": 1,
+  "seed": 513902,
+  "createdAt": "2026-09-15T18:20:00.000Z",
+  "updatedAt": "2026-09-15T18:20:00.000Z",
+  "rooms": [
+    { "id": "hv-entrance", "name": "Flooded Threshold", "type": "entrance", "x": -38, "z": 0, "width": 14, "depth": 12, "height": 4.8, "rotation": 0, "floorLevel": 0, "tags": ["entry"] },
+    { "id": "hv-crossroads", "name": "Drowned Crossroads", "type": "combat", "x": -10, "z": 0, "width": 18, "depth": 15, "height": 4.9, "rotation": 0, "floorLevel": 0, "tags": ["combat"] },
+    { "id": "hv-reliquary", "name": "Sunken Reliquary", "type": "treasure", "x": -10, "z": -23, "width": 13, "depth": 11, "height": 4.6, "rotation": 0, "floorLevel": 0, "tags": ["treasure"] },
+    { "id": "hv-ossuary", "name": "Ossuary Hall", "type": "elite", "x": 20, "z": 3, "width": 20, "depth": 17, "height": 5.2, "rotation": 0, "floorLevel": 0, "tags": ["elite"] },
+    { "id": "hv-sanctum", "name": "Warden Sanctum", "type": "boss", "x": 53, "z": 0, "width": 30, "depth": 25, "height": 5.8, "rotation": 0, "floorLevel": 0, "tags": ["boss"] }
+  ],
+  "corridors": [
+    { "id": "hv-c1", "fromRoomId": "hv-entrance", "toRoomId": "hv-crossroads", "width": 4.2, "style": "l" },
+    { "id": "hv-c2", "fromRoomId": "hv-crossroads", "toRoomId": "hv-reliquary", "width": 4.2, "style": "l" },
+    { "id": "hv-c3", "fromRoomId": "hv-crossroads", "toRoomId": "hv-ossuary", "width": 4.5, "style": "l" },
+    { "id": "hv-c4", "fromRoomId": "hv-ossuary", "toRoomId": "hv-sanctum", "width": 5, "style": "l" }
+  ],
+  "markers": [
+    { "id": "hv-checkpoint", "type": "checkpoint", "x": -38, "y": 0.3, "z": 0, "roomId": "hv-entrance", "name": "Vault Threshold", "radius": 0.75, "data": { "checkpointId": "hollow-vault-entry" } },
+    { "id": "hv-cross-spawn", "type": "enemy", "x": -10, "y": 0.3, "z": 0, "roomId": "hv-crossroads", "name": "Road Wretch Pack", "radius": 1.5, "data": { "family": "road-wretch", "count": 6, "eliteChance": 0.12, "difficulty": 1, "encounterId": "hv-cross-enc" } },
+    { "id": "hv-cross-trigger", "type": "trigger", "x": -10, "y": 0.15, "z": 0, "roomId": "hv-crossroads", "name": "Crossroads Ambush", "radius": 4.8, "data": { "action": "start-encounter", "targetId": "hv-cross-enc", "once": true } },
+    { "id": "hv-treasure", "type": "loot", "x": -10, "y": 0.3, "z": -23, "roomId": "hv-reliquary", "name": "Drowned Cache", "radius": 0.75, "data": { "tier": "rare", "requiresClear": false } },
+    { "id": "hv-elite-spawn", "type": "enemy", "x": 20, "y": 0.3, "z": 3, "roomId": "hv-ossuary", "name": "Ossuary Guard", "radius": 1.5, "data": { "family": "road-wretch", "count": 4, "eliteChance": 0.75, "difficulty": 2, "encounterId": "hv-elite-enc" } },
+    { "id": "hv-elite-trigger", "type": "trigger", "x": 20, "y": 0.15, "z": 3, "roomId": "hv-ossuary", "name": "Ossuary Trigger", "radius": 5.2, "data": { "action": "start-encounter", "targetId": "hv-elite-enc", "once": true } },
+    { "id": "hv-elite-gate", "type": "door", "x": 10, "y": 0, "z": 1.5, "roomId": "hv-ossuary", "name": "Ossuary Gate", "radius": 0.75, "data": { "corridorId": "hv-c3", "yaw": 0, "locked": false, "encounterId": "hv-elite-enc" } },
+    { "id": "hv-boss-spawn", "type": "enemy", "x": 53, "y": 0.3, "z": 0, "roomId": "hv-sanctum", "name": "Vault Warden", "radius": 1.5, "data": { "family": "road-wretch", "count": 1, "eliteChance": 1, "difficulty": 3, "encounterId": "hv-boss-enc" } },
+    { "id": "hv-boss-trigger", "type": "trigger", "x": 53, "y": 0.15, "z": 0, "roomId": "hv-sanctum", "name": "Warden Trigger", "radius": 7, "data": { "action": "start-encounter", "targetId": "hv-boss-enc", "once": true } },
+    { "id": "hv-boss-gate", "type": "door", "x": 38, "y": 0, "z": 1.5, "roomId": "hv-sanctum", "name": "Warden Gate", "radius": 0.75, "data": { "corridorId": "hv-c4", "yaw": 0, "locked": false, "encounterId": "hv-boss-enc" } },
+    { "id": "hv-boss-reward", "type": "loot", "x": 57, "y": 0.3, "z": 1, "roomId": "hv-sanctum", "name": "Warden Reliquary", "radius": 0.75, "data": { "tier": "legendary", "requiresClear": true, "encounterId": "hv-boss-enc", "itemId": "rusted-sword" } },
+    { "id": "hv-exit", "type": "portal", "x": 62, "y": 0.3, "z": 0, "roomId": "hv-sanctum", "name": "Return to Drowned March", "radius": 0.75, "data": { "action": "exit-dungeon", "requiresEncounterId": "hv-boss-enc" } }
+  ],
+  "logic": {
+    "encounters": [
+      { "id": "hv-cross-enc", "name": "Drowned Crossroads Ambush", "roomId": "hv-crossroads", "trigger": "marker", "triggerMarkerId": "hv-cross-trigger", "spawnMarkerIds": ["hv-cross-spawn"], "lockDoorIds": [], "rewardMarkerIds": [], "family": "road-wretch", "count": 6, "eliteChance": 0.12, "difficulty": 1, "boss": false, "once": true },
+      { "id": "hv-elite-enc", "name": "Ossuary Guard", "roomId": "hv-ossuary", "trigger": "marker", "triggerMarkerId": "hv-elite-trigger", "spawnMarkerIds": ["hv-elite-spawn"], "lockDoorIds": ["hv-elite-gate"], "rewardMarkerIds": [], "family": "road-wretch", "count": 4, "eliteChance": 0.75, "difficulty": 2, "boss": false, "once": true },
+      { "id": "hv-boss-enc", "name": "Vault Warden", "roomId": "hv-sanctum", "trigger": "marker", "triggerMarkerId": "hv-boss-trigger", "spawnMarkerIds": ["hv-boss-spawn"], "lockDoorIds": ["hv-boss-gate"], "rewardMarkerIds": ["hv-boss-reward"], "family": "road-wretch", "count": 1, "eliteChance": 1, "difficulty": 3, "boss": true, "once": true }
+    ],
+    "completionPortalId": "hv-exit"
+  },
+  "props": [
+    { "id": "hv-prop-1", "name": "Threshold Torch", "source": "builtin", "assetRef": "torch", "x": -34, "y": 0, "z": -4, "rotationY": 0, "scale": 1, "roomId": "hv-entrance", "collision": true },
+    { "id": "hv-prop-2", "name": "Crossroads Pillar", "source": "builtin", "assetRef": "pillar", "x": -14, "y": 0, "z": 4, "rotationY": 0, "scale": 1, "roomId": "hv-crossroads", "collision": true },
+    { "id": "hv-prop-3", "name": "Crossroads Pillar", "source": "builtin", "assetRef": "pillar", "x": -6, "y": 0, "z": -4, "rotationY": 0, "scale": 1, "roomId": "hv-crossroads", "collision": true },
+    { "id": "hv-prop-4", "name": "Reliquary Crate", "source": "builtin", "assetRef": "crate", "x": -12, "y": 0, "z": -25, "rotationY": 18, "scale": 1, "roomId": "hv-reliquary", "collision": true },
+    { "id": "hv-prop-5", "name": "Ossuary Statue", "source": "builtin", "assetRef": "statue", "x": 24, "y": 0, "z": 6, "rotationY": 180, "scale": 1.1, "roomId": "hv-ossuary", "collision": true },
+    { "id": "hv-prop-6", "name": "Sanctum Pillar", "source": "builtin", "assetRef": "pillar", "x": 46, "y": 0, "z": -7, "rotationY": 0, "scale": 1.2, "roomId": "hv-sanctum", "collision": true },
+    { "id": "hv-prop-7", "name": "Sanctum Pillar", "source": "builtin", "assetRef": "pillar", "x": 46, "y": 0, "z": 7, "rotationY": 0, "scale": 1.2, "roomId": "hv-sanctum", "collision": true }
+  ],
+  "settings": { "wallThickness": 0.5, "ambientLight": 0.25, "fogDensity": 0.014, "snap": true }
+}

@@ -29,19 +29,43 @@ export function buildProjectDependencies(workspace: ForgeProjectWorkspace, asset
   const itemIds = new Set(workspace.gameplay.items.map((item) => item.id))
   const lootIds = new Set(workspace.gameplay.lootTables.map((table) => table.id))
   const regionIds = new Set(workspace.regions.map((region) => region.id))
+  const dungeonIds = new Set(workspace.dungeons.map((dungeon) => dungeon.id))
 
   for (const world of workspace.worlds) {
     for (const node of world.nodes) {
-      if (node.type !== 'procedural-region' || !node.ref) continue
-      edges.push(projectEdge(
-        `world.${world.id}`,
-        `region.${node.ref}`,
-        `${node.label} region`,
-        regionIds.has(node.ref),
-        true,
-        regionIds.has(node.ref) ? 'Campaign node resolves to authored region grammar.' : `Missing region definition: ${node.ref}`,
-      ))
+      if (!node.ref) continue
+      if (node.type === 'procedural-region') {
+        edges.push(projectEdge(
+          `world.${world.id}`,
+          `region.${node.ref}`,
+          `${node.label} region`,
+          regionIds.has(node.ref),
+          true,
+          regionIds.has(node.ref) ? 'Campaign node resolves to authored region grammar.' : `Missing region definition: ${node.ref}`,
+        ))
+      } else if (node.type === 'dungeon') {
+        edges.push(projectEdge(
+          `world.${world.id}`,
+          `dungeon.${node.ref}`,
+          `${node.label} dungeon`,
+          dungeonIds.has(node.ref),
+          node.required,
+          dungeonIds.has(node.ref) ? 'Campaign dungeon resolves to an authored Map Studio package.' : `Missing dungeon definition: ${node.ref}`,
+        ))
+      }
     }
+  }
+
+  for (const region of workspace.regions) {
+    if (!region.linkedDungeonId) continue
+    edges.push(projectEdge(
+      `region.${region.id}`,
+      `dungeon.${region.linkedDungeonId}`,
+      'Linked dungeon entrance',
+      dungeonIds.has(region.linkedDungeonId),
+      true,
+      dungeonIds.has(region.linkedDungeonId) ? 'Generated region can transition into the authored dungeon.' : `Missing linked dungeon: ${region.linkedDungeonId}`,
+    ))
   }
 
   const playerSource = `player.${workspace.gameplay.player.id}`

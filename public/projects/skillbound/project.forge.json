@@ -3,8 +3,8 @@
   "version": 1,
   "id": "skillbound",
   "name": "Skillbound",
-  "generationVersion": 1,
-  "contentRevision": 3,
+  "generationVersion": 2,
+  "contentRevision": 4,
   "runtime": {
     "renderer": "three",
     "entryWorld": "act1",
@@ -13,6 +13,7 @@
   "content": {
     "worlds": ["worlds/act1.world.json"],
     "regions": ["regions/deadwood.region.json", "regions/drowned-march.region.json"],
+    "dungeons": ["dungeons/hollow-vault.dungeon.json"],
     "player": "players/skillbound-player.player.json",
     "abilities": ["abilities/iron-cleave.ability.json", "abilities/ember-burst.ability.json"],
     "enemies": ["enemies/road-wretch.enemy.json"],

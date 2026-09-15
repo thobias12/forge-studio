@@ -8,6 +8,6 @@
     { "id": "deadwood", "label": "Deadwood", "type": "procedural-region", "ref": "deadwood", "required": true },
     { "id": "bellwick", "label": "Bellwick", "type": "town", "required": true },
     { "id": "drowned-march", "label": "Drowned March", "type": "procedural-region", "ref": "drowned-march", "required": true },
-    { "id": "hollow-vault", "label": "Hollow Vault", "type": "dungeon", "required": true }
+    { "id": "hollow-vault", "label": "Hollow Vault", "type": "dungeon", "ref": "hollow-vault", "required": true }
   ]
 }

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { loadSkillboundWorkspace, type ForgeGameplayContent } from '../engine/forgeProject'
+import ArpgDungeonViewport from './ArpgDungeonViewport'
+import { loadSkillboundWorkspace, type ForgeProjectWorkspace } from '../engine/forgeProject'
 import { itemVisual } from '../engine/itemPresentation'
 import type { GeneratedRegion } from '../engine/guidedWorld'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { getAsset } from '../lib/library'
-import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
+import { skillboundUiCssVariables } from '../lib/uiForge'
 import '../skillbound-runtime.css'
+import '../skillbound-adventure.css'
 
 type Props = { region: GeneratedRegion }
 
@@ -26,24 +28,24 @@ export default function SkillboundPlayViewport({ region }: Props) {
   const runtimeRef = useRef<ForgePlayRuntime | null>(null)
   const [snapshot, setSnapshot] = useState<ForgeRuntimeSnapshot>(EMPTY_STATE)
   const [session, setSession] = useState(0)
-  const [gameplay, setGameplay] = useState<ForgeGameplayContent>()
-  const [projectId, setProjectId] = useState('')
-  const [uiTheme, setUiTheme] = useState<SkillboundUiTheme>()
+  const [workspace, setWorkspace] = useState<ForgeProjectWorkspace>()
+  const [activeDungeonId, setActiveDungeonId] = useState<string>()
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({})
 
+  const gameplay = workspace?.gameplay
+  const projectId = workspace?.manifest.id ?? ''
+  const uiTheme = workspace?.ui.theme
   const primaryAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.basicAbility), [gameplay])
   const skillAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0]), [gameplay])
   const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
   const uiClasses = uiTheme
     ? `panel-${uiTheme.panelStyle} ornament-${uiTheme.ornamentLevel} corner-${uiTheme.cornerStyle} slots-${uiTheme.slotStyle} buttons-${uiTheme.buttonStyle} density-${uiTheme.density}`
     : ''
+  const dungeonAnchor = useMemo(() => region.nodes.find((node) => node.contentType === 'dungeon' && node.contentRef), [region])
+  const activeDungeon = activeDungeonId ? workspace?.dungeons.find((dungeon) => dungeon.id === activeDungeonId) : undefined
 
   useEffect(() => {
-    void loadSkillboundWorkspace().then((workspace) => {
-      setGameplay(workspace.gameplay)
-      setProjectId(workspace.manifest.id)
-      setUiTheme(workspace.ui.theme)
-    })
+    void loadSkillboundWorkspace().then(setWorkspace)
   }, [])
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export default function SkillboundPlayViewport({ region }: Props) {
   }, [gameplay])
 
   useEffect(() => {
-    if (!hostRef.current || !gameplay || !projectId) return
+    if (activeDungeonId || !hostRef.current || !gameplay || !projectId) return
     const runtime = new ForgePlayRuntime(hostRef.current, region, gameplay, { projectId, onState: setSnapshot })
     runtimeRef.current = runtime
     setSnapshot(runtime.getSnapshot())
@@ -78,11 +80,36 @@ export default function SkillboundPlayViewport({ region }: Props) {
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
-  }, [region, gameplay, projectId, session])
+  }, [region, gameplay, projectId, session, activeDungeonId])
 
   const reset = () => {
     runtimeRef.current?.resetProgress()
     setSession((value) => value + 1)
+  }
+
+  const enterDungeon = () => {
+    const dungeonId = dungeonAnchor?.contentRef
+    if (!dungeonId) return
+    runtimeRef.current?.saveGame(false)
+    setActiveDungeonId(dungeonId)
+  }
+
+  const returnToOverworld = () => {
+    setActiveDungeonId(undefined)
+    setSession((value) => value + 1)
+  }
+
+  if (activeDungeonId) {
+    if (!workspace) return <div className="skillbound-runtime-loading">Loading Skillbound dungeon…</div>
+    if (!activeDungeon) return <div className="skillbound-dungeon-session missing"><strong>Dungeon unavailable</strong><span>{activeDungeonId} is referenced by this region but is missing from the Skillbound project.</span><button onClick={returnToOverworld}>Return to {region.regionName}</button></div>
+    return <div className="skillbound-dungeon-session">
+      <ArpgDungeonViewport value={activeDungeon}/>
+      <div className="skillbound-dungeon-session-bar">
+        <div><span>SKILLBOUND DUNGEON</span><strong>{activeDungeon.name}</strong><small>{activeDungeon.theme} · Map Studio package · seed {activeDungeon.seed}</small></div>
+        <button onClick={returnToOverworld}>Return to {region.regionName}</button>
+      </div>
+      <div className="skillbound-dungeon-session-note">Clear encounters and test the authored dungeon. Returning remounts the same overworld seed and restores its saved combat state.</div>
+    </div>
   }
 
   const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
@@ -90,23 +117,27 @@ export default function SkillboundPlayViewport({ region }: Props) {
     ? 'No encounter in this generated region.'
     : snapshot.enemiesAlive > 0
       ? `Clear the encounter · ${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies remaining`
-      : 'Encounter cleared · collect and equip the drop'
+      : dungeonAnchor
+        ? `Encounter cleared · ${dungeonAnchor.label} is available from this region`
+        : 'Encounter cleared · collect and equip the drop'
 
   return <div className={`skillbound-runtime-host ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>FORGE PLAY MODE · AUTHORED PRESENTATION</strong>
-      <span>WASD move · LMB attack · Q skill · Space dodge · red ring = enemy wind-up</span>
+      <strong>FORGE PLAY MODE · PHASE 3 WORLD BRIDGE</strong>
+      <span>WASD move · LMB attack · Q skill · Space dodge · authored dungeons now transition from the generated world</span>
     </div>
 
     <div className="skillbound-objective">{objective}</div>
     {snapshot.target && <TargetBar target={snapshot.target}/>} 
 
     <div className="skillbound-runtime-actions">
+      {dungeonAnchor && <button className="dungeon-entry-action" onClick={enterDungeon}>Enter {dungeonAnchor.label}</button>}
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
       <button onClick={reset}>Reset run</button>
     </div>
 
+    {dungeonAnchor && <div className="skillbound-dungeon-available"><span>DUNGEON ENTRANCE</span><strong>{dungeonAnchor.label}</strong><small>Authored in Map Studio · transition preserves this overworld run</small></div>}
     {snapshot.message && <div className="skillbound-runtime-message">{snapshot.message}</div>}
 
     <div className="skillbound-hud">

@@ -1,4 +1,5 @@
 import { createDefaultSkillboundUiDefinition, type ForgeUiThemeDefinition } from '../lib/uiForge'
+import type { DungeonWithProps } from '../lib/dungeonProps'
 
 export type ForgeProjectManifest = {
   format: 'forge-project'
@@ -15,6 +16,7 @@ export type ForgeProjectManifest = {
   content: {
     worlds: string[]
     regions: string[]
+    dungeons?: string[]
     player: string
     abilities: string[]
     enemies: string[]
@@ -60,6 +62,8 @@ export type ForgeRegionDefinition = {
   optionalDungeonChance: number
   settlementChance: number
   features: string[]
+  /** Required authored dungeon reached from this generated region. */
+  linkedDungeonId?: string
 }
 
 export type ForgeAbilityKind = 'melee' | 'area'
@@ -145,9 +149,9 @@ export type ForgeItemDefinition = {
   rarity: ForgeItemRarity
   damageBonus: number
   color: string
-  /** Legacy master visual binding kept for Phase 2.1 runtime compatibility. */
+  /** Legacy master visual binding kept for older runtime compatibility. */
   modelAssetId?: string
-  /** Forge v1.18+: one item visual drives inventory, world-drop and equipped presentations. */
+  /** One item visual drives inventory, world-drop and equipped presentations. */
   visual?: ForgeItemVisualDefinition
 }
 
@@ -188,10 +192,13 @@ export type ForgeGameplayContent = {
   lootTables: ForgeLootTableDefinition[]
 }
 
+export type ForgeProjectDungeonDefinition = DungeonWithProps & { id: string }
+
 export type ForgeProjectWorkspace = {
   manifest: ForgeProjectManifest
   worlds: ForgeWorldDefinition[]
   regions: ForgeRegionDefinition[]
+  dungeons: ForgeProjectDungeonDefinition[]
   gameplay: ForgeGameplayContent
   ui: ForgeUiThemeDefinition
   editor: {
@@ -202,8 +209,9 @@ export type ForgeProjectWorkspace = {
   updatedAt: string
 }
 
-const WORKSPACE_KEY = 'forge-project:skillbound:v2'
-const LEGACY_WORKSPACE_KEY = 'forge-project:skillbound:v1'
+const WORKSPACE_KEY = 'forge-project:skillbound:v3'
+const LEGACY_WORKSPACE_KEY = 'forge-project:skillbound:v2'
+const OLDER_WORKSPACE_KEY = 'forge-project:skillbound:v1'
 const PROJECT_ROOT = './projects/skillbound/'
 
 export async function loadSkillboundWorkspace(forceBundled = false): Promise<ForgeProjectWorkspace> {
@@ -214,27 +222,31 @@ export async function loadSkillboundWorkspace(forceBundled = false): Promise<For
       return {
         ...current,
         manifest,
+        dungeons: current.dungeons?.length ? current.dungeons : await loadDungeons(manifest),
         ui: current.ui ?? await loadUi(manifest),
       } as ForgeProjectWorkspace
     }
 
-    const legacy = readCachedWorkspace(LEGACY_WORKSPACE_KEY)
+    const legacy = readCachedWorkspace(LEGACY_WORKSPACE_KEY) ?? readCachedWorkspace(OLDER_WORKSPACE_KEY)
     if (legacy?.worlds?.length && legacy.regions?.length && legacy.editor) {
+      const bundledRegions = await loadRegions(manifest)
       return {
         manifest,
         worlds: legacy.worlds,
-        regions: legacy.regions,
-        gameplay: await loadGameplay(manifest),
-        ui: await loadUi(manifest),
+        regions: mergeProjectRegionLinks(legacy.regions, bundledRegions),
+        dungeons: await loadDungeons(manifest),
+        gameplay: legacy.gameplay ?? await loadGameplay(manifest),
+        ui: legacy.ui ?? await loadUi(manifest),
         editor: legacy.editor,
         updatedAt: legacy.updatedAt ?? new Date().toISOString(),
       }
     }
   }
 
-  const [worlds, regions, gameplay, ui] = await Promise.all([
+  const [worlds, regions, dungeons, gameplay, ui] = await Promise.all([
     Promise.all(manifest.content.worlds.map((path) => fetchJson<ForgeWorldDefinition>(`${PROJECT_ROOT}${path}`))),
-    Promise.all(manifest.content.regions.map((path) => fetchJson<ForgeRegionDefinition>(`${PROJECT_ROOT}${path}`))),
+    loadRegions(manifest),
+    loadDungeons(manifest),
     loadGameplay(manifest),
     loadUi(manifest),
   ])
@@ -245,6 +257,7 @@ export async function loadSkillboundWorkspace(forceBundled = false): Promise<For
     manifest,
     worlds,
     regions,
+    dungeons,
     gameplay,
     ui,
     editor: {
@@ -266,6 +279,7 @@ export function saveSkillboundWorkspace(workspace: ForgeProjectWorkspace) {
 export function clearSkillboundWorkspace() {
   localStorage.removeItem(WORKSPACE_KEY)
   localStorage.removeItem(LEGACY_WORKSPACE_KEY)
+  localStorage.removeItem(OLDER_WORKSPACE_KEY)
 }
 
 export function patchRegion(workspace: ForgeProjectWorkspace, region: ForgeRegionDefinition): ForgeProjectWorkspace {
@@ -284,6 +298,15 @@ export function patchUi(workspace: ForgeProjectWorkspace, ui: ForgeUiThemeDefini
   return { ...workspace, ui, updatedAt: new Date().toISOString() }
 }
 
+export function patchDungeon(workspace: ForgeProjectWorkspace, dungeon: ForgeProjectDungeonDefinition): ForgeProjectWorkspace {
+  const exists = workspace.dungeons.some((item) => item.id === dungeon.id)
+  return {
+    ...workspace,
+    dungeons: exists ? workspace.dungeons.map((item) => item.id === dungeon.id ? dungeon : item) : [...workspace.dungeons, dungeon],
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 type CachedWorkspace = Partial<ForgeProjectWorkspace> & Pick<ForgeProjectWorkspace, 'manifest'>
 
 function readCachedWorkspace(key: string): CachedWorkspace | undefined {
@@ -297,6 +320,18 @@ function readCachedWorkspace(key: string): CachedWorkspace | undefined {
   } catch {
     return undefined
   }
+}
+
+async function loadRegions(manifest: ForgeProjectManifest) {
+  return await Promise.all(manifest.content.regions.map((path) => fetchJson<ForgeRegionDefinition>(`${PROJECT_ROOT}${path}`)))
+}
+
+async function loadDungeons(manifest: ForgeProjectManifest): Promise<ForgeProjectDungeonDefinition[]> {
+  return await Promise.all((manifest.content.dungeons ?? []).map(async (path) => {
+    const value = await fetchJson<DungeonWithProps & { id?: string }>(`${PROJECT_ROOT}${path}`)
+    const id = value.id ?? dungeonIdFromPath(path)
+    return { ...value, id } as ForgeProjectDungeonDefinition
+  }))
 }
 
 async function loadGameplay(manifest: ForgeProjectManifest): Promise<ForgeGameplayContent> {
@@ -321,6 +356,19 @@ async function loadUi(manifest: ForgeProjectManifest): Promise<ForgeUiThemeDefin
   } catch {
     return createDefaultSkillboundUiDefinition()
   }
+}
+
+function mergeProjectRegionLinks(cached: ForgeRegionDefinition[], bundled: ForgeRegionDefinition[]) {
+  const bundledById = new Map(bundled.map((region) => [region.id, region]))
+  return cached.map((region) => ({
+    ...region,
+    linkedDungeonId: region.linkedDungeonId ?? bundledById.get(region.id)?.linkedDungeonId,
+  }))
+}
+
+function dungeonIdFromPath(path: string) {
+  const filename = path.split('/').pop() ?? path
+  return filename.replace(/\.forge-dungeon\.json$/i, '').replace(/\.dungeon\.json$/i, '').replace(/\.json$/i, '')
 }
 
 async function fetchJson<T>(url: string): Promise<T> {

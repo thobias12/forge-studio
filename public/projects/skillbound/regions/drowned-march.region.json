@@ -11,5 +11,6 @@
   "enemyDensity": "medium",
   "optionalDungeonChance": 0.4,
   "settlementChance": 0.08,
-  "features": ["roads", "clearings", "streams", "ruins"]
+  "features": ["roads", "clearings", "streams", "ruins"],
+  "linkedDungeonId": "hollow-vault"
 }
