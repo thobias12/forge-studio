@@ -1,5 +1,6 @@
 import type { ForgeProjectWorkspace } from './forgeProject'
 import type { LibraryAsset } from '../lib/library'
+import { itemVisual } from './itemPresentation'
 
 export type ForgeDependencyStatus = 'ready' | 'warning' | 'missing'
 
@@ -100,7 +101,13 @@ export function buildProjectDependencies(workspace: ForgeProjectWorkspace, asset
   }
 
   for (const item of workspace.gameplay.items) {
-    edges.push(assetEdge(`item.${item.id}`, item.modelAssetId, 'Item model', assetIds))
+    const source = `item.${item.id}`
+    const visual = itemVisual(item)
+    const master = visual.masterAssetId ?? item.modelAssetId
+    edges.push(assetEdge(source, master, 'Master item model', assetIds))
+    if (!visual.drop.useMaster) edges.push(assetEdge(source, visual.drop.modelAssetId, 'World-drop override', assetIds))
+    if (!visual.equipped.useMaster) edges.push(assetEdge(source, visual.equipped.modelAssetId, 'Equipped override', assetIds))
+    if (visual.inventory.iconAssetId) edges.push(assetEdge(source, visual.inventory.iconAssetId, 'Generated inventory icon', assetIds))
   }
 
   for (const table of workspace.gameplay.lootTables) {
