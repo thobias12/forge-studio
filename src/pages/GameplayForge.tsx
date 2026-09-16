@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Boxes, Check, CircleGauge, Copy, FolderSync, Library, PackageOpen, Plus, Save, Shield, Sparkles, Swords, Trash2, UserRoundCog, WandSparkles } from 'lucide-react'
+import ArchetypeLoadoutEditor from '../components/ArchetypeLoadoutEditor'
 import {
   loadSkillboundWorkspace,
   saveSkillboundWorkspace,
@@ -53,7 +54,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
       setSelectedItem(project.gameplay.items[0]?.id ?? '')
       setSelectedLoot(project.gameplay.lootTables[0]?.id ?? '')
       setSourceConnected(connection?.permission === 'granted' || connection?.permission === 'prompt')
-      setStatus('Live save enabled · create, duplicate and remove definitions directly in the active Skillbound project.')
+      setStatus('Live save enabled · archetype loadouts, definitions and equipment content are authored from the active Skillbound project.')
     }).catch((error) => setStatus(error instanceof Error ? error.message : 'Could not open Gameplay Forge.'))
   }, [])
 
@@ -69,7 +70,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
     return commitWorkspace({ ...workspace, gameplay }, message)
   }
 
-  const patchPlayer = (patch: Partial<ForgePlayerDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, player: { ...workspace.gameplay.player, ...patch } })
+  const patchPlayer = (patch: Partial<ForgePlayerDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, player: { ...workspace.gameplay.player, ...patch } }, 'Player and archetype runtime settings updated.')
   const patchEnemy = (id: string, patch: Partial<ForgeEnemyDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, enemies: workspace.gameplay.enemies.map((item) => item.id === id ? { ...item, ...patch } : item) })
   const patchAbility = (id: string, patch: Partial<ForgeAbilityDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, abilities: workspace.gameplay.abilities.map((item) => item.id === id ? { ...item, ...patch } : item) })
   const patchItem = (id: string, patch: Partial<ForgeItemDefinition>) => workspace && commitGameplay({ ...workspace.gameplay, items: workspace.gameplay.items.map((item) => item.id === id ? { ...item, ...patch } : item) })
@@ -110,7 +111,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
     if (!name) return
     const id = uniqueContentId(slugContentId(name), workspace.gameplay.abilities.map((entry) => entry.id))
     const created = createAbilityDefinition(name, id)
-    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'ability', id), gameplay: { ...workspace.gameplay, abilities: [...workspace.gameplay.abilities, created] } }, `${created.name} created. Assign it to the player from the Player tab when you want it on the skill bar.`)
+    const next = commitWorkspace({ ...workspace, manifest: addManagedManifestPath(workspace.manifest, 'ability', id), gameplay: { ...workspace.gameplay, abilities: [...workspace.gameplay.abilities, created] } }, `${created.name} created. Assign it from the Player archetype editor when you want it in a class loadout.`)
     setSelectedAbility(id)
     setWorkspace(next)
   }
@@ -207,7 +208,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
   const writeSource = async () => {
     if (!workspace) return
     try {
-      setStatus('Writing Gameplay Forge definitions and project manifest to connected source…')
+      setStatus('Writing Gameplay Forge definitions, archetype loadouts and project manifest to connected source…')
       const written = await saveSkillboundWorkspaceToProjectFolder(workspace)
       const saved = saveSkillboundWorkspace(written)
       setWorkspace(saved)
@@ -226,7 +227,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
 
   return <div className="gameplay-forge-page">
     <header className="gameplay-forge-toolbar">
-      <div><span className="eyebrow">SKILLBOUND / RUNTIME CONTENT</span><strong>Gameplay Forge</strong><small>Create definitions here → author presentation in specialized Forge tools → runtime consumes the same project data</small></div>
+      <div><span className="eyebrow">SKILLBOUND / RUNTIME CONTENT</span><strong>Gameplay Forge</strong><small>Author the player, archetypes and reusable combat content here → runtime consumes the same project data</small></div>
       <div className="gameplay-forge-toolbar-actions">
         <button onClick={() => void refreshAssets()}><Library size={14}/> Refresh Library</button>
         <button onClick={() => onOpenTool('world')}><CircleGauge size={14}/> Play in World Forge</button>
@@ -264,13 +265,14 @@ export default function GameplayForge({ onOpenTool }: Props) {
         <div className="gameplay-forge-panel-title"><Check size={14}/> RUNTIME BINDINGS</div>
         <BindingRow label="Player character" bound={Boolean(workspace.gameplay.player.characterAssetId)}/>
         <BindingRow label="Player animations" bound={Boolean(workspace.gameplay.player.animationAssetId)}/>
+        <BindingRow label="Archetype loadouts" bound={Boolean(workspace.gameplay.player.archetypeLoadouts && Object.keys(workspace.gameplay.player.archetypeLoadouts).length === 3)}/>
         <BindingRow label="Enemy characters" bound={workspace.gameplay.enemies.some((entry) => Boolean(entry.characterAssetId))}/>
         <BindingRow label="Enemy animations" bound={workspace.gameplay.enemies.some((entry) => Boolean(entry.animationAssetId))}/>
         <BindingRow label="Ability VFX" bound={workspace.gameplay.abilities.some((entry) => Boolean(entry.vfxAssetId))}/>
         <BindingRow label="Enemy VFX" bound={workspace.gameplay.enemies.some((entry) => Boolean(entry.attackVfxAssetId || entry.hitVfxAssetId || entry.deathVfxAssetId))}/>
         <BindingRow label="Item models" bound={workspace.gameplay.items.some((entry) => Boolean(entry.modelAssetId))}/>
-        <div className="gameplay-forge-runtime-note"><strong>Safe deletion</strong><p>Forge blocks deletion while another player, encounter, boss or loot definition still references the selected content.</p></div>
-        <div className="gameplay-forge-runtime-note"><strong>Source paths</strong><p>New definitions automatically receive the correct project manifest path. Write Source creates the JSON and removes stale definition files in the connected Skillbound folder.</p></div>
+        <div className="gameplay-forge-runtime-note"><strong>Archetype resolution</strong><p>Vanguard, Ranger and Arcanist resolve their authored HP, movement, dodge, LMB, Q and starting gear before entering either overworld or dungeon runtime.</p></div>
+        <div className="gameplay-forge-runtime-note"><strong>Safe deletion</strong><p>Forge blocks deletion while another player, archetype, encounter, boss or loot definition still references the selected content.</p></div>
         <div className="gameplay-forge-library-count"><Boxes size={15}/><span><strong>{assets.length}</strong> shared Library assets</span></div>
       </aside>
     </div>
@@ -290,17 +292,18 @@ function EmptyDefinition({ label, onCreate }: { label: string; onCreate: () => v
 function PlayerEditor({ value, gameplay, assets, onPatch, onImportAnimation }: { value: ForgePlayerDefinition; gameplay: ForgeGameplayContent; assets: LibraryAsset[]; onPatch: (patch: Partial<ForgePlayerDefinition>) => void; onImportAnimation: (file: File) => Promise<void> }) {
   const abilityOptions = gameplay.abilities.map((ability) => [ability.id, ability.name] as [string, string])
   const itemOptions = gameplay.items.map((item) => [item.id, item.name] as [string, string])
-  return <EditorSection title="Player runtime" subtitle="Movement, survivability, ability loadout, starting item and visual bindings used by Forge Play Mode.">
+  return <EditorSection title="Player runtime" subtitle="Base fallback values plus three fully authored playable archetypes. Character roles resolve these loadouts at runtime.">
     <FieldGrid>
       <TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/>
-      <NumberField label="Max health" value={value.maxHealth} min={1} max={5000} step={5} onChange={(maxHealth) => onPatch({ maxHealth })}/>
-      <NumberField label="Move speed" value={value.moveSpeed} min={1} max={30} step={0.1} onChange={(moveSpeed) => onPatch({ moveSpeed })}/>
-      <NumberField label="Dodge distance" value={value.dodgeDistance} min={1} max={15} step={0.1} onChange={(dodgeDistance) => onPatch({ dodgeDistance })}/>
-      <NumberField label="Dodge cooldown" value={value.dodgeCooldown} min={0.1} max={10} step={0.05} onChange={(dodgeCooldown) => onPatch({ dodgeCooldown })}/>
-      <SelectField label="Primary ability · LMB" value={value.basicAbility} options={abilityOptions} onChange={(basicAbility) => onPatch({ basicAbility })}/>
-      <SelectField label="Active ability · Q" value={value.activeAbilities[0] ?? ''} options={[["","None"], ...abilityOptions]} onChange={(abilityId) => onPatch({ activeAbilities: abilityId ? [abilityId] : [] })}/>
-      <SelectField label="Starting item" value={value.startingItems[0] ?? ''} options={[["","None"], ...itemOptions]} onChange={(itemId) => onPatch({ startingItems: itemId ? [itemId] : [] })}/>
+      <NumberField label="Fallback max health" value={value.maxHealth} min={1} max={5000} step={5} onChange={(maxHealth) => onPatch({ maxHealth })}/>
+      <NumberField label="Fallback move speed" value={value.moveSpeed} min={1} max={30} step={0.1} onChange={(moveSpeed) => onPatch({ moveSpeed })}/>
+      <NumberField label="Fallback dodge distance" value={value.dodgeDistance} min={1} max={15} step={0.1} onChange={(dodgeDistance) => onPatch({ dodgeDistance })}/>
+      <NumberField label="Fallback dodge cooldown" value={value.dodgeCooldown} min={0.1} max={10} step={0.05} onChange={(dodgeCooldown) => onPatch({ dodgeCooldown })}/>
+      <SelectField label="Fallback primary · LMB" value={value.basicAbility} options={abilityOptions} onChange={(basicAbility) => onPatch({ basicAbility })}/>
+      <SelectField label="Fallback active · Q" value={value.activeAbilities[0] ?? ''} options={[["","None"], ...abilityOptions]} onChange={(abilityId) => onPatch({ activeAbilities: abilityId ? [abilityId] : [] })}/>
+      <SelectField label="Fallback starting item" value={value.startingItems[0] ?? ''} options={[["","None"], ...itemOptions]} onChange={(itemId) => onPatch({ startingItems: itemId ? [itemId] : [] })}/>
     </FieldGrid>
+    <ArchetypeLoadoutEditor player={value} gameplay={gameplay} onPatch={onPatch}/>
     <AssetBinding title="Character Forge rig" value={value.characterAssetId} assets={assets} categories={['characters']} onChange={(characterAssetId) => onPatch({ characterAssetId })}/>
     <AssetBinding title="Animation set" value={value.animationAssetId} assets={assets} categories={['animations']} onChange={(animationAssetId) => onPatch({ animationAssetId })}>
       <label className="gameplay-inline-upload">Import animation GLB<input type="file" accept=".glb,model/gltf-binary" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportAnimation(file); event.currentTarget.value = '' }}/></label>
@@ -336,7 +339,7 @@ function AbilityEditor({ value, assets, onPatch }: { value: ForgeAbilityDefiniti
 }
 
 function ItemEditor({ value, assets, onPatch }: { value: ForgeItemDefinition; assets: LibraryAsset[]; onPatch: (patch: Partial<ForgeItemDefinition>) => void }) {
-  return <EditorSection title={value.name} subtitle="Quick stat editing here; use Item Forge for taxonomy, master model, icon, drop and equipped presentation."><FieldGrid><TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/><SelectField label="Rarity" value={value.rarity} options={[["common","Common"],["magic","Magic"],["rare","Rare"]]} onChange={(rarity) => onPatch({ rarity: rarity as ForgeItemDefinition['rarity'] })}/><NumberField label="Damage bonus" value={value.damageBonus} min={0} max={2000} step={1} onChange={(damageBonus) => onPatch({ damageBonus })}/><ColorField label="Drop color" value={value.color} onChange={(color) => onPatch({ color })}/></FieldGrid><AssetBinding title="Compatibility model" value={value.modelAssetId} assets={assets} categories={['props']} onChange={(modelAssetId) => onPatch({ modelAssetId })}/></EditorSection>
+  return <EditorSection title={value.name} subtitle="Quick stat editing here; use Item Forge for taxonomy, defense, master model, icon, drop and equipped presentation."><FieldGrid><TextField label="Name" value={value.name} onChange={(name) => onPatch({ name })}/><SelectField label="Rarity" value={value.rarity} options={[["common","Common"],["magic","Magic"],["rare","Rare"]]} onChange={(rarity) => onPatch({ rarity: rarity as ForgeItemDefinition['rarity'] })}/><NumberField label="Damage bonus" value={value.damageBonus} min={0} max={2000} step={1} onChange={(damageBonus) => onPatch({ damageBonus })}/><ColorField label="Drop color" value={value.color} onChange={(color) => onPatch({ color })}/></FieldGrid><AssetBinding title="Compatibility model" value={value.modelAssetId} assets={assets} categories={['props']} onChange={(modelAssetId) => onPatch({ modelAssetId })}/></EditorSection>
 }
 
 function LootEditor({ value, gameplay, onPatch }: { value: ForgeLootTableDefinition; gameplay: ForgeGameplayContent; onPatch: (patch: Partial<ForgeLootTableDefinition>) => void }) {

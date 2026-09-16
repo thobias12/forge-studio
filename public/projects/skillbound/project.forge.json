@@ -4,7 +4,7 @@
   "id": "skillbound",
   "name": "Skillbound",
   "generationVersion": 2,
-  "contentRevision": 6,
+  "contentRevision": 7,
   "runtime": {
     "renderer": "three",
     "entryWorld": "act1",

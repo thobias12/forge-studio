@@ -7,6 +7,7 @@ import './gameplay-content-management.css'
 import './hud-runtime-layout.css'
 import './hud-runtime-orbs.css'
 import './ui-screen-polish.css'
+import './rpg-core-v145.css'
 
 // Keep the only safe global Three.js helper here. Dungeon visual/reference styling
 // is handled by the Map Studio renderer itself; globally patching Object3D.add

@@ -7,6 +7,10 @@ export type SkillboundArchetypeLoadout = {
   basicAbility: string
   activeAbilities: string[]
   startingItems: string[]
+  maxHealth?: number
+  moveSpeed?: number
+  dodgeDistance?: number
+  dodgeCooldown?: number
 }
 
 type PlayerWithArchetypes = ForgePlayerDefinition & {
@@ -18,6 +22,10 @@ export function resolvePlayerLoadout(player: ForgePlayerDefinition, role?: Forge
     basicAbility: player.basicAbility,
     activeAbilities: [...player.activeAbilities],
     startingItems: [...player.startingItems],
+    maxHealth: player.maxHealth,
+    moveSpeed: player.moveSpeed,
+    dodgeDistance: player.dodgeDistance,
+    dodgeCooldown: player.dodgeCooldown,
   }
   if (role !== 'melee' && role !== 'ranged' && role !== 'caster') return base
   const loadout = (player as PlayerWithArchetypes).archetypeLoadouts?.[role]
@@ -26,6 +34,10 @@ export function resolvePlayerLoadout(player: ForgePlayerDefinition, role?: Forge
     basicAbility: loadout.basicAbility || base.basicAbility,
     activeAbilities: loadout.activeAbilities?.length ? [...loadout.activeAbilities] : [...base.activeAbilities],
     startingItems: loadout.startingItems ? [...loadout.startingItems] : [...base.startingItems],
+    maxHealth: finiteOr(loadout.maxHealth, base.maxHealth),
+    moveSpeed: finiteOr(loadout.moveSpeed, base.moveSpeed),
+    dodgeDistance: finiteOr(loadout.dodgeDistance, base.dodgeDistance),
+    dodgeCooldown: finiteOr(loadout.dodgeCooldown, base.dodgeCooldown),
   } : base
 }
 
@@ -35,6 +47,10 @@ export function resolveGameplayForRole(gameplay: ForgeGameplayContent, role?: Fo
     ...gameplay,
     player: {
       ...gameplay.player,
+      maxHealth: loadout.maxHealth ?? gameplay.player.maxHealth,
+      moveSpeed: loadout.moveSpeed ?? gameplay.player.moveSpeed,
+      dodgeDistance: loadout.dodgeDistance ?? gameplay.player.dodgeDistance,
+      dodgeCooldown: loadout.dodgeCooldown ?? gameplay.player.dodgeCooldown,
       basicAbility: loadout.basicAbility,
       activeAbilities: [...loadout.activeAbilities],
       startingItems: [...loadout.startingItems],
@@ -46,4 +62,8 @@ export function archetypeLabel(role?: ForgeCharacterRole) {
   if (role === 'ranged') return 'Ranger'
   if (role === 'caster') return 'Arcanist'
   return 'Vanguard'
+}
+
+function finiteOr(value: number | undefined, fallback: number | undefined) {
+  return Number.isFinite(value) ? value : fallback
 }

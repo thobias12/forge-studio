@@ -15,19 +15,31 @@
       "label": "Vanguard",
       "basicAbility": "iron-cleave",
       "activeAbilities": ["shield-bash"],
-      "startingItems": ["rusted-sword", "worn-buckler", "road-worn-chest"]
+      "startingItems": ["rusted-sword", "worn-buckler", "road-worn-chest"],
+      "maxHealth": 120,
+      "moveSpeed": 8.6,
+      "dodgeDistance": 4.6,
+      "dodgeCooldown": 1.1
     },
     "ranged": {
       "label": "Ranger",
       "basicAbility": "quick-shot",
       "activeAbilities": ["volley"],
-      "startingItems": ["hunter-bow", "gripwrap-gloves", "trail-boots"]
+      "startingItems": ["hunter-bow", "gripwrap-gloves", "trail-boots"],
+      "maxHealth": 90,
+      "moveSpeed": 10.4,
+      "dodgeDistance": 6.0,
+      "dodgeCooldown": 0.78
     },
     "caster": {
       "label": "Arcanist",
       "basicAbility": "arc-bolt",
       "activeAbilities": ["ember-burst"],
-      "startingItems": ["ash-staff", "marsh-hood", "drowned-greaves"]
+      "startingItems": ["ash-staff", "marsh-hood", "drowned-greaves"],
+      "maxHealth": 82,
+      "moveSpeed": 9.6,
+      "dodgeDistance": 5.4,
+      "dodgeCooldown": 0.92
     }
   }
 }

@@ -10,6 +10,15 @@ export type ForgeEquipmentStats = {
   defense: number
 }
 
+export type ForgeEquipmentComparison = {
+  slot?: ForgeEquipmentSlot
+  before: ForgeEquipmentStats
+  after: ForgeEquipmentStats
+  damageDelta: number
+  defenseDelta: number
+  replaced: Array<{ slot: ForgeEquipmentSlot; itemId: string }>
+}
+
 export function itemEquipmentSlot(item: ForgeItemDefinition): ForgeEquipmentSlot | undefined {
   const slot = itemClassification(item).equipSlot
   return slot === 'None' ? undefined : slot as ForgeEquipmentSlot
@@ -53,6 +62,23 @@ export function equipItemIntoState(gameplay: ForgeGameplayContent, current: Forg
     if (mainHand && isTwoHandedSubtype(itemClassification(mainHand).subtype)) delete next.MainHand
   }
   return { equipment: next, slot }
+}
+
+export function compareEquipmentChange(gameplay: ForgeGameplayContent, current: ForgeEquipmentState, item: ForgeItemDefinition): ForgeEquipmentComparison {
+  const before = equipmentStats(gameplay, current)
+  const result = equipItemIntoState(gameplay, current, item)
+  const after = equipmentStats(gameplay, result.equipment)
+  const replaced = FORGE_EQUIPMENT_SLOTS
+    .filter((slot) => current[slot] && current[slot] !== result.equipment[slot])
+    .map((slot) => ({ slot, itemId: current[slot]! }))
+  return {
+    slot: result.slot,
+    before,
+    after,
+    damageDelta: after.damageBonus - before.damageBonus,
+    defenseDelta: after.defense - before.defense,
+    replaced,
+  }
 }
 
 export function isItemEquipped(equipment: ForgeEquipmentState | undefined, itemId: string) {
