@@ -167,7 +167,7 @@ export default function App() {
       .filter((item) => item.label.toLowerCase().includes(needle) || item.id.includes(needle))
       .map((item) => ({ key: `tool:${item.id}`, name: item.label, detail: 'Forge tool', page: item.id }))
     const contentResults = searchForgeRegistry(registry, searchQuery)
-      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: (entry.page === 'mocap' || entry.page === 'animationbindings' ? 'animations' : entry.page) as Page }))
+      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: (entry.page === 'mocap' ? 'animations' : entry.page) as Page }))
     return [...toolResults, ...contentResults].slice(0, 9)
   }, [registry, searchQuery])
 
