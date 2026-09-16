@@ -2,6 +2,13 @@ export type SkillboundHudModuleId = 'health' | 'hotbar' | 'objective' | 'target'
 export type SkillboundHudAnchor = 'top-left' | 'top-center' | 'top-right' | 'center-left' | 'center' | 'center-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 export type SkillboundHudPresetId = 'classic-arpg' | 'compact' | 'minimal' | 'ultrawide'
 
+export type HudEditorGrid = {
+  columns: number
+  rows: number
+  snap: boolean
+  show: boolean
+}
+
 export type SkillboundHudModule = {
   id: SkillboundHudModuleId
   visible: boolean
@@ -16,6 +23,7 @@ export type SkillboundHudLayout = {
   format: 'forge-hud-layout'
   version: 1
   preset: SkillboundHudPresetId | 'custom'
+  grid: HudEditorGrid
   modules: Record<SkillboundHudModuleId, SkillboundHudModule>
 }
 
@@ -41,6 +49,8 @@ export const HUD_ANCHORS: Array<{ id: SkillboundHudAnchor; label: string }> = [
   { id: 'bottom-center', label: 'Bottom center' },
   { id: 'bottom-right', label: 'Bottom right' },
 ]
+
+const DEFAULT_GRID: HudEditorGrid = { columns: 24, rows: 14, snap: true, show: true }
 
 const classic = layout('classic-arpg', {
   health: module('health', 'bottom-center', -15.5, -2.1, 1, 1),
@@ -117,7 +127,13 @@ export function normalizeHudLayout(value?: Partial<SkillboundHudLayout>) {
       opacity: clampNumber(stored.opacity, .2, 1, modules[meta.id].opacity),
     }
   }
-  return { format: 'forge-hud-layout' as const, version: 1 as const, preset: value.preset ?? 'custom', modules }
+  const grid = {
+    columns: clampInt(value.grid?.columns, 8, 48, fallback.grid.columns),
+    rows: clampInt(value.grid?.rows, 6, 30, fallback.grid.rows),
+    snap: value.grid?.snap !== false,
+    show: value.grid?.show !== false,
+  }
+  return { format: 'forge-hud-layout' as const, version: 1 as const, preset: value.preset ?? 'custom', grid, modules }
 }
 
 export function patchHudModule(layoutValue: SkillboundHudLayout, id: SkillboundHudModuleId, patch: Partial<Omit<SkillboundHudModule, 'id'>>) {
@@ -126,6 +142,24 @@ export function patchHudModule(layoutValue: SkillboundHudLayout, id: SkillboundH
     preset: 'custom' as const,
     modules: { ...layoutValue.modules, [id]: { ...layoutValue.modules[id], ...patch, id } },
   }
+}
+
+export function patchHudGrid(layoutValue: SkillboundHudLayout, patch: Partial<HudEditorGrid>) {
+  return {
+    ...layoutValue,
+    grid: {
+      columns: clampInt(patch.columns ?? layoutValue.grid.columns, 8, 48, layoutValue.grid.columns),
+      rows: clampInt(patch.rows ?? layoutValue.grid.rows, 6, 30, layoutValue.grid.rows),
+      snap: patch.snap ?? layoutValue.grid.snap,
+      show: patch.show ?? layoutValue.grid.show,
+    },
+  }
+}
+
+export function snapHudOffset(value: number, axis: 'x' | 'y', grid: HudEditorGrid) {
+  if (!grid.snap) return Math.round(value * 10) / 10
+  const step = 100 / (axis === 'x' ? grid.columns : grid.rows)
+  return Math.round(value / step) * step
 }
 
 export function hudModuleStyle(moduleValue: SkillboundHudModule, globalScale = 1): Record<string, string | number> {
@@ -159,11 +193,17 @@ function module(id: SkillboundHudModuleId, anchor: SkillboundHudAnchor, offsetX:
 }
 
 function layout(preset: SkillboundHudPresetId, modules: Record<SkillboundHudModuleId, SkillboundHudModule>): SkillboundHudLayout {
-  return { format: 'forge-hud-layout', version: 1, preset, modules }
+  return { format: 'forge-hud-layout', version: 1, preset, grid: { ...DEFAULT_GRID }, modules }
 }
 
 function cloneHudLayout(value: SkillboundHudLayout): SkillboundHudLayout {
   return JSON.parse(JSON.stringify(value)) as SkillboundHudLayout
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number) {
+  const number = Math.round(Number(value))
+  if (!Number.isFinite(number)) return fallback
+  return Math.max(min, Math.min(max, number))
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {
