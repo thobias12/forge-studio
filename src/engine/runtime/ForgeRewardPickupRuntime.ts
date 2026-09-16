@@ -211,7 +211,7 @@ function spawnPieces(runtime: RewardRuntime, enemyId: string, kind: 'gold' | 'xp
       amount,
       group,
       baseY,
-      age: index * -.055,
+      age: index * -.025,
       magnet: false,
     })
   })
@@ -225,22 +225,23 @@ function updateRewardPickups(runtime: RewardRuntime, delta: number) {
     const dx = runtime.player.position.x - pickup.group.position.x
     const dz = runtime.player.position.z - pickup.group.position.z
     const horizontalDistance = Math.hypot(dx, dz)
-    if (horizontalDistance < 3.15) pickup.magnet = true
+    if (horizontalDistance < 3.6) pickup.magnet = true
 
     if (!pickup.magnet) {
-      pickup.group.position.y = pickup.baseY + Math.sin(pickup.age * 5.5) * (pickup.kind === 'xp' ? .09 : .035)
-      pickup.group.rotation.y += delta * (pickup.kind === 'xp' ? 3.6 : 5.2)
-      const appear = Math.min(1, pickup.age * 5)
+      pickup.group.position.y = pickup.baseY + Math.sin(pickup.age * 6.2) * (pickup.kind === 'xp' ? .08 : .03)
+      pickup.group.rotation.y += delta * (pickup.kind === 'xp' ? 4.8 : 6.8)
+      const appear = Math.min(1, pickup.age * 7)
       pickup.group.scale.setScalar(.55 + appear * .45)
       continue
     }
 
-    const target = runtime.player.position.clone().add(new THREE.Vector3(0, .85, 0))
-    const attraction = 1 - Math.exp(-delta * (6.2 + Math.min(8, pickup.age * 2.4)))
+    const target = runtime.player.position.clone().add(new THREE.Vector3(0, .9, 0))
+    const distance = pickup.group.position.distanceTo(target)
+    const attraction = 1 - Math.exp(-delta * (12.5 + Math.min(12, distance * 3.2)))
     pickup.group.position.lerp(target, attraction)
-    pickup.group.rotation.y += delta * 8
-    pickup.group.scale.multiplyScalar(Math.max(.9, 1 - delta * .55))
-    if (pickup.group.position.distanceTo(target) > .34) continue
+    pickup.group.rotation.y += delta * 13
+    pickup.group.scale.multiplyScalar(Math.max(.86, 1 - delta * 1.4))
+    if (pickup.group.position.distanceTo(target) > .38) continue
     collectReward(runtime, pickup)
   }
 }
