@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { HudPickupFlights } from './HudPickupFlights'
+import SkillboundOrb from './SkillboundOrb'
 import { loadSkillboundWorkspace, type ForgeGameplayContent, type ForgeProjectDungeonDefinition } from '../engine/forgeProject'
 import type { ForgeBossDefinition, ForgeEncounterProfile } from '../engine/encounterForge'
+import type { ForgeCharacterBlueprint } from '../engine/characterBlueprint'
 import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine/runtime/ForgeDungeonRuntime'
 import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
 import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
 import { installDungeonRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
+import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
 import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
 import '../hud-runtime-rewards.css'
@@ -14,6 +17,7 @@ import '../hud-runtime-rewards.css'
 installDungeonRewardMethods(ForgeDungeonRuntime)
 installEncounterBossRuntime(ForgeDungeonRuntime)
 installDungeonRewardPickupRuntime(ForgeDungeonRuntime)
+installPlayerProfileRuntime(ForgeDungeonRuntime)
 
 type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension
 
@@ -41,6 +45,9 @@ type Props = {
   gameplay: ForgeGameplayContent
   projectId: string
   initialState: ForgeAdventurePlayerState
+  characterBlueprint?: ForgeCharacterBlueprint
+  paused?: boolean
+  onSnapshot?: (state: DungeonRuntimeState) => void
   uiTheme?: SkillboundUiTheme
   hudLayout?: SkillboundHudLayout
   itemIcons: Record<string, string>
@@ -52,7 +59,7 @@ type AuthoredCombatProfiles = {
   bosses: ForgeBossDefinition[]
 }
 
-export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, projectId, initialState, uiTheme, hudLayout, itemIcons, onExit }: Props) {
+export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, projectId, initialState, characterBlueprint, paused = false, onSnapshot, uiTheme, hudLayout, itemIcons, onExit }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const runtimeRef = useRef<ForgeDungeonRuntime | null>(null)
   const [snapshot, setSnapshot] = useState<DungeonRuntimeState>({ ...EMPTY, ...initialState, maxHealth: gameplay.player.maxHealth })
@@ -79,12 +86,18 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   useEffect(() => {
     const host = hostRef.current
     if (!host || !profiles) return
+    const handleState = (state: ForgeDungeonRuntimeSnapshot) => {
+      const next = state as DungeonRuntimeState
+      setSnapshot(next)
+      onSnapshot?.(next)
+    }
     const runtime = new ForgeDungeonRuntime(host, dungeon, gameplay, initialState, {
       projectId,
-      onState: (state: ForgeDungeonRuntimeSnapshot) => setSnapshot(state as DungeonRuntimeState),
+      onState: handleState,
       onExit,
       encounterProfiles: profiles.encounters,
       bossProfiles: profiles.bosses,
+      characterBlueprint,
     } as any)
     const rewardRuntime = runtime as unknown as {
       __forgeGold?: number
@@ -101,22 +114,30 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     rewardRuntime.__forgeRewardEvents = []
     rewardRuntime.__forgeRewardPickups = []
     runtimeRef.current = runtime
-    setSnapshot(runtime.getSnapshot() as DungeonRuntimeState)
+    ;(runtime as any).setPaused?.(paused)
+    const initial = runtime.getSnapshot() as DungeonRuntimeState
+    setSnapshot(initial)
+    onSnapshot?.(initial)
     return () => {
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
-  }, [dungeon, gameplay, initialState, onExit, profiles, projectId])
+  }, [dungeon, gameplay, initialState, onExit, profiles, projectId, characterBlueprint])
 
-  const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
+  useEffect(() => {
+    ;(runtimeRef.current as any)?.setPaused?.(paused)
+  }, [paused])
+
   const targetModule: SkillboundHudModuleId = snapshot.target?.boss ? 'boss' : 'target'
   const xpPercent = Math.max(0, Math.min(100, snapshot.xp / Math.max(1, snapshot.xpToNext) * 100))
+  const skillCooldownMax = Math.max(.1, skillAbility?.cooldown ?? 1)
+  const mana = Math.round(100 - Math.min(1, snapshot.skillCooldown / skillCooldownMax) * 28)
 
   return <div className={`skillbound-runtime-host skillbound-dungeon-runtime ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!profiles && <div className="skillbound-runtime-loading">Loading Encounter Forge + Boss Forge definitions…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>HOLLOW VAULT · HUD FORGE 2.0</strong>
-      <span>Encounter Forge + Boss Forge · Skillbound camera · WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
+      <strong>HOLLOW VAULT · SKILLBOUND</strong>
+      <span>WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact · Esc menu</span>
     </div>
 
     <HudPickupFlights events={snapshot.pickupEvents} layout={normalizedHudLayout}/>
@@ -125,9 +146,8 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     {snapshot.interaction && hudModuleVisible(normalizedHudLayout, 'interaction') && <div className={`skillbound-interaction-prompt ${snapshot.interaction.ready ? 'ready' : 'locked'}`} style={moduleStyle('interaction')}><kbd>E</kbd><strong>{snapshot.interaction.label.replace(/^E · /, '')}</strong></div>}
     {snapshot.message && hudModuleVisible(normalizedHudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
 
-    {hudModuleVisible(normalizedHudLayout, 'health') && <div className="skillbound-health-orb" style={{ ...moduleStyle('health'), '--health': `${healthPercent}%` } as CSSProperties}>
-      <strong>{Math.ceil(snapshot.health)}</strong><span>/{snapshot.maxHealth}</span>
-    </div>}
+    {hudModuleVisible(normalizedHudLayout, 'health') && <SkillboundOrb kind="health" value={snapshot.health} max={snapshot.maxHealth} style={moduleStyle('health')}/>} 
+    {hudModuleVisible(normalizedHudLayout, 'resource') && <SkillboundOrb kind="mana" value={mana} max={100} style={moduleStyle('resource')}/>} 
     {hudModuleVisible(normalizedHudLayout, 'hotbar') && <div className="skillbound-skillbar" style={moduleStyle('hotbar')}>
       <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
       <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
