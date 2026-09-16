@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Eye, EyeOff, Grip, RotateCcw } from 'lucide-react'
 import {
   HUD_ANCHORS,
@@ -17,9 +17,17 @@ import {
   type SkillboundHudModuleId,
   type SkillboundHudPresetId,
 } from '../lib/hudForge'
+import {
+  HUD_MOTION_OPTIONS,
+  HudMotionPreviewLayer,
+  motionTarget,
+  type HudMotionEvent,
+  type HudMotionKind,
+} from './HudMotionPreview'
 import '../hud-forge.css'
 import '../hud-forge-full.css'
 import '../hud-orb-polish.css'
+import '../hud-motion-preview.css'
 
 type EditorProps = {
   layout: SkillboundHudLayout
@@ -33,6 +41,11 @@ const ORIENTATION_MODULES: SkillboundHudModuleId[] = ['hotbar', 'potions', 'buff
 
 export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
+  const [motion, setMotion] = useState<HudMotionEvent>()
+
+  const triggerMotion = (kind: HudMotionKind) => {
+    setMotion((previous) => ({ id: (previous?.id ?? 0) + 1, kind }))
+  }
 
   const startDrag = (event: ReactPointerEvent, id: SkillboundHudModuleId) => {
     if (event.button !== 0) return
@@ -72,21 +85,29 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     {layout.preview === 'low-health' && <div className="hud-low-health-vignette"/>}
     {layout.grid.show && <div className="hud-layout-grid"/>}
     <div className="hud-safe-frame"><span>SAFE AREA</span></div>
+
     {HUD_MODULES.map(({ id }) => {
       const module = layout.modules[id]
       const contextual = hudModuleVisibleInPreview(layout, id)
       if (!module.visible || (!contextual && selected !== id)) return null
+      const motionActive = Boolean(motion && motionTarget(motion.kind) === id)
       return <div
-        key={id}
-        className={`hud-module-shell module-${id} ${selected === id ? 'selected' : ''} ${!contextual ? 'context-preview' : ''}`}
+        key={`${id}-${motionActive ? motion?.id ?? 0 : 0}`}
+        className={`hud-module-shell module-${id} ${selected === id ? 'selected' : ''} ${!contextual ? 'context-preview' : ''} ${motionActive ? 'hud-motion-target' : ''}`}
         style={hudModuleStyle(module) as CSSProperties}
         onPointerDown={(event) => startDrag(event, id)}
         onClick={(event) => { event.stopPropagation(); onSelect(id) }}
       >
         <span className="hud-module-drag"><Grip size={10}/></span>
-        <HudModuleMock id={id} module={module} preview={layout.preview}/>
+        <HudModuleMock id={id} module={module} preview={layout.preview} motionKind={motionActive ? motion?.kind : undefined}/>
       </div>
     })}
+
+    <HudMotionPreviewLayer layout={layout} motion={motion}/>
+    <div className="hud-motion-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+      <span>MOTION PREVIEW</span>
+      {HUD_MOTION_OPTIONS.map((option) => <button key={option.id} title={option.detail} onClick={() => triggerMotion(option.id)}>{option.label}</button>)}
+    </div>
   </div>
 }
 
@@ -153,14 +174,14 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
   </>
 }
 
-function HudModuleMock({ id, module, preview }: { id: SkillboundHudModuleId; module: SkillboundHudModule; preview: SkillboundHudLayout['preview'] }) {
+function HudModuleMock({ id, module, preview, motionKind }: { id: SkillboundHudModuleId; module: SkillboundHudModule; preview: SkillboundHudLayout['preview']; motionKind?: HudMotionKind }) {
   const critical = preview === 'low-health'
-  if (id === 'health') return <div className={`hud-preview-orb life display-${module.displayMode}`}><div className="orb-liquid" style={{ '--orb-fill': critical ? '24%' : '78%' } as CSSProperties}/><strong>{module.showNumbers ? critical ? '214' : '1,248' : ''}</strong>{module.showLabels && <small>Health</small>}</div>
-  if (id === 'resource') return <div className={`hud-preview-orb resource display-${module.displayMode}`}><div className="orb-liquid" style={{ '--orb-fill': '68%' } as CSSProperties}/><strong>{module.showNumbers ? '462' : ''}</strong>{module.showLabels && <small>Mana</small>}</div>
-  if (id === 'hotbar') return <div className={`hud-preview-hotbar ${module.orientation}`}>{Array.from({ length: module.slotCount }).map((_, index) => { const key = ['LMB','Q','W','E','R','SPACE'][index] ?? `${index + 1}`; return <div key={index} className={`skill-${index}`}><kbd>{key}</kbd><i/><span>{module.showLabels ? ['Attack','Soul Cleave','Grave Step','Ward','Nova','Dodge'][index] ?? 'Skill' : ''}</span>{module.showNumbers && index === 1 ? <em>2.4</em> : null}</div>})}</div>
+  if (id === 'health') return <div className={`hud-preview-orb life display-${module.displayMode} ${motionKind === 'health' ? 'motion-active' : ''}`}><div className="orb-liquid" style={{ '--orb-fill': critical ? '24%' : '78%' } as CSSProperties}/><strong>{module.showNumbers ? critical ? '214' : '1,248' : ''}</strong>{module.showLabels && <small>Health</small>}</div>
+  if (id === 'resource') return <div className={`hud-preview-orb resource display-${module.displayMode} ${motionKind === 'mana' ? 'motion-active' : ''}`}><div className="orb-liquid" style={{ '--orb-fill': '68%' } as CSSProperties}/><strong>{module.showNumbers ? '462' : ''}</strong>{module.showLabels && <small>Mana</small>}</div>
+  if (id === 'hotbar') return <div className={`hud-preview-hotbar ${module.orientation} ${motionKind === 'cooldown' ? 'motion-active' : ''}`}>{Array.from({ length: module.slotCount }).map((_, index) => { const key = ['LMB','Q','W','E','R','SPACE'][index] ?? `${index + 1}`; return <div key={index} className={`skill-${index}`}><kbd>{key}</kbd><i/><span>{module.showLabels ? ['Attack','Soul Cleave','Grave Step','Ward','Nova','Dodge'][index] ?? 'Skill' : ''}</span>{module.showNumbers && index === 1 ? <em>2.4</em> : null}</div>})}</div>
   if (id === 'potions') return <div className={`hud-preview-potions ${module.orientation}`}>{Array.from({ length: module.slotCount }).map((_, index) => <div key={index}><kbd>{index + 1}</kbd><i className={index % 2 ? 'mana' : 'life'}/>{module.showNumbers && <small>{index === 0 ? '3' : '5'}</small>}</div>)}</div>
-  if (id === 'xp') return <div className="hud-preview-xp"><span><b>LV 18</b>{module.showLabels && <em>VANGUARD</em>}{module.showNumbers && <small>64%</small>}</span><i><b style={{ width: '64%' }}/></i></div>
-  if (id === 'gold') return <div className="hud-preview-gold"><i/><span><strong>{module.showNumbers ? '12,840' : ''}</strong>{module.showLabels && <small>Gold</small>}</span></div>
+  if (id === 'xp') return <div className={`hud-preview-xp ${motionKind === 'xp' ? 'motion-active' : ''}`}><span><b>LV 18</b>{module.showLabels && <em>VANGUARD</em>}{module.showNumbers && <small>64%</small>}</span><i><b style={{ width: '64%' }}/></i></div>
+  if (id === 'gold') return <div className={`hud-preview-gold ${motionKind === 'gold' ? 'motion-active' : ''}`}><i/><span><strong>{module.showNumbers ? '12,840' : ''}</strong>{module.showLabels && <small>Gold</small>}</span></div>
   if (id === 'minimap') return <div className="hud-preview-minimap"><div className="map-path a"/><div className="map-path b"/><i className="player"/><i className="objective"/><i className="portal"/>{module.showLabels && <strong>DROWNED MARCH</strong>}</div>
   if (id === 'objective') return <div className="hud-preview-objective"><span>OBJECTIVE</span><strong>Break the Bone Seal</strong>{module.showLabels && <small>Reach the lower sanctum · 2/3</small>}</div>
   if (id === 'buffs' || id === 'debuffs') return <div className={`hud-preview-status ${id} ${module.orientation}`}>{Array.from({ length: Math.min(module.slotCount, 8) }).map((_, index) => <div key={index}><i/>{module.showNumbers && <small>{8 + index}s</small>}</div>)}</div>
@@ -169,7 +190,7 @@ function HudModuleMock({ id, module, preview }: { id: SkillboundHudModuleId; mod
   if (id === 'boss') return <div className="hud-preview-target boss"><div><strong>THE VAULT WARDEN</strong>{module.showNumbers && <span>6,840 / 9,200</span>}</div><i><b style={{ width: '74%' }}/></i>{module.showLabels && <small>PHASE II · BONE AEGIS</small>}</div>
   if (id === 'cast') return <div className="hud-preview-cast"><span>{module.showLabels ? 'SOUL CLEAVE' : ''}{module.showNumbers && <small>0.7s</small>}</span><i><b style={{ width: '68%' }}/></i></div>
   if (id === 'interaction') return <div className="hud-preview-interaction"><kbd>E</kbd><strong>{module.showLabels ? 'Enter Hollow Vault' : 'Interact'}</strong></div>
-  if (id === 'loot') return <div className={`hud-preview-feed ${module.orientation}`}>{Array.from({ length: Math.min(module.slotCount, 4) }).map((_, index) => <div key={index}><i/><span><strong>{['Rusted Sword','Crypt Sigil','42 Gold','Health Flask'][index]}</strong>{module.showLabels && <small>{index < 2 ? 'Rare pickup' : 'Collected'}</small>}</span></div>)}</div>
+  if (id === 'loot') return <div className={`hud-preview-feed ${module.orientation} ${motionKind === 'loot' ? 'motion-active' : ''}`}>{Array.from({ length: Math.min(module.slotCount, 4) }).map((_, index) => <div key={index}><i/><span><strong>{['Rusted Sword','Crypt Sigil','42 Gold','Health Flask'][index]}</strong>{module.showLabels && <small>{index < 2 ? 'Rare pickup' : 'Collected'}</small>}</span></div>)}</div>
   if (id === 'combatText') return <div className="hud-preview-combat-text"><strong>1,284</strong><b>CRIT 2,117</b><small>+186</small></div>
   return <div className="hud-preview-inventory"><header><span>INVENTORY</span><small>2 items</small></header><div><i/><span><strong>Rusted Sword</strong><small>Rare weapon</small></span><em>Equipped</em></div><div><i/><span><strong>Crypt Key</strong><small>Quest item</small></span><em>Use</em></div></div>
 }
