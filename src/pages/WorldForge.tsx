@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CheckCircle2, CircleDot, Eye, EyeOff, Globe2, MapPinned, Play, RefreshCcw, RotateCcw, Save, Shuffle, Square, StopCircle, Waypoints } from 'lucide-react'
 import WorldForgeViewport from '../components/WorldForgeViewport'
-import SkillboundPlayViewport from '../components/SkillboundPlayViewport'
+import SkillboundFrontend from '../components/SkillboundFrontend'
 import { generateGuidedRegion, randomWorldSeed } from '../engine/guidedWorld'
 import {
   clearSkillboundWorkspace,
@@ -108,9 +108,9 @@ export default function WorldForge() {
         <span className={generated.validation.valid ? 'validation-good' : 'validation-bad'}>{generated.validation.valid ? <CheckCircle2 size={13}/> : <Waypoints size={13}/>} {generated.validation.valid ? 'Navigation valid' : `${generated.validation.issues.length} issues`}</span>
       </div>
       <div className="world-forge-stage">
-        {playMode ? <SkillboundPlayViewport region={generated}/> : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome}/>} 
+        {playMode ? <SkillboundFrontend workspace={workspace} region={generated} onOpenWorld={() => setPlayMode(false)} onBackHome={() => setPlayMode(false)}/> : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome}/>} 
       </div>
-      <footer className="world-forge-status"><span>{status}</span><strong>{playMode ? 'Runtime is reading the same generated region shown by the editor.' : 'Geography → route → branches → landmarks → dressing.'}</strong></footer>
+      <footer className="world-forge-status"><span>{status}</span><strong>{playMode ? 'Full Skillbound frontend/runtime flow is using this generated region.' : 'Geography → route → branches → landmarks → dressing.'}</strong></footer>
     </main>
 
     <aside className="world-forge-right">
