@@ -4,16 +4,21 @@ import {
   HUD_ANCHORS,
   HUD_MODULES,
   HUD_PRESETS,
+  HUD_PREVIEW_MODES,
   cloneHudPreset,
   hudModuleStyle,
+  hudModuleVisibleInPreview,
   patchHudGrid,
   patchHudModule,
+  patchHudPreview,
   snapHudOffset,
   type SkillboundHudLayout,
+  type SkillboundHudModule,
   type SkillboundHudModuleId,
   type SkillboundHudPresetId,
 } from '../lib/hudForge'
 import '../hud-forge.css'
+import '../hud-forge-full.css'
 
 type EditorProps = {
   layout: SkillboundHudLayout
@@ -21,6 +26,9 @@ type EditorProps = {
   onSelect: (id: SkillboundHudModuleId) => void
   onChange: (layout: SkillboundHudLayout) => void
 }
+
+const SLOT_MODULES: SkillboundHudModuleId[] = ['hotbar', 'potions', 'buffs', 'debuffs', 'party', 'loot']
+const ORIENTATION_MODULES: SkillboundHudModuleId[] = ['hotbar', 'potions', 'buffs', 'debuffs', 'party', 'loot']
 
 export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -52,7 +60,7 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     window.addEventListener('pointerup', stop, { once: true })
   }
 
-  return <div className={`hud-forge-editor ${layout.grid.show ? 'hud-show-grid' : ''}`} ref={canvasRef} onPointerDown={() => onSelect(selected)} style={{ '--hud-grid-columns': layout.grid.columns, '--hud-grid-rows': layout.grid.rows } as CSSProperties}>
+  return <div className={`hud-forge-editor hud-preview-${layout.preview} ${layout.grid.show ? 'hud-show-grid' : ''}`} ref={canvasRef} onPointerDown={() => onSelect(selected)} style={{ '--hud-grid-columns': layout.grid.columns, '--hud-grid-rows': layout.grid.rows } as CSSProperties}>
     <div className="hud-forge-world">
       <div className="hud-forge-vignette"/>
       <div className="hud-forge-ground"/>
@@ -60,20 +68,22 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
       <div className="hud-forge-player"><i/><b/></div>
       <div className="hud-forge-enemy enemy-one"/><div className="hud-forge-enemy enemy-two"/>
     </div>
+    {layout.preview === 'low-health' && <div className="hud-low-health-vignette"/>}
     {layout.grid.show && <div className="hud-layout-grid"/>}
     <div className="hud-safe-frame"><span>SAFE AREA</span></div>
     {HUD_MODULES.map(({ id }) => {
       const module = layout.modules[id]
-      if (!module.visible) return null
+      const contextual = hudModuleVisibleInPreview(layout, id)
+      if (!module.visible || (!contextual && selected !== id)) return null
       return <div
         key={id}
-        className={`hud-module-shell module-${id} ${selected === id ? 'selected' : ''}`}
+        className={`hud-module-shell module-${id} ${selected === id ? 'selected' : ''} ${!contextual ? 'context-preview' : ''}`}
         style={hudModuleStyle(module) as CSSProperties}
         onPointerDown={(event) => startDrag(event, id)}
         onClick={(event) => { event.stopPropagation(); onSelect(id) }}
       >
         <span className="hud-module-drag"><Grip size={10}/></span>
-        <HudModuleMock id={id}/>
+        <HudModuleMock id={id} module={module} preview={layout.preview}/>
       </div>
     })}
   </div>
@@ -90,6 +100,11 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
 
   return <>
     <section className="hud-inspector-section">
+      <h3>Preview state</h3>
+      <div className="hud-preview-state-grid">{HUD_PREVIEW_MODES.map((mode) => <button key={mode.id} className={layout.preview === mode.id ? 'active' : ''} onClick={() => onChange(patchHudPreview(layout, mode.id))}><strong>{mode.label}</strong><small>{mode.detail}</small></button>)}</div>
+    </section>
+
+    <section className="hud-inspector-section">
       <h3>HUD layout preset</h3>
       <div className="hud-preset-grid">{HUD_PRESETS.map((preset) => <button key={preset.id} className={layout.preset === preset.id ? 'active' : ''} onClick={() => loadPreset(preset.id)}><strong>{preset.label}</strong><small>{preset.detail}</small></button>)}</div>
     </section>
@@ -104,11 +119,11 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
     </section>
 
     <section className="hud-inspector-section">
-      <div className="hud-inspector-heading"><div><h3>HUD modules</h3><small>Modules keep responsive anchors, but dragging can now snap to a grid.</small></div></div>
+      <div className="hud-inspector-heading"><div><h3>HUD modules</h3><small>Full player HUD. “Authored” modules are ready for gameplay data binding as those systems come online.</small></div></div>
       <div className="hud-module-list">{HUD_MODULES.map((module) => {
         const value = layout.modules[module.id]
         return <div key={module.id} className={`hud-module-row ${selected === module.id ? 'active' : ''}`}>
-          <button className="hud-module-main" onClick={() => onSelect(module.id)}><span><strong>{module.label}</strong><small>{module.detail}</small></span><em>{module.runtime}</em></button>
+          <button className="hud-module-main" onClick={() => onSelect(module.id)}><span><strong>{module.label}</strong><small>{module.detail}</small></span><em className={module.runtime === 'Live' ? 'live' : ''}>{module.runtime}</em></button>
           <button className="hud-visibility" title={value.visible ? 'Hide module' : 'Show module'} onClick={() => onChange(patchHudModule(layout, module.id, { visible: !value.visible }))}>{value.visible ? <Eye size={13}/> : <EyeOff size={13}/>}</button>
         </div>
       })}</div>
@@ -121,19 +136,34 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
       <HudRange label="Vertical offset" value={current.offsetY} min={-40} max={40} step={.1} suffix={`${current.offsetY.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetY: snapHudOffset(value, 'y', layout.grid) }))}/>
       <HudRange label="Module scale" value={current.scale} min={.55} max={1.7} step={.01} suffix={`${Math.round(current.scale * 100)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { scale: value }))}/>
       <HudRange label="Opacity" value={current.opacity} min={.2} max={1} step={.01} suffix={`${Math.round(current.opacity * 100)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { opacity: value }))}/>
-      <label className="hud-visible-switch"><input type="checkbox" checked={current.visible} onChange={(event) => onChange(patchHudModule(layout, selected, { visible: event.target.checked }))}/><span>Visible in Skillbound runtime</span></label>
+      <label className="hud-field"><span>Display</span><select value={current.displayMode} onChange={(event) => onChange(patchHudModule(layout, selected, { displayMode: event.target.value as SkillboundHudModule['displayMode'] }))}><option value="orb">Orb</option><option value="bar">Bar</option><option value="compact">Compact</option><option value="icons">Icons</option><option value="list">List</option></select></label>
+      {ORIENTATION_MODULES.includes(selected) && <label className="hud-field"><span>Direction</span><select value={current.orientation} onChange={(event) => onChange(patchHudModule(layout, selected, { orientation: event.target.value as SkillboundHudModule['orientation'] }))}><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>}
+      {SLOT_MODULES.includes(selected) && <HudRange label="Slots / entries" value={current.slotCount} min={1} max={12} step={1} suffix={`${current.slotCount}`} onChange={(value) => onChange(patchHudModule(layout, selected, { slotCount: Math.round(value) }))}/>} 
+      <label className="hud-field"><span>Visibility rule</span><select value={current.visibilityRule} onChange={(event) => onChange(patchHudModule(layout, selected, { visibilityRule: event.target.value as SkillboundHudModule['visibilityRule'] }))}><option value="always">Always</option><option value="combat">In combat</option><option value="context">Context only</option></select></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={current.showNumbers} onChange={(event) => onChange(patchHudModule(layout, selected, { showNumbers: event.target.checked }))}/><span>Show numeric values / timers</span></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={current.showLabels} onChange={(event) => onChange(patchHudModule(layout, selected, { showLabels: event.target.checked }))}/><span>Show text labels</span></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={current.visible} onChange={(event) => onChange(patchHudModule(layout, selected, { visible: event.target.checked }))}/><span>Enabled in Skillbound UI</span></label>
     </section>
   </>
 }
 
-function HudModuleMock({ id }: { id: SkillboundHudModuleId }) {
-  if (id === 'health') return <div className="hud-preview-orb"><div/><strong>1,248</strong><small>Life</small></div>
-  if (id === 'hotbar') return <div className="hud-preview-hotbar">{['LMB','Q','SPACE'].map((key, index) => <div key={key} className={`skill-${index}`}><kbd>{key}</kbd><i/><span>{index === 0 ? 'Attack' : index === 1 ? 'Soul Cleave' : 'Dodge'}</span></div>)}</div>
-  if (id === 'objective') return <div className="hud-preview-objective"><span>OBJECTIVE</span><strong>Break the Bone Seal</strong><small>Reach the lower sanctum</small></div>
-  if (id === 'target') return <div className="hud-preview-target"><div><strong>Crypt Wretch</strong><span>348 / 420</span></div><i><b style={{ width: '82%' }}/></i></div>
-  if (id === 'boss') return <div className="hud-preview-target boss"><div><strong>THE VAULT WARDEN</strong><span>6,840 / 9,200</span></div><i><b style={{ width: '74%' }}/></i></div>
-  if (id === 'interaction') return <div className="hud-preview-interaction"><kbd>E</kbd><strong>Enter Hollow Vault</strong></div>
-  if (id === 'loot') return <div className="hud-preview-loot">Rusted Sword added to inventory</div>
+function HudModuleMock({ id, module, preview }: { id: SkillboundHudModuleId; module: SkillboundHudModule; preview: SkillboundHudLayout['preview'] }) {
+  const critical = preview === 'low-health'
+  if (id === 'health') return <div className={`hud-preview-orb life display-${module.displayMode}`}><div/><strong>{module.showNumbers ? critical ? '214' : '1,248' : ''}</strong>{module.showLabels && <small>Life</small>}</div>
+  if (id === 'resource') return <div className={`hud-preview-orb resource display-${module.displayMode}`}><div/><strong>{module.showNumbers ? '462' : ''}</strong>{module.showLabels && <small>Essence</small>}</div>
+  if (id === 'hotbar') return <div className={`hud-preview-hotbar ${module.orientation}`}>{Array.from({ length: module.slotCount }).map((_, index) => { const key = ['LMB','Q','W','E','R','SPACE'][index] ?? `${index + 1}`; return <div key={index} className={`skill-${index}`}><kbd>{key}</kbd><i/><span>{module.showLabels ? ['Attack','Soul Cleave','Grave Step','Ward','Nova','Dodge'][index] ?? 'Skill' : ''}</span>{module.showNumbers && index === 1 ? <em>2.4</em> : null}</div>})}</div>
+  if (id === 'potions') return <div className={`hud-preview-potions ${module.orientation}`}>{Array.from({ length: module.slotCount }).map((_, index) => <div key={index}><kbd>{index + 1}</kbd><i className={index % 2 ? 'mana' : 'life'}/>{module.showNumbers && <small>{index === 0 ? '3' : '5'}</small>}</div>)}</div>
+  if (id === 'xp') return <div className="hud-preview-xp"><span><b>LV 18</b>{module.showLabels && <em>VANGUARD</em>}{module.showNumbers && <small>64%</small>}</span><i><b style={{ width: '64%' }}/></i></div>
+  if (id === 'minimap') return <div className="hud-preview-minimap"><div className="map-path a"/><div className="map-path b"/><i className="player"/><i className="objective"/><i className="portal"/>{module.showLabels && <strong>DROWNED MARCH</strong>}</div>
+  if (id === 'objective') return <div className="hud-preview-objective"><span>OBJECTIVE</span><strong>Break the Bone Seal</strong>{module.showLabels && <small>Reach the lower sanctum · 2/3</small>}</div>
+  if (id === 'buffs' || id === 'debuffs') return <div className={`hud-preview-status ${id} ${module.orientation}`}>{Array.from({ length: Math.min(module.slotCount, 8) }).map((_, index) => <div key={index}><i/><>{module.showNumbers && <small>{8 + index}s</small>}</></div>)}</div>
+  if (id === 'party') return <div className={`hud-preview-party ${module.orientation}`}>{Array.from({ length: Math.min(module.slotCount, 4) }).map((_, index) => <div key={index}><i/><span><strong>{['Thobias','Mira','Kael','Edda'][index]}</strong><b><em style={{ width: `${88 - index * 13}%` }}/></b></span>{module.showNumbers && <small>18</small>}</div>)}</div>
+  if (id === 'target') return <div className="hud-preview-target"><div><strong>Crypt Wretch</strong>{module.showNumbers && <span>348 / 420</span>}</div><i><b style={{ width: '82%' }}/></i>{module.showLabels && <small>Lv. 17 · Undead</small>}</div>
+  if (id === 'boss') return <div className="hud-preview-target boss"><div><strong>THE VAULT WARDEN</strong>{module.showNumbers && <span>6,840 / 9,200</span>}</div><i><b style={{ width: '74%' }}/></i>{module.showLabels && <small>PHASE II · BONE AEGIS</small>}</div>
+  if (id === 'cast') return <div className="hud-preview-cast"><span>{module.showLabels ? 'SOUL CLEAVE' : ''}{module.showNumbers && <small>0.7s</small>}</span><i><b style={{ width: '68%' }}/></i></div>
+  if (id === 'interaction') return <div className="hud-preview-interaction"><kbd>E</kbd><strong>{module.showLabels ? 'Enter Hollow Vault' : 'Interact'}</strong></div>
+  if (id === 'loot') return <div className={`hud-preview-feed ${module.orientation}`}>{Array.from({ length: Math.min(module.slotCount, 4) }).map((_, index) => <div key={index}><i/><span><strong>{['Rusted Sword','Crypt Sigil','42 Gold','Health Flask'][index]}</strong>{module.showLabels && <small>{index < 2 ? 'Rare pickup' : 'Collected'}</small>}</span></div>)}</div>
+  if (id === 'combatText') return <div className="hud-preview-combat-text"><strong>1,284</strong><b>CRIT 2,117</b><small>+186</small></div>
   return <div className="hud-preview-inventory"><header><span>INVENTORY</span><small>2 items</small></header><div><i/><span><strong>Rusted Sword</strong><small>Rare weapon</small></span><em>Equipped</em></div><div><i/><span><strong>Crypt Key</strong><small>Quest item</small></span><em>Use</em></div></div>
 }
 
