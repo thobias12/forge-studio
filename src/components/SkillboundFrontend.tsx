@@ -49,12 +49,17 @@ type Props = {
   region: GeneratedRegion
   onOpenWorld: () => void
   onBackHome: () => void
+  autoPlayActive?: boolean
 }
 
-export default function SkillboundFrontend({ workspace, region, onOpenWorld, onBackHome }: Props) {
+export default function SkillboundFrontend({ workspace, region, onOpenWorld, onBackHome, autoPlayActive = false }: Props) {
   const [profiles, setProfiles] = useState<SkillboundPlayerProfile[]>(() => listPlayerProfiles())
   const [selectedId, setSelectedId] = useState(() => getActivePlayerProfileId() ?? profiles[0]?.id)
-  const [screen, setScreen] = useState<Screen>('menu')
+  const [screen, setScreen] = useState<Screen>(() => {
+    if (!autoPlayActive) return 'menu'
+    const activeId = getActivePlayerProfileId()
+    return activeId && profiles.some((profile) => profile.id === activeId) ? 'play' : 'menu'
+  })
   const [draft, setDraft] = useState<ForgeCharacterBlueprint>(() => createDefaultPlayerBlueprint('Wanderer'))
   const [snapshot, setSnapshot] = useState<ExtendedSnapshot>()
   const [paused, setPaused] = useState(false)
@@ -67,6 +72,11 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
   useEffect(() => {
     if (!selectedId && profiles[0]) setSelectedId(profiles[0].id)
   }, [profiles, selectedId])
+
+  useEffect(() => {
+    if (!autoPlayActive || screen !== 'play') return
+    requestAnimationFrame(() => (document.activeElement as HTMLElement | null)?.blur?.())
+  }, [autoPlayActive, screen])
 
   useEffect(() => {
     if (screen !== 'play') return
