@@ -71,13 +71,15 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
   useEffect(() => {
     if (screen !== 'play') return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || isTextInput(event.target)) return
+      if (event.key !== 'Escape' && event.key !== 'Esc') return
+      if (event.repeat) return
       event.preventDefault()
+      event.stopPropagation()
       setPausePanel('root')
       setPaused((value) => !value)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [screen])
 
   const refreshProfiles = (preferId?: string) => {
@@ -96,6 +98,7 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
     setPaused(false)
     setPausePanel('root')
     setScreen('play')
+    requestAnimationFrame(() => (document.activeElement as HTMLElement | null)?.blur?.())
   }
 
   const createAndPlay = () => {
@@ -314,4 +317,3 @@ function CreatorRange({ label, value, min, max, onChange }: { label: string; val
 }
 function Stat({ label, value }: { label: string; value: string | number }) { return <div><span>{label}</span><strong>{value}</strong></div> }
 function formatDate(value: string) { try { return new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric' }) } catch { return 'Recently' } }
-function isTextInput(target: EventTarget | null) { return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || target instanceof HTMLButtonElement || (target instanceof HTMLElement && target.isContentEditable) }
