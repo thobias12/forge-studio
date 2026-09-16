@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Backpack, Coins, Footprints, Heart, Shield, Sparkles, Swords, Zap } from 'lucide-react'
 import CharacterForgePreview from './CharacterForgePreview'
 import { blueprintToConfig } from '../engine/characterBlueprint'
@@ -84,14 +84,18 @@ export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }
 export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }: CommonProps) {
   const items = snapshot?.inventory.map((id, index) => ({ item: workspace.gameplay.items.find((candidate) => candidate.id === id), index })).filter((entry): entry is { item: ForgeItemDefinition; index: number } => Boolean(entry.item)) ?? []
   const [selectedKey, setSelectedKey] = useState('')
-  const selectedEntry = items.find((entry) => `${entry.item.id}:${entry.index}` === selectedKey) ?? items[0]
+  const selectedMatch = items.find((entry) => `${entry.item.id}:${entry.index}` === selectedKey)
+  const selectedEntry = selectedMatch ?? items[0]
   const selected = selectedEntry?.item
   const equippedId = snapshot?.equippedWeaponId
 
   useEffect(() => {
-    if (!items.length) setSelectedKey('')
-    else if (!selectedEntry) setSelectedKey(`${items[0].item.id}:${items[0].index}`)
-  }, [items.length, selectedEntry])
+    if (!items.length) {
+      if (selectedKey) setSelectedKey('')
+      return
+    }
+    if (!selectedMatch) setSelectedKey(`${items[0].item.id}:${items[0].index}`)
+  }, [items.length, selectedKey, selectedMatch])
 
   const equip = (item: ForgeItemDefinition) => {
     if (item.slot !== 'weapon') return
@@ -111,7 +115,7 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
           {items.map(({ item, index }) => {
             const key = `${item.id}:${index}`
             const equipped = equippedId === item.id
-            return <button key={key} className={`runtime-item-card rarity-${item.rarity} ${selectedKey === key || (!selectedKey && index === items[0]?.index) ? 'selected' : ''} ${equipped ? 'equipped' : ''}`} onClick={() => setSelectedKey(key)}>
+            return <button key={key} className={`runtime-item-card rarity-${item.rarity} ${selectedKey === key ? 'selected' : ''} ${equipped ? 'equipped' : ''}`} onClick={() => setSelectedKey(key)}>
               <RuntimeItemIcon item={item}/>
               <span><strong>{item.name}</strong><small>{item.rarity} {item.slot}</small></span>
               {equipped && <em>Equipped</em>}
@@ -136,7 +140,7 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
   </div>
 }
 
-function RuntimeStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
+function RuntimeStat({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
   return <div className="runtime-stat-card"><i>{icon}</i><span>{label}</span><strong>{value}</strong></div>
 }
 
