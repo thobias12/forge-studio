@@ -10,6 +10,7 @@ import {
   type UiScreenElement,
 } from '../lib/uiScreenForge'
 import '../ui-screen-forge.css'
+import '../ui-screen-forge-full.css'
 
 type Props = {
   layout: SkillboundUiScreenLayout
@@ -113,7 +114,7 @@ export function UiScreenForgeInspector({ layout, selectedElementId, onSelectElem
 }
 
 function ScreenBackdrop({ id }: { id: SkillboundUiScreenLayout['id'] }) {
-  const frontEnd = id === 'main-menu' || id === 'character-select' || id === 'character-creator'
+  const frontEnd = id === 'main-menu' || id === 'load-game' || id === 'character-select' || id === 'character-creator'
   return <div className={`ui-screen-backdrop ${frontEnd ? 'front-end' : ''}`}><i/><b/></div>
 }
 
@@ -129,12 +130,17 @@ function ElementMock({ screenId, element }: { screenId: SkillboundUiScreenLayout
   if (kind === 'quest-list') return <div className="ui-mock-list">{['Break the Bone Seal','The Hollow Vault','Ash on the Road','A Stranger in Grey'].map((item, index) => <span className={index === 0 ? 'active' : ''} key={item}>{item}</span>)}</div>
   if (kind === 'character-cards') return <div className="ui-mock-cards">{['Thobias','Kael','Mira'].map((name, index) => <div className={index === 0 ? 'active' : ''} key={name}><i/><span><strong>{name}</strong><small>{index === 0 ? 'Vanguard · The Hollow Vault' : 'Adventurer · Drowned March'}</small></span><em>Lv. {18 - index * 4}</em></div>)}</div>
   if (kind === 'creator-options') return <CreatorOptionsMock/>
-  if (kind === 'button-list') return <div className="ui-mock-buttons">{buttonLabels(element.label).map((item) => <button className={item === 'PLAY' || item === 'CREATE CHARACTER' || item === 'RESUME' ? 'primary' : ''} key={item}>{item}</button>)}</div>
+  if (kind === 'settings-list') return <SettingsMock/>
+  if (kind === 'save-list') return <SaveListMock/>
+  if (kind === 'item-compare') return <ItemCompareMock equipped={element.id === 'current'}/>
+  if (kind === 'level-up') return <LevelUpMock/>
+  if (kind === 'waypoint-list') return <WaypointMock/>
+  if (kind === 'button-list') return <div className="ui-mock-buttons">{buttonLabels(element.label).map((item) => <button className={isPrimaryButton(item) ? 'primary' : ''} key={item}>{item}</button>)}</div>
   if (kind === 'vendor-list') return <div className="ui-mock-list">{['Iron Longsword · 480g','Hunter Bow · 390g','Leather Boots · 220g','Health Flask · 85g'].map((item) => <span key={item}>{item}</span>)}</div>
   if (kind === 'crafting-list') return <div className="ui-mock-list">{['Rusted Blade','Iron Ingot','Leather Grip','Crypt Sigil'].map((item) => <span key={item}>{item}</span>)}</div>
   if (kind === 'dialogue') return <div className="ui-mock-dialogue"><strong>Warden Edda</strong><p>“The vault below has not been quiet since the seal broke.”</p></div>
   if (kind === 'death-summary') return <div className="ui-mock-death"><strong>YOU HAVE FALLEN</strong><span>Level 18 · The Hollow Vault</span><small>3 enemies defeated · 2 items recovered</small></div>
-  if (kind === 'tabs') return <div className="ui-mock-tabs"><span>Stash I</span><span>Stash II</span><span>Materials</span><span>Quest</span></div>
+  if (kind === 'tabs') return <TabsMock screenId={screenId}/>
   return <PanelMock screenId={screenId} element={element}/>
 }
 
@@ -149,13 +155,8 @@ function CharacterMock({ screenId }: { screenId: SkillboundUiScreenLayout['id'] 
 }
 
 function EquipmentMock() {
-  const slots = [
-    ['helm','Helmet'],['amulet','Amulet'],['weapon','Weapon'],['chest','Chest'],['offhand','Offhand'],['gloves','Gloves'],['legs','Legs'],['ring','Ring'],['boots','Boots'],
-  ]
-  return <div className="ui-mock-equipment">
-    <div className="equipment-paperdoll"><i className="head"/><i className="torso"/><i className="legs"/></div>
-    {slots.map(([slot,label]) => <span className={`equip-${slot}`} key={slot}><b>{label}</b><small>{slot === 'weapon' ? 'Rusted Sword' : 'Empty'}</small></span>)}
-  </div>
+  const slots = [['helm','Helmet'],['amulet','Amulet'],['weapon','Weapon'],['chest','Chest'],['offhand','Offhand'],['gloves','Gloves'],['legs','Legs'],['ring','Ring'],['boots','Boots']]
+  return <div className="ui-mock-equipment"><div className="equipment-paperdoll"><i className="head"/><i className="torso"/><i className="legs"/></div>{slots.map(([slot,label]) => <span className={`equip-${slot}`} key={slot}><b>{label}</b><small>{slot === 'weapon' ? 'Rusted Sword' : 'Empty'}</small></span>)}</div>
 }
 
 function StatsMock({ element }: { element: UiScreenElement }) {
@@ -167,21 +168,39 @@ function StatsMock({ element }: { element: UiScreenElement }) {
 }
 
 function CreatorOptionsMock() {
-  return <div className="ui-mock-creator-options">
-    <div className="creator-tabs">{['Identity','Body','Face','Hair','Skin'].map((item,index) => <span className={index === 0 ? 'active' : ''} key={item}>{item}</span>)}</div>
-    <label><b>Name</b><span>Thobias</span></label>
-    <label><b>Body type</b><span>Adventurer</span></label>
-    <label><b>Height</b><i><em style={{ width: '58%' }}/></i></label>
-    <label><b>Build</b><i><em style={{ width: '44%' }}/></i></label>
-    <label><b>Skin tone</b><div className="creator-swatches"><i/><i/><i/><i/></div></label>
-    <label><b>Origin</b><span>Drowned March</span></label>
-  </div>
+  return <div className="ui-mock-creator-options"><div className="creator-tabs">{['Identity','Body','Face','Hair','Skin'].map((item,index) => <span className={index === 0 ? 'active' : ''} key={item}>{item}</span>)}</div><label><b>Name</b><span>Thobias</span></label><label><b>Body type</b><span>Adventurer</span></label><label><b>Height</b><i><em style={{ width: '58%' }}/></i></label><label><b>Build</b><i><em style={{ width: '44%' }}/></i></label><label><b>Skin tone</b><div className="creator-swatches"><i/><i/><i/><i/></div></label><label><b>Origin</b><span>Drowned March</span></label></div>
+}
+
+function SettingsMock() {
+  const settings = [['Resolution','2560 × 1440'],['Display Mode','Borderless'],['Quality','High'],['Master Volume','78%'],['Combat Text','On'],['Damage Numbers','On'],['Screen Shake','65%'],['UI Scale','100%']]
+  return <div className="ui-mock-settings">{settings.map(([label,value], index) => <label key={label}><span><b>{label}</b><small>{index < 3 ? 'Video' : index < 4 ? 'Audio' : 'Gameplay'}</small></span>{index === 3 || index === 6 || index === 7 ? <i><em style={{ width: value }}/></i> : <button>{value}</button>}</label>)}</div>
+}
+
+function SaveListMock() {
+  return <div className="ui-mock-save-list">{[['Thobias','Vanguard · Lv. 18','The Hollow Vault · 2h 34m'],['Kael','Warden · Lv. 12','Drowned March · 1h 08m'],['Mira','Arcanist · Lv. 8','Deadwood · 42m']].map((save,index) => <div className={index === 0 ? 'active' : ''} key={save[0]}><i/><span><strong>{save[0]}</strong><b>{save[1]}</b><small>{save[2]}</small></span><em>{index === 0 ? 'TODAY' : `${index + 1}D AGO`}</em></div>)}</div>
+}
+
+function ItemCompareMock({ equipped }: { equipped: boolean }) {
+  return <div className={`ui-mock-item-compare ${equipped ? 'equipped' : 'candidate'}`}><span>{equipped ? 'EQUIPPED' : 'COMPARED'}</span><div className="compare-art"><i/></div><strong>{equipped ? 'Rusted Sword' : 'Ashen Vanguard Blade'}</strong><small>{equipped ? 'Rare · 118–154 Damage' : 'Rare · 142–188 Damage'}</small><dl><div><dt>Damage</dt><dd className={!equipped ? 'gain' : ''}>{equipped ? '118–154' : '142–188 ▲'}</dd></div><div><dt>Attack Speed</dt><dd>{equipped ? '+6%' : '+12%'}</dd></div><div><dt>Strength</dt><dd className={!equipped ? 'gain' : ''}>{equipped ? '+18' : '+34 ▲'}</dd></div><div><dt>Crit</dt><dd>{equipped ? '—' : '+8%'}</dd></div></dl></div>
+}
+
+function LevelUpMock() {
+  return <div className="ui-mock-level-up"><span>LEVEL UP</span><strong>19</strong><h4>VANGUARD</h4><div><b>+8</b><small>Maximum Life</small></div><div><b>+2</b><small>Attribute Points</small></div><div><b>1</b><small>Skill Point</small></div><p>New skill tier unlocked</p></div>
+}
+
+function WaypointMock() {
+  return <div className="ui-mock-waypoints">{[['Drowned March','Current'],['Deadwood','Unlocked'],['Hollow Vault','Unlocked'],['Ashen Crossing','Locked'],['Old Bastion','Locked']].map(([name,state], index) => <span className={index === 0 ? 'active' : state === 'Locked' ? 'locked' : ''} key={name}><i/><b>{name}</b><small>{state}</small></span>)}</div>
+}
+
+function TabsMock({ screenId }: { screenId: SkillboundUiScreenLayout['id'] }) {
+  const tabs = screenId === 'settings' ? ['Video','Audio','Controls','Gameplay','Accessibility'] : ['Stash I','Stash II','Materials','Quest']
+  return <div className={`ui-mock-tabs ${screenId === 'settings' ? 'vertical' : ''}`}>{tabs.map((tab,index) => <span className={index === 0 ? 'active' : ''} key={tab}>{tab}</span>)}</div>
 }
 
 function PanelMock({ screenId, element }: { screenId: SkillboundUiScreenLayout['id']; element: UiScreenElement }) {
   if (screenId === 'inventory') return <div className="ui-mock-panel item-details"><span>SELECTED ITEM</span><strong>Ashen Vanguard Blade</strong><small>Rare · One-Handed Sword · Lv. 18</small><div className="item-art"><i/></div><b>142–188 Damage</b><p>+12% attack speed<br/>+34 strength<br/>+8% critical strike chance</p><footer>Compare · Equip</footer></div>
   if (screenId === 'character-creator') return <div className="ui-mock-panel creator-summary"><span>IDENTITY & CONFIRM</span><strong>Thobias</strong><small>Adventurer · Drowned March</small><dl><div><dt>Body</dt><dd>Adventurer</dd></div><div><dt>Voice</dt><dd>Voice 02</dd></div><div><dt>Preset</dt><dd>Custom</dd></div></dl><button>CREATE CHARACTER</button></div>
-  if (screenId === 'character-select') return <div className="ui-mock-panel character-summary"><span>SELECTED HERO</span><strong>Thobias</strong><small>Level 18 Vanguard</small><p>The Hollow Vault<br/>2h 34m played<br/>Last played today</p></div>
+  if (screenId === 'character-select' || screenId === 'load-game') return <div className="ui-mock-panel character-summary"><span>SELECTED HERO</span><strong>Thobias</strong><small>Level 18 Vanguard</small><p>The Hollow Vault<br/>2h 34m played<br/>Last played today</p></div>
   if (screenId === 'quests') return <div className="ui-mock-panel quest-details"><span>ACTIVE QUEST</span><strong>Break the Bone Seal</strong><small>The Hollow Vault</small><p>Reach the lower sanctum and destroy the seal guarding the Vault Warden.</p><footer>Tracked</footer></div>
   if (screenId === 'skills') return <div className="ui-mock-panel"><span>SELECTED SKILL</span><strong>Soul Cleave</strong><small>Melee · Physical</small><p>128% weapon damage<br/>4.2s cooldown<br/>Hits enemies in a frontal arc.</p></div>
   return <div className="ui-mock-panel"><span>{element.label}</span><strong>Skillbound</strong><small>{screenId.replace('-', ' ')}</small><p>This panel is authored on the shared UI grid.</p></div>
@@ -189,8 +208,9 @@ function PanelMock({ screenId, element }: { screenId: SkillboundUiScreenLayout['
 
 function titleFor(screenId: SkillboundUiScreenLayout['id'], label: string) {
   const titles: Partial<Record<SkillboundUiScreenLayout['id'], string>> = {
-    inventory: 'Inventory', character: 'Character', skills: 'Skills', map: 'World Map', quests: 'Quest Log', pause: 'Paused',
-    'main-menu': 'SKILLBOUND', 'character-select': 'Select Character', 'character-creator': 'Create Character', stash: 'Stash', vendor: 'Vendor', crafting: 'Crafting', dialogue: 'Dialogue', death: 'You Have Fallen',
+    inventory: 'Inventory', character: 'Character', skills: 'Skills', map: 'World Map', quests: 'Quest Log', pause: 'Paused', settings: 'Settings',
+    'main-menu': 'SKILLBOUND', 'load-game': 'Continue', 'character-select': 'Select Character', 'character-creator': 'Create Character', stash: 'Stash', vendor: 'Vendor', crafting: 'Crafting', dialogue: 'Dialogue', death: 'You Have Fallen',
+    'item-compare': 'Compare Items', 'level-up': 'Level Up', waypoint: 'Waypoints',
   }
   return titles[screenId] ?? label.replace(/ Header| Logo \/ Title| Logo/g, '')
 }
@@ -199,11 +219,18 @@ function buttonLabels(label: string) {
   if (label.includes('Main')) return ['CONTINUE', 'CHARACTER SELECT', 'SETTINGS', 'QUIT']
   if (label.includes('Pause')) return ['RESUME', 'INVENTORY', 'CHARACTER', 'SKILLS', 'MAP', 'QUESTS', 'SETTINGS', 'SAVE & EXIT']
   if (label.includes('Play')) return ['PLAY', '+ CREATE']
+  if (label.includes('Continue Actions')) return ['CONTINUE', 'DELETE']
+  if (label.includes('Apply')) return ['APPLY', 'RESET', 'BACK']
+  if (label.includes('Compare Actions')) return ['EQUIP', 'CLOSE']
+  if (label === 'Continue') return ['CONTINUE']
+  if (label.includes('Travel')) return ['TRAVEL', 'CLOSE']
   if (label.includes('Confirm') || label.includes('Creation')) return ['CREATE CHARACTER', 'BACK']
   if (label.includes('Dialogue')) return ['Tell me more', 'Trade', 'Leave']
   if (label.includes('Respawn')) return ['RESPAWN', 'RETURN TO TOWN']
   return ['PRIMARY', 'SECONDARY', 'CANCEL']
 }
+
+function isPrimaryButton(item: string) { return ['PLAY','CREATE CHARACTER','RESUME','CONTINUE','APPLY','EQUIP','TRAVEL','RESPAWN'].includes(item) }
 
 function GridNumber({ label, value, min, max, step = 1, suffix = '', onChange }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; onChange: (value: number) => void }) {
   return <label className="ui-grid-number"><span>{label}</span><div><input type="number" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))}/><small>{suffix}</small></div></label>
