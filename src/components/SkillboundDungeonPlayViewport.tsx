@@ -5,8 +5,10 @@ import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventure
 import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine/runtime/ForgeDungeonRuntime'
 import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
 import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
+import { xpRequired } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
+import '../hud-runtime-rewards.css'
 
 installDungeonRewardMethods(ForgeDungeonRuntime)
 installEncounterBossRuntime(ForgeDungeonRuntime)
@@ -68,15 +70,21 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   useEffect(() => {
     const host = hostRef.current
     if (!host || !profiles) return
+    const mergeRewards = (state: ForgeDungeonRuntimeSnapshot): ForgeDungeonRuntimeSnapshot => ({
+      ...state,
+      gold: state.gold ?? initialState.gold ?? 0,
+      xp: state.xp ?? initialState.xp ?? 0,
+      level: state.level ?? initialState.level ?? 1,
+    })
     const runtime = new ForgeDungeonRuntime(host, dungeon, gameplay, initialState, {
       projectId,
-      onState: setSnapshot,
+      onState: (state: ForgeDungeonRuntimeSnapshot) => setSnapshot(mergeRewards(state)),
       onExit,
       encounterProfiles: profiles.encounters,
       bossProfiles: profiles.bosses,
     } as any)
     runtimeRef.current = runtime
-    setSnapshot(runtime.getSnapshot())
+    setSnapshot(mergeRewards(runtime.getSnapshot()))
     return () => {
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
@@ -85,6 +93,11 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
 
   const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
   const targetModule: SkillboundHudModuleId = snapshot.target?.boss ? 'boss' : 'target'
+  const level = snapshot.level ?? initialState.level ?? 1
+  const xp = snapshot.xp ?? initialState.xp ?? 0
+  const xpToNext = xpRequired(level)
+  const xpPercent = Math.max(0, Math.min(100, xp / Math.max(1, xpToNext) * 100))
+  const gold = snapshot.gold ?? initialState.gold ?? 0
 
   return <div className={`skillbound-runtime-host skillbound-dungeon-runtime ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!profiles && <div className="skillbound-runtime-loading">Loading Encounter Forge + Boss Forge definitions…</div>}
@@ -105,6 +118,13 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
       <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
       <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
       <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
+    </div>}
+    {hudModuleVisible(normalizedHudLayout, 'xp') && <div className="skillbound-runtime-xp" style={moduleStyle('xp')}>
+      <span><strong>LV {level}</strong><em>EXPERIENCE</em><small>{xp} / {xpToNext}</small></span>
+      <i><b style={{ width: `${xpPercent}%` }}/></i>
+    </div>}
+    {hudModuleVisible(normalizedHudLayout, 'gold') && <div className="skillbound-runtime-gold" style={moduleStyle('gold')}>
+      <i/><span><strong>{gold.toLocaleString()}</strong><small>Gold</small></span>
     </div>}
 
     {hudModuleVisible(normalizedHudLayout, 'inventory') && <aside className="skillbound-inventory" style={moduleStyle('inventory')}>
