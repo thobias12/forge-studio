@@ -4,6 +4,7 @@ export type SkillboundHudModuleId =
   | 'hotbar'
   | 'potions'
   | 'xp'
+  | 'gold'
   | 'minimap'
   | 'objective'
   | 'buffs'
@@ -38,6 +39,8 @@ export type SkillboundHudModule = {
   offsetX: number
   offsetY: number
   scale: number
+  widthScale: number
+  heightScale: number
   opacity: number
   displayMode: SkillboundHudDisplayMode
   orientation: SkillboundHudOrientation
@@ -64,11 +67,12 @@ export const HUD_PREVIEW_MODES: Array<{ id: SkillboundHudPreviewMode; label: str
 ]
 
 export const HUD_MODULES: Array<{ id: SkillboundHudModuleId; label: string; detail: string; runtime: 'Live' | 'Authored' }> = [
-  { id: 'health', label: 'Life', detail: 'Player life orb or health bar.', runtime: 'Live' },
-  { id: 'resource', label: 'Resource', detail: 'Mana, rage, energy or class resource.', runtime: 'Authored' },
+  { id: 'health', label: 'Health orb', detail: 'Player health. Classic layout uses one red liquid orb.', runtime: 'Live' },
+  { id: 'resource', label: 'Mana orb', detail: 'Player mana/class resource. Classic layout uses one blue liquid orb.', runtime: 'Authored' },
   { id: 'hotbar', label: 'Skill hotbar', detail: 'Active abilities, keys and cooldowns.', runtime: 'Live' },
   { id: 'potions', label: 'Potion bar', detail: 'Consumables, charges and hotkeys.', runtime: 'Authored' },
   { id: 'xp', label: 'XP / level', detail: 'Experience progress and current level.', runtime: 'Authored' },
+  { id: 'gold', label: 'Gold', detail: 'Primary currency counter.', runtime: 'Authored' },
   { id: 'minimap', label: 'Minimap', detail: 'Player, objectives, portals and nearby markers.', runtime: 'Authored' },
   { id: 'objective', label: 'Objective tracker', detail: 'Tracked quest and current objective.', runtime: 'Live' },
   { id: 'buffs', label: 'Buffs', detail: 'Positive status icons and timers.', runtime: 'Authored' },
@@ -97,7 +101,9 @@ export const HUD_ANCHORS: Array<{ id: SkillboundHudAnchor; label: string }> = [
 
 const DEFAULT_GRID: HudEditorGrid = { columns: 24, rows: 14, snap: true, show: true }
 
-const defaultModuleOptions: Pick<SkillboundHudModule, 'displayMode' | 'orientation' | 'slotCount' | 'showNumbers' | 'showLabels' | 'visibilityRule'> = {
+const defaultModuleOptions: Pick<SkillboundHudModule, 'widthScale' | 'heightScale' | 'displayMode' | 'orientation' | 'slotCount' | 'showNumbers' | 'showLabels' | 'visibilityRule'> = {
+  widthScale: 1,
+  heightScale: 1,
   displayMode: 'compact',
   orientation: 'horizontal',
   slotCount: 6,
@@ -112,6 +118,7 @@ const classic = layout('classic-arpg', {
   hotbar: module('hotbar', 'bottom-center', 0, -3.2, 1, 1, { slotCount: 6 }),
   potions: module('potions', 'bottom-center', -28.5, -3.2, .92, 1, { slotCount: 4 }),
   xp: module('xp', 'bottom-center', 0, -.7, 1, .94, { displayMode: 'bar', showLabels: false }),
+  gold: module('gold', 'bottom-center', -28.5, -10.5, .9, .98, { displayMode: 'compact' }),
   minimap: module('minimap', 'top-right', -2.1, 2.2, 1, .98),
   objective: module('objective', 'top-right', -2.1, 20, .92, .98, { visibilityRule: 'context' }),
   buffs: module('buffs', 'top-left', 2.1, 12.5, .9, .96, { displayMode: 'icons', slotCount: 8, showLabels: false, visibilityRule: 'context' }),
@@ -132,6 +139,7 @@ const compact = layout('compact', {
   hotbar: module('hotbar', 'bottom-center', 0, -1.9, .86, .96, { slotCount: 5 }),
   potions: module('potions', 'bottom-right', -1.8, -2, .8, .96, { slotCount: 3 }),
   xp: module('xp', 'bottom-center', 0, -.4, .9, .9, { displayMode: 'bar', showLabels: false }),
+  gold: module('gold', 'bottom-right', -1.8, -9, .8, .94, { displayMode: 'compact' }),
   minimap: module('minimap', 'top-right', -1.6, 1.8, .82, .94),
   objective: module('objective', 'top-right', -1.8, 15, .8, .92, { visibilityRule: 'context' }),
   buffs: module('buffs', 'top-left', 1.6, 9.5, .78, .92, { displayMode: 'icons', slotCount: 6, showLabels: false, visibilityRule: 'context' }),
@@ -152,6 +160,7 @@ const minimal = layout('minimal', {
   hotbar: module('hotbar', 'bottom-center', 0, -1.6, .8, .92, { slotCount: 4, showLabels: false }),
   potions: module('potions', 'bottom-right', -1.4, -1.7, .74, .9, { slotCount: 2, showLabels: false }),
   xp: module('xp', 'bottom-center', 0, -.3, .82, .76, { displayMode: 'bar', showLabels: false, showNumbers: false }),
+  gold: module('gold', 'bottom-right', -1.4, -7.3, .72, .84, { displayMode: 'compact', showLabels: false }),
   minimap: module('minimap', 'top-right', -1.4, 1.5, .76, .86),
   objective: module('objective', 'top-right', -1.5, 13.5, .74, .84, { visibilityRule: 'context' }, false),
   buffs: module('buffs', 'top-left', 1.4, 8, .72, .84, { displayMode: 'icons', slotCount: 5, showLabels: false, visibilityRule: 'context' }),
@@ -172,6 +181,7 @@ const ultrawide = layout('ultrawide', {
   hotbar: module('hotbar', 'bottom-center', 0, -2.5, 1, 1, { slotCount: 7 }),
   potions: module('potions', 'bottom-center', -21.5, -2.5, .9, .98, { slotCount: 4 }),
   xp: module('xp', 'bottom-center', 0, -.5, 1, .9, { displayMode: 'bar', showLabels: false }),
+  gold: module('gold', 'bottom-center', -21.5, -9.4, .86, .92, { displayMode: 'compact' }),
   minimap: module('minimap', 'top-right', -8.5, 2, .94, .96),
   objective: module('objective', 'top-right', -8.5, 18.5, .9, .94, { visibilityRule: 'context' }),
   buffs: module('buffs', 'top-left', 8.5, 11, .86, .94, { displayMode: 'icons', slotCount: 8, showLabels: false, visibilityRule: 'context' }),
@@ -187,7 +197,7 @@ const ultrawide = layout('ultrawide', {
 })
 
 export const HUD_PRESETS: Array<{ id: SkillboundHudPresetId; label: string; detail: string; layout: SkillboundHudLayout }> = [
-  { id: 'classic-arpg', label: 'Classic ARPG', detail: 'Twin resource orbs, central skills and full combat information.', layout: classic },
+  { id: 'classic-arpg', label: 'Classic ARPG', detail: 'One red health orb, one blue mana orb, central skills and full combat information.', layout: classic },
   { id: 'compact', label: 'Compact', detail: 'Dense bars and smaller utility modules for laptop screens.', layout: compact },
   { id: 'minimal', label: 'Minimal', detail: 'Reduced chrome while preserving combat readability.', layout: minimal },
   { id: 'ultrawide', label: 'Ultrawide', detail: 'Keeps combat focus central while utility stays within a safe zone.', layout: ultrawide },
@@ -215,7 +225,9 @@ export function normalizeHudLayout(value?: Partial<SkillboundHudLayout>) {
       anchor: HUD_ANCHORS.some((entry) => entry.id === stored.anchor) ? stored.anchor : modules[meta.id].anchor,
       offsetX: clampNumber(stored.offsetX, -60, 60, modules[meta.id].offsetX),
       offsetY: clampNumber(stored.offsetY, -60, 60, modules[meta.id].offsetY),
-      scale: clampNumber(stored.scale, .55, 1.7, modules[meta.id].scale),
+      scale: clampNumber(stored.scale, .25, 2.5, modules[meta.id].scale),
+      widthScale: clampNumber(stored.widthScale, .4, 2.5, modules[meta.id].widthScale),
+      heightScale: clampNumber(stored.heightScale, .4, 2.5, modules[meta.id].heightScale),
       opacity: clampNumber(stored.opacity, .2, 1, modules[meta.id].opacity),
       slotCount: clampInt(stored.slotCount, 1, 12, modules[meta.id].slotCount),
     }
@@ -264,13 +276,15 @@ export function hudModuleStyle(moduleValue: SkillboundHudModule, globalScale = 1
   const [x, y] = anchorPoint(moduleValue.anchor)
   const translateX = x === 0 ? '0%' : x === 50 ? '-50%' : '-100%'
   const translateY = y === 0 ? '0%' : y === 50 ? '-50%' : '-100%'
+  const scaleX = moduleValue.scale * moduleValue.widthScale * globalScale
+  const scaleY = moduleValue.scale * moduleValue.heightScale * globalScale
   return {
     position: 'absolute',
     left: `calc(${x}% + ${moduleValue.offsetX}%)`,
     top: `calc(${y}% + ${moduleValue.offsetY}%)`,
     right: 'auto',
     bottom: 'auto',
-    transform: `translate(${translateX}, ${translateY}) scale(${moduleValue.scale * globalScale})`,
+    transform: `translate(${translateX}, ${translateY}) scale(${scaleX}, ${scaleY})`,
     transformOrigin: `${x === 0 ? 'left' : x === 50 ? 'center' : 'right'} ${y === 0 ? 'top' : y === 50 ? 'center' : 'bottom'}`,
     opacity: moduleValue.opacity,
   }
