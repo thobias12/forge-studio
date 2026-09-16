@@ -11,6 +11,7 @@ export function createConceptForgeCharacter(config: ForgeCharacterConfig): Forge
     conceptForgeVersion: 2,
     weaponPolicy: 'external-item-forge',
     previewWeapon: false,
+    mocapFacingYaw: Math.PI,
   }
   build.stats = recount(build)
   build.root.updateMatrixWorld(true)
