@@ -1,6 +1,7 @@
 // @ts-nocheck
 import type { ForgeCharacterBlueprint } from '../characterBlueprint'
 import { bindCharacterBlueprint } from './ForgeBlueprintRuntime'
+import { registerSkillboundRuntime, unregisterSkillboundRuntime } from './SkillboundRuntimeBridge'
 
 const installed = new WeakSet<object>()
 
@@ -11,6 +12,7 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
 
   const originalBindPlayerVisual = proto.bindPlayerVisual
   proto.bindPlayerVisual = async function () {
+    registerSkillboundRuntime(this)
     const blueprint = this.options?.characterBlueprint as ForgeCharacterBlueprint | undefined
     if (!blueprint) return originalBindPlayerVisual.call(this)
     try {
@@ -21,6 +23,14 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
       if (!this.disposed && this.refreshEquippedModel) void this.refreshEquippedModel()
     } catch {
       return originalBindPlayerVisual.call(this)
+    }
+  }
+
+  const originalDispose = proto.dispose
+  if (typeof originalDispose === 'function') {
+    proto.dispose = function (...args: unknown[]) {
+      unregisterSkillboundRuntime(this)
+      return originalDispose.apply(this, args)
     }
   }
 
