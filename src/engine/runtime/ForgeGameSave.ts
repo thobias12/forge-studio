@@ -17,6 +17,9 @@ export type ForgeRuntimeSave = {
   equippedWeaponId?: string
   defeatedEnemyIds: string[]
   lootDrops: ForgeRuntimeLootSave[]
+  gold?: number
+  xp?: number
+  level?: number
   savedAt: string
 }
 
