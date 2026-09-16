@@ -5,7 +5,9 @@ export type SkillboundUiScreenId =
   | 'map'
   | 'quests'
   | 'pause'
+  | 'settings'
   | 'main-menu'
+  | 'load-game'
   | 'character-select'
   | 'character-creator'
   | 'stash'
@@ -13,6 +15,9 @@ export type SkillboundUiScreenId =
   | 'crafting'
   | 'dialogue'
   | 'death'
+  | 'item-compare'
+  | 'level-up'
+  | 'waypoint'
 
 export type UiScreenCategory = 'In Game' | 'Front End' | 'Gameplay Windows'
 export type UiScreenElementKind =
@@ -33,6 +38,11 @@ export type UiScreenElementKind =
   | 'crafting-list'
   | 'dialogue'
   | 'death-summary'
+  | 'settings-list'
+  | 'save-list'
+  | 'item-compare'
+  | 'level-up'
+  | 'waypoint-list'
   | 'panel'
 
 export type UiGridDefinition = {
@@ -75,9 +85,11 @@ export const UI_SCREEN_META: Array<{ id: SkillboundUiScreenId; label: string; ca
   { id: 'character', label: 'Character', category: 'In Game', detail: 'Attributes, offense, defense and resistances.' },
   { id: 'skills', label: 'Skills', category: 'In Game', detail: 'Active skills, passives and loadout.' },
   { id: 'map', label: 'Map', category: 'In Game', detail: 'World map, region markers and navigation.' },
-  { id: 'quests', label: 'Quest Log', category: 'In Game', detail: 'Tracked and completed quest entries.' },
+  { id: 'quests', label: 'Quest Log', category: 'In Game', detail: 'Tracked, completed and story quest entries.' },
   { id: 'pause', label: 'Pause / ESC', category: 'In Game', detail: 'Resume, menus, settings and exit actions.' },
+  { id: 'settings', label: 'Settings', category: 'In Game', detail: 'Graphics, audio, controls, gameplay and accessibility.' },
   { id: 'main-menu', label: 'Main Menu', category: 'Front End', detail: 'Continue, character select, settings and quit.' },
+  { id: 'load-game', label: 'Continue / Saves', category: 'Front End', detail: 'Character saves, locations, playtime and continue flow.' },
   { id: 'character-select', label: 'Character Select', category: 'Front End', detail: 'Saved heroes, progress and play action.' },
   { id: 'character-creator', label: 'Character Creator', category: 'Front End', detail: 'Blueprint-compatible appearance and identity flow.' },
   { id: 'stash', label: 'Stash', category: 'Gameplay Windows', detail: 'Shared storage and tabs.' },
@@ -85,6 +97,9 @@ export const UI_SCREEN_META: Array<{ id: SkillboundUiScreenId; label: string; ca
   { id: 'crafting', label: 'Crafting', category: 'Gameplay Windows', detail: 'Recipes, materials and result preview.' },
   { id: 'dialogue', label: 'Dialogue', category: 'Gameplay Windows', detail: 'NPC portrait, dialogue and choices.' },
   { id: 'death', label: 'Death / Respawn', category: 'Gameplay Windows', detail: 'Death summary and respawn actions.' },
+  { id: 'item-compare', label: 'Item Compare', category: 'Gameplay Windows', detail: 'Ground, inventory and equipped item comparison.' },
+  { id: 'level-up', label: 'Level Up', category: 'Gameplay Windows', detail: 'Level rewards, stat gains and unlocks.' },
+  { id: 'waypoint', label: 'Waypoint / Travel', category: 'Gameplay Windows', detail: 'Unlocked destinations and fast travel.' },
 ]
 
 const GRID: UiGridDefinition = { columns: 12, rows: 8, gap: 1, margin: 2, showGrid: true }
@@ -128,11 +143,23 @@ export function createDefaultUiScreens(): SkillboundUiScreens {
       e('title', 'Skillbound Logo / Title', 'title', p(4, 1, 6, 1), true),
       e('nav', 'Pause Navigation', 'button-list', p(5, 2, 4, 6)),
     ]),
+    settings: screen('settings', 'Settings', [
+      e('title', 'Settings Header', 'title', p(1, 1, 12, 1), true),
+      e('tabs', 'Settings Tabs', 'tabs', p(1, 2, 3, 6)),
+      e('settings', 'Settings Controls', 'settings-list', p(4, 2, 7, 6)),
+      e('actions', 'Apply / Reset', 'button-list', p(11, 2, 2, 6)),
+    ]),
     'main-menu': screen('main-menu', 'Main Menu', [
       e('title', 'Skillbound Logo', 'title', p(4, 1, 6, 2), true),
       e('hero', 'Selected Character', 'character-model', p(1, 2, 6, 7)),
       e('nav', 'Main Navigation', 'button-list', p(8, 3, 4, 4)),
     ], { rows: 9 }),
+    'load-game': screen('load-game', 'Continue / Saves', [
+      e('title', 'Continue Header', 'title', p(1, 1, 12, 1), true),
+      e('saves', 'Save Slots', 'save-list', p(1, 2, 7, 6)),
+      e('details', 'Save Details', 'panel', p(8, 2, 3, 6)),
+      e('actions', 'Continue Actions', 'button-list', p(11, 2, 2, 6)),
+    ]),
     'character-select': screen('character-select', 'Character Select', [
       e('title', 'Character Select Header', 'title', p(1, 1, 12, 1), true),
       e('characters', 'Character Cards', 'character-cards', p(1, 2, 5, 6)),
@@ -171,6 +198,23 @@ export function createDefaultUiScreens(): SkillboundUiScreens {
     death: screen('death', 'Death / Respawn', [
       e('summary', 'Death Summary', 'death-summary', p(4, 2, 6, 3)),
       e('actions', 'Respawn Actions', 'button-list', p(5, 5, 4, 2)),
+    ]),
+    'item-compare': screen('item-compare', 'Item Compare', [
+      e('title', 'Item Compare Header', 'title', p(2, 1, 10, 1), true),
+      e('current', 'Equipped Item', 'item-compare', p(2, 2, 5, 5)),
+      e('candidate', 'Compared Item', 'item-compare', p(7, 2, 5, 5)),
+      e('actions', 'Compare Actions', 'button-list', p(5, 7, 4, 1)),
+    ]),
+    'level-up': screen('level-up', 'Level Up', [
+      e('title', 'Level Up Header', 'title', p(3, 1, 8, 1), true),
+      e('summary', 'Level Rewards', 'level-up', p(3, 2, 8, 4)),
+      e('actions', 'Continue', 'button-list', p(5, 6, 4, 2)),
+    ]),
+    waypoint: screen('waypoint', 'Waypoint / Travel', [
+      e('title', 'Waypoint Header', 'title', p(1, 1, 12, 1), true),
+      e('locations', 'Destinations', 'waypoint-list', p(1, 2, 4, 6)),
+      e('map', 'Travel Map', 'map', p(5, 2, 6, 6)),
+      e('actions', 'Travel Actions', 'button-list', p(11, 2, 2, 6)),
     ]),
   }
 }
