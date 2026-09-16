@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import SkillboundDungeonPlayViewport from './SkillboundDungeonPlayViewport'
+import { HudPickupFlights } from './HudPickupFlights'
 import { loadSkillboundWorkspace, type ForgeProjectWorkspace } from '../engine/forgeProject'
 import { itemVisual } from '../engine/itemPresentation'
 import type { GeneratedRegion } from '../engine/guidedWorld'
 import { mergeAdventurePlayerState, type ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
+import { installForgeRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { getAsset } from '../lib/library'
 import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import { skillboundUiCssVariables } from '../lib/uiForge'
 import '../skillbound-runtime.css'
 import '../skillbound-adventure.css'
+import '../hud-runtime-rewards.css'
+
+installForgeRewardPickupRuntime(ForgePlayRuntime)
 
 type Props = { region: GeneratedRegion }
+type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension
 
-const EMPTY_STATE: ForgeRuntimeSnapshot = {
+const EMPTY_STATE: SkillboundRuntimeState = {
   health: 1,
   maxHealth: 1,
   enemiesAlive: 0,
@@ -24,13 +30,18 @@ const EMPTY_STATE: ForgeRuntimeSnapshot = {
   dodgeCooldown: 0,
   inventory: [],
   message: '',
+  gold: 0,
+  xp: 0,
+  level: 1,
+  xpToNext: 100,
+  pickupEvents: [],
 }
 
 export default function SkillboundPlayViewport({ region }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const runtimeRef = useRef<ForgePlayRuntime | null>(null)
   const nearDungeonRef = useRef(false)
-  const [snapshot, setSnapshot] = useState<ForgeRuntimeSnapshot>(EMPTY_STATE)
+  const [snapshot, setSnapshot] = useState<SkillboundRuntimeState>(EMPTY_STATE)
   const [session, setSession] = useState(0)
   const [workspace, setWorkspace] = useState<ForgeProjectWorkspace>()
   const [activeDungeonId, setActiveDungeonId] = useState<string>()
@@ -81,9 +92,9 @@ export default function SkillboundPlayViewport({ region }: Props) {
 
   useEffect(() => {
     if (activeDungeonId || !hostRef.current || !gameplay || !projectId) return
-    const runtime = new ForgePlayRuntime(hostRef.current, region, gameplay, { projectId, onState: setSnapshot })
+    const runtime = new ForgePlayRuntime(hostRef.current, region, gameplay, { projectId, onState: (state) => setSnapshot(state as SkillboundRuntimeState) })
     runtimeRef.current = runtime
-    setSnapshot(runtime.getSnapshot())
+    setSnapshot(runtime.getSnapshot() as SkillboundRuntimeState)
     return () => {
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
@@ -124,6 +135,9 @@ export default function SkillboundPlayViewport({ region }: Props) {
       health: snapshot.health,
       inventory: [...snapshot.inventory],
       equippedWeaponId: snapshot.equippedWeaponId,
+      gold: snapshot.gold,
+      xp: snapshot.xp,
+      level: snapshot.level,
     })
     setActiveDungeonId(dungeonId)
     nearDungeonRef.current = false
@@ -144,11 +158,16 @@ export default function SkillboundPlayViewport({ region }: Props) {
   const returnToOverworld = useCallback((state: ForgeAdventurePlayerState) => {
     if (!projectId) return
     const key = runtimeSaveKey(projectId, region.regionId, region.seed, region.generationVersion)
-    mergeAdventurePlayerState(key, state)
+    mergeAdventurePlayerState(key, {
+      ...state,
+      gold: state.gold ?? dungeonPlayerState?.gold ?? 0,
+      xp: state.xp ?? dungeonPlayerState?.xp ?? 0,
+      level: state.level ?? dungeonPlayerState?.level ?? 1,
+    })
     setDungeonPlayerState(undefined)
     setActiveDungeonId(undefined)
     setSession((value) => value + 1)
-  }, [projectId, region.generationVersion, region.regionId, region.seed])
+  }, [dungeonPlayerState, projectId, region.generationVersion, region.regionId, region.seed])
 
   if (activeDungeonId) {
     if (!workspace || !gameplay || !dungeonPlayerState) return <div className="skillbound-runtime-loading">Loading Skillbound dungeon session…</div>
@@ -166,6 +185,7 @@ export default function SkillboundPlayViewport({ region }: Props) {
   }
 
   const healthPercent = Math.max(0, Math.min(100, snapshot.health / Math.max(1, snapshot.maxHealth) * 100))
+  const xpPercent = Math.max(0, Math.min(100, snapshot.xp / Math.max(1, snapshot.xpToNext) * 100))
   const objective = snapshot.enemiesTotal === 0
     ? 'No encounter in this generated region.'
     : snapshot.enemiesAlive > 0
@@ -181,6 +201,7 @@ export default function SkillboundPlayViewport({ region }: Props) {
       <span>WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact</span>
     </div>
 
+    <HudPickupFlights events={snapshot.pickupEvents} layout={hudLayout}/>
     {hudModuleVisible(hudLayout, 'objective') && <div className="skillbound-objective" style={moduleStyle('objective')}>{objective}</div>}
     {snapshot.target && hudModuleVisible(hudLayout, 'target') && <TargetBar target={snapshot.target} style={moduleStyle('target')}/>} 
     {nearDungeon && dungeonAnchor && hudModuleVisible(hudLayout, 'interaction') && <div className="skillbound-interaction-prompt ready" style={moduleStyle('interaction')}><kbd>E</kbd><strong>Enter {dungeonAnchor.label}</strong></div>}
@@ -201,6 +222,13 @@ export default function SkillboundPlayViewport({ region }: Props) {
       <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
       <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
       <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
+    </div>}
+    {hudModuleVisible(hudLayout, 'xp') && <div className="skillbound-runtime-xp" style={moduleStyle('xp')}>
+      <span><strong>LV {snapshot.level}</strong><em>EXPERIENCE</em><small>{snapshot.xp} / {snapshot.xpToNext}</small></span>
+      <i><b style={{ width: `${xpPercent}%` }}/></i>
+    </div>}
+    {hudModuleVisible(hudLayout, 'gold') && <div className="skillbound-runtime-gold" style={moduleStyle('gold')}>
+      <i/><span><strong>{snapshot.gold.toLocaleString()}</strong><small>Gold</small></span>
     </div>}
 
     {hudModuleVisible(hudLayout, 'inventory') && <aside className="skillbound-inventory" style={moduleStyle('inventory')}>
