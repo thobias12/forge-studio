@@ -12,7 +12,9 @@ import {
   normalizeAnimationSet,
   parseAnimationSet,
   type ForgeAnimationActionId,
+  type ForgeAnimationSet,
 } from '../engine/animationBindings'
+import { loadSkillboundWorkspace, patchGameplay, saveSkillboundWorkspace } from '../engine/forgeProject'
 import type { ForgeMotion, PoseFrame } from '../types'
 
 export type AnimationAuthoringEdit = {
@@ -57,11 +59,14 @@ export function editMotionForAuthoring(motion: ForgeMotion, edit: AnimationAutho
 
   let selected = motion.frames.filter((frame) => frame.t >= start && frame.t <= end)
   if (selected.length < 2) {
-    const nearest = [...motion.frames].sort((a, b) => Math.abs(a.t - start) - Math.abs(b.t - start)).slice(0, 2).sort((a, b) => a.t - b.t)
-    selected = nearest
+    selected = [...motion.frames]
+      .sort((a, b) => Math.abs(a.t - start) - Math.abs(b.t - start))
+      .slice(0, 2)
+      .sort((a, b) => a.t - b.t)
   }
 
-  const frames = selected.map((frame) => cloneFrameWithTime(frame, Math.max(0, (frame.t - start) / speed)))
+  const firstSelectedTime = selected[0]?.t ?? start
+  const frames = selected.map((frame) => cloneFrameWithTime(frame, Math.max(0, (frame.t - firstSelectedTime) / speed)))
   const durationMs = frames.at(-1)?.t ?? 0
   const fps = durationMs > 0 ? Math.round((frames.length / durationMs) * 1000) : motion.fps
 
@@ -126,23 +131,41 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
   action: ForgeAnimationActionId
 }) {
   const built = await buildAuthoredAnimation(input)
-  const animationAssetId = `forge-animation:${input.characterAsset.id}:${input.action}`
+  const bindingId = animationBindingAssetId(input.characterAsset.id)
+  const existingBindingAsset = await getAsset(bindingId)
+  const existingSet = existingBindingAsset ? await parseAnimationSet(existingBindingAsset.blob, input.characterAsset.id) : undefined
+  const previousClipName = existingSet?.actions[input.action]?.clip
+
+  const packId = `forge-animation-pack:${input.characterAsset.id}`
+  const existingPack = await getAsset(packId)
+  const previousClips = existingPack ? await loadAnimationClips(existingPack.blob) : []
+  const newClips = await loadAnimationClips(built.blob)
+  const newClip = newClips.find((clip) => clip.name === built.clipName) ?? newClips[0]
+  if (!newClip) throw new Error('The newly baked animation did not contain a usable clip.')
+
+  const mergedClips = previousClips
+    .filter((clip) => clip.name !== built.clipName && (!previousClipName || clip.name !== previousClipName))
+    .map((clip) => clip.clone())
+  mergedClips.push(newClip.clone())
+
+  const packBlob = await exportAnimationPack(built.blob, mergedClips)
   const animationAsset = await saveAsset({
-    id: animationAssetId,
-    name: `${input.characterAsset.name} · ${built.clipName}`,
+    id: packId,
+    name: `${input.characterAsset.name} · Gameplay Animations`,
     category: 'animations',
     kind: 'glb',
     mime: 'model/gltf-binary',
-    tags: ['animation', 'gameplay', input.action, input.characterAsset.id],
+    tags: ['animation-pack', 'gameplay', 'ForgeHumanoidV1', input.characterAsset.id],
     source: 'Forge Animation Studio',
-    blob: built.blob,
+    blob: packBlob,
   })
 
-  const bindingId = animationBindingAssetId(input.characterAsset.id)
-  const existingAsset = await getAsset(bindingId)
-  const existing = existingAsset ? await parseAnimationSet(existingAsset.blob, input.characterAsset.id) : undefined
-  const baseSet = normalizeAnimationSet(existing ?? createAnimationSet(input.characterAsset.id, [built.clipName]), input.characterAsset.id, [built.clipName])
-  const nextSet = {
+  const baseSet = normalizeAnimationSet(
+    existingSet ?? createAnimationSet(input.characterAsset.id, mergedClips.map((clip) => clip.name)),
+    input.characterAsset.id,
+    mergedClips.map((clip) => clip.name),
+  )
+  const nextSet: ForgeAnimationSet = {
     ...baseSet,
     actions: {
       ...baseSet.actions,
@@ -165,7 +188,48 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
     blob: animationSetBlob(nextSet),
   })
 
-  return { built, animationAsset, bindingAsset, set: nextSet }
+  const linkedRuntimeTargets = await linkAnimationPackToSkillbound(input.characterAsset.id, packId)
+  return { built, animationAsset, bindingAsset, set: nextSet, linkedRuntimeTargets, clipCount: mergedClips.length }
+}
+
+async function exportAnimationPack(sceneBlob: Blob, clips: THREE.AnimationClip[]) {
+  const url = URL.createObjectURL(sceneBlob)
+  try {
+    return await exportAnimationSet(url, clips)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function loadAnimationClips(blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const gltf = await new GLTFLoader().loadAsync(url)
+    const clips = gltf.animations.map((clip) => clip.clone())
+    disposeGltf(gltf.scene)
+    return clips
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function linkAnimationPackToSkillbound(characterAssetId: string, animationAssetId: string) {
+  try {
+    const workspace = await loadSkillboundWorkspace()
+    let linked = 0
+    const player = workspace.gameplay.player.characterAssetId === characterAssetId
+      ? (() => { linked += 1; return { ...workspace.gameplay.player, animationAssetId } })()
+      : workspace.gameplay.player
+    const enemies = workspace.gameplay.enemies.map((enemy) => {
+      if (enemy.characterAssetId !== characterAssetId) return enemy
+      linked += 1
+      return { ...enemy, animationAssetId }
+    })
+    if (linked > 0) saveSkillboundWorkspace(patchGameplay(workspace, { ...workspace.gameplay, player, enemies }))
+    return linked
+  } catch {
+    return 0
+  }
 }
 
 function cloneFrameWithTime(frame: PoseFrame, t: number): PoseFrame {
