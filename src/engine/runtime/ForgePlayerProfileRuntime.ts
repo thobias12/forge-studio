@@ -29,6 +29,8 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
     this.keys?.clear?.()
   }
 
+  wrapNoopWhenPaused(proto, 'updateCooldowns')
+  wrapNoopWhenPaused(proto, 'activateEncounters')
   wrapNoopWhenPaused(proto, 'updatePlayer')
   wrapNoopWhenPaused(proto, 'updateEnemies')
   wrapNoopWhenPaused(proto, 'updateLoot')
