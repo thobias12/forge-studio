@@ -108,9 +108,9 @@ export default function WorldForge() {
         <span className={generated.validation.valid ? 'validation-good' : 'validation-bad'}>{generated.validation.valid ? <CheckCircle2 size={13}/> : <Waypoints size={13}/>} {generated.validation.valid ? 'Navigation valid' : `${generated.validation.issues.length} issues`}</span>
       </div>
       <div className="world-forge-stage">
-        {playMode ? <SkillboundFrontend workspace={workspace} region={generated} onOpenWorld={() => setPlayMode(false)} onBackHome={() => setPlayMode(false)}/> : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome}/>} 
+        {playMode ? <SkillboundFrontend workspace={workspace} region={generated} autoPlayActive onOpenWorld={() => setPlayMode(false)} onBackHome={() => setPlayMode(false)}/> : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome}/>} 
       </div>
-      <footer className="world-forge-status"><span>{status}</span><strong>{playMode ? 'Full Skillbound frontend/runtime flow is using this generated region.' : 'Geography → route → branches → landmarks → dressing.'}</strong></footer>
+      <footer className="world-forge-status"><span>{status}</span><strong>{playMode ? 'Play From Here starts the active character in this generated region.' : 'Geography → route → branches → landmarks → dressing.'}</strong></footer>
     </main>
 
     <aside className="world-forge-right">
