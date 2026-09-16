@@ -13,11 +13,9 @@ import {
   Home,
   Layers3,
   LayoutGrid,
-  Link2,
   MapPinned,
   PackagePlus,
   Play,
-  ScanLine,
   Search,
   Settings,
   ShieldCheck,
@@ -37,14 +35,13 @@ import GameplayForge from './pages/GameplayForge'
 import ItemForge from './pages/ItemForge'
 import EncounterForge from './pages/EncounterForge'
 import BossForge from './pages/BossForge'
-import MocapStudio from './pages/MocapStudio'
+import AnimationStudioV2 from './pages/AnimationStudioV2'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
 import UIForge from './pages/UIForge'
 import CharacterStudio from './pages/CharacterStudio'
 import CharacterForge from './pages/CharacterForge'
 import DestructionLab from './pages/DestructionLab'
-import AnimationStudio from './pages/AnimationStudio'
 import AnimationBindings from './pages/AnimationBindings'
 import AssetLibrary from './pages/AssetLibrary'
 import TextureLab from './pages/TextureLab'
@@ -102,9 +99,7 @@ const navGroups: NavGroup[] = [
       { id: 'conceptforge', label: 'Concept Forge', icon: Sparkles },
       { id: 'characterforge', label: 'Character Forge', icon: Skull },
       { id: 'characters', label: 'Character Assembly', icon: UserRoundCog },
-      { id: 'animations', label: 'Animations', icon: Clapperboard },
-      { id: 'animationbindings', label: 'Action Bindings', icon: Link2 },
-      { id: 'mocap', label: 'Mocap', icon: ScanLine },
+      { id: 'animations', label: 'Animation Studio', icon: Clapperboard },
     ],
   },
   {
@@ -137,7 +132,7 @@ const navGroups: NavGroup[] = [
 ]
 
 const nav: NavItem[] = navGroups.flatMap((group) => group.items)
-const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'play', 'validation'])
+const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'animations', 'play', 'validation'])
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -145,6 +140,7 @@ export default function App() {
 
   const [page, setPage] = useState<Page>(() => {
     const value = window.location.hash.replace('#/', '') as Page
+    if (value === 'mocap' || value === 'animationbindings') return 'animations'
     return nav.some((item) => item.id === value) ? value : 'home'
   })
   const [registry, setRegistry] = useState<ForgeContentEntry[]>(CORE_REGISTRY_ENTRIES)
@@ -171,12 +167,12 @@ export default function App() {
       .filter((item) => item.label.toLowerCase().includes(needle) || item.id.includes(needle))
       .map((item) => ({ key: `tool:${item.id}`, name: item.label, detail: 'Forge tool', page: item.id }))
     const contentResults = searchForgeRegistry(registry, searchQuery)
-      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: entry.page as Page }))
+      .map((entry) => ({ key: `content:${entry.id}`, name: entry.name, detail: entry.id, page: (entry.page === 'mocap' ? 'animations' : entry.page) as Page }))
     return [...toolResults, ...contentResults].slice(0, 9)
   }, [registry, searchQuery])
 
   const navigate = (next: Page) => {
-    setPage(next)
+    setPage(next === 'mocap' || next === 'animationbindings' ? 'animations' : next)
     setSearchQuery('')
     setSearchFocused(false)
   }
@@ -236,14 +232,14 @@ export default function App() {
           {page === 'itemforge' && <ItemForge />}
           {page === 'play' && <ProjectPlay onOpenWorld={() => navigate('world')} onBackHome={() => navigate('home')} />}
           {page === 'validation' && <ProjectValidation registry={registry} onNavigate={(target) => navigate(target)} />}
-          {page === 'mocap' && <MocapStudio />}
+          {page === 'mocap' && <AnimationStudioV2 onTestGame={() => navigate('play')} />}
           {page === 'models' && <Models />}
           {page === 'destruction' && <DestructionLab />}
           {page === 'conceptforge' && <ConceptForge />}
           {page === 'uiforge' && <UIForge />}
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <CharacterStudio />}
-          {page === 'animations' && <AnimationStudio />}
+          {page === 'animations' && <AnimationStudioV2 onTestGame={() => navigate('play')} />}
           {page === 'animationbindings' && <AnimationBindings />}
           {page === 'textures' && <TextureLab />}
           {page === 'audio' && <AudioStudioWorkspace />}
