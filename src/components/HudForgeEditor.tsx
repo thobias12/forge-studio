@@ -1,17 +1,18 @@
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Eye, EyeOff, Grip, RotateCcw } from 'lucide-react'
 import {
   HUD_ANCHORS,
   HUD_MODULES,
   HUD_PRESETS,
   HUD_PREVIEW_MODES,
+  anchorPoint,
   cloneHudPreset,
   hudModuleStyle,
   hudModuleVisibleInPreview,
   patchHudGrid,
   patchHudModule,
   patchHudPreview,
-  snapHudOffset,
+  type HudEditorGrid,
   type SkillboundHudLayout,
   type SkillboundHudModule,
   type SkillboundHudModuleId,
@@ -38,6 +39,7 @@ type EditorProps = {
 
 const SLOT_MODULES: SkillboundHudModuleId[] = ['hotbar', 'potions', 'buffs', 'debuffs', 'party', 'loot']
 const ORIENTATION_MODULES: SkillboundHudModuleId[] = ['hotbar', 'potions', 'buffs', 'debuffs', 'party', 'loot']
+const HUD_SAFE_INSET = 2.2
 
 export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -47,6 +49,33 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     setMotion((previous) => ({ id: (previous?.id ?? 0) + 1, kind }))
   }
 
+  const focusCanvas = () => canvasRef.current?.focus({ preventScroll: true })
+
+  const nudgeSelected = (pixelsX: number, pixelsY: number) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const bounds = canvas.getBoundingClientRect()
+    const current = layout.modules[selected]
+    const offsetX = clampOffset(current.offsetX + pixelsX / Math.max(1, bounds.width) * 100)
+    const offsetY = clampOffset(current.offsetY + pixelsY / Math.max(1, bounds.height) * 100)
+    onChange(patchHudModule(layout, selected, { offsetX, offsetY }))
+  }
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return
+    const step = event.shiftKey ? 10 : 1
+    const movement = event.key === 'ArrowLeft' ? [-step, 0]
+      : event.key === 'ArrowRight' ? [step, 0]
+        : event.key === 'ArrowUp' ? [0, -step]
+          : event.key === 'ArrowDown' ? [0, step]
+            : undefined
+    if (!movement) return
+    event.preventDefault()
+    event.stopPropagation()
+    nudgeSelected(movement[0], movement[1])
+  }
+
   const startDrag = (event: ReactPointerEvent, id: SkillboundHudModuleId) => {
     if (event.button !== 0) return
     const canvas = canvasRef.current
@@ -54,6 +83,7 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     event.preventDefault()
     event.stopPropagation()
     onSelect(id)
+    focusCanvas()
     const bounds = canvas.getBoundingClientRect()
     const start = layout.modules[id]
     const startX = event.clientX
@@ -62,8 +92,8 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
       const rawX = start.offsetX + (next.clientX - startX) / Math.max(1, bounds.width) * 100
       const rawY = start.offsetY + (next.clientY - startY) / Math.max(1, bounds.height) * 100
       onChange(patchHudModule(layout, id, {
-        offsetX: snapHudOffset(rawX, 'x', layout.grid),
-        offsetY: snapHudOffset(rawY, 'y', layout.grid),
+        offsetX: snapToSafeGrid(rawX, 'x', layout.grid, start.anchor),
+        offsetY: snapToSafeGrid(rawY, 'y', layout.grid, start.anchor),
       }))
     }
     const stop = () => {
@@ -74,7 +104,14 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     window.addEventListener('pointerup', stop, { once: true })
   }
 
-  return <div className={`hud-forge-editor hud-preview-${layout.preview} ${layout.grid.show ? 'hud-show-grid' : ''}`} ref={canvasRef} onPointerDown={() => onSelect(selected)} style={{ '--hud-grid-columns': layout.grid.columns, '--hud-grid-rows': layout.grid.rows } as CSSProperties}>
+  return <div
+    className={`hud-forge-editor hud-preview-${layout.preview} ${layout.grid.show ? 'hud-show-grid' : ''}`}
+    ref={canvasRef}
+    tabIndex={0}
+    onKeyDown={handleKeyDown}
+    onPointerDown={() => { focusCanvas(); onSelect(selected) }}
+    style={{ '--hud-grid-columns': layout.grid.columns, '--hud-grid-rows': layout.grid.rows, '--hud-safe-inset': `${HUD_SAFE_INSET}%` } as CSSProperties}
+  >
     <div className="hud-forge-world">
       <div className="hud-forge-vignette"/>
       <div className="hud-forge-ground"/>
@@ -84,7 +121,7 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     </div>
     {layout.preview === 'low-health' && <div className="hud-low-health-vignette"/>}
     {layout.grid.show && <div className="hud-layout-grid"/>}
-    <div className="hud-safe-frame"><span>SAFE AREA</span></div>
+    <div className="hud-safe-frame"><span>SAFE GRID AREA</span></div>
 
     {HUD_MODULES.map(({ id }) => {
       const module = layout.modules[id]
@@ -96,7 +133,7 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
         className={`hud-module-shell module-${id} ${selected === id ? 'selected' : ''} ${!contextual ? 'context-preview' : ''} ${motionActive ? 'hud-motion-target' : ''}`}
         style={hudModuleStyle(module) as CSSProperties}
         onPointerDown={(event) => startDrag(event, id)}
-        onClick={(event) => { event.stopPropagation(); onSelect(id) }}
+        onClick={(event) => { event.stopPropagation(); onSelect(id); focusCanvas() }}
       >
         <span className="hud-module-drag"><Grip size={10}/></span>
         <HudModuleMock id={id} module={module} preview={layout.preview} motionKind={motionActive ? motion?.kind : undefined}/>
@@ -136,8 +173,9 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
       <div className="hud-grid-preset-row"><button onClick={() => onChange(patchHudGrid(layout, { columns: 16, rows: 9 }))}>16×9</button><button onClick={() => onChange(patchHudGrid(layout, { columns: 24, rows: 14 }))}>24×14</button><button onClick={() => onChange(patchHudGrid(layout, { columns: 32, rows: 18 }))}>32×18</button></div>
       <label className="hud-field"><span>Columns</span><input type="number" min={8} max={48} value={layout.grid.columns} onChange={(event) => onChange(patchHudGrid(layout, { columns: Number(event.target.value) }))}/></label>
       <label className="hud-field"><span>Rows</span><input type="number" min={6} max={30} value={layout.grid.rows} onChange={(event) => onChange(patchHudGrid(layout, { rows: Number(event.target.value) }))}/></label>
-      <label className="hud-visible-switch"><input type="checkbox" checked={layout.grid.snap} onChange={(event) => onChange(patchHudGrid(layout, { snap: event.target.checked }))}/><span>Snap dragged modules to grid</span></label>
-      <label className="hud-visible-switch"><input type="checkbox" checked={layout.grid.show} onChange={(event) => onChange(patchHudGrid(layout, { show: event.target.checked }))}/><span>Show placement grid</span></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={layout.grid.snap} onChange={(event) => onChange(patchHudGrid(layout, { snap: event.target.checked }))}/><span>Snap dragged modules to safe-area grid</span></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={layout.grid.show} onChange={(event) => onChange(patchHudGrid(layout, { show: event.target.checked }))}/><span>Show safe-area grid</span></label>
+      <small className="hud-grid-help">The grid now begins and ends on the safe-area boundary. Select a HUD module and use the arrow keys to nudge it exactly 1 px. Hold Shift for 10 px.</small>
     </section>
 
     <section className="hud-inspector-section">
@@ -154,8 +192,8 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
     <section className="hud-inspector-section selected-module">
       <div className="hud-selected-title"><div><span>SELECTED MODULE</span><strong>{meta.label}</strong></div><button onClick={resetSelected} title="Reset this module to the current preset"><RotateCcw size={13}/></button></div>
       <label className="hud-field"><span>Anchor</span><select value={current.anchor} onChange={(event) => onChange(patchHudModule(layout, selected, { anchor: event.target.value as typeof current.anchor }))}>{HUD_ANCHORS.map((anchor) => <option key={anchor.id} value={anchor.id}>{anchor.label}</option>)}</select></label>
-      <HudRange label="Horizontal offset" value={current.offsetX} min={-40} max={40} step={.1} suffix={`${current.offsetX.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetX: snapHudOffset(value, 'x', layout.grid) }))}/>
-      <HudRange label="Vertical offset" value={current.offsetY} min={-40} max={40} step={.1} suffix={`${current.offsetY.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetY: snapHudOffset(value, 'y', layout.grid) }))}/>
+      <HudRange label="Horizontal offset" value={current.offsetX} min={-40} max={40} step={.1} suffix={`${current.offsetX.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetX: snapToSafeGrid(value, 'x', layout.grid, current.anchor) }))}/>
+      <HudRange label="Vertical offset" value={current.offsetY} min={-40} max={40} step={.1} suffix={`${current.offsetY.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetY: snapToSafeGrid(value, 'y', layout.grid, current.anchor) }))}/>
       <div className="hud-size-group">
         <span>SIZE</span>
         <HudRange label="Overall scale" value={current.scale} min={.25} max={2.5} step={.01} suffix={`${Math.round(current.scale * 100)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { scale: value }))}/>
@@ -197,4 +235,21 @@ function HudModuleMock({ id, module, preview, motionKind }: { id: SkillboundHudM
 
 function HudRange({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) {
   return <label className="hud-range"><span><b>{label}</b><code>{suffix}</code></span><input type="range" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))}/></label>
+}
+
+function snapToSafeGrid(value: number, axis: 'x' | 'y', grid: HudEditorGrid, anchor: SkillboundHudModule['anchor']) {
+  if (!grid.snap) return Math.round(value * 1000) / 1000
+  const [anchorX, anchorY] = anchorPoint(anchor)
+  const anchorCoordinate = axis === 'x' ? anchorX : anchorY
+  const count = axis === 'x' ? grid.columns : grid.rows
+  const safeSpan = 100 - HUD_SAFE_INSET * 2
+  const step = safeSpan / Math.max(1, count)
+  const absolute = anchorCoordinate + value
+  const cell = Math.max(0, Math.min(count, Math.round((absolute - HUD_SAFE_INSET) / step)))
+  const snappedAbsolute = HUD_SAFE_INSET + cell * step
+  return Math.round((snappedAbsolute - anchorCoordinate) * 10000) / 10000
+}
+
+function clampOffset(value: number) {
+  return Math.max(-60, Math.min(60, value))
 }
