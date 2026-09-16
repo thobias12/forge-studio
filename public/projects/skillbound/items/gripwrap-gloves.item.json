@@ -1,0 +1,16 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "gripwrap-gloves",
+  "name": "Gripwrap Gloves",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 0,
+  "color": "#6d5a43",
+  "itemType": "armor",
+  "subtype": "gloves",
+  "equipSlot": "Hands",
+  "armorFitMode": "rigid",
+  "bodyMask": ["hands", "forearms"],
+  "defenseBonus": 3
+}

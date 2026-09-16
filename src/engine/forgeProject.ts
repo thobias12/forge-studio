@@ -49,7 +49,8 @@ export type ForgeItemVisualDefinition = { masterAssetId?: string; inventory: { a
 export type ForgeItemDefinition = { format: 'forge-item'; version: 1; id: string; name: string; slot: ForgeItemSlot; rarity: ForgeItemRarity; damageBonus: number; color: string; modelAssetId?: string; visual?: ForgeItemVisualDefinition }
 export type ForgeLootEntry = { itemId: string; chance: number }
 export type ForgeLootTableDefinition = { format: 'forge-loot-table'; version: 1; id: string; name: string; entries: ForgeLootEntry[] }
-export type ForgePlayerDefinition = { format: 'forge-player'; version: 1; id: string; name: string; maxHealth: number; moveSpeed: number; dodgeDistance: number; dodgeCooldown: number; basicAbility: string; activeAbilities: string[]; startingItems: string[]; characterAssetId?: string; animationAssetId?: string }
+export type ForgePlayerArchetypeLoadout = { label?: string; basicAbility: string; activeAbilities: string[]; startingItems: string[] }
+export type ForgePlayerDefinition = { format: 'forge-player'; version: 1; id: string; name: string; maxHealth: number; moveSpeed: number; dodgeDistance: number; dodgeCooldown: number; basicAbility: string; activeAbilities: string[]; startingItems: string[]; characterAssetId?: string; animationAssetId?: string; archetypeLoadouts?: Partial<Record<'melee' | 'ranged' | 'caster', ForgePlayerArchetypeLoadout>> }
 export type ForgeGameplayContent = { player: ForgePlayerDefinition; abilities: ForgeAbilityDefinition[]; enemies: ForgeEnemyDefinition[]; items: ForgeItemDefinition[]; lootTables: ForgeLootTableDefinition[] }
 export type ForgeProjectDungeonDefinition = DungeonWithProps & { id: string }
 export type ForgeProjectWorkspace = { manifest: ForgeProjectManifest; worlds: ForgeWorldDefinition[]; regions: ForgeRegionDefinition[]; dungeons: ForgeProjectDungeonDefinition[]; encounterProfiles: ForgeEncounterProfile[]; bossProfiles: ForgeBossDefinition[]; gameplay: ForgeGameplayContent; ui: ForgeUiThemeDefinition; editor: { previewSeed: number; selectedWorldId: string; selectedRegionId: string }; updatedAt: string }
@@ -65,8 +66,20 @@ export async function loadSkillboundWorkspace(forceBundled = false): Promise<For
   if (!forceBundled) {
     const current = readCachedWorkspace(WORKSPACE_KEY)
     if (current?.worlds?.length && current.regions?.length && current.editor && current.gameplay) {
-      const bundledDungeons = await loadDungeons(manifest)
-      return { ...current, manifest, dungeons: current.dungeons?.length ? mergeProjectDungeonBindings(current.dungeons, bundledDungeons) : bundledDungeons, encounterProfiles: current.encounterProfiles ?? await loadEncounterProfiles(manifest), bossProfiles: current.bossProfiles ?? await loadBossProfiles(manifest), ui: current.ui ?? await loadUi(manifest) } as ForgeProjectWorkspace
+      const sourceAdvanced = (manifest.contentRevision ?? 1) > (current.manifest.contentRevision ?? 1)
+      const [bundledDungeons, bundledGameplay] = await Promise.all([
+        loadDungeons(manifest),
+        sourceAdvanced ? loadGameplay(manifest) : Promise.resolve(undefined),
+      ])
+      return {
+        ...current,
+        manifest: sourceAdvanced ? manifest : { ...manifest, contentRevision: current.manifest.contentRevision ?? manifest.contentRevision },
+        dungeons: current.dungeons?.length ? mergeProjectDungeonBindings(current.dungeons, bundledDungeons) : bundledDungeons,
+        encounterProfiles: sourceAdvanced ? await loadEncounterProfiles(manifest) : current.encounterProfiles ?? await loadEncounterProfiles(manifest),
+        bossProfiles: sourceAdvanced ? await loadBossProfiles(manifest) : current.bossProfiles ?? await loadBossProfiles(manifest),
+        gameplay: bundledGameplay ?? current.gameplay,
+        ui: current.ui ?? await loadUi(manifest),
+      } as ForgeProjectWorkspace
     }
     const legacy = readCachedWorkspace(LEGACY_V3_KEY) ?? readCachedWorkspace(LEGACY_V2_KEY) ?? readCachedWorkspace(LEGACY_V1_KEY)
     if (legacy?.worlds?.length && legacy.regions?.length && legacy.editor) {

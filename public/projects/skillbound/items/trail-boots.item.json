@@ -1,0 +1,16 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "trail-boots",
+  "name": "Trail Boots",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 0,
+  "color": "#665643",
+  "itemType": "armor",
+  "subtype": "boots",
+  "equipSlot": "Feet",
+  "armorFitMode": "rigid",
+  "bodyMask": ["feet", "shins"],
+  "defenseBonus": 4
+}

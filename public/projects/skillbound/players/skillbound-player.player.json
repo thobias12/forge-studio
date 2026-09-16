@@ -9,5 +9,25 @@
   "dodgeCooldown": 1.0,
   "basicAbility": "iron-cleave",
   "activeAbilities": ["ember-burst"],
-  "startingItems": []
+  "startingItems": [],
+  "archetypeLoadouts": {
+    "melee": {
+      "label": "Vanguard",
+      "basicAbility": "iron-cleave",
+      "activeAbilities": ["shield-bash"],
+      "startingItems": ["rusted-sword", "worn-buckler", "road-worn-chest"]
+    },
+    "ranged": {
+      "label": "Ranger",
+      "basicAbility": "quick-shot",
+      "activeAbilities": ["volley"],
+      "startingItems": ["hunter-bow", "gripwrap-gloves", "trail-boots"]
+    },
+    "caster": {
+      "label": "Arcanist",
+      "basicAbility": "arc-bolt",
+      "activeAbilities": ["ember-burst"],
+      "startingItems": ["ash-staff", "marsh-hood", "drowned-greaves"]
+    }
+  }
 }

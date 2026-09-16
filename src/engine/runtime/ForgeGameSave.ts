@@ -1,3 +1,5 @@
+import type { ForgeEquipmentState } from '../equipment'
+
 export type ForgeRuntimeLootSave = {
   id: string
   itemId: string
@@ -15,6 +17,7 @@ export type ForgeRuntimeSave = {
   player: { x: number; z: number; health: number }
   inventory: string[]
   equippedWeaponId?: string
+  equipment?: ForgeEquipmentState
   defeatedEnemyIds: string[]
   lootDrops: ForgeRuntimeLootSave[]
   gold?: number

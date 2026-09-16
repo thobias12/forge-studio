@@ -1,0 +1,16 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "drowned-greaves",
+  "name": "Drowned Greaves",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 0,
+  "color": "#596b68",
+  "itemType": "armor",
+  "subtype": "legs",
+  "equipSlot": "Legs",
+  "armorFitMode": "rigid",
+  "bodyMask": ["hips", "thighs", "shins"],
+  "defenseBonus": 6
+}

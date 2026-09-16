@@ -1,0 +1,16 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "marsh-hood",
+  "name": "Marsh Hood",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 0,
+  "color": "#545c52",
+  "itemType": "armor",
+  "subtype": "helmet",
+  "equipSlot": "Head",
+  "armorFitMode": "rigid",
+  "bodyMask": ["head", "hair"],
+  "defenseBonus": 5
+}

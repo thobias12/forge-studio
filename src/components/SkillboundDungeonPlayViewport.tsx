@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { HudPickupFlights } from './HudPickupFlights'
 import SkillboundOrb from './SkillboundOrb'
 import { loadSkillboundWorkspace, type ForgeGameplayContent, type ForgeProjectDungeonDefinition } from '../engine/forgeProject'
+import { isItemEquipped, itemRuntimeDescription } from '../engine/equipment'
 import type { ForgeBossDefinition, ForgeEncounterProfile } from '../engine/encounterForge'
 import type { ForgeCharacterBlueprint } from '../engine/characterBlueprint'
 import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine/runtime/ForgeDungeonRuntime'
+import { hydrateRuntimeEquipment, type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
 import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
 import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
 import { installDungeonRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
@@ -19,12 +21,15 @@ installEncounterBossRuntime(ForgeDungeonRuntime)
 installDungeonRewardPickupRuntime(ForgeDungeonRuntime)
 installPlayerProfileRuntime(ForgeDungeonRuntime)
 
-type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension
+type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension
 
 const EMPTY: DungeonRuntimeState = {
   health: 1,
   maxHealth: 1,
   inventory: [],
+  equipment: {},
+  defense: 0,
+  attackBonus: 0,
   enemiesAlive: 0,
   enemiesTotal: 0,
   primaryCooldown: 0,
@@ -114,6 +119,7 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     rewardRuntime.__forgeRewardEvents = []
     rewardRuntime.__forgeRewardPickups = []
     runtimeRef.current = runtime
+    hydrateRuntimeEquipment(runtime, initialState.equipment)
     ;(runtime as any).setPaused?.(paused)
     const initial = runtime.getSnapshot() as DungeonRuntimeState
     setSnapshot(initial)
@@ -162,17 +168,17 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     </div>}
 
     {hudModuleVisible(normalizedHudLayout, 'inventory') && <aside className="skillbound-inventory" style={moduleStyle('inventory')}>
-      <header><span>INVENTORY</span><small>{snapshot.inventory.length} item{snapshot.inventory.length === 1 ? '' : 's'}</small></header>
+      <header><span>INVENTORY</span><small>{snapshot.inventory.length} item{snapshot.inventory.length === 1 ? '' : 's'} · {snapshot.defense} DEF</small></header>
       <div className="skillbound-inventory-items">
         {snapshot.inventory.length === 0 && <p>Drops collected in Hollow Vault will carry back to Drowned March.</p>}
         {snapshot.inventory.map((itemId, index) => {
           const item = gameplay.items.find((candidate) => candidate.id === itemId)
           if (!item) return null
-          const equipped = snapshot.equippedWeaponId === item.id
+          const equipped = isItemEquipped(snapshot.equipment, item.id)
           const icon = itemIcons[item.id]
           return <button key={`${itemId}-${index}`} className={`${equipped ? 'equipped ' : ''}rarity-${item.rarity}`} onClick={() => runtimeRef.current?.equipItem(item.id)}>
             <span className="skillbound-item-icon">{icon ? <img src={icon} alt=""/> : <i style={{ background: item.color }}/>}</span>
-            <span><strong>{item.name}</strong><small>{item.rarity} weapon · +{item.damageBonus} damage</small></span>
+            <span><strong>{item.name}</strong><small>{itemRuntimeDescription(item)}</small></span>
             <em>{equipped ? 'Equipped' : 'Equip'}</em>
           </button>
         })}

@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import './engine/runtime/ForgeEquipmentRuntime'
 import App from './App'
 import { installPropSelectionAssist } from './lib/propSelectionAssist'
 import './gameplay-content-management.css'

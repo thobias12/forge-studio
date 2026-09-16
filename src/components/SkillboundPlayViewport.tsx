@@ -3,10 +3,13 @@ import SkillboundDungeonPlayViewport from './SkillboundDungeonPlayViewport'
 import SkillboundOrb from './SkillboundOrb'
 import { HudPickupFlights } from './HudPickupFlights'
 import { loadSkillboundWorkspace, type ForgeProjectWorkspace } from '../engine/forgeProject'
+import { isItemEquipped, itemRuntimeDescription } from '../engine/equipment'
 import { itemVisual } from '../engine/itemPresentation'
+import { resolveGameplayForRole } from '../engine/playerLoadout'
 import type { GeneratedRegion } from '../engine/guidedWorld'
 import { mergeAdventurePlayerState, type ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
+import { type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { installForgeRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
@@ -25,9 +28,9 @@ type Props = {
   region: GeneratedRegion
   profile?: SkillboundPlayerProfile
   paused?: boolean
-  onSnapshot?: (state: ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension) => void
+  onSnapshot?: (state: ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension) => void
 }
-type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension
+type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension
 
 const EMPTY_STATE: SkillboundRuntimeState = {
   health: 1,
@@ -38,6 +41,9 @@ const EMPTY_STATE: SkillboundRuntimeState = {
   skillCooldown: 0,
   dodgeCooldown: 0,
   inventory: [],
+  equipment: {},
+  defense: 0,
+  attackBonus: 0,
   message: '',
   gold: 0,
   xp: 0,
@@ -58,7 +64,8 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   const [nearDungeon, setNearDungeon] = useState(false)
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({})
 
-  const gameplay = workspace?.gameplay
+  const baseGameplay = workspace?.gameplay
+  const gameplay = useMemo(() => baseGameplay ? resolveGameplayForRole(baseGameplay, profile?.blueprint.role) : undefined, [baseGameplay, profile?.blueprint.role])
   const projectId = workspace?.manifest.id ?? ''
   const runtimeProjectId = profile ? `${projectId}:character:${profile.id}` : projectId
   const uiTheme = workspace?.ui.theme
@@ -121,7 +128,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
-  }, [region, gameplay, runtimeProjectId, session, activeDungeonId, profile?.id])
+  }, [region, gameplay, runtimeProjectId, session, activeDungeonId, profile?.id, profile?.blueprint.role])
 
   useEffect(() => {
     ;(runtimeRef.current as any)?.setPaused?.(paused)
@@ -160,7 +167,8 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     setDungeonPlayerState({
       health: snapshot.health,
       inventory: [...snapshot.inventory],
-      equippedWeaponId: snapshot.equippedWeaponId,
+      equippedWeaponId: snapshot.equipment.MainHand ?? snapshot.equippedWeaponId,
+      equipment: { ...snapshot.equipment },
       gold: snapshot.gold,
       xp: snapshot.xp,
       level: snapshot.level,
@@ -260,17 +268,17 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     </div>}
 
     {hudModuleVisible(hudLayout, 'inventory') && <aside className="skillbound-inventory" style={moduleStyle('inventory')}>
-      <header><span>INVENTORY</span><small>{snapshot.inventory.length} item{snapshot.inventory.length === 1 ? '' : 's'}</small></header>
+      <header><span>INVENTORY</span><small>{snapshot.inventory.length} item{snapshot.inventory.length === 1 ? '' : 's'} · {snapshot.defense} DEF</small></header>
       <div className="skillbound-inventory-items">
         {snapshot.inventory.length === 0 && <p>Defeat the encounter and walk over the loot.</p>}
         {snapshot.inventory.map((itemId, index) => {
           const item = gameplay?.items.find((candidate) => candidate.id === itemId)
           if (!item) return null
-          const equipped = snapshot.equippedWeaponId === item.id
+          const equipped = isItemEquipped(snapshot.equipment, item.id)
           const icon = itemIcons[item.id]
           return <button key={`${itemId}-${index}`} className={`${equipped ? 'equipped ' : ''}rarity-${item.rarity}`} onClick={() => runtimeRef.current?.equipItem(item.id)}>
             <span className="skillbound-item-icon">{icon ? <img src={icon} alt=""/> : <i style={{ background: item.color }}/>}</span>
-            <span><strong>{item.name}</strong><small>{item.rarity} weapon · +{item.damageBonus} damage</small></span>
+            <span><strong>{item.name}</strong><small>{itemRuntimeDescription(item)}</small></span>
             <em>{equipped ? 'Equipped' : 'Equip'}</em>
           </button>
         })}

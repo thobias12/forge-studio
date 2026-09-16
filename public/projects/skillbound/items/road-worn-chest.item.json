@@ -1,0 +1,16 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "road-worn-chest",
+  "name": "Road-Worn Chestguard",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 0,
+  "color": "#78664f",
+  "itemType": "armor",
+  "subtype": "chest",
+  "equipSlot": "Chest",
+  "armorFitMode": "rigid",
+  "bodyMask": ["torso", "upper-arms"],
+  "defenseBonus": 8
+}

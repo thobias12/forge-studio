@@ -1,0 +1,13 @@
+{
+  "format": "forge-ability",
+  "version": 1,
+  "id": "shield-bash",
+  "name": "Shield Bash",
+  "kind": "melee",
+  "input": "skill-1",
+  "damage": 36,
+  "cooldown": 2.2,
+  "range": 2.15,
+  "radius": 1.2,
+  "color": "#c59a58"
+}

@@ -1,9 +1,11 @@
+import type { ForgeEquipmentState } from '../equipment'
 import { loadRuntimeSave, writeRuntimeSave } from './ForgeGameSave'
 
 export type ForgeAdventurePlayerState = {
   health: number
   inventory: string[]
   equippedWeaponId?: string
+  equipment?: ForgeEquipmentState
   gold?: number
   xp?: number
   level?: number
@@ -16,7 +18,8 @@ export function mergeAdventurePlayerState(runtimeSaveKey: string, state: ForgeAd
     ...save,
     player: { ...save.player, health: Math.max(1, state.health) },
     inventory: [...state.inventory],
-    equippedWeaponId: state.equippedWeaponId,
+    equippedWeaponId: state.equipment?.MainHand ?? state.equippedWeaponId,
+    equipment: state.equipment ? { ...state.equipment } : save.equipment,
     gold: state.gold ?? save.gold ?? 0,
     xp: state.xp ?? save.xp ?? 0,
     level: state.level ?? save.level ?? 1,

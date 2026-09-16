@@ -116,10 +116,16 @@ export function removeManagedManifestPath(manifest: ForgeProjectManifest, kind: 
 
 export function findGameplayReferences(workspace: ForgeProjectWorkspace, kind: ManagedGameplayKind, id: string) {
   const references: string[] = []
+  const loadouts = workspace.gameplay.player.archetypeLoadouts ?? {}
 
   if (kind === 'ability') {
-    if (workspace.gameplay.player.basicAbility === id) references.push('Player · basic ability')
-    if (workspace.gameplay.player.activeAbilities.includes(id)) references.push('Player · active abilities')
+    if (workspace.gameplay.player.basicAbility === id) references.push('Player · fallback basic ability')
+    if (workspace.gameplay.player.activeAbilities.includes(id)) references.push('Player · fallback active abilities')
+    for (const [role, loadout] of Object.entries(loadouts)) {
+      if (!loadout) continue
+      if (loadout.basicAbility === id) references.push(`Player · ${role} primary ability`)
+      if (loadout.activeAbilities.includes(id)) references.push(`Player · ${role} active abilities`)
+    }
   }
 
   if (kind === 'enemy') {
@@ -131,7 +137,10 @@ export function findGameplayReferences(workspace: ForgeProjectWorkspace, kind: M
   }
 
   if (kind === 'item') {
-    if (workspace.gameplay.player.startingItems.includes(id)) references.push('Player · starting items')
+    if (workspace.gameplay.player.startingItems.includes(id)) references.push('Player · fallback starting items')
+    for (const [role, loadout] of Object.entries(loadouts)) {
+      if (loadout?.startingItems.includes(id)) references.push(`Player · ${role} starting gear`)
+    }
     for (const table of workspace.gameplay.lootTables) if (table.entries.some((entry) => entry.itemId === id)) references.push(`Loot · ${table.name}`)
     for (const boss of workspace.bossProfiles) if (boss.guaranteedItemId === id) references.push(`Boss Forge · ${boss.name} guaranteed reward`)
   }

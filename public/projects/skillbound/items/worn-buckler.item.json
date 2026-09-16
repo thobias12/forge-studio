@@ -1,0 +1,16 @@
+{
+  "format": "forge-item",
+  "version": 1,
+  "id": "worn-buckler",
+  "name": "Worn Buckler",
+  "slot": "weapon",
+  "rarity": "common",
+  "damageBonus": 0,
+  "color": "#8b7657",
+  "itemType": "offhand",
+  "subtype": "shield",
+  "equipSlot": "OffHand",
+  "armorFitMode": "rigid",
+  "bodyMask": [],
+  "defenseBonus": 4
+}

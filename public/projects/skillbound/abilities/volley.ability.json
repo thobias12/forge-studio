@@ -1,0 +1,13 @@
+{
+  "format": "forge-ability",
+  "version": 1,
+  "id": "volley",
+  "name": "Volley",
+  "kind": "area",
+  "input": "skill-1",
+  "damage": 34,
+  "cooldown": 2.8,
+  "range": 9.5,
+  "radius": 2.5,
+  "color": "#739b61"
+}

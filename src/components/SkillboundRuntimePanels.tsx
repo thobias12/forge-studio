@@ -2,7 +2,20 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Backpack, Coins, Footprints, Heart, Shield, Sparkles, Swords, Zap } from 'lucide-react'
 import CharacterForgePreview from './CharacterForgePreview'
 import { blueprintToConfig } from '../engine/characterBlueprint'
+import {
+  FORGE_EQUIPMENT_SLOTS,
+  equipmentItem,
+  equipmentSlotLabel,
+  equipmentStats,
+  isItemEquipped,
+  itemDefenseBonus,
+  itemEquipmentSlot,
+  itemRuntimeDescription,
+  normalizeEquipment,
+  type ForgeEquipmentState,
+} from '../engine/equipment'
 import { itemVisual } from '../engine/itemPresentation'
+import { resolveGameplayForRole } from '../engine/playerLoadout'
 import type { ForgeProjectWorkspace, ForgeItemDefinition } from '../engine/forgeProject'
 import type { ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { equipActiveSkillboundItem } from '../engine/runtime/SkillboundRuntimeBridge'
@@ -11,6 +24,9 @@ import { getAsset } from '../lib/library'
 import '../skillbound-runtime-panels.css'
 
 type RuntimeSnapshot = ForgeRuntimeSnapshot & {
+  equipment?: ForgeEquipmentState
+  defense?: number
+  attackBonus?: number
   gold?: number
   xp?: number
   level?: number
@@ -23,14 +39,15 @@ type CommonProps = {
   workspace: ForgeProjectWorkspace
 }
 
-const PAPER_DOLL_SLOTS = ['Helmet', 'Chest', 'Gloves', 'Weapon', 'Legs', 'Boots'] as const
-
 export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }: CommonProps) {
   const config = useMemo(() => blueprintToConfig(profile.blueprint), [profile.blueprint])
-  const equipped = workspace.gameplay.items.find((item) => item.id === snapshot?.equippedWeaponId)
-  const primary = workspace.gameplay.abilities.find((ability) => ability.id === workspace.gameplay.player.basicAbility)
-  const active = workspace.gameplay.abilities.find((ability) => ability.id === workspace.gameplay.player.activeAbilities[0])
-  const attack = Math.round((primary?.damage ?? 0) + (equipped?.damageBonus ?? 0))
+  const gameplay = useMemo(() => resolveGameplayForRole(workspace.gameplay, profile.blueprint.role), [workspace.gameplay, profile.blueprint.role])
+  const equipment = normalizeEquipment(snapshot?.equipment, snapshot?.equippedWeaponId)
+  const stats = equipmentStats(gameplay, equipment)
+  const primary = gameplay.abilities.find((ability) => ability.id === gameplay.player.basicAbility)
+  const active = gameplay.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0])
+  const attack = Math.round((primary?.damage ?? 0) + (snapshot?.attackBonus ?? stats.damageBonus))
+  const defense = snapshot?.defense ?? stats.defense
   const level = snapshot?.level ?? profile.blueprint.level ?? 1
 
   return <div className="pause-sheet runtime-character-sheet">
@@ -48,14 +65,14 @@ export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }
       <section className="runtime-paper-doll">
         <span className="runtime-section-label">EQUIPMENT</span>
         <div className="paper-doll-grid">
-          {PAPER_DOLL_SLOTS.map((slot) => {
-            const live = slot === 'Weapon'
-            return <div key={slot} className={`paper-doll-slot ${live && equipped ? 'filled' : ''}`}>
-              <small>{slot}</small>
-              {live && equipped ? <>
+          {FORGE_EQUIPMENT_SLOTS.map((slot) => {
+            const equipped = equipmentItem(gameplay, equipment, slot)
+            return <div key={slot} className={`paper-doll-slot ${equipped ? 'filled' : ''}`}>
+              <small>{equipmentSlotLabel(slot)}</small>
+              {equipped ? <>
                 <RuntimeItemIcon item={equipped}/>
                 <strong>{equipped.name}</strong>
-                <em>+{equipped.damageBonus} attack</em>
+                <em>{equipped.damageBonus ? `+${equipped.damageBonus} attack` : itemDefenseBonus(equipped) ? `+${itemDefenseBonus(equipped)} defense` : 'Equipped'}</em>
               </> : <><i/><span>Empty</span></>}
             </div>
           })}
@@ -66,11 +83,11 @@ export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }
         <span className="runtime-section-label">COMBAT STATS</span>
         <div className="runtime-stat-cards">
           <RuntimeStat icon={<Swords size={15}/>} label="Attack" value={attack}/>
+          <RuntimeStat icon={<Shield size={15}/>} label="Defense" value={defense}/>
           <RuntimeStat icon={<Sparkles size={15}/>} label="Skill Power" value={Math.round(active?.damage ?? 0)}/>
-          <RuntimeStat icon={<Heart size={15}/>} label="Health" value={`${Math.ceil(snapshot?.health ?? workspace.gameplay.player.maxHealth)} / ${snapshot?.maxHealth ?? workspace.gameplay.player.maxHealth}`}/>
-          <RuntimeStat icon={<Footprints size={15}/>} label="Move Speed" value={workspace.gameplay.player.moveSpeed.toFixed(1)}/>
-          <RuntimeStat icon={<Zap size={15}/>} label="Dodge" value={`${workspace.gameplay.player.dodgeCooldown.toFixed(1)}s`}/>
-          <RuntimeStat icon={<Shield size={15}/>} label="Weapon Bonus" value={`+${equipped?.damageBonus ?? 0}`}/>
+          <RuntimeStat icon={<Heart size={15}/>} label="Health" value={`${Math.ceil(snapshot?.health ?? gameplay.player.maxHealth)} / ${snapshot?.maxHealth ?? gameplay.player.maxHealth}`}/>
+          <RuntimeStat icon={<Footprints size={15}/>} label="Move Speed" value={gameplay.player.moveSpeed.toFixed(1)}/>
+          <RuntimeStat icon={<Zap size={15}/>} label="Dodge" value={`${gameplay.player.dodgeCooldown.toFixed(1)}s`}/>
         </div>
         <div className="runtime-progress-summary">
           <span><b>Experience</b><em>{snapshot?.xp ?? 0} / {snapshot?.xpToNext ?? 100}</em></span>
@@ -82,12 +99,13 @@ export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }
 }
 
 export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }: CommonProps) {
-  const items = snapshot?.inventory.map((id, index) => ({ item: workspace.gameplay.items.find((candidate) => candidate.id === id), index })).filter((entry): entry is { item: ForgeItemDefinition; index: number } => Boolean(entry.item)) ?? []
+  const gameplay = useMemo(() => resolveGameplayForRole(workspace.gameplay, profile.blueprint.role), [workspace.gameplay, profile.blueprint.role])
+  const equipment = normalizeEquipment(snapshot?.equipment, snapshot?.equippedWeaponId)
+  const items = snapshot?.inventory.map((id, index) => ({ item: gameplay.items.find((candidate) => candidate.id === id), index })).filter((entry): entry is { item: ForgeItemDefinition; index: number } => Boolean(entry.item)) ?? []
   const [selectedKey, setSelectedKey] = useState('')
   const selectedMatch = items.find((entry) => `${entry.item.id}:${entry.index}` === selectedKey)
   const selectedEntry = selectedMatch ?? items[0]
   const selected = selectedEntry?.item
-  const equippedId = snapshot?.equippedWeaponId
 
   useEffect(() => {
     if (!items.length) {
@@ -98,9 +116,12 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
   }, [items.length, selectedKey, selectedMatch])
 
   const equip = (item: ForgeItemDefinition) => {
-    if (item.slot !== 'weapon') return
+    if (!itemEquipmentSlot(item)) return
     equipActiveSkillboundItem(item.id)
   }
+
+  const selectedEquipped = selected ? isItemEquipped(equipment, selected.id) : false
+  const selectedSlot = selected ? itemEquipmentSlot(selected) : undefined
 
   return <div className="pause-sheet runtime-inventory-sheet">
     <header className="runtime-sheet-header">
@@ -110,14 +131,14 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
 
     <div className="runtime-inventory-layout">
       <section className="runtime-inventory-list">
-        <div className="runtime-inventory-title"><Backpack size={14}/><span>{items.length} item{items.length === 1 ? '' : 's'}</span></div>
+        <div className="runtime-inventory-title"><Backpack size={14}/><span>{items.length} item{items.length === 1 ? '' : 's'} · {snapshot?.defense ?? equipmentStats(gameplay, equipment).defense} defense</span></div>
         <div className="runtime-item-grid">
           {items.map(({ item, index }) => {
             const key = `${item.id}:${index}`
-            const equipped = equippedId === item.id
+            const equipped = isItemEquipped(equipment, item.id)
             return <button key={key} className={`runtime-item-card rarity-${item.rarity} ${selectedKey === key ? 'selected' : ''} ${equipped ? 'equipped' : ''}`} onClick={() => setSelectedKey(key)}>
               <RuntimeItemIcon item={item}/>
-              <span><strong>{item.name}</strong><small>{item.rarity} {item.slot}</small></span>
+              <span><strong>{item.name}</strong><small>{itemRuntimeDescription(item)}</small></span>
               {equipped && <em>Equipped</em>}
             </button>
           })}
@@ -128,12 +149,13 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
       <aside className="runtime-item-inspector">
         {selected ? <>
           <div className={`runtime-item-hero rarity-${selected.rarity}`}><RuntimeItemIcon item={selected}/></div>
-          <span>{selected.rarity.toUpperCase()} · {selected.slot.toUpperCase()}</span>
+          <span>{selected.rarity.toUpperCase()} · {selectedSlot ? equipmentSlotLabel(selectedSlot).toUpperCase() : 'NOT EQUIPPABLE'}</span>
           <h3>{selected.name}</h3>
           <div className="runtime-item-stat"><small>Attack bonus</small><strong>+{selected.damageBonus}</strong></div>
-          <div className="runtime-item-stat"><small>Equipped</small><strong>{equippedId === selected.id ? 'Yes' : 'No'}</strong></div>
-          <button className="runtime-equip-button" disabled={equippedId === selected.id} onClick={() => equip(selected)}>{equippedId === selected.id ? 'Currently Equipped' : 'Equip Item'}</button>
-          <p>Item Forge remains the source of truth for the model, icon, drop presentation and equipped transform.</p>
+          <div className="runtime-item-stat"><small>Defense bonus</small><strong>+{itemDefenseBonus(selected)}</strong></div>
+          <div className="runtime-item-stat"><small>Equipped</small><strong>{selectedEquipped ? 'Yes' : 'No'}</strong></div>
+          <button className="runtime-equip-button" disabled={!selectedSlot || selectedEquipped} onClick={() => equip(selected)}>{selectedEquipped ? 'Currently Equipped' : selectedSlot ? `Equip · ${equipmentSlotLabel(selectedSlot)}` : 'Not Equippable'}</button>
+          <p>Item Forge is the source of truth for slot, stats, master model, icon, world drop and equipped presentation.</p>
         </> : <div className="runtime-item-inspector-empty"><Sparkles size={24}/><strong>Select an item</strong><span>Its live runtime details will appear here.</span></div>}
       </aside>
     </div>

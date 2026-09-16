@@ -1,0 +1,13 @@
+{
+  "format": "forge-ability",
+  "version": 1,
+  "id": "arc-bolt",
+  "name": "Arc Bolt",
+  "kind": "area",
+  "input": "primary",
+  "damage": 25,
+  "cooldown": 0.42,
+  "range": 9.5,
+  "radius": 0.72,
+  "color": "#718bd1"
+}
