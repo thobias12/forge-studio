@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import CharacterForgePreview from './CharacterForgePreview'
 import SkillboundPlayViewport from './SkillboundPlayViewport'
+import { SkillboundCharacterRuntimePanel, SkillboundInventoryRuntimePanel } from './SkillboundRuntimePanels'
 import type { ForgeProjectWorkspace } from '../engine/forgeProject'
 import type { ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import type { GeneratedRegion } from '../engine/guidedWorld'
@@ -266,7 +267,6 @@ function PauseMenu({ panel, setPanel, profile, snapshot, workspace, region, onRe
   onResume: () => void
   onCharacterSelect: () => void
 }) {
-  const items = snapshot?.inventory.map((id) => workspace.gameplay.items.find((item) => item.id === id)).filter(Boolean) ?? []
   return <div className="skillbound-pause-layer">
     <div className="skillbound-pause-backdrop"/>
     <aside className="pause-navigation">
@@ -288,11 +288,8 @@ function PauseMenu({ panel, setPanel, profile, snapshot, workspace, region, onRe
 
 function renderPausePanel(panel: PausePanel, profile: SkillboundPlayerProfile, snapshot: ExtendedSnapshot | undefined, workspace: ForgeProjectWorkspace, region: GeneratedRegion, onResume: () => void) {
   if (panel === 'root') return <div className="pause-hero-panel"><span>GAME PAUSED</span><h2>{profile.name}</h2><p>{region.regionName} · Level {snapshot?.level ?? 1}</p><button onClick={onResume}><Play size={16}/> Return to World</button></div>
-  if (panel === 'character') return <div className="pause-sheet"><header><span>CHARACTER</span><h2>{profile.name}</h2></header><div className="character-stat-grid"><Stat label="Level" value={snapshot?.level ?? 1}/><Stat label="Gold" value={(snapshot?.gold ?? 0).toLocaleString()}/><Stat label="Health" value={`${Math.ceil(snapshot?.health ?? 0)} / ${snapshot?.maxHealth ?? workspace.gameplay.player.maxHealth}`}/><Stat label="XP" value={`${snapshot?.xp ?? 0} / ${snapshot?.xpToNext ?? 100}`}/><Stat label="Role" value={profile.blueprint.role}/><Stat label="Weapon style" value={profile.blueprint.combat.weaponProfile.replaceAll('-', ' ')}/></div></div>
-  if (panel === 'inventory') {
-    const items = snapshot?.inventory.map((id) => workspace.gameplay.items.find((item) => item.id === id)).filter(Boolean) ?? []
-    return <div className="pause-sheet"><header><span>INVENTORY</span><h2>{items.length} items</h2></header><div className="pause-inventory-grid">{items.map((item, index) => item && <div key={`${item.id}-${index}`}><i style={{ background: item.color }}/><strong>{item.name}</strong><span>{item.rarity} · +{item.damageBonus} damage</span></div>)}{!items.length && <p>No items collected yet.</p>}</div></div>
-  }
+  if (panel === 'character') return <SkillboundCharacterRuntimePanel profile={profile} snapshot={snapshot} workspace={workspace}/>
+  if (panel === 'inventory') return <SkillboundInventoryRuntimePanel profile={profile} snapshot={snapshot} workspace={workspace}/>
   if (panel === 'skills') return <div className="pause-sheet"><header><span>SKILLS</span><h2>Current abilities</h2></header><div className="pause-skill-list">{workspace.gameplay.abilities.map((ability) => <div key={ability.id}><i style={{ background: ability.color }}/><span><strong>{ability.name}</strong><small>{ability.kind} · {ability.damage} damage · {ability.cooldown}s cooldown</small></span></div>)}</div></div>
   if (panel === 'map') return <div className="pause-sheet"><header><span>MAP</span><h2>{region.regionName}</h2></header><div className="pause-map"><div className="map-route"/>{region.nodes.slice(0, 12).map((node, index) => <i key={node.id} style={{ left: `${12 + (index * 17) % 76}%`, top: `${20 + (index * 29) % 62}%` }} title={node.label}/>)}</div><p>{region.nodes.length} generated locations · {region.biome}</p></div>
   if (panel === 'quests') return <div className="pause-sheet"><header><span>QUEST LOG</span><h2>Tracked objectives</h2></header><div className="pause-quest"><strong>{snapshot && snapshot.enemiesAlive > 0 ? 'Clear the encounter' : 'Explore the region'}</strong><span>{snapshot ? `${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies remain` : `Travel through ${region.regionName}`}</span></div></div>
