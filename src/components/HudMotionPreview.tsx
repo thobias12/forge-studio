@@ -39,23 +39,25 @@ export function HudMotionPreviewLayer({ layout, motion }: { layout: SkillboundHu
   const sourceY = motion.kind === 'loot' ? 59 : 55
   const particles = motion.kind === 'gold' ? 9 : motion.kind === 'xp' ? 8 : motion.kind === 'health' || motion.kind === 'mana' ? 6 : 0
   const fastPickup = motion.kind === 'gold' || motion.kind === 'xp'
-  const duration = motion.kind === 'gold' ? 410 : motion.kind === 'xp' ? 470 : 650
-  const delayStep = motion.kind === 'gold' ? 22 : motion.kind === 'xp' ? 26 : 36
-  const impactDelay = motion.kind === 'gold' ? 330 : motion.kind === 'xp' ? 385 : 510
+  const duration = motion.kind === 'gold' ? 330 : motion.kind === 'xp' ? 385 : 650
+  const delayStep = motion.kind === 'gold' ? 14 : motion.kind === 'xp' ? 18 : 36
+  const impactDelay = motion.kind === 'gold' ? 305 : motion.kind === 'xp' ? 360 : 510
 
   return <div className={`hud-motion-layer motion-${motion.kind}`} key={`${motion.kind}-${motion.id}`} style={{ '--impact-delay': `${impactDelay}ms` } as CSSProperties}>
     {Array.from({ length: particles }).map((_, index) => {
-      const spread = ((index % 5) - 2) * (fastPickup ? .85 : 1.15)
-      const sourceSpread = ((index % 3) - 1) * (fastPickup ? .75 : 1.25)
-      const midX = sourceX + (targetX - sourceX) * (fastPickup ? .38 : .46) + spread
-      const midY = Math.min(sourceY, targetY) - (fastPickup ? 5.8 : 9) - (index % 3) * (fastPickup ? 1.35 : 2.2)
+      const lane = (index % 5) - 2
+      const sourceSpread = ((index % 3) - 1) * (fastPickup ? .62 : 1.25)
+      const arcHeight = fastPickup ? 4.8 + (index % 3) * .55 : 7 + (index % 3) * 1.1
+      const arcX = lane * (fastPickup ? .48 : .75)
       const style = {
         '--source-x': `${sourceX + sourceSpread}%`,
-        '--source-y': `${sourceY + (index % 2) * (fastPickup ? .65 : 1.2)}%`,
-        '--mid-x': `${midX}%`,
-        '--mid-y': `${midY}%`,
+        '--source-y': `${sourceY + (index % 2) * (fastPickup ? .5 : 1.2)}%`,
         '--target-x': `${targetX}%`,
         '--target-y': `${targetY}%`,
+        '--arc-x': `${arcX}vw`,
+        '--arc-y': `-${arcHeight}vh`,
+        '--tail-x': `${arcX * .28}vw`,
+        '--tail-y': `-${arcHeight * .32}vh`,
         '--flight-delay': `${index * delayStep}ms`,
         '--flight-duration': `${duration}ms`,
       } as CSSProperties
