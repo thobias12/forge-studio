@@ -53,51 +53,51 @@ export const HUD_ANCHORS: Array<{ id: SkillboundHudAnchor; label: string }> = [
 const DEFAULT_GRID: HudEditorGrid = { columns: 24, rows: 14, snap: true, show: true }
 
 const classic = layout('classic-arpg', {
-  health: module('health', 'bottom-center', -15.5, -2.1, 1, 1),
-  hotbar: module('hotbar', 'bottom-center', 3.2, -2.2, 1, 1),
-  objective: module('objective', 'top-center', 0, 1.4, 1, 1),
-  target: module('target', 'top-center', 0, 5.4, 1, 1),
-  boss: module('boss', 'top-center', 0, 10.8, 1.08, 1),
-  interaction: module('interaction', 'bottom-center', 0, -12.5, 1, 1),
-  loot: module('loot', 'bottom-center', 0, -19.5, 1, 1),
-  inventory: module('inventory', 'top-right', -1.2, 5.1, 1, 1),
+  health: module('health', 'bottom-center', -14.5, -5.2, 1, 1),
+  hotbar: module('hotbar', 'bottom-center', 4, -4.8, 1, 1),
+  objective: module('objective', 'top-left', 2.5, 3.2, .94, .96),
+  target: module('target', 'top-center', 0, 4.2, 1, 1),
+  boss: module('boss', 'top-center', 0, 9.6, 1.08, 1, false),
+  interaction: module('interaction', 'bottom-center', 0, -14, 1, 1),
+  loot: module('loot', 'bottom-left', 2.5, -4.5, .94, .95),
+  inventory: module('inventory', 'top-right', -2.2, 3.2, .9, .96),
 })
 
 const compact = layout('compact', {
-  health: module('health', 'bottom-left', 1.4, -1.8, .86, 1),
-  hotbar: module('hotbar', 'bottom-center', 0, -1.6, .88, .96),
-  objective: module('objective', 'top-center', 0, 1.2, .9, .94),
-  target: module('target', 'top-center', 0, 5, .9, 1),
-  boss: module('boss', 'top-center', 0, 10, .98, 1),
-  interaction: module('interaction', 'bottom-center', 0, -11, .9, 1),
-  loot: module('loot', 'bottom-center', 0, -17, .9, .95),
-  inventory: module('inventory', 'top-right', -1, 4.8, .86, .94),
+  health: module('health', 'bottom-left', 2.2, -4.2, .86, 1),
+  hotbar: module('hotbar', 'bottom-center', 0, -4.2, .88, .96),
+  objective: module('objective', 'top-left', 2, 2.8, .86, .92),
+  target: module('target', 'top-center', 0, 4.2, .9, 1),
+  boss: module('boss', 'top-center', 0, 9, .98, 1, false),
+  interaction: module('interaction', 'bottom-center', 0, -12.5, .9, 1),
+  loot: module('loot', 'bottom-left', 2, -3.8, .85, .92),
+  inventory: module('inventory', 'top-right', -1.8, 3, .82, .92),
 })
 
 const minimal = layout('minimal', {
-  health: module('health', 'bottom-left', 1.3, -1.6, .82, .92),
-  hotbar: module('hotbar', 'bottom-center', 0, -1.4, .82, .92),
-  objective: module('objective', 'top-center', 0, 1.2, .86, .9, false),
+  health: module('health', 'bottom-left', 2.1, -3.8, .82, .92),
+  hotbar: module('hotbar', 'bottom-center', 0, -3.8, .82, .92),
+  objective: module('objective', 'top-left', 2, 2.8, .82, .88, false),
   target: module('target', 'top-center', 0, 3.8, .88, .96),
-  boss: module('boss', 'top-center', 0, 8.8, .98, 1),
-  interaction: module('interaction', 'bottom-center', 0, -9.5, .86, .96),
-  loot: module('loot', 'bottom-center', 0, -14.8, .84, .9),
-  inventory: module('inventory', 'top-right', -1, 4.2, .82, .9, false),
+  boss: module('boss', 'top-center', 0, 8.8, .98, 1, false),
+  interaction: module('interaction', 'bottom-center', 0, -11.5, .86, .96),
+  loot: module('loot', 'bottom-left', 2, -3.5, .8, .88),
+  inventory: module('inventory', 'top-right', -1.6, 3, .78, .86, false),
 })
 
 const ultrawide = layout('ultrawide', {
-  health: module('health', 'bottom-center', -11, -1.9, 1, 1),
-  hotbar: module('hotbar', 'bottom-center', 1.8, -2, 1, 1),
-  objective: module('objective', 'top-right', -9.5, 2.1, .96, .96),
-  target: module('target', 'top-center', 0, 4.6, 1, 1),
-  boss: module('boss', 'top-center', 0, 9.8, 1.08, 1),
-  interaction: module('interaction', 'bottom-center', 0, -11, .96, 1),
-  loot: module('loot', 'bottom-center', 0, -17, .94, .95),
-  inventory: module('inventory', 'top-right', -1.1, 7, .96, .98),
+  health: module('health', 'bottom-center', -10.8, -4.6, 1, 1),
+  hotbar: module('hotbar', 'bottom-center', 2.2, -4.5, 1, 1),
+  objective: module('objective', 'top-right', -9, 3, .94, .94),
+  target: module('target', 'top-center', 0, 4.2, 1, 1),
+  boss: module('boss', 'top-center', 0, 9.4, 1.08, 1, false),
+  interaction: module('interaction', 'bottom-center', 0, -13.2, .96, 1),
+  loot: module('loot', 'bottom-left', 4, -4.2, .9, .92),
+  inventory: module('inventory', 'top-right', -2.2, 4.5, .9, .94),
 })
 
 export const HUD_PRESETS: Array<{ id: SkillboundHudPresetId; label: string; detail: string; layout: SkillboundHudLayout }> = [
-  { id: 'classic-arpg', label: 'Classic ARPG', detail: 'Central combat bar with strong life orb and quick inventory.', layout: classic },
+  { id: 'classic-arpg', label: 'Classic ARPG', detail: 'Central combat bar with strong life orb and utility kept clear of the combat center.', layout: classic },
   { id: 'compact', label: 'Compact', detail: 'Smaller controls for laptop and busy combat scenes.', layout: compact },
   { id: 'minimal', label: 'Minimal', detail: 'Only essential combat information stays visible.', layout: minimal },
   { id: 'ultrawide', label: 'Ultrawide', detail: 'Pulls utility information outward without moving combat focus.', layout: ultrawide },
