@@ -1,5 +1,6 @@
-import type { CSSProperties } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { anchorPoint, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
+import { previewPickupFeedbackSound } from '../lib/pickupFeedbackAudio'
 
 export type HudMotionKind = 'gold' | 'xp' | 'health' | 'mana' | 'cooldown' | 'loot'
 export type HudMotionEvent = { id: number; kind: HudMotionKind }
@@ -23,6 +24,10 @@ export function motionTarget(kind: HudMotionKind): SkillboundHudModuleId {
 }
 
 export function HudMotionPreviewLayer({ layout, motion }: { layout: SkillboundHudLayout; motion?: HudMotionEvent }) {
+  useEffect(() => {
+    if (motion?.kind === 'gold' || motion?.kind === 'xp') previewPickupFeedbackSound(motion.kind)
+  }, [motion?.id, motion?.kind])
+
   if (!motion) return null
   const targetId = motionTarget(motion.kind)
   const target = layout.modules[targetId]
