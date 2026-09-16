@@ -6,7 +6,9 @@ import {
   HUD_PRESETS,
   cloneHudPreset,
   hudModuleStyle,
+  patchHudGrid,
   patchHudModule,
+  snapHudOffset,
   type SkillboundHudLayout,
   type SkillboundHudModuleId,
   type SkillboundHudPresetId,
@@ -35,9 +37,12 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     const startX = event.clientX
     const startY = event.clientY
     const move = (next: PointerEvent) => {
-      const offsetX = start.offsetX + (next.clientX - startX) / Math.max(1, bounds.width) * 100
-      const offsetY = start.offsetY + (next.clientY - startY) / Math.max(1, bounds.height) * 100
-      onChange(patchHudModule(layout, id, { offsetX: round(offsetX), offsetY: round(offsetY) }))
+      const rawX = start.offsetX + (next.clientX - startX) / Math.max(1, bounds.width) * 100
+      const rawY = start.offsetY + (next.clientY - startY) / Math.max(1, bounds.height) * 100
+      onChange(patchHudModule(layout, id, {
+        offsetX: snapHudOffset(rawX, 'x', layout.grid),
+        offsetY: snapHudOffset(rawY, 'y', layout.grid),
+      }))
     }
     const stop = () => {
       window.removeEventListener('pointermove', move)
@@ -47,7 +52,7 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
     window.addEventListener('pointerup', stop, { once: true })
   }
 
-  return <div className="hud-forge-editor" ref={canvasRef} onPointerDown={() => onSelect(selected)}>
+  return <div className={`hud-forge-editor ${layout.grid.show ? 'hud-show-grid' : ''}`} ref={canvasRef} onPointerDown={() => onSelect(selected)} style={{ '--hud-grid-columns': layout.grid.columns, '--hud-grid-rows': layout.grid.rows } as CSSProperties}>
     <div className="hud-forge-world">
       <div className="hud-forge-vignette"/>
       <div className="hud-forge-ground"/>
@@ -55,6 +60,7 @@ export function HudForgeEditor({ layout, selected, onSelect, onChange }: EditorP
       <div className="hud-forge-player"><i/><b/></div>
       <div className="hud-forge-enemy enemy-one"/><div className="hud-forge-enemy enemy-two"/>
     </div>
+    {layout.grid.show && <div className="hud-layout-grid"/>}
     <div className="hud-safe-frame"><span>SAFE AREA</span></div>
     {HUD_MODULES.map(({ id }) => {
       const module = layout.modules[id]
@@ -89,7 +95,16 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
     </section>
 
     <section className="hud-inspector-section">
-      <div className="hud-inspector-heading"><div><h3>HUD modules</h3><small>Click a module, then drag it directly in the canvas.</small></div></div>
+      <h3>Placement grid</h3>
+      <div className="hud-grid-preset-row"><button onClick={() => onChange(patchHudGrid(layout, { columns: 16, rows: 9 }))}>16×9</button><button onClick={() => onChange(patchHudGrid(layout, { columns: 24, rows: 14 }))}>24×14</button><button onClick={() => onChange(patchHudGrid(layout, { columns: 32, rows: 18 }))}>32×18</button></div>
+      <label className="hud-field"><span>Columns</span><input type="number" min={8} max={48} value={layout.grid.columns} onChange={(event) => onChange(patchHudGrid(layout, { columns: Number(event.target.value) }))}/></label>
+      <label className="hud-field"><span>Rows</span><input type="number" min={6} max={30} value={layout.grid.rows} onChange={(event) => onChange(patchHudGrid(layout, { rows: Number(event.target.value) }))}/></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={layout.grid.snap} onChange={(event) => onChange(patchHudGrid(layout, { snap: event.target.checked }))}/><span>Snap dragged modules to grid</span></label>
+      <label className="hud-visible-switch"><input type="checkbox" checked={layout.grid.show} onChange={(event) => onChange(patchHudGrid(layout, { show: event.target.checked }))}/><span>Show placement grid</span></label>
+    </section>
+
+    <section className="hud-inspector-section">
+      <div className="hud-inspector-heading"><div><h3>HUD modules</h3><small>Modules keep responsive anchors, but dragging can now snap to a grid.</small></div></div>
       <div className="hud-module-list">{HUD_MODULES.map((module) => {
         const value = layout.modules[module.id]
         return <div key={module.id} className={`hud-module-row ${selected === module.id ? 'active' : ''}`}>
@@ -102,8 +117,8 @@ export function HudForgeInspector({ layout, selected, onSelect, onChange }: Edit
     <section className="hud-inspector-section selected-module">
       <div className="hud-selected-title"><div><span>SELECTED MODULE</span><strong>{meta.label}</strong></div><button onClick={resetSelected} title="Reset this module to the current preset"><RotateCcw size={13}/></button></div>
       <label className="hud-field"><span>Anchor</span><select value={current.anchor} onChange={(event) => onChange(patchHudModule(layout, selected, { anchor: event.target.value as typeof current.anchor }))}>{HUD_ANCHORS.map((anchor) => <option key={anchor.id} value={anchor.id}>{anchor.label}</option>)}</select></label>
-      <HudRange label="Horizontal offset" value={current.offsetX} min={-40} max={40} step={.1} suffix={`${current.offsetX.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetX: value }))}/>
-      <HudRange label="Vertical offset" value={current.offsetY} min={-40} max={40} step={.1} suffix={`${current.offsetY.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetY: value }))}/>
+      <HudRange label="Horizontal offset" value={current.offsetX} min={-40} max={40} step={.1} suffix={`${current.offsetX.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetX: snapHudOffset(value, 'x', layout.grid) }))}/>
+      <HudRange label="Vertical offset" value={current.offsetY} min={-40} max={40} step={.1} suffix={`${current.offsetY.toFixed(1)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { offsetY: snapHudOffset(value, 'y', layout.grid) }))}/>
       <HudRange label="Module scale" value={current.scale} min={.55} max={1.7} step={.01} suffix={`${Math.round(current.scale * 100)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { scale: value }))}/>
       <HudRange label="Opacity" value={current.opacity} min={.2} max={1} step={.01} suffix={`${Math.round(current.opacity * 100)}%`} onChange={(value) => onChange(patchHudModule(layout, selected, { opacity: value }))}/>
       <label className="hud-visible-switch"><input type="checkbox" checked={current.visible} onChange={(event) => onChange(patchHudModule(layout, selected, { visible: event.target.checked }))}/><span>Visible in Skillbound runtime</span></label>
@@ -125,5 +140,3 @@ function HudModuleMock({ id }: { id: SkillboundHudModuleId }) {
 function HudRange({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) {
   return <label className="hud-range"><span><b>{label}</b><code>{suffix}</code></span><input type="range" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))}/></label>
 }
-
-function round(value: number) { return Math.round(value * 10) / 10 }
