@@ -29,12 +29,14 @@ type RewardPickup = {
 
 type RewardRuntime = {
   scene: THREE.Scene
+  world?: THREE.Object3D
   camera: THREE.Camera
   renderer: THREE.WebGLRenderer
   player: THREE.Object3D
-  saveKey: string
+  saveKey?: string
   emitState: () => void
   setMessage: (message: string, seconds: number) => void
+  saveGame?: (manual?: boolean) => void
   __forgeRewardInit?: boolean
   __forgeGold?: number
   __forgeXp?: number
@@ -44,25 +46,19 @@ type RewardRuntime = {
   __forgeRewardPickups?: RewardPickup[]
 }
 
-let installed = false
+let overworldInstalled = false
+let dungeonInstalled = false
 
 export function installForgeRewardPickupRuntime(RuntimeClass: { prototype: any }) {
-  if (installed) return
-  installed = true
+  if (overworldInstalled) return
+  overworldInstalled = true
   const proto = RuntimeClass.prototype
 
   const originalMakeSnapshot = proto.makeSnapshot
   proto.makeSnapshot = function () {
     const runtime = this as RewardRuntime
     ensureRewardState(runtime)
-    return {
-      ...originalMakeSnapshot.call(this),
-      gold: runtime.__forgeGold ?? 0,
-      xp: runtime.__forgeXp ?? 0,
-      level: runtime.__forgeLevel ?? 1,
-      xpToNext: xpRequired(runtime.__forgeLevel ?? 1),
-      pickupEvents: [...(runtime.__forgeRewardEvents ?? [])],
-    }
+    return withRewardSnapshot(originalMakeSnapshot.call(this), runtime)
   }
 
   const originalSaveGame = proto.saveGame
@@ -70,6 +66,7 @@ export function installForgeRewardPickupRuntime(RuntimeClass: { prototype: any }
     const runtime = this as RewardRuntime
     ensureRewardState(runtime)
     const result = originalSaveGame.apply(this, args)
+    if (!runtime.saveKey) return result
     const save = loadRuntimeSave(runtime.saveKey)
     if (save) {
       writeRuntimeSave(runtime.saveKey, {
@@ -86,20 +83,48 @@ export function installForgeRewardPickupRuntime(RuntimeClass: { prototype: any }
   proto.resetProgress = function (...args: unknown[]) {
     const runtime = this as RewardRuntime
     const result = originalReset.apply(this, args)
-    runtime.__forgeGold = 0
-    runtime.__forgeXp = 0
-    runtime.__forgeLevel = 1
-    runtime.__forgeRewardEvents = []
-    runtime.__forgeRewardPickups = []
+    clearRewardState(runtime)
     return result
   }
 
+  wrapCombatRewards(proto)
+}
+
+export function installDungeonRewardPickupRuntime(RuntimeClass: { prototype: any }) {
+  if (dungeonInstalled) return
+  dungeonInstalled = true
+  const proto = RuntimeClass.prototype
+
+  const originalPlayerState = proto.playerState
+  proto.playerState = function () {
+    const runtime = this as RewardRuntime
+    ensureRewardState(runtime)
+    return {
+      ...originalPlayerState.call(this),
+      gold: runtime.__forgeGold ?? 0,
+      xp: runtime.__forgeXp ?? 0,
+      level: runtime.__forgeLevel ?? 1,
+    }
+  }
+
+  const originalMakeSnapshot = proto.makeSnapshot
+  proto.makeSnapshot = function () {
+    const runtime = this as RewardRuntime
+    ensureRewardState(runtime)
+    return withRewardSnapshot(originalMakeSnapshot.call(this), runtime)
+  }
+
+  wrapCombatRewards(proto)
+}
+
+function wrapCombatRewards(proto: any) {
   const originalKillEnemy = proto.killEnemy
   proto.killEnemy = function (enemy: any) {
     const runtime = this as RewardRuntime
+    ensureRewardState(runtime)
     const position = enemy.group.position.clone() as THREE.Vector3
     const enemyId = String(enemy.id)
-    const maxHealth = Number(enemy.definition?.maxHealth ?? 100)
+    const maxHealth = Number(enemy.maxHealth ?? enemy.definition?.maxHealth ?? 100)
     const result = originalKillEnemy.call(this, enemy)
     spawnRewardBurst(runtime, enemyId, maxHealth, position)
     return result
@@ -113,13 +138,38 @@ export function installForgeRewardPickupRuntime(RuntimeClass: { prototype: any }
   }
 }
 
+function withRewardSnapshot<T extends object>(base: T, runtime: RewardRuntime): T & ForgeRewardSnapshotExtension {
+  return {
+    ...base,
+    gold: runtime.__forgeGold ?? 0,
+    xp: runtime.__forgeXp ?? 0,
+    level: runtime.__forgeLevel ?? 1,
+    xpToNext: xpRequired(runtime.__forgeLevel ?? 1),
+    pickupEvents: [...(runtime.__forgeRewardEvents ?? [])],
+  }
+}
+
 function ensureRewardState(runtime: RewardRuntime) {
   if (runtime.__forgeRewardInit) return
   runtime.__forgeRewardInit = true
-  const save = loadRuntimeSave(runtime.saveKey)
-  runtime.__forgeGold = Math.max(0, Math.round(save?.gold ?? 0))
-  runtime.__forgeXp = Math.max(0, Math.round(save?.xp ?? 0))
-  runtime.__forgeLevel = Math.max(1, Math.round(save?.level ?? 1))
+  const save = runtime.saveKey ? loadRuntimeSave(runtime.saveKey) : undefined
+  runtime.__forgeGold = Math.max(0, Math.round(runtime.__forgeGold ?? save?.gold ?? 0))
+  runtime.__forgeXp = Math.max(0, Math.round(runtime.__forgeXp ?? save?.xp ?? 0))
+  runtime.__forgeLevel = Math.max(1, Math.round(runtime.__forgeLevel ?? save?.level ?? 1))
+  runtime.__forgeRewardEventId = runtime.__forgeRewardEventId ?? 0
+  runtime.__forgeRewardEvents = runtime.__forgeRewardEvents ?? []
+  runtime.__forgeRewardPickups = runtime.__forgeRewardPickups ?? []
+}
+
+function clearRewardState(runtime: RewardRuntime) {
+  for (const pickup of runtime.__forgeRewardPickups ?? []) {
+    pickup.group.parent?.remove(pickup.group)
+    disposeGroup(pickup.group)
+  }
+  runtime.__forgeRewardInit = true
+  runtime.__forgeGold = 0
+  runtime.__forgeXp = 0
+  runtime.__forgeLevel = 1
   runtime.__forgeRewardEventId = 0
   runtime.__forgeRewardEvents = []
   runtime.__forgeRewardPickups = []
@@ -151,10 +201,10 @@ function spawnPieces(runtime: RewardRuntime, enemyId: string, kind: 'gold' | 'xp
     mesh.castShadow = true
     if (kind === 'gold') mesh.rotation.x = Math.PI / 2
     group.add(mesh)
-    const baseY = kind === 'gold' ? .18 : .38
+    const baseY = position.y + (kind === 'gold' ? .18 : .38)
     group.position.set(position.x + Math.cos(angle) * radius, baseY, position.z + Math.sin(angle) * radius)
     group.scale.setScalar(.55)
-    runtime.scene.add(group)
+    ;(runtime.world ?? runtime.scene).add(group)
     runtime.__forgeRewardPickups!.push({
       id: `${enemyId}:${kind}:${index}`,
       kind,
@@ -175,7 +225,7 @@ function updateRewardPickups(runtime: RewardRuntime, delta: number) {
     const dx = runtime.player.position.x - pickup.group.position.x
     const dz = runtime.player.position.z - pickup.group.position.z
     const horizontalDistance = Math.hypot(dx, dz)
-    if (horizontalDistance < 3.15 || pickup.age > 1.05) pickup.magnet = true
+    if (horizontalDistance < 3.15) pickup.magnet = true
 
     if (!pickup.magnet) {
       pickup.group.position.y = pickup.baseY + Math.sin(pickup.age * 5.5) * (pickup.kind === 'xp' ? .09 : .035)
@@ -199,7 +249,7 @@ function collectReward(runtime: RewardRuntime, pickup: RewardPickup) {
   const screen = projectToScreen(runtime, pickup.group.position)
   const index = runtime.__forgeRewardPickups!.indexOf(pickup)
   if (index >= 0) runtime.__forgeRewardPickups!.splice(index, 1)
-  runtime.scene.remove(pickup.group)
+  pickup.group.parent?.remove(pickup.group)
   disposeGroup(pickup.group)
 
   let leveled = false
