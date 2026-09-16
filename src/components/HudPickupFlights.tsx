@@ -30,8 +30,8 @@ export function HudPickupFlights({ events, layout }: { events: HudPickupFlightEv
     if (!fresh.length) return
 
     fresh.slice(-8).forEach((event, index) => {
-      const impactDelay = event.kind === 'gold' ? 0.31 : 0.35
-      playPickupFeedbackSound(event.kind, event.amount, impactDelay + index * 0.014)
+      const impactDelay = event.kind === 'gold' ? 0.31 : 0.36
+      playPickupFeedbackSound(event.kind, event.amount, impactDelay + index * 0.01)
     })
   }, [events])
 
@@ -49,9 +49,9 @@ function RuntimeFlight({ event, layout }: { event: HudPickupFlightEvent; layout:
   const targetY = clamp(anchorY + target.offsetY, 2, 98)
   const sourceX = clamp(event.screenX, 2, 98)
   const sourceY = clamp(event.screenY, 2, 98)
-  const duration = event.kind === 'gold' ? 410 : 470
-  const delayStep = event.kind === 'gold' ? 22 : 26
-  const impactDelay = event.kind === 'gold' ? 330 : 385
+  const duration = event.kind === 'gold' ? 330 : 385
+  const delayStep = event.kind === 'gold' ? 14 : 18
+  const impactDelay = event.kind === 'gold' ? 305 : 360
 
   const layerStyle = {
     '--impact-delay': `${impactDelay}ms`,
@@ -60,15 +60,17 @@ function RuntimeFlight({ event, layout }: { event: HudPickupFlightEvent; layout:
   return <div className={`hud-motion-layer hud-runtime-flight motion-${event.kind}`} style={layerStyle}>
     {Array.from({ length: event.kind === 'gold' ? 6 : 5 }).map((_, index) => {
       const lane = (index % 3) - 1
-      const midX = sourceX + (targetX - sourceX) * .38 + lane * 1.15
-      const midY = Math.min(sourceY, targetY) - 5.5 - (index % 2) * 1.6
+      const arcHeight = event.kind === 'gold' ? 4.4 + (index % 2) * .65 : 5.2 + (index % 3) * .6
+      const arcX = lane * (event.kind === 'gold' ? .8 : 1.05)
       const style = {
-        '--source-x': `${sourceX + lane * .48}%`,
-        '--source-y': `${sourceY + (index % 2) * .38}%`,
-        '--mid-x': `${midX}%`,
-        '--mid-y': `${midY}%`,
+        '--source-x': `${sourceX + lane * .42}%`,
+        '--source-y': `${sourceY + (index % 2) * .32}%`,
         '--target-x': `${targetX}%`,
         '--target-y': `${targetY}%`,
+        '--arc-x': `${arcX}vw`,
+        '--arc-y': `-${arcHeight}vh`,
+        '--tail-x': `${arcX * .28}vw`,
+        '--tail-y': `-${arcHeight * .32}vh`,
         '--flight-delay': `${index * delayStep}ms`,
         '--flight-duration': `${duration}ms`,
       } as CSSProperties
