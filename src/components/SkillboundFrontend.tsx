@@ -27,6 +27,7 @@ import {
   cloneBlueprint,
   type ForgeCharacterBlueprint,
 } from '../engine/characterBlueprint'
+import { archetypeLabel } from '../engine/playerLoadout'
 import {
   createDefaultPlayerBlueprint,
   createPlayerProfile,
@@ -222,7 +223,7 @@ function CharacterSelect({ profiles, selected, selectedConfig, onSelect, onPlay,
       <aside className="character-card-list">
         {profiles.map((profile) => <button key={profile.id} className={selected?.id === profile.id ? 'active' : ''} onClick={() => onSelect(profile)}>
           <span className="portrait-mark"><UserRound size={18}/></span>
-          <span><strong>{profile.name}</strong><small>Level {profile.blueprint.level} · {profile.blueprint.role}</small><em>{profile.lastPlayedAt ? `Last played ${formatDate(profile.lastPlayedAt)}` : 'New character'}</em></span>
+          <span><strong>{profile.name}</strong><small>Level {profile.blueprint.level} · {archetypeLabel(profile.blueprint.role)}</small><em>{profile.lastPlayedAt ? `Last played ${formatDate(profile.lastPlayedAt)}` : 'New character'}</em></span>
           <ChevronRight size={15}/>
         </button>)}
         {!profiles.length && <div className="no-characters"><CircleUserRound size={28}/><strong>No heroes yet</strong><span>Create your first Skillbound character.</span></div>}
@@ -230,7 +231,7 @@ function CharacterSelect({ profiles, selected, selectedConfig, onSelect, onPlay,
       <section className="character-select-preview">
         {selected && selectedConfig ? <>
           <div className="character-preview-3d"><CharacterForgePreview conceptMode config={selectedConfig} animation="Idle" playing showRig={false} showHitbox={false} cameraMode="studio"/></div>
-          <div className="character-select-info"><span>{selected.blueprint.role.toUpperCase()} · {selected.blueprint.combat.weaponProfile.replaceAll('-', ' ').toUpperCase()}</span><h2>{selected.name}</h2><p>{selected.blueprint.tags.join(' · ')}</p><div><button className="play" onClick={() => onPlay(selected)}><Play size={15}/> Enter World</button><button className="delete" onClick={() => onDelete(selected.id)}><Trash2 size={14}/></button></div></div>
+          <div className="character-select-info"><span>{archetypeLabel(selected.blueprint.role).toUpperCase()} · {selected.blueprint.combat.weaponProfile.replaceAll('-', ' ').toUpperCase()}</span><h2>{selected.name}</h2><p>{selected.blueprint.tags.join(' · ')}</p><div><button className="play" onClick={() => onPlay(selected)}><Play size={15}/> Enter World</button><button className="delete" onClick={() => onDelete(selected.id)}><Trash2 size={14}/></button></div></div>
         </> : <div className="character-empty-preview"><Sparkles size={32}/><strong>Create your first hero</strong><button onClick={onCreate}>Open Character Creator</button></div>}
       </section>
     </div>
@@ -250,8 +251,19 @@ function CharacterCreator({ blueprint, config, onChange, onCreate, onBack }: {
     const next = cloneBlueprint(blueprint)
     next.role = role
     next.combat.weaponProfile = role === 'caster' ? 'staff' : role === 'ranged' ? 'bow' : 'one-hand-sword'
-    next.appearance.accent = role === 'caster' ? '#586ca8' : role === 'ranged' ? '#526f4d' : '#8a5d3a'
-    next.tags = ['player', 'human', role]
+    if (role === 'ranged') {
+      next.body = { ...next.body, height: 1.01, bulk: 0.96, shoulders: 1.01, headScale: 0.95, armLength: 1.03, legLength: 1.04, asymmetry: 0.02 }
+      next.appearance = { ...next.appearance, armor: 'none', headwear: 'none', secondary: '#2e3a2b', accent: '#795a37' }
+      next.tags = ['player', 'human', 'thornwarden', 'ranged']
+    } else if (role === 'caster') {
+      next.body = { ...next.body, height: 1.04, bulk: 0.93, shoulders: 0.98, headScale: 0.96, armLength: 1.04, legLength: 1.02, asymmetry: 0.01 }
+      next.appearance = { ...next.appearance, armor: 'none', headwear: 'none', secondary: '#211b35', accent: '#6752a0' }
+      next.tags = ['player', 'human', 'voidweaver', 'caster']
+    } else {
+      next.body = { ...next.body, height: 1.02, bulk: 0.98, shoulders: 1.04, headScale: 0.96, armLength: 1.01, legLength: 1.03, asymmetry: 0.06 }
+      next.appearance = { ...next.appearance, armor: 'none', headwear: 'hood', secondary: '#202126', accent: '#763d38' }
+      next.tags = ['player', 'human', 'duskstrider', 'melee']
+    }
     onChange(next)
   }
 
@@ -260,12 +272,12 @@ function CharacterCreator({ blueprint, config, onChange, onCreate, onBack }: {
     <div className="creator-body">
       <aside className="creator-controls">
         <section><label>Character name<input value={blueprint.name} maxLength={24} onChange={(event) => onChange({ ...blueprint, name: event.target.value })}/></label></section>
-        <section><span className="section-title">ARCHETYPE</span><div className="creator-archetypes"><button className={blueprint.role === 'melee' ? 'active' : ''} onClick={() => archetype('melee')}><Shield size={15}/><strong>Vanguard</strong><small>Sword & resilience</small></button><button className={blueprint.role === 'ranged' ? 'active' : ''} onClick={() => archetype('ranged')}><Swords size={15}/><strong>Ranger</strong><small>Range & mobility</small></button><button className={blueprint.role === 'caster' ? 'active' : ''} onClick={() => archetype('caster')}><Sparkles size={15}/><strong>Arcanist</strong><small>Staff & arcane power</small></button></div></section>
+        <section><span className="section-title">STARTING CLASS</span><div className="creator-archetypes"><button className={blueprint.role === 'melee' ? 'active' : ''} onClick={() => archetype('melee')}><Shield size={15}/><strong>Duskstrider</strong><small>Blade · relics · mobility</small></button><button className={blueprint.role === 'ranged' ? 'active' : ''} onClick={() => archetype('ranged')}><Swords size={15}/><strong>Thornwarden</strong><small>Bow · tracking · agility</small></button><button className={blueprint.role === 'caster' ? 'active' : ''} onClick={() => archetype('caster')}><Sparkles size={15}/><strong>Voidweaver</strong><small>Staff · forbidden arcana</small></button></div></section>
         <section><span className="section-title">BODY</span><CreatorRange label="Height" value={blueprint.body.height} min={.85} max={1.2} onChange={(value) => patchBody('height', value)}/><CreatorRange label="Build" value={blueprint.body.bulk} min={.78} max={1.38} onChange={(value) => patchBody('bulk', value)}/><CreatorRange label="Shoulders" value={blueprint.body.shoulders} min={.82} max={1.3} onChange={(value) => patchBody('shoulders', value)}/><CreatorRange label="Head" value={blueprint.body.headScale} min={.88} max={1.14} onChange={(value) => patchBody('headScale', value)}/></section>
         <section><span className="section-title">APPEARANCE</span><div className="creator-colors"><label>Skin<input type="color" value={blueprint.appearance.primary} onChange={(event) => patchAppearance('primary', event.target.value)}/></label><label>Cloth<input type="color" value={blueprint.appearance.secondary} onChange={(event) => patchAppearance('secondary', event.target.value)}/></label><label>Accent<input type="color" value={blueprint.appearance.accent} onChange={(event) => patchAppearance('accent', event.target.value)}/></label></div><label>Headwear<select value={blueprint.appearance.headwear} onChange={(event) => patchAppearance('headwear', event.target.value)}><option value="none">None</option><option value="hood">Hood</option><option value="helmet">Helmet</option></select></label></section>
       </aside>
-      <section className="creator-preview"><CharacterForgePreview conceptMode config={config} animation="Idle" playing showRig={false} showHitbox={false} cameraMode="studio"/><div className="creator-preview-label"><span>FORGEHUMANOIDV1</span><strong>{blueprint.name || 'Wanderer'}</strong><small>Character Blueprint v2 · compatible with Skillbound runtime</small></div></section>
-      <aside className="creator-summary"><span>HERO SUMMARY</span><h3>{blueprint.name || 'Wanderer'}</h3><dl><div><dt>Archetype</dt><dd>{blueprint.role}</dd></div><div><dt>Weapon style</dt><dd>{blueprint.combat.weaponProfile.replaceAll('-', ' ')}</dd></div><div><dt>Height</dt><dd>{Math.round(blueprint.body.height * 180)} cm</dd></div><div><dt>Build</dt><dd>{Math.round(blueprint.body.bulk * 100)}%</dd></div></dl><p>Your body and appearance are stored as editable Character Blueprint DNA. Equipment remains external and comes from Item Forge.</p><button onClick={onCreate}><Gamepad2 size={15}/> Create Character</button></aside>
+      <section className="creator-preview"><CharacterForgePreview conceptMode config={config} animation="Idle" playing showRig={false} showHitbox={false} cameraMode="studio"/><div className="creator-preview-label"><span>FORGEHUMANOIDV1 · {archetypeLabel(blueprint.role).toUpperCase()}</span><strong>{blueprint.name || 'Wanderer'}</strong><small>Character Blueprint v2 · compatible with Skillbound runtime</small></div></section>
+      <aside className="creator-summary"><span>HERO SUMMARY</span><h3>{blueprint.name || 'Wanderer'}</h3><dl><div><dt>Class</dt><dd>{archetypeLabel(blueprint.role)}</dd></div><div><dt>Weapon style</dt><dd>{blueprint.combat.weaponProfile.replaceAll('-', ' ')}</dd></div><div><dt>Height</dt><dd>{Math.round(blueprint.body.height * 180)} cm</dd></div><div><dt>Build</dt><dd>{Math.round(blueprint.body.bulk * 100)}%</dd></div></dl><p>Your body and appearance are stored as editable Character Blueprint DNA. Equipment remains external and comes from Item Forge.</p><button onClick={onCreate}><Gamepad2 size={15}/> Create Character</button></aside>
     </div>
   </main>
 }
