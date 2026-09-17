@@ -35,7 +35,7 @@ import GameplayForge from './pages/GameplayForge'
 import ItemForge from './pages/ItemForge'
 import EncounterForge from './pages/EncounterForge'
 import BossForge from './pages/BossForge'
-import AnimationStudioV2 from './pages/AnimationStudioV2'
+import AnimationStudioRuntime2 from './pages/AnimationStudioRuntime2'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
 import UIForge from './pages/UIForge'
@@ -232,14 +232,14 @@ export default function App() {
           {page === 'itemforge' && <ItemForge />}
           {page === 'play' && <ProjectPlay onOpenWorld={() => navigate('world')} onBackHome={() => navigate('home')} />}
           {page === 'validation' && <ProjectValidation registry={registry} onNavigate={(target) => navigate(target)} />}
-          {page === 'mocap' && <AnimationStudioV2 onTestGame={() => navigate('play')} />}
+          {page === 'mocap' && <AnimationStudioRuntime2 onTestGame={() => navigate('play')} />}
           {page === 'models' && <Models />}
           {page === 'destruction' && <DestructionLab />}
           {page === 'conceptforge' && <ConceptForge />}
           {page === 'uiforge' && <UIForge />}
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <CharacterStudio />}
-          {page === 'animations' && <AnimationStudioV2 onTestGame={() => navigate('play')} />}
+          {page === 'animations' && <AnimationStudioRuntime2 onTestGame={() => navigate('play')} />}
           {page === 'animationbindings' && <AnimationBindings />}
           {page === 'textures' && <TextureLab />}
           {page === 'audio' && <AudioStudioWorkspace />}
