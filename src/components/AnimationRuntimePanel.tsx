@@ -13,6 +13,7 @@ import {
   type ForgeAnimationSet,
 } from '../engine/animationBindings'
 import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import AnimationCombatTestArena from './AnimationCombatTestArena'
 
 const EVENT_KINDS: Array<{ id: ForgeAnimationEventKind; label: string; defaultTime: number }> = [
   { id: 'hit', label: 'Hit', defaultTime: .42 },
@@ -22,6 +23,7 @@ const EVENT_KINDS: Array<{ id: ForgeAnimationEventKind; label: string; defaultTi
 ]
 
 export default function AnimationRuntimePanel() {
+  const [assets, setAssets] = useState<LibraryAsset[]>([])
   const [targets, setTargets] = useState<LibraryAsset[]>([])
   const [targetId, setTargetId] = useState('')
   const [set, setSet] = useState<ForgeAnimationSet>()
@@ -31,10 +33,14 @@ export default function AnimationRuntimePanel() {
 
   const selectedTarget = useMemo(() => targets.find((asset) => asset.id === targetId), [targets, targetId])
   const binding = set?.actions[selectedAction]
+  const vfxAssets = useMemo(() => assets.filter((asset) => asset.category === 'vfx'), [assets])
+  const audioAssets = useMemo(() => assets.filter((asset) => asset.category === 'audio'), [assets])
+  const timelineMax = useMemo(() => Math.max(1.25, ...(binding?.events ?? []).map((event) => event.time + .12)), [binding?.events])
 
   const refreshTargets = async () => {
-    const assets = await listAssets()
-    const next = assets.filter((asset) => asset.category === 'characters' && asset.kind === 'glb' && (
+    const library = await listAssets()
+    setAssets(library)
+    const next = library.filter((asset) => asset.category === 'characters' && asset.kind === 'glb' && (
       asset.tags.includes('ForgeHumanoidV1') ||
       asset.tags.includes('animation-target') ||
       asset.tags.includes('concept-forge-2') ||
@@ -67,9 +73,15 @@ export default function AnimationRuntimePanel() {
         speed: 1,
       }
       const existing = currentBinding.events ?? []
+      const previous = existing.find((event) => event.kind === kind)
       const events = time === undefined
         ? existing.filter((event) => event.kind !== kind)
-        : [...existing.filter((event) => event.kind !== kind), { id: `${selectedAction}-${kind}`, kind, time: Math.max(0, time) }].sort((a, b) => a.time - b.time)
+        : [...existing.filter((event) => event.kind !== kind), {
+          id: `${selectedAction}-${kind}`,
+          kind,
+          time: Math.max(0, time),
+          assetId: previous?.assetId,
+        }].sort((a, b) => a.time - b.time)
       return {
         ...current,
         actions: {
@@ -80,7 +92,17 @@ export default function AnimationRuntimePanel() {
     })
   }
 
-  const saveTiming = async () => {
+  const updateEventAsset = (kind: ForgeAnimationEventKind, assetId: string | undefined) => {
+    setSet((current) => {
+      if (!current) return current
+      const currentBinding = current.actions[selectedAction]
+      if (!currentBinding) return current
+      const events = (currentBinding.events ?? []).map((event) => event.kind === kind ? { ...event, assetId: assetId || undefined } : event)
+      return { ...current, actions: { ...current.actions, [selectedAction]: { ...currentBinding, events } } }
+    })
+  }
+
+  const saveSequence = async () => {
     if (!set || !selectedTarget) return
     setSaving(true)
     try {
@@ -96,7 +118,7 @@ export default function AnimationRuntimePanel() {
         blob: animationSetBlob(normalized),
       })
       setSet(normalized)
-      setStatus(`Saved ${actionDefinition(selectedAction)?.label} timing for ${selectedTarget.name}.`)
+      setStatus(`Saved ${actionDefinition(selectedAction)?.label} timing + presentation events for ${selectedTarget.name}.`)
     } finally {
       setSaving(false)
     }
@@ -104,7 +126,7 @@ export default function AnimationRuntimePanel() {
 
   return <section className="animation-runtime-panel">
     <header>
-      <div><span className="eyebrow">ANIMATION RUNTIME 2.0</span><strong>Gameplay bindings & timing</strong><small>Everything published for the selected character in one overview.</small></div>
+      <div><span className="eyebrow">ANIMATION RUNTIME 2.0</span><strong>Gameplay bindings, timing & effects</strong><small>Hit timing, VFX and SFX live on the same authored action.</small></div>
       <button className="secondary-button" onClick={() => void refreshTargets()}><RefreshCw size={14}/> Refresh</button>
     </header>
 
@@ -125,22 +147,37 @@ export default function AnimationRuntimePanel() {
 
     <div className="animation-event-editor">
       <div className="animation-event-heading"><Swords size={15}/><div><strong>{actionDefinition(selectedAction)?.label}</strong><small>{binding?.clip ? `Clip · ${binding.clip}` : 'Record and publish this action in Animation Studio first.'}</small></div></div>
+
+      <div className="animation-event-timeline">
+        <div className="animation-event-ruler"><span>0.00s</span><span>{timelineMax.toFixed(2)}s</span></div>
+        <div className="animation-event-track">
+          <div className="animation-event-clip-fill"/>
+          {(binding?.events ?? []).map((event) => <div key={event.id} className={`animation-event-marker marker-${event.kind}`} style={{ left: `${Math.min(100, event.time / timelineMax * 100)}%` }} title={`${event.kind.toUpperCase()} · ${event.time.toFixed(2)}s`}><i/><b>{event.kind.toUpperCase()}</b></div>)}
+        </div>
+      </div>
+
       <div className="animation-event-list">
         {EVENT_KINDS.map((event) => {
           const current = binding?.events?.find((item) => item.kind === event.id)
           const enabled = current !== undefined
-          return <div className="animation-event-row" key={event.id}>
+          const choices = event.id === 'vfx' ? vfxAssets : event.id === 'sfx' ? audioAssets : []
+          return <div className={`animation-event-row event-row-${event.id}`} key={event.id}>
             <label className="event-enable"><input type="checkbox" checked={enabled} onChange={(change) => updateEvent(event.id, change.target.checked ? event.defaultTime : undefined)}/><span>{event.label}</span></label>
             <input type="range" min="0" max="2.5" step="0.01" disabled={!enabled} value={current?.time ?? event.defaultTime} onChange={(change) => updateEvent(event.id, Number(change.target.value))}/>
             <input className="event-time-input" type="number" min="0" max="10" step="0.01" disabled={!enabled} value={(current?.time ?? event.defaultTime).toFixed(2)} onChange={(change) => updateEvent(event.id, Number(change.target.value))}/>
             <em>s</em>
+            {(event.id === 'vfx' || event.id === 'sfx') ? <select className="animation-event-asset" disabled={!enabled} value={current?.assetId ?? ''} onChange={(change) => updateEventAsset(event.id, change.target.value || undefined)}>
+              <option value="">{event.id === 'vfx' ? 'Choose VFX…' : 'Choose sound…'}</option>
+              {choices.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+            </select> : <span className="animation-event-gameplay-label">{event.id === 'hit' ? 'Damage lands here' : 'Action can recover here'}</span>}
           </div>
         })}
       </div>
-      <p><b>Hit</b> controls when gameplay damage lands. VFX/SFX markers are stored now so Skill Forge can bind effects to the same animation timeline next.</p>
-      <button className="primary-button" disabled={!set || !selectedTarget || saving} onClick={() => void saveTiming()}><SaveIcon size={15}/>{saving ? 'Saving…' : 'Save Gameplay Timing'}</button>
+      <p><b>Hit</b> delays gameplay damage until the authored contact frame. <b>VFX</b> and <b>SFX</b> now fire from the same timeline in both the test arena and Skillbound runtime.</p>
+      <button className="primary-button" disabled={!set || !selectedTarget || saving} onClick={() => void saveSequence()}><SaveIcon size={15}/>{saving ? 'Saving…' : 'Save Gameplay Sequence'}</button>
     </div>
 
+    <AnimationCombatTestArena target={selectedTarget} animationSet={set} action={selectedAction}/>
     <footer>{status}</footer>
   </section>
 }
