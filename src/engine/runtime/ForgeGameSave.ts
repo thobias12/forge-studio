@@ -23,6 +23,8 @@ export type ForgeRuntimeSave = {
   gold?: number
   xp?: number
   level?: number
+  mana?: number
+  maxMana?: number
   savedAt: string
 }
 
