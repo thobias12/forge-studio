@@ -13,6 +13,7 @@ import { type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEqu
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { installForgeRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
+import type { ForgeSkillSnapshotExtension } from '../engine/runtime/ForgeSkillRuntime'
 import type { SkillboundPlayerProfile } from '../engine/playerProfiles'
 import { getAsset } from '../lib/library'
 import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
@@ -28,13 +29,18 @@ type Props = {
   region: GeneratedRegion
   profile?: SkillboundPlayerProfile
   paused?: boolean
-  onSnapshot?: (state: ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension) => void
+  onSnapshot?: (state: ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension) => void
 }
-type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension
+type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension
 
 const EMPTY_STATE: SkillboundRuntimeState = {
   health: 1,
   maxHealth: 1,
+  mana: 100,
+  maxMana: 100,
+  manaRegen: 14,
+  hotbarAbilityIds: ['', '', '', '', ''],
+  hotbarCooldowns: [0, 0, 0, 0, 0],
   enemiesAlive: 0,
   enemiesTotal: 0,
   primaryCooldown: 0,
@@ -71,7 +77,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   const uiTheme = workspace?.ui.theme
   const hudLayout = useMemo(() => normalizeHudLayout(workspace?.ui.hud), [workspace?.ui.hud])
   const primaryAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.basicAbility), [gameplay])
-  const skillAbility = useMemo(() => gameplay?.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0]), [gameplay])
+  const hotbarAbilities = useMemo(() => (snapshot.hotbarAbilityIds ?? []).map((id) => gameplay?.abilities.find((ability) => ability.id === id)), [gameplay, snapshot.hotbarAbilityIds])
   const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
   const uiClasses = uiTheme
     ? `panel-${uiTheme.panelStyle} ornament-${uiTheme.ornamentLevel} corner-${uiTheme.cornerStyle} slots-${uiTheme.slotStyle} buttons-${uiTheme.buttonStyle} density-${uiTheme.density}`
@@ -166,6 +172,8 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     runtimeRef.current?.saveGame(false)
     setDungeonPlayerState({
       health: snapshot.health,
+      mana: snapshot.mana,
+      maxMana: snapshot.maxMana,
       inventory: [...snapshot.inventory],
       equippedWeaponId: snapshot.equipment.MainHand ?? snapshot.equippedWeaponId,
       equipment: { ...snapshot.equipment },
@@ -197,6 +205,8 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
       gold: state.gold ?? dungeonPlayerState?.gold ?? 0,
       xp: state.xp ?? dungeonPlayerState?.xp ?? 0,
       level: state.level ?? dungeonPlayerState?.level ?? 1,
+      mana: state.mana ?? dungeonPlayerState?.mana,
+      maxMana: state.maxMana ?? dungeonPlayerState?.maxMana,
     })
     setDungeonPlayerState(undefined)
     setActiveDungeonId(undefined)
@@ -222,8 +232,6 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   }
 
   const xpPercent = Math.max(0, Math.min(100, snapshot.xp / Math.max(1, snapshot.xpToNext) * 100))
-  const skillCooldownMax = Math.max(.1, skillAbility?.cooldown ?? 1)
-  const mana = Math.round(100 - Math.min(1, snapshot.skillCooldown / skillCooldownMax) * 28)
   const objective = snapshot.enemiesTotal === 0
     ? 'No encounter in this generated region.'
     : snapshot.enemiesAlive > 0
@@ -236,7 +244,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     {!gameplay && <div className="skillbound-runtime-loading">Loading Skillbound gameplay data…</div>}
     <div className="skillbound-runtime-hint">
       <strong>SKILLBOUND · {profile?.name ?? 'FORGE HERO'}</strong>
-      <span>WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact · Esc menu</span>
+      <span>WASD move · LMB primary · 1–5 skills · Q slot 1 · Space dodge · wheel zoom · E interact · Esc menu</span>
     </div>
 
     <HudPickupFlights events={snapshot.pickupEvents} layout={hudLayout}/>
@@ -253,10 +261,10 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     {snapshot.message && hudModuleVisible(hudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
 
     {hudModuleVisible(hudLayout, 'health') && <SkillboundOrb kind="health" value={snapshot.health} max={snapshot.maxHealth} style={moduleStyle('health')}/>} 
-    {hudModuleVisible(hudLayout, 'resource') && <SkillboundOrb kind="mana" value={mana} max={100} style={moduleStyle('resource')}/>} 
-    {hudModuleVisible(hudLayout, 'hotbar') && <div className="skillbound-skillbar" style={moduleStyle('hotbar')}>
+    {hudModuleVisible(hudLayout, 'resource') && <SkillboundOrb kind="mana" value={snapshot.mana} max={snapshot.maxMana} style={moduleStyle('resource')}/>} 
+    {hudModuleVisible(hudLayout, 'hotbar') && <div className="skillbound-skillbar skillbound-skillbar-expanded" style={moduleStyle('hotbar')}>
       <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
-      <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
+      {hotbarAbilities.map((skill, index) => <SkillSlot key={index} hotkey={String(index + 1)} name={skill?.name ?? 'Empty'} cooldown={snapshot.hotbarCooldowns[index] ?? 0} manaCost={skill ? Number((skill as any).manaCost ?? 12) : undefined} onClick={skill ? () => (runtimeRef.current as any)?.useAbilitySlot?.(index) : undefined}/>)}
       <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
     </div>}
     {hudModuleVisible(hudLayout, 'xp') && <div className="skillbound-runtime-xp" style={moduleStyle('xp')}>
@@ -296,11 +304,11 @@ function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot
   </div>
 }
 
-function SkillSlot({ hotkey, name, cooldown }: { hotkey: string; name: string; cooldown: number }) {
+function SkillSlot({ hotkey, name, cooldown, manaCost, onClick }: { hotkey: string; name: string; cooldown: number; manaCost?: number; onClick?: () => void }) {
   const cooling = cooldown > 0.04
-  return <div className={cooling ? 'skillbound-skill-slot cooling' : 'skillbound-skill-slot'}>
+  return <div className={`${cooling ? 'skillbound-skill-slot cooling' : 'skillbound-skill-slot'}${onClick ? ' clickable' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}>
     <b>{hotkey}</b>
-    <span>{name}</span>
+    <span>{name}{manaCost !== undefined && <small>{manaCost} MP</small>}</span>
     {cooling && <em>{cooldown.toFixed(1)}</em>}
   </div>
 }
