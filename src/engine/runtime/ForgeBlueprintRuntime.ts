@@ -1,9 +1,16 @@
 import * as THREE from 'three'
+import { getAsset } from '../../lib/library'
+import { animationBindingAssetId, animationPackAssetId, parseAnimationSet } from '../animationBindings'
 import { blueprintToConfig, type ForgeCharacterBlueprint } from '../characterBlueprint'
 import { createConceptForgeCharacter } from '../conceptCharacterV2'
-import { ForgeCharacterVisualBinding } from './ForgeAssetRuntime'
+import { ForgeCharacterVisualBinding, loadLibraryAnimationClips } from './ForgeAssetRuntime'
 
-export function bindCharacterBlueprint(target: THREE.Object3D, blueprint: ForgeCharacterBlueprint, desiredHeight = 1.95) {
+export async function bindCharacterBlueprint(
+  target: THREE.Object3D,
+  blueprint: ForgeCharacterBlueprint,
+  desiredHeight = 1.95,
+  animationTargetId?: string,
+) {
   const build = createConceptForgeCharacter(blueprintToConfig(blueprint))
   const root = build.root
   normalize(root, desiredHeight)
@@ -16,8 +23,19 @@ export function bindCharacterBlueprint(target: THREE.Object3D, blueprint: ForgeC
   target.add(root)
   const placeholder = target.getObjectByName('__forge_placeholder')
   if (placeholder) placeholder.visible = false
+
   const binding = new ForgeCharacterVisualBinding(root)
-  binding.setAnimations(build.clips.map((clip) => clip.clone()))
+  let clips = build.clips.map((clip) => clip.clone())
+
+  if (animationTargetId) {
+    const bindingAsset = await getAsset(animationBindingAssetId(animationTargetId)).catch(() => undefined)
+    if (bindingAsset) binding.setAnimationSet(await parseAnimationSet(bindingAsset.blob, animationTargetId))
+
+    const authored = await loadLibraryAnimationClips(animationPackAssetId(animationTargetId)).catch(() => [])
+    if (authored.length) clips = [...clips, ...authored]
+  }
+
+  binding.setAnimations(clips)
   return binding
 }
 
