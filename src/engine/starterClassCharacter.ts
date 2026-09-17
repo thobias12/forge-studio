@@ -9,6 +9,9 @@ export type SkillboundStarterClass = 'duskstrider' | 'thornwarden' | 'voidweaver
 export type StarterClassCharacterConfig = ForgeCharacterConfig & { starterClass?: SkillboundStarterClass }
 
 type Palette = {
+  skin: THREE.MeshStandardMaterial
+  skinShadow: THREE.MeshStandardMaterial
+  hair: THREE.MeshStandardMaterial
   cloth: THREE.MeshStandardMaterial
   clothDark: THREE.MeshStandardMaterial
   clothLight: THREE.MeshStandardMaterial
@@ -16,23 +19,24 @@ type Palette = {
   leatherDark: THREE.MeshStandardMaterial
   metal: THREE.MeshStandardMaterial
   metalDark: THREE.MeshStandardMaterial
-  accent: THREE.MeshStandardMaterial
-  accentDark: THREE.MeshStandardMaterial
+  trim: THREE.MeshStandardMaterial
+  eye: THREE.MeshStandardMaterial
   glow: THREE.MeshStandardMaterial
 }
 
-type StyleProfile = {
+type BodyStyle = {
+  height: number
   bulk: number
   shoulders: number
-  head: number
-  arms: number
-  legs: number
+  headScale: number
+  armLength: number
+  legLength: number
 }
 
-const STYLE: Record<SkillboundStarterClass, StyleProfile> = {
-  duskstrider: { bulk: 0.78, shoulders: 0.88, head: 1.09, arms: 0.98, legs: 1.03 },
-  thornwarden: { bulk: 0.75, shoulders: 0.85, head: 1.10, arms: 1.00, legs: 1.05 },
-  voidweaver: { bulk: 0.72, shoulders: 0.82, head: 1.11, arms: 1.00, legs: 1.03 },
+const CLASS_BODY: Record<SkillboundStarterClass, BodyStyle> = {
+  duskstrider: { height: 0.97, bulk: 0.82, shoulders: 0.91, headScale: 1.02, armLength: 0.97, legLength: 1.00 },
+  thornwarden: { height: 0.98, bulk: 0.79, shoulders: 0.89, headScale: 1.03, armLength: 0.99, legLength: 1.02 },
+  voidweaver: { height: 0.98, bulk: 0.77, shoulders: 0.87, headScale: 1.04, armLength: 0.98, legLength: 1.01 },
 }
 
 export function createStarterClassCharacter(
@@ -41,9 +45,15 @@ export function createStarterClassCharacter(
 ): ForgeCharacterBuild {
   const styled = stylizeConfig(config, starterClass)
   const build = createProceduralCharacter(styled)
-  const palette = makePalette(config, starterClass)
 
-  addSharedSilhouette(build, palette, starterClass)
+  // v1.54 is a hard visual rebuild. Keep ForgeHumanoidV1 bones + animation clips,
+  // throw away every previous procedural body/gear mesh, then build a new low-poly
+  // top-down character directly on the rig.
+  removeLegacyMeshes(build.root)
+
+  const palette = makePalette(config, starterClass)
+  buildBaseCharacter(build, palette, styled)
+
   if (starterClass === 'duskstrider') buildDuskstrider(build, palette)
   else if (starterClass === 'thornwarden') buildThornwarden(build, palette)
   else buildVoidweaver(build, palette)
@@ -51,14 +61,14 @@ export function createStarterClassCharacter(
   build.root.userData.forgeCharacter = {
     ...build.root.userData.forgeCharacter,
     format: 'ForgeCharacter',
-    version: 7,
-    archetypeVersion: 7,
+    version: 8,
+    archetypeVersion: 8,
     starterClass,
     conceptTarget: starterClass,
     source: 'SkillboundStarterClass',
-    artStyle: 'compact-topdown-lowpoly-v2',
-    styleReference: 'Evergrow-inspired proportions translated independently to 3D',
-    assembly: 'rig-compatible-layered-procedural',
+    artStyle: 'compact-topdown-outfit-first-v3',
+    assembly: 'rig-compatible-rigid-lowpoly',
+    visualRebuild: true,
     weaponPolicy: 'external-item-forge',
     previewWeapon: false,
     mocapFacingYaw: Math.PI,
@@ -68,6 +78,7 @@ export function createStarterClassCharacter(
     if (!(object instanceof THREE.Mesh)) return
     object.castShadow = true
     object.receiveShadow = true
+    object.frustumCulled = false
     const materials = Array.isArray(object.material) ? object.material : [object.material]
     materials.forEach((material) => {
       if (material instanceof THREE.MeshStandardMaterial) {
@@ -76,56 +87,61 @@ export function createStarterClassCharacter(
       }
     })
   })
+
   build.root.updateMatrixWorld(true)
   build.stats = recount(build)
   return build
 }
 
 function stylizeConfig(config: ForgeCharacterConfig, starterClass: SkillboundStarterClass): ForgeCharacterConfig {
-  const p = STYLE[starterClass]
+  const p = CLASS_BODY[starterClass]
   return {
     ...config,
     species: 'bandit',
     armor: 'none',
     headwear: 'none',
     weapon: 'none',
-    bulk: clamp(p.bulk + (config.bulk - 1) * 0.16, p.bulk - 0.05, p.bulk + 0.06),
-    shoulders: clamp(p.shoulders + (config.shoulders - 1) * 0.14, p.shoulders - 0.05, p.shoulders + 0.06),
-    headScale: clamp(p.head + (config.headScale - 1) * 0.18, p.head - 0.04, p.head + 0.04),
-    armLength: clamp(p.arms + (config.armLength - 1) * 0.25, p.arms - 0.04, p.arms + 0.04),
-    legLength: clamp(p.legs + (config.legLength - 1) * 0.25, p.legs - 0.04, p.legs + 0.04),
-    asymmetry: Math.min(config.asymmetry, starterClass === 'duskstrider' ? 0.05 : 0.025),
+    height: clamp(p.height + (config.height - 1) * 0.08, p.height - 0.02, p.height + 0.025),
+    bulk: clamp(p.bulk + (config.bulk - 1) * 0.05, p.bulk - 0.02, p.bulk + 0.025),
+    shoulders: clamp(p.shoulders + (config.shoulders - 1) * 0.05, p.shoulders - 0.02, p.shoulders + 0.025),
+    headScale: clamp(p.headScale + (config.headScale - 1) * 0.06, p.headScale - 0.02, p.headScale + 0.02),
+    armLength: clamp(p.armLength + (config.armLength - 1) * 0.08, p.armLength - 0.02, p.armLength + 0.02),
+    legLength: clamp(p.legLength + (config.legLength - 1) * 0.08, p.legLength - 0.02, p.legLength + 0.02),
+    asymmetry: 0,
   }
 }
 
 function makePalette(config: ForgeCharacterConfig, starterClass: SkillboundStarterClass): Palette {
-  const cloth = new THREE.Color(config.secondary)
-  const accent = new THREE.Color(config.accent)
-  const steel = starterClass === 'voidweaver'
-    ? new THREE.Color('#625d72')
+  const skin = new THREE.Color(config.primary)
+  const requestedCloth = new THREE.Color(config.secondary)
+  const requestedAccent = new THREE.Color(config.accent)
+
+  const classDefaults = starterClass === 'duskstrider'
+    ? { cloth: '#253638', clothDark: '#17272a', leather: '#5b493c', metal: '#72877e', trim: '#b68a55', glow: '#c7d9cf', hair: '#352920' }
     : starterClass === 'thornwarden'
-      ? new THREE.Color('#5a6a5c')
-      : new THREE.Color('#64776f')
-  const glow = starterClass === 'voidweaver' ? '#a99cff' : starterClass === 'thornwarden' ? '#a4c58a' : '#9fc7d2'
+      ? { cloth: '#334637', clothDark: '#1f3027', leather: '#594936', metal: '#68796c', trim: '#b39a62', glow: '#a9c896', hair: '#3b2d20' }
+      : { cloth: '#302a48', clothDark: '#1c1a2f', leather: '#4a3d45', metal: '#756f86', trim: '#a88f68', glow: '#b4a6ff', hair: '#2b2332' }
+
+  const cloth = new THREE.Color(classDefaults.cloth).lerp(requestedCloth, 0.38)
+  const clothDark = new THREE.Color(classDefaults.clothDark).lerp(requestedCloth.clone().multiplyScalar(0.55), 0.28)
+  const leather = new THREE.Color(classDefaults.leather).lerp(requestedAccent, 0.3)
+  const metal = new THREE.Color(classDefaults.metal)
+  const trim = new THREE.Color(classDefaults.trim).lerp(requestedAccent, 0.18)
 
   return {
-    cloth: mat(cloth, 0.96),
-    clothDark: mat(cloth.clone().multiplyScalar(0.56), 1),
-    clothLight: mat(cloth.clone().lerp(new THREE.Color('#d7d6c7'), 0.22), 0.94),
-    leather: mat(accent.clone().multiplyScalar(0.82), 0.95),
-    leatherDark: mat(accent.clone().multiplyScalar(0.46), 1),
-    metal: mat(steel, 0.64, 0.28),
-    metalDark: mat(steel.clone().multiplyScalar(0.5), 0.8, 0.18),
-    accent: mat(accent, 0.94),
-    accentDark: mat(accent.clone().multiplyScalar(0.55), 1),
-    glow: new THREE.MeshStandardMaterial({
-      color: glow,
-      emissive: glow,
-      emissiveIntensity: starterClass === 'voidweaver' ? 1.8 : 0.8,
-      roughness: 0.45,
-      metalness: 0,
-      flatShading: true,
-    }),
+    skin: mat(skin, 0.9),
+    skinShadow: mat(skin.clone().multiplyScalar(0.72), 0.96),
+    hair: mat(new THREE.Color(classDefaults.hair), 0.98),
+    cloth: mat(cloth, 0.98),
+    clothDark: mat(clothDark, 1),
+    clothLight: mat(cloth.clone().lerp(new THREE.Color('#d0d0bd'), 0.18), 0.96),
+    leather: mat(leather, 0.98),
+    leatherDark: mat(leather.clone().multiplyScalar(0.56), 1),
+    metal: mat(metal, 0.62, 0.25),
+    metalDark: mat(metal.clone().multiplyScalar(0.52), 0.76, 0.18),
+    trim: mat(trim, 0.82, 0.06),
+    eye: new THREE.MeshStandardMaterial({ color: '#d4b261', emissive: '#3b2d13', emissiveIntensity: 0.35, roughness: 0.65, flatShading: true }),
+    glow: new THREE.MeshStandardMaterial({ color: classDefaults.glow, emissive: classDefaults.glow, emissiveIntensity: starterClass === 'voidweaver' ? 1.75 : 0.65, roughness: 0.4, flatShading: true }),
   }
 }
 
@@ -133,131 +149,174 @@ function mat(color: THREE.Color | string, roughness: number, metalness = 0) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: true })
 }
 
-/** Shared Evergrow-like read: narrow clothes, tapered limbs and small equipment masses. */
-function addSharedSilhouette(build: ForgeCharacterBuild, m: Palette, starterClass: SkillboundStarterClass) {
+function buildBaseCharacter(build: ForgeCharacterBuild, m: Palette, config: ForgeCharacterConfig) {
   const { bones } = build
-  const main = starterClass === 'voidweaver' ? m.clothDark : m.cloth
+  const h = config.height
+  const upperArm = 0.335 * h * config.armLength
+  const lowerArm = 0.305 * h * config.armLength
+  const upperLeg = 0.39 * h * config.legLength
+  const lowerLeg = 0.38 * h * config.legLength
 
-  // Slim fitted tunic; deliberately narrower than the underlying torso so its silhouette stays compact.
-  add(bones.Chest, taperedBox(0.30, 0.16, 0.25, 0.145, 0.29), main, [0, -0.105, -0.012], undefined, undefined, 'Starter_FittedTorso')
-  add(bones.Hips, taperedBox(0.255, 0.15, 0.225, 0.14, 0.105), m.leatherDark, [0, 0.005, -0.01], undefined, undefined, 'Starter_Waist')
+  // Head: compact, faceted and readable. Neck is intentionally hidden by the outfit.
+  add(bones.Head, new THREE.IcosahedronGeometry(0.142 * h * config.headScale, 1), m.skin,
+    [0, 0.067, -0.012], undefined, [0.94, 1.02, 0.9], 'Hero_Head')
+  add(bones.Head, new THREE.SphereGeometry(0.142 * h * config.headScale, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.48), m.hair,
+    [0, 0.118, 0.004], [0.02, 0, 0], [0.96, 0.72, 0.96], 'Hero_HairCap')
 
-  // Small sleeves, cuffs, trousers and boots follow the bones instead of widening the shoulders.
+  // Small brows/eyes preserve the Evergrow-like tiny-face read without making a realistic portrait.
   for (const side of [-1, 1] as const) {
-    const upperArm = side < 0 ? bones.UpperArm_L : bones.UpperArm_R
-    const lowerArm = side < 0 ? bones.LowerArm_L : bones.LowerArm_R
-    const upperLeg = side < 0 ? bones.UpperLeg_L : bones.UpperLeg_R
-    const lowerLeg = side < 0 ? bones.LowerLeg_L : bones.LowerLeg_R
+    add(bones.Head, new THREE.BoxGeometry(0.038, 0.012, 0.014), m.hair,
+      [side * 0.047, 0.082, -0.126], [0, side * -0.05, side * -0.05], undefined, `Hero_Brow_${side}`)
+    add(bones.Head, new THREE.BoxGeometry(0.016, 0.013, 0.011), m.eye,
+      [side * 0.047, 0.057, -0.135], undefined, undefined, `Hero_Eye_${side}`)
+  }
 
-    add(upperArm, new THREE.CylinderGeometry(0.058, 0.067, 0.245, 6), main,
-      [side * 0.145, 0, 0], [0, 0, Math.PI / 2], undefined, `Starter_Sleeve_${side}`)
-    add(lowerArm, new THREE.CylinderGeometry(0.047, 0.057, 0.17, 6), m.leatherDark,
-      [side * 0.115, 0, 0], [0, 0, Math.PI / 2], undefined, `Starter_Cuff_${side}`)
-    add(upperLeg, new THREE.CylinderGeometry(0.067, 0.077, 0.285, 6), m.clothDark,
-      [0, -0.17, 0], undefined, [0.96, 1, 0.92], `Starter_Trouser_${side}`)
-    add(lowerLeg, new THREE.CylinderGeometry(0.058, 0.064, 0.23, 6), m.leatherDark,
-      [0, -0.18, 0], undefined, [0.96, 1, 0.9], `Starter_Boot_${side}`)
+  // Outfit-first torso: a single tapered tunic volume replaces exposed mannequin anatomy.
+  add(bones.Spine, taperedBox(0.275, 0.15, 0.37, 0.17, 0.31), m.cloth,
+    [0, 0.105, 0], undefined, undefined, 'Hero_Tunic')
+  add(bones.Chest, taperedBox(0.37, 0.17, 0.31, 0.155, 0.19), m.cloth,
+    [0, -0.075, 0], undefined, undefined, 'Hero_UpperTunic')
+  add(bones.Hips, taperedBox(0.255, 0.145, 0.29, 0.15, 0.16), m.clothDark,
+    [0, 0.075, 0], undefined, undefined, 'Hero_WaistCloth')
+  add(bones.Hips, new THREE.BoxGeometry(0.29, 0.035, 0.165), m.leatherDark,
+    [0, 0.13, 0], undefined, undefined, 'Hero_BeltBase')
+  add(bones.Hips, new THREE.BoxGeometry(0.045, 0.055, 0.025), m.trim,
+    [0, 0.13, -0.096], undefined, undefined, 'Hero_BeltBuckle')
+
+  // Sleeves and trousers fully cover the old bare limbs. Segments deliberately overlap at joints.
+  for (const side of [-1, 1] as const) {
+    const upperArmBone = side < 0 ? bones.UpperArm_L : bones.UpperArm_R
+    const lowerArmBone = side < 0 ? bones.LowerArm_L : bones.LowerArm_R
+    const handBone = side < 0 ? bones.Hand_L : bones.Hand_R
+    const upperLegBone = side < 0 ? bones.UpperLeg_L : bones.UpperLeg_R
+    const lowerLegBone = side < 0 ? bones.LowerLeg_L : bones.LowerLeg_R
+    const footBone = side < 0 ? bones.Foot_L : bones.Foot_R
+
+    add(upperArmBone, new THREE.CylinderGeometry(0.055, 0.068, upperArm * 0.95, 6), m.cloth,
+      [side * upperArm * 0.47, 0, 0], [0, 0, side < 0 ? Math.PI / 2 : -Math.PI / 2], undefined, `Hero_UpperSleeve_${side}`)
+    add(lowerArmBone, new THREE.CylinderGeometry(0.046, 0.058, lowerArm * 0.93, 6), m.clothDark,
+      [side * lowerArm * 0.46, 0, 0], [0, 0, side < 0 ? Math.PI / 2 : -Math.PI / 2], undefined, `Hero_ForeSleeve_${side}`)
+    add(lowerArmBone, new THREE.CylinderGeometry(0.058, 0.061, 0.075, 6), m.leather,
+      [side * lowerArm * 0.78, 0, 0], [0, 0, side < 0 ? Math.PI / 2 : -Math.PI / 2], undefined, `Hero_Cuff_${side}`)
+    add(handBone, new THREE.BoxGeometry(0.082, 0.07, 0.075), m.leather,
+      [side * 0.032, -0.004, -0.002], undefined, undefined, `Hero_Glove_${side}`)
+
+    add(upperLegBone, new THREE.CylinderGeometry(0.066, 0.082, upperLeg * 0.97, 6), m.clothDark,
+      [0, -upperLeg * 0.48, 0], undefined, [0.98, 1, 0.92], `Hero_Thigh_${side}`)
+    add(lowerLegBone, new THREE.CylinderGeometry(0.055, 0.067, lowerLeg * 0.91, 6), m.clothDark,
+      [0, -lowerLeg * 0.45, 0], undefined, [0.98, 1, 0.92], `Hero_Shin_${side}`)
+    add(lowerLegBone, taperedBox(0.105, 0.125, 0.12, 0.14, 0.18), m.leather,
+      [0, -lowerLeg * 0.70, -0.005], undefined, undefined, `Hero_BootCuff_${side}`)
+    add(footBone, taperedBox(0.12, 0.205, 0.11, 0.17, 0.105), m.leatherDark,
+      [0, -0.025, -0.085], [-0.07, 0, 0], undefined, `Hero_Boot_${side}`)
+  }
+
+  // Shoulder cloth bridges the torso and arm so the model reads as a designed outfit, not a puppet.
+  for (const side of [-1, 1] as const) {
+    add(bones.Chest, new THREE.SphereGeometry(0.09, 7, 4, 0, Math.PI * 2, 0, Math.PI * 0.58), m.clothDark,
+      [side * 0.195, 0.035, 0], [0, 0, side * 0.12], [1.15, 0.65, 0.98], `Hero_ShoulderCloth_${side}`)
   }
 }
 
 function buildDuskstrider(build: ForgeCharacterBuild, m: Palette) {
   const { bones } = build
 
-  // One tiny shoulder plate, never a full pauldron pair.
-  add(bones.Chest, taperedBox(0.14, 0.13, 0.105, 0.105, 0.055), m.metal,
-    [-0.205, 0.055, -0.005], [0, 0.08, -0.07], undefined, 'Duskstrider_Shoulder')
+  add(bones.Neck, new THREE.CylinderGeometry(0.145, 0.165, 0.085, 7), m.clothDark,
+    [0, -0.005, 0.015], undefined, [1, 1, 0.82], 'Duskstrider_Cowl')
+  add(bones.Head, new THREE.SphereGeometry(0.152, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.60), m.clothDark,
+    [0, 0.112, 0.018], [0.02, 0, 0], [1.03, 0.86, 1.03], 'Duskstrider_Hood')
 
-  // Compact hood cap and low cowl: the face stays readable.
-  add(bones.Head, new THREE.SphereGeometry(0.154, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.56), m.clothDark,
-    [0, 0.115, 0.025], [0.04, 0, 0], [1.02, 0.9, 1.02], 'Duskstrider_HoodTop')
-  add(bones.Neck, new THREE.CylinderGeometry(0.145, 0.16, 0.075, 6), m.clothDark,
-    [0, -0.005, 0.015], undefined, [1, 1, 0.78], 'Duskstrider_Cowl')
+  // One small metal shoulder cue, matching the compact asymmetrical ARPG silhouette.
+  add(bones.Chest, taperedBox(0.15, 0.14, 0.105, 0.115, 0.055), m.metal,
+    [-0.205, 0.055, -0.005], [0.02, 0.08, -0.06], undefined, 'Duskstrider_ShoulderPlate')
+  add(bones.Chest, new THREE.BoxGeometry(0.04, 0.27, 0.022), m.leather,
+    [-0.055, -0.09, -0.096], [0, 0, 0.40], undefined, 'Duskstrider_ChestStrap')
 
-  // Evergrow-style strong read: one muted cape color with a split hem, not stacked armor clutter.
-  addCapePair(bones.Chest, m.accentDark, m.accent, 0.43, 0.145, 0.16, 'Duskstrider')
-  add(bones.Hips, new THREE.BoxGeometry(0.22, 0.035, 0.045), m.leather,
-    [0, 0.025, -0.105], undefined, undefined, 'Duskstrider_Belt')
-  add(bones.Hips, new THREE.BoxGeometry(0.07, 0.085, 0.045), m.leatherDark,
-    [0.13, -0.035, 0.035], [0, 0.08, -0.05], undefined, 'Duskstrider_Pouch')
+  addCape(bones.Chest, m.clothDark, m.accent ?? m.trim, 0.47, 0.31, 'Duskstrider')
+  add(bones.Hips, new THREE.BoxGeometry(0.07, 0.09, 0.045), m.leatherDark,
+    [0.145, 0.055, 0.02], [0, 0.08, -0.04], undefined, 'Duskstrider_Pouch')
 }
 
 function buildThornwarden(build: ForgeCharacterBuild, m: Palette) {
   const { bones } = build
 
-  // Short hunter mantle and half-cape, kept close to the body.
-  add(bones.Chest, taperedBox(0.31, 0.155, 0.27, 0.145, 0.095), m.clothDark,
-    [0, 0.03, 0.025], undefined, undefined, 'Thornwarden_Mantle')
-  addCapePair(bones.Chest, m.clothDark, m.cloth, 0.315, 0.12, 0.13, 'Thornwarden')
+  add(bones.Neck, taperedBox(0.24, 0.16, 0.19, 0.14, 0.085), m.clothDark,
+    [0, -0.012, 0.015], undefined, undefined, 'Thornwarden_Mantle')
+  addCape(bones.Chest, m.clothDark, m.cloth, 0.36, 0.285, 'Thornwarden')
 
-  // Quiver is the single ranged silhouette cue; only three arrows are needed at gameplay scale.
-  add(bones.Chest, new THREE.CylinderGeometry(0.043, 0.05, 0.34, 7), m.leatherDark,
-    [0.145, -0.13, 0.14], [0, 0, -0.22], undefined, 'Thornwarden_Quiver')
+  // Narrow chest overlay provides a hunter silhouette without plate bulk.
+  add(bones.Chest, taperedBox(0.245, 0.025, 0.205, 0.02, 0.23), m.leather,
+    [0, -0.10, -0.095], [0.02, 0, 0], undefined, 'Thornwarden_LeatherBib')
+  add(bones.Chest, new THREE.BoxGeometry(0.035, 0.28, 0.018), m.leatherDark,
+    [0.045, -0.105, -0.113], [0, 0, -0.30], undefined, 'Thornwarden_ChestStrap')
+
+  // Compact quiver is the dominant ranged read from above.
+  add(bones.Chest, new THREE.CylinderGeometry(0.043, 0.052, 0.34, 7), m.leatherDark,
+    [0.135, -0.13, 0.145], [0.04, 0, -0.24], undefined, 'Thornwarden_Quiver')
   for (let i = 0; i < 3; i += 1) {
-    const x = 0.125 + i * 0.019
     add(bones.Chest, new THREE.CylinderGeometry(0.004, 0.004, 0.39, 5), m.metalDark,
-      [x, 0.055 + i * 0.006, 0.145], [0, 0, -0.22], undefined, `Thornwarden_Arrow_${i}`)
-    add(bones.Chest, new THREE.ConeGeometry(0.014, 0.045, 4), m.accent,
-      [x + 0.075, 0.22 + i * 0.004, 0.145], [0, 0, -0.22], undefined, `Thornwarden_Fletching_${i}`)
+      [0.115 + i * 0.019, 0.065 + i * 0.004, 0.15], [0.04, 0, -0.24], undefined, `Thornwarden_Arrow_${i}`)
+    add(bones.Chest, new THREE.ConeGeometry(0.013, 0.04, 4), m.trim,
+      [0.19 + i * 0.019, 0.225 + i * 0.004, 0.15], [0.04, 0, -0.24], undefined, `Thornwarden_Fletching_${i}`)
   }
-  add(bones.Hips, new THREE.BoxGeometry(0.21, 0.032, 0.042), m.leather,
-    [0, 0.024, -0.104], undefined, undefined, 'Thornwarden_Belt')
 }
 
 function buildVoidweaver(build: ForgeCharacterBuild, m: Palette) {
   const { bones } = build
 
-  // Narrow high collar instead of shoulder armor.
-  for (const side of [-1, 1] as const) {
-    add(bones.Neck, taperedBox(0.075, 0.08, 0.055, 0.07, 0.12), m.cloth,
-      [side * 0.055, 0.025, 0.01], [0, 0, side * 0.16], undefined, `Voidweaver_Collar_${side}`)
-  }
+  add(bones.Neck, new THREE.CylinderGeometry(0.14, 0.165, 0.105, 7), m.clothDark,
+    [0, -0.002, 0.012], undefined, [1, 1, 0.82], 'Voidweaver_Cowl')
+  add(bones.Head, new THREE.SphereGeometry(0.15, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.54), m.clothDark,
+    [0, 0.115, 0.02], [0.02, 0, 0], [1.02, 0.82, 1.02], 'Voidweaver_Hood')
 
-  // Two slim robe strips preserve visible leg separation from the top-down camera.
-  add(bones.Hips, taperedBox(0.095, 0.045, 0.115, 0.038, 0.43), m.cloth,
-    [-0.064, -0.25, -0.025], [0.025, 0, -0.015], undefined, 'Voidweaver_Robe_L')
-  add(bones.Hips, taperedBox(0.095, 0.045, 0.115, 0.038, 0.43), m.clothDark,
-    [0.064, -0.25, -0.025], [0.025, 0, 0.015], undefined, 'Voidweaver_Robe_R')
-  add(bones.Chest, new THREE.BoxGeometry(0.032, 0.20, 0.018), m.accent,
+  // Strong robe read: skirt around the hips plus split front panels, while still exposing leg separation.
+  add(bones.Hips, taperedBox(0.29, 0.15, 0.38, 0.17, 0.34), m.cloth,
+    [0, -0.10, 0.01], [0.02, 0, 0], undefined, 'Voidweaver_RobeSkirt')
+  add(bones.Hips, taperedBox(0.105, 0.04, 0.125, 0.035, 0.42), m.clothDark,
+    [-0.073, -0.31, -0.095], [0.03, 0, -0.02], undefined, 'Voidweaver_FrontRobe_L')
+  add(bones.Hips, taperedBox(0.105, 0.04, 0.125, 0.035, 0.42), m.clothDark,
+    [0.073, -0.31, -0.095], [0.03, 0, 0.02], undefined, 'Voidweaver_FrontRobe_R')
+
+  add(bones.Chest, new THREE.BoxGeometry(0.035, 0.22, 0.018), m.trim,
     [0, -0.11, -0.102], undefined, undefined, 'Voidweaver_RuneStripe')
   add(bones.Chest, new THREE.OctahedronGeometry(0.026, 0), m.glow,
-    [0, -0.015, -0.125], undefined, undefined, 'Voidweaver_RuneGem')
-
-  // Tiny bound book at the hip: readable up close, negligible silhouette cost in combat.
-  add(bones.Hips, new THREE.BoxGeometry(0.095, 0.12, 0.032), m.leatherDark,
-    [0.135, -0.045, 0.045], [0.02, -0.08, -0.04], undefined, 'Voidweaver_Grimoire')
-  add(bones.Hips, new THREE.BoxGeometry(0.045, 0.012, 0.036), m.glow,
-    [0.135, -0.045, 0.025], [0.02, -0.08, -0.04], undefined, 'Voidweaver_GrimoireMark')
+    [0, -0.012, -0.125], undefined, undefined, 'Voidweaver_RuneGem')
+  add(bones.Hips, new THREE.BoxGeometry(0.095, 0.12, 0.034), m.leatherDark,
+    [0.14, 0.04, 0.055], [0.02, -0.08, -0.04], undefined, 'Voidweaver_Grimoire')
+  add(bones.Hips, new THREE.BoxGeometry(0.046, 0.012, 0.038), m.glow,
+    [0.14, 0.04, 0.034], [0.02, -0.08, -0.04], undefined, 'Voidweaver_GrimoireMark')
 }
 
-function addCapePair(
+function addCape(
   chest: THREE.Bone,
   dark: THREE.Material,
   light: THREE.Material,
   height: number,
-  topWidth: number,
-  bottomWidth: number,
+  width: number,
   prefix: string,
 ) {
-  const gap = 0.012
-  add(chest, taperedBox(topWidth, 0.022, bottomWidth, 0.026, height), dark,
-    [-topWidth * 0.48 - gap, -height * 0.48, 0.135], [0.055, 0, -0.025], undefined, `${prefix}_Cape_L`)
-  add(chest, taperedBox(topWidth, 0.022, bottomWidth, 0.026, height * 0.94), light,
-    [topWidth * 0.48 + gap, -height * 0.45, 0.137], [0.05, 0, 0.025], undefined, `${prefix}_Cape_R`)
+  const topY = 0.045
+  const centerY = topY - height / 2
+  const z = 0.115
+  add(chest, taperedBox(width * 0.46, 0.025, width * 0.52, 0.03, height), dark,
+    [-width * 0.13, centerY, z], [0.05, 0.02, -0.025], undefined, `${prefix}_Cape_L`)
+  add(chest, taperedBox(width * 0.46, 0.025, width * 0.52, 0.03, height * 0.96), light,
+    [width * 0.13, centerY + 0.01, z + 0.002], [0.05, -0.02, 0.025], undefined, `${prefix}_Cape_R`)
+  add(chest, new THREE.BoxGeometry(width * 0.9, 0.035, 0.03), dark,
+    [0, topY - 0.015, z - 0.01], undefined, undefined, `${prefix}_CapeCollar`)
 }
 
-function taperedBox(topW: number, topD: number, bottomW: number, bottomD: number, height: number) {
-  const y0 = -height / 2
-  const y1 = height / 2
-  const vertices = new Float32Array([
-    -bottomW / 2, y0, -bottomD / 2, bottomW / 2, y0, -bottomD / 2, bottomW / 2, y0, bottomD / 2, -bottomW / 2, y0, bottomD / 2,
-    -topW / 2, y1, -topD / 2, topW / 2, y1, -topD / 2, topW / 2, y1, topD / 2, -topW / 2, y1, topD / 2,
-  ])
-  const indices = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  return geometry
+function removeLegacyMeshes(root: THREE.Object3D) {
+  const meshes: THREE.Mesh[] = []
+  root.traverse((object) => {
+    if (object instanceof THREE.Mesh) meshes.push(object)
+  })
+  meshes.forEach((mesh) => {
+    mesh.removeFromParent()
+    mesh.geometry?.dispose()
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    materials.forEach((material) => material?.dispose())
+  })
 }
 
 function add(
@@ -267,7 +326,7 @@ function add(
   position: [number, number, number],
   rotation: [number, number, number] = [0, 0, 0],
   scale: [number, number, number] = [1, 1, 1],
-  name = 'StarterClassPart',
+  name = 'StarterCharacterPart',
 ) {
   const mesh = new THREE.Mesh(geometry, material)
   mesh.name = name
@@ -278,6 +337,34 @@ function add(
   mesh.receiveShadow = true
   parent.add(mesh)
   return mesh
+}
+
+function taperedBox(topW: number, topD: number, bottomW: number, bottomD: number, height: number) {
+  const y0 = -height / 2
+  const y1 = height / 2
+  const vertices = new Float32Array([
+    -bottomW / 2, y0, -bottomD / 2,
+    bottomW / 2, y0, -bottomD / 2,
+    bottomW / 2, y0, bottomD / 2,
+    -bottomW / 2, y0, bottomD / 2,
+    -topW / 2, y1, -topD / 2,
+    topW / 2, y1, -topD / 2,
+    topW / 2, y1, topD / 2,
+    -topW / 2, y1, topD / 2,
+  ])
+  const indices = [
+    0, 2, 1, 0, 3, 2,
+    4, 5, 6, 4, 6, 7,
+    0, 1, 5, 0, 5, 4,
+    1, 2, 6, 1, 6, 5,
+    2, 3, 7, 2, 7, 6,
+    3, 0, 4, 3, 4, 7,
+  ]
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
 }
 
 function recount(build: ForgeCharacterBuild) {
