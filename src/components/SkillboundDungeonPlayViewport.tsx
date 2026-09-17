@@ -12,6 +12,7 @@ import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRunti
 import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
 import { installDungeonRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
+import type { ForgeSkillSnapshotExtension } from '../engine/runtime/ForgeSkillRuntime'
 import { hudModuleStyle, hudModuleVisible, normalizeHudLayout, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
 import { skillboundUiCssVariables, type SkillboundUiTheme } from '../lib/uiForge'
 import '../hud-runtime-rewards.css'
@@ -21,11 +22,16 @@ installEncounterBossRuntime(ForgeDungeonRuntime)
 installDungeonRewardPickupRuntime(ForgeDungeonRuntime)
 installPlayerProfileRuntime(ForgeDungeonRuntime)
 
-type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension
+type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension
 
 const EMPTY: DungeonRuntimeState = {
   health: 1,
   maxHealth: 1,
+  mana: 100,
+  maxMana: 100,
+  manaRegen: 14,
+  hotbarAbilityIds: ['', '', '', '', ''],
+  hotbarCooldowns: [0, 0, 0, 0, 0],
   inventory: [],
   equipment: {},
   defense: 0,
@@ -70,7 +76,7 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   const [snapshot, setSnapshot] = useState<DungeonRuntimeState>({ ...EMPTY, ...initialState, maxHealth: gameplay.player.maxHealth })
   const [profiles, setProfiles] = useState<AuthoredCombatProfiles>()
   const primaryAbility = gameplay.abilities.find((ability) => ability.id === gameplay.player.basicAbility)
-  const skillAbility = gameplay.abilities.find((ability) => ability.id === gameplay.player.activeAbilities[0])
+  const hotbarAbilities = useMemo(() => (snapshot.hotbarAbilityIds ?? []).map((id) => gameplay.abilities.find((ability) => ability.id === id)), [gameplay.abilities, snapshot.hotbarAbilityIds])
   const normalizedHudLayout = useMemo(() => normalizeHudLayout(hudLayout), [hudLayout])
   const uiStyle = useMemo(() => uiTheme ? skillboundUiCssVariables(uiTheme) as CSSProperties : undefined, [uiTheme])
   const uiClasses = uiTheme
@@ -120,6 +126,7 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     rewardRuntime.__forgeRewardPickups = []
     runtimeRef.current = runtime
     hydrateRuntimeEquipment(runtime, initialState.equipment)
+    ;(runtime as any).setManaState?.(initialState.mana, initialState.maxMana)
     ;(runtime as any).setPaused?.(paused)
     const initial = runtime.getSnapshot() as DungeonRuntimeState
     setSnapshot(initial)
@@ -136,14 +143,12 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
 
   const targetModule: SkillboundHudModuleId = snapshot.target?.boss ? 'boss' : 'target'
   const xpPercent = Math.max(0, Math.min(100, snapshot.xp / Math.max(1, snapshot.xpToNext) * 100))
-  const skillCooldownMax = Math.max(.1, skillAbility?.cooldown ?? 1)
-  const mana = Math.round(100 - Math.min(1, snapshot.skillCooldown / skillCooldownMax) * 28)
 
   return <div className={`skillbound-runtime-host skillbound-dungeon-runtime ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!profiles && <div className="skillbound-runtime-loading">Loading Encounter Forge + Boss Forge definitions…</div>}
     <div className="skillbound-runtime-hint">
       <strong>HOLLOW VAULT · SKILLBOUND</strong>
-      <span>WASD move · LMB attack · Q skill · Space dodge · wheel zoom · E interact · Esc menu</span>
+      <span>WASD move · LMB primary · 1–5 skills · Q slot 1 · Space dodge · wheel zoom · E interact · Esc menu</span>
     </div>
 
     <HudPickupFlights events={snapshot.pickupEvents} layout={normalizedHudLayout}/>
@@ -153,10 +158,10 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     {snapshot.message && hudModuleVisible(normalizedHudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
 
     {hudModuleVisible(normalizedHudLayout, 'health') && <SkillboundOrb kind="health" value={snapshot.health} max={snapshot.maxHealth} style={moduleStyle('health')}/>} 
-    {hudModuleVisible(normalizedHudLayout, 'resource') && <SkillboundOrb kind="mana" value={mana} max={100} style={moduleStyle('resource')}/>} 
-    {hudModuleVisible(normalizedHudLayout, 'hotbar') && <div className="skillbound-skillbar" style={moduleStyle('hotbar')}>
+    {hudModuleVisible(normalizedHudLayout, 'resource') && <SkillboundOrb kind="mana" value={snapshot.mana} max={snapshot.maxMana} style={moduleStyle('resource')}/>} 
+    {hudModuleVisible(normalizedHudLayout, 'hotbar') && <div className="skillbound-skillbar skillbound-skillbar-expanded" style={moduleStyle('hotbar')}>
       <SkillSlot hotkey="LMB" name={primaryAbility?.name ?? 'Basic attack'} cooldown={snapshot.primaryCooldown}/>
-      <SkillSlot hotkey="Q" name={skillAbility?.name ?? 'Skill'} cooldown={snapshot.skillCooldown}/>
+      {hotbarAbilities.map((skill, index) => <SkillSlot key={index} hotkey={String(index + 1)} name={skill?.name ?? 'Empty'} cooldown={snapshot.hotbarCooldowns[index] ?? 0} manaCost={skill ? Number((skill as any).manaCost ?? 12) : undefined} onClick={skill ? () => (runtimeRef.current as any)?.useAbilitySlot?.(index) : undefined}/>)}
       <SkillSlot hotkey="SPACE" name="Dodge" cooldown={snapshot.dodgeCooldown}/>
     </div>}
     {hudModuleVisible(normalizedHudLayout, 'xp') && <div className="skillbound-runtime-xp" style={moduleStyle('xp')}>
@@ -196,9 +201,9 @@ function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeS
   </div>
 }
 
-function SkillSlot({ hotkey, name, cooldown }: { hotkey: string; name: string; cooldown: number }) {
+function SkillSlot({ hotkey, name, cooldown, manaCost, onClick }: { hotkey: string; name: string; cooldown: number; manaCost?: number; onClick?: () => void }) {
   const cooling = cooldown > 0.04
-  return <div className={cooling ? 'skillbound-skill-slot cooling' : 'skillbound-skill-slot'}>
-    <b>{hotkey}</b><span>{name}</span>{cooling && <em>{cooldown.toFixed(1)}</em>}
+  return <div className={`${cooling ? 'skillbound-skill-slot cooling' : 'skillbound-skill-slot'}${onClick ? ' clickable' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}>
+    <b>{hotkey}</b><span>{name}{manaCost !== undefined && <small>{manaCost} MP</small>}</span>{cooling && <em>{cooldown.toFixed(1)}</em>}
   </div>
 }
