@@ -23,9 +23,9 @@ type Palette = {
 }
 
 const BODY: Record<SkillboundStarterClass, Pick<ForgeCharacterConfig, 'height' | 'bulk' | 'shoulders' | 'headScale' | 'armLength' | 'legLength'>> = {
-  duskstrider: { height: .97, bulk: .82, shoulders: .91, headScale: .98, armLength: .97, legLength: 1 },
-  thornwarden: { height: .98, bulk: .79, shoulders: .89, headScale: .99, armLength: .99, legLength: 1.02 },
-  voidweaver: { height: .98, bulk: .77, shoulders: .87, headScale: 1, armLength: .98, legLength: 1.01 },
+  duskstrider: { height: .97, bulk: .82, shoulders: .89, headScale: .98, armLength: .95, legLength: 1 },
+  thornwarden: { height: .98, bulk: .79, shoulders: .87, headScale: .99, armLength: .97, legLength: 1.02 },
+  voidweaver: { height: .98, bulk: .77, shoulders: .85, headScale: 1, armLength: .96, legLength: 1.01 },
 }
 
 export function createStarterClassCharacter(config: ForgeCharacterConfig, starterClass: SkillboundStarterClass): ForgeCharacterBuild {
@@ -41,10 +41,10 @@ export function createStarterClassCharacter(config: ForgeCharacterConfig, starte
 
   build.root.userData.forgeCharacter = {
     ...build.root.userData.forgeCharacter,
-    version: 9,
-    archetypeVersion: 9,
+    version: 10,
+    archetypeVersion: 10,
     starterClass,
-    artStyle: 'compact-topdown-unified-hero-v4',
+    artStyle: 'compact-topdown-unified-hero-v5',
     visualRebuild: true,
     seamlessAssembly: true,
     headStyle: 'tapered-stylized-face-v2',
@@ -117,7 +117,7 @@ function buildSharedBody(build: ForgeCharacterBuild, m: Palette, c: ForgeCharact
   const lowerArm = .325 * h * c.armLength
   const upperLeg = .41 * h * c.legLength
   const lowerLeg = .41 * h * c.legLength
-  const shoulderX = .325 * c.shoulders * c.bulk
+  const shoulderX = .318 * c.shoulders * c.bulk
   const headR = .14 * h * c.headScale
 
   // New head: tapered jaw/cheeks, flatter face and lower placement so it seats into the collar.
@@ -140,29 +140,39 @@ function buildSharedBody(build: ForgeCharacterBuild, m: Palette, c: ForgeCharact
     const footBone = s < 0 ? b.Foot_L : b.Foot_R
     const rz = s < 0 ? Math.PI / 2 : -Math.PI / 2
 
-    // Shoulder bridge deliberately overlaps both torso and sleeve, hiding the shoulder joint.
-    add(b.Chest, new THREE.BoxGeometry(.15, .105, .17), m.cloth,
-      [s * (shoulderX - .035), .038, -.002], [0, s * .04, s * -.08], undefined, `Hero_ShoulderBridge_${s}`)
+    // Narrower shoulder bridge keeps the upper body heroic without the shelf-like puppet silhouette.
+    add(b.Chest, new THREE.BoxGeometry(.138, .102, .162), m.cloth,
+      [s * (shoulderX - .032), .038, -.002], [0, s * .035, s * -.07], undefined, `Hero_ShoulderBridge_${s}`)
 
     // Use the rig's exact limb lengths, plus a small overlap at elbows/wrists to remove floating seams.
-    add(upperArmBone, new THREE.CylinderGeometry(.057, .069, upperArm * 1.055, 7), m.cloth,
+    add(upperArmBone, new THREE.CylinderGeometry(.056, .067, upperArm * 1.055, 7), m.cloth,
       [s * upperArm * .5, -.009, 0], [0, 0, rz], undefined, `Hero_Sleeve_${s}`)
-    add(lowerArmBone, new THREE.CylinderGeometry(.048, .059, lowerArm * 1.055, 7), m.clothDark,
+    add(lowerArmBone, new THREE.CylinderGeometry(.047, .057, lowerArm * 1.055, 7), m.clothDark,
       [s * lowerArm * .5, 0, 0], [0, 0, rz], undefined, `Hero_Forearm_${s}`)
-    add(lowerArmBone, new THREE.CylinderGeometry(.061, .064, .09, 7), m.leather,
+    add(lowerArmBone, new THREE.CylinderGeometry(.059, .062, .086, 7), m.leather,
       [s * lowerArm * .84, 0, 0], [0, 0, rz], undefined, `Hero_Cuff_${s}`)
-    add(handBone, new THREE.BoxGeometry(.095, .078, .082), m.leather,
-      [s * .032, 0, 0], undefined, undefined, `Hero_Glove_${s}`)
+    add(handBone, new THREE.BoxGeometry(.092, .076, .079), m.leather,
+      [s * .03, 0, 0], undefined, undefined, `Hero_Glove_${s}`)
 
-    // Legs also use exact rig segment lengths so thighs/shins meet instead of hovering apart.
+    // Slimmer lower body: calf-to-ankle taper, less front/back depth and a shorter boot shaft.
     add(upperLegBone, new THREE.CylinderGeometry(.069, .083, upperLeg * 1.045, 7), m.clothDark,
-      [0, -upperLeg * .5, .012], undefined, [.98, 1, .93], `Hero_Thigh_${s}`)
-    add(lowerLegBone, new THREE.CylinderGeometry(.058, .069, lowerLeg * 1.04, 7), m.clothDark,
-      [0, -lowerLeg * .5, .03], undefined, [.98, 1, .93], `Hero_Shin_${s}`)
-    add(lowerLegBone, frustum(.115, .135, .125, .145, lowerLeg * .62), m.leather,
-      [0, -lowerLeg * .67, .035], undefined, undefined, `Hero_BootShaft_${s}`)
-    add(footBone, frustum(.125, .215, .115, .18, .11), m.leatherDark,
-      [0, -.025, -.075], [-.055, 0, 0], undefined, `Hero_Boot_${s}`)
+      [0, -upperLeg * .5, .01], undefined, [.98, 1, .9], `Hero_Thigh_${s}`)
+    add(lowerLegBone, new THREE.CylinderGeometry(.064, .052, lowerLeg * 1.04, 7), m.clothDark,
+      [0, -lowerLeg * .5, .018], undefined, [.95, 1, .84], `Hero_Shin_${s}`)
+
+    const bootShaftHeight = lowerLeg * .46
+    add(lowerLegBone, frustum(.1, .112, .105, .118, bootShaftHeight), m.leather,
+      [0, -lowerLeg * .75, .018], undefined, undefined, `Hero_BootShaft_${s}`)
+
+    // Cuff intentionally bites into the exposed shin so the boot reads as worn over the leg, not stacked beneath it.
+    add(lowerLegBone, frustum(.108, .122, .102, .116, .052), m.leatherDark,
+      [0, -lowerLeg * .51, .016], undefined, undefined, `Hero_BootCuff_${s}`)
+
+    // Shorter toe, narrower footprint and flatter profile remove the chunky puppet-foot silhouette.
+    add(footBone, frustum(.106, .166, .098, .145, .074), m.leatherDark,
+      [0, -.01, -.056], [-.03, 0, 0], undefined, `Hero_Boot_${s}`)
+    add(footBone, new THREE.BoxGeometry(.098, .018, .148), m.leatherDark,
+      [0, -.053, -.053], [-.02, 0, 0], undefined, `Hero_BootSole_${s}`)
   }
 }
 
