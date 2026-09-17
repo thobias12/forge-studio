@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { getAsset } from '../../lib/library'
-import { animationBindingAssetId, animationPackAssetId, parseAnimationSet } from '../animationBindings'
+import { animationBindingAssetId, animationPackAssetId, parseAnimationSet, type ForgeAnimationSet } from '../animationBindings'
 import { blueprintToConfig, type ForgeCharacterBlueprint } from '../characterBlueprint'
 import { createConceptForgeCharacter } from '../conceptCharacterV2'
 import { ForgeCharacterVisualBinding, loadLibraryAnimationClips } from './ForgeAssetRuntime'
@@ -26,15 +26,18 @@ export async function bindCharacterBlueprint(
 
   const binding = new ForgeCharacterVisualBinding(root)
   let clips = build.clips.map((clip) => clip.clone())
+  let authoredSet: ForgeAnimationSet | undefined
 
   if (animationTargetId) {
     const bindingAsset = await getAsset(animationBindingAssetId(animationTargetId)).catch(() => undefined)
-    if (bindingAsset) binding.setAnimationSet(await parseAnimationSet(bindingAsset.blob, animationTargetId))
+    authoredSet = bindingAsset ? await parseAnimationSet(bindingAsset.blob, animationTargetId) : undefined
+    if (authoredSet) binding.setAnimationSet(authoredSet)
 
     const authored = await loadLibraryAnimationClips(animationPackAssetId(animationTargetId)).catch(() => [])
     if (authored.length) clips = [...clips, ...authored]
   }
 
+  ;(binding as ForgeCharacterVisualBinding & { forgeAnimationSet?: ForgeAnimationSet }).forgeAnimationSet = authoredSet
   binding.setAnimations(clips)
   return binding
 }
