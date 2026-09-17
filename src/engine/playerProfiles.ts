@@ -18,13 +18,20 @@ export type SkillboundPlayerProfile = {
 const PROFILE_KEY = 'skillbound-player-profiles:v1'
 const ACTIVE_KEY = 'skillbound-player-profile:active:v1'
 
+export function playerAnimationTargetId(profileId: string) {
+  return `skillbound-player:${profileId}`
+}
+
 export function listPlayerProfiles(): SkillboundPlayerProfile[] {
   const raw = localStorage.getItem(PROFILE_KEY)
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isProfile).sort((a, b) => (b.lastPlayedAt ?? b.updatedAt).localeCompare(a.lastPlayedAt ?? a.updatedAt))
+    return parsed
+      .filter(isProfile)
+      .map(withAnimationTarget)
+      .sort((a, b) => (b.lastPlayedAt ?? b.updatedAt).localeCompare(a.lastPlayedAt ?? a.updatedAt))
   } catch {
     return []
   }
@@ -32,15 +39,17 @@ export function listPlayerProfiles(): SkillboundPlayerProfile[] {
 
 export function createPlayerProfile(name = 'Wanderer', blueprint?: ForgeCharacterBlueprint) {
   const now = new Date().toISOString()
+  const id = `hero-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
   const base = blueprint ? cloneBlueprint(blueprint) : createDefaultPlayerBlueprint(name)
   base.name = sanitizeName(name)
   base.entityKind = 'player'
   base.faction = 'neutral'
   base.creatorCompatible = true
+  base.targetAssetId = playerAnimationTargetId(id)
   const profile: SkillboundPlayerProfile = {
     format: 'skillbound-player-profile',
     version: 1,
-    id: `hero-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    id,
     name: base.name,
     blueprint: base,
     createdAt: now,
@@ -77,7 +86,13 @@ export function savePlayerProfile(profile: SkillboundPlayerProfile) {
   const next: SkillboundPlayerProfile = {
     ...profile,
     name: sanitizeName(profile.name),
-    blueprint: { ...cloneBlueprint(profile.blueprint), name: sanitizeName(profile.name), entityKind: 'player', creatorCompatible: true },
+    blueprint: {
+      ...cloneBlueprint(profile.blueprint),
+      name: sanitizeName(profile.name),
+      entityKind: 'player',
+      creatorCompatible: true,
+      targetAssetId: profile.blueprint.targetAssetId || playerAnimationTargetId(profile.id),
+    },
     updatedAt: now,
   }
   const exists = profiles.some((entry) => entry.id === next.id)
@@ -107,6 +122,14 @@ export function getActivePlayerProfileId() {
 
 export function setActivePlayerProfileId(profileId: string) {
   localStorage.setItem(ACTIVE_KEY, profileId)
+}
+
+function withAnimationTarget(profile: SkillboundPlayerProfile): SkillboundPlayerProfile {
+  if (profile.blueprint.targetAssetId) return profile
+  return {
+    ...profile,
+    blueprint: { ...cloneBlueprint(profile.blueprint), targetAssetId: playerAnimationTargetId(profile.id) },
+  }
 }
 
 function isProfile(value: unknown): value is SkillboundPlayerProfile {
