@@ -15,10 +15,19 @@ export type ForgeAnimationActionId =
   | 'equip'
   | 'unequip'
 
+export type ForgeAnimationEventKind = 'hit' | 'vfx' | 'sfx' | 'recovery'
+
+export type ForgeAnimationEvent = {
+  id: string
+  kind: ForgeAnimationEventKind
+  time: number
+}
+
 export type ForgeAnimationActionBinding = {
   clip?: string
   loop: boolean
   speed: number
+  events?: ForgeAnimationEvent[]
 }
 
 export type ForgeAnimationSet = {
@@ -59,6 +68,10 @@ export function animationBindingAssetId(targetAssetId: string) {
   return `forge-animation-set:${targetAssetId}`
 }
 
+export function animationPackAssetId(targetAssetId: string) {
+  return `forge-animation-pack:${targetAssetId}`
+}
+
 export function createAnimationSet(targetAssetId: string, clipNames: string[]): ForgeAnimationSet {
   const actions: ForgeAnimationSet['actions'] = {}
   for (const definition of FORGE_ANIMATION_ACTIONS) {
@@ -81,6 +94,7 @@ export function normalizeAnimationSet(value: Partial<ForgeAnimationSet> | undefi
       clip,
       loop: typeof raw?.loop === 'boolean' ? raw.loop : definition.loop,
       speed: clampSpeed(raw?.speed),
+      events: normalizeEvents(raw?.events),
     }
   }
   return {
@@ -114,6 +128,11 @@ export function actionDefinition(id: ForgeAnimationActionId) {
   return FORGE_ANIMATION_ACTIONS.find((item) => item.id === id)
 }
 
+export function actionEventTime(set: ForgeAnimationSet | undefined, action: ForgeAnimationActionId, kind: ForgeAnimationEventKind) {
+  const event = set?.actions[action]?.events?.find((item) => item.kind === kind)
+  return event?.time
+}
+
 export function resolveRuntimeBinding(set: ForgeAnimationSet | undefined, cue: 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge') {
   if (!set) return undefined
   if (cue === 'idle') return set.actions.idle
@@ -122,6 +141,21 @@ export function resolveRuntimeBinding(set: ForgeAnimationSet | undefined, cue: '
   if (cue === 'hit') return set.actions.hit ?? set.actions.stagger
   if (cue === 'death') return set.actions.death
   return set.actions.dodge
+}
+
+function normalizeEvents(value: unknown): ForgeAnimationEvent[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const allowed = new Set<ForgeAnimationEventKind>(['hit', 'vfx', 'sfx', 'recovery'])
+  const events = value
+    .map((raw) => raw as Partial<ForgeAnimationEvent>)
+    .filter((raw) => typeof raw.kind === 'string' && allowed.has(raw.kind as ForgeAnimationEventKind) && Number.isFinite(Number(raw.time)))
+    .map((raw, index) => ({
+      id: typeof raw.id === 'string' && raw.id ? raw.id : `${raw.kind}-${index}`,
+      kind: raw.kind as ForgeAnimationEventKind,
+      time: Math.max(0, Number(raw.time)),
+    }))
+    .sort((a, b) => a.time - b.time)
+  return events.length ? events : undefined
 }
 
 function findBestClip(names: string[], aliases: RegExp[]) {
