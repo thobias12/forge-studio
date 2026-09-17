@@ -9,6 +9,8 @@ export type ForgeAdventurePlayerState = {
   gold?: number
   xp?: number
   level?: number
+  mana?: number
+  maxMana?: number
 }
 
 export function mergeAdventurePlayerState(runtimeSaveKey: string, state: ForgeAdventurePlayerState) {
@@ -23,6 +25,8 @@ export function mergeAdventurePlayerState(runtimeSaveKey: string, state: ForgeAd
     gold: state.gold ?? save.gold ?? 0,
     xp: state.xp ?? save.xp ?? 0,
     level: state.level ?? save.level ?? 1,
+    mana: state.mana ?? save.mana,
+    maxMana: state.maxMana ?? save.maxMana,
     savedAt: new Date().toISOString(),
   })
   return true
