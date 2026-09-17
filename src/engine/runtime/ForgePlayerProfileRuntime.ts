@@ -16,7 +16,8 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
     const blueprint = this.options?.characterBlueprint as ForgeCharacterBlueprint | undefined
     if (!blueprint) return originalBindPlayerVisual.call(this)
     try {
-      const binding = bindCharacterBlueprint(this.player, blueprint, 1.95)
+      const animationTargetId = this.options?.animationTargetId ?? blueprint.targetAssetId
+      const binding = await bindCharacterBlueprint(this.player, blueprint, 1.95, animationTargetId)
       if (this.disposed) { binding.dispose(); return }
       this.playerVisual = binding
       if (binding && this.preloadAbilityAnimations) await this.preloadAbilityAnimations(binding)
