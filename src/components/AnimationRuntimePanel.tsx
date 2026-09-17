@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Clock3, RefreshCw, Save, Swords, Zap } from 'lucide-react'
+import { CheckCircle2, Clock3, RefreshCw, Save as SaveIcon, Swords, Zap } from 'lucide-react'
 import {
   FORGE_ANIMATION_ACTIONS,
   actionDefinition,
@@ -80,7 +80,7 @@ export default function AnimationRuntimePanel() {
     })
   }
 
-  const save = async () => {
+  const saveTiming = async () => {
     if (!set || !selectedTarget) return
     setSaving(true)
     try {
@@ -138,7 +138,7 @@ export default function AnimationRuntimePanel() {
         })}
       </div>
       <p><b>Hit</b> controls when gameplay damage lands. VFX/SFX markers are stored now so Skill Forge can bind effects to the same animation timeline next.</p>
-      <button className="primary-button" disabled={!set || !selectedTarget || saving} onClick={() => void save()}><Save size={15}/>{saving ? 'Saving…' : 'Save Gameplay Timing'}</button>
+      <button className="primary-button" disabled={!set || !selectedTarget || saving} onClick={() => void saveTiming()}><SaveIcon size={15}/>{saving ? 'Saving…' : 'Save Gameplay Timing'}</button>
     </div>
 
     <footer>{status}</footer>
