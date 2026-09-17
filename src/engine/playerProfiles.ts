@@ -74,15 +74,28 @@ export function createDefaultPlayerBlueprint(name = 'Wanderer') {
   blueprint.role = 'melee'
   blueprint.faction = 'neutral'
   blueprint.level = 1
-  blueprint.body.asymmetry = 0
-  blueprint.appearance.armor = 'none'
-  blueprint.appearance.headwear = 'none'
+  blueprint.body = {
+    height: 1.02,
+    bulk: 0.98,
+    shoulders: 1.04,
+    headScale: 0.96,
+    armLength: 1.01,
+    legLength: 1.03,
+    asymmetry: 0.06,
+  }
+  blueprint.appearance = {
+    armor: 'none',
+    headwear: 'hood',
+    primary: blueprint.appearance.primary,
+    secondary: '#202126',
+    accent: '#763d38',
+  }
   blueprint.combat.weaponProfile = 'one-hand-sword'
   blueprint.combat.temperament = 'defensive'
   blueprint.combat.aggression = 0.25
   blueprint.combat.preferredRange = 1.6
   blueprint.npc = { occupation: '', dialogueStyle: 'none', important: false }
-  blueprint.tags = ['player', 'human', 'adventurer']
+  blueprint.tags = ['player', 'human', 'duskstrider', 'melee']
   blueprint.creatorCompatible = true
   return blueprint
 }

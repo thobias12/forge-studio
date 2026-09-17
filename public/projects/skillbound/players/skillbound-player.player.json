@@ -2,7 +2,7 @@
   "format": "forge-player",
   "version": 1,
   "id": "skillbound-player",
-  "name": "Wanderer",
+  "name": "Duskstrider",
   "maxHealth": 100,
   "moveSpeed": 9.2,
   "dodgeDistance": 5.2,
@@ -12,7 +12,7 @@
   "startingItems": [],
   "archetypeLoadouts": {
     "melee": {
-      "label": "Vanguard",
+      "label": "Duskstrider",
       "basicAbility": "iron-cleave",
       "activeAbilities": ["shield-bash"],
       "startingItems": ["rusted-sword", "worn-buckler", "road-worn-chest"],
@@ -22,7 +22,7 @@
       "dodgeCooldown": 1.1
     },
     "ranged": {
-      "label": "Ranger",
+      "label": "Thornwarden",
       "basicAbility": "quick-shot",
       "activeAbilities": ["volley"],
       "startingItems": ["hunter-bow", "gripwrap-gloves", "trail-boots"],
@@ -32,7 +32,7 @@
       "dodgeCooldown": 0.78
     },
     "caster": {
-      "label": "Arcanist",
+      "label": "Voidweaver",
       "basicAbility": "arc-bolt",
       "activeAbilities": ["ember-burst"],
       "startingItems": ["ash-staff", "marsh-hood", "drowned-greaves"],

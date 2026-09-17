@@ -2,20 +2,37 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { createConceptCharacter } from '../lib/conceptCryptSkeleton'
 import { disposeForgeCharacter, type ForgeCharacterBuild, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
+import {
+  createStarterClassCharacter,
+  type SkillboundStarterClass,
+  type StarterClassCharacterConfig,
+} from './starterClassCharacter'
 
 export function createConceptForgeCharacter(config: ForgeCharacterConfig): ForgeCharacterBuild {
-  const build = createConceptCharacter({ ...config, weapon: 'none' })
+  const starterClass = (config as StarterClassCharacterConfig).starterClass
+  const build = starterClass
+    ? createStarterClassCharacter(config, starterClass)
+    : createConceptCharacter({ ...config, weapon: 'none' })
+
   stripLegacyConceptWeapon(build)
   build.root.userData.forgeCharacter = {
     ...build.root.userData.forgeCharacter,
-    conceptForgeVersion: 2,
+    conceptForgeVersion: starterClass ? 3 : 2,
     weaponPolicy: 'external-item-forge',
     previewWeapon: false,
     mocapFacingYaw: Math.PI,
+    ...(starterClass ? { starterClass } : {}),
   }
   build.stats = recount(build)
   build.root.updateMatrixWorld(true)
   return build
+}
+
+export function starterClassFromRole(role?: string): SkillboundStarterClass | undefined {
+  if (role === 'ranged') return 'thornwarden'
+  if (role === 'caster') return 'voidweaver'
+  if (role === 'melee') return 'duskstrider'
+  return undefined
 }
 
 export async function exportConceptForgeCharacterGlb(config: ForgeCharacterConfig): Promise<Blob> {
