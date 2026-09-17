@@ -59,9 +59,9 @@ export function resolveGameplayForRole(gameplay: ForgeGameplayContent, role?: Fo
 }
 
 export function archetypeLabel(role?: ForgeCharacterRole) {
-  if (role === 'ranged') return 'Ranger'
-  if (role === 'caster') return 'Arcanist'
-  return 'Vanguard'
+  if (role === 'ranged') return 'Thornwarden'
+  if (role === 'caster') return 'Voidweaver'
+  return 'Duskstrider'
 }
 
 function finiteOr(value: number | undefined, fallback: number | undefined) {
