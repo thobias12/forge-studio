@@ -7,6 +7,7 @@ import { getAsset, saveAsset, type LibraryAsset } from './library'
 import type { MotionCleanupOptions } from './motionCleanup'
 import {
   animationBindingAssetId,
+  animationPackAssetId,
   animationSetBlob,
   createAnimationSet,
   normalizeAnimationSet,
@@ -134,9 +135,10 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
   const bindingId = animationBindingAssetId(input.characterAsset.id)
   const existingBindingAsset = await getAsset(bindingId)
   const existingSet = existingBindingAsset ? await parseAnimationSet(existingBindingAsset.blob, input.characterAsset.id) : undefined
-  const previousClipName = existingSet?.actions[input.action]?.clip
+  const previousBinding = existingSet?.actions[input.action]
+  const previousClipName = previousBinding?.clip
 
-  const packId = `forge-animation-pack:${input.characterAsset.id}`
+  const packId = animationPackAssetId(input.characterAsset.id)
   const existingPack = await getAsset(packId)
   const previousClips = existingPack ? await loadAnimationClips(existingPack.blob) : []
   const newClips = await loadAnimationClips(built.blob)
@@ -173,6 +175,7 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
         clip: built.clipName,
         loop: input.edit.loop,
         speed: 1,
+        events: previousBinding?.events,
       },
     },
   }
