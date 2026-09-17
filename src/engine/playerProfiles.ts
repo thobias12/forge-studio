@@ -75,20 +75,20 @@ export function createDefaultPlayerBlueprint(name = 'Wanderer') {
   blueprint.faction = 'neutral'
   blueprint.level = 1
   blueprint.body = {
-    height: 1.02,
-    bulk: 0.98,
-    shoulders: 1.04,
-    headScale: 0.96,
-    armLength: 1.01,
+    height: 1.0,
+    bulk: 0.82,
+    shoulders: 0.9,
+    headScale: 1.08,
+    armLength: 0.98,
     legLength: 1.03,
-    asymmetry: 0.06,
+    asymmetry: 0.025,
   }
   blueprint.appearance = {
     armor: 'none',
     headwear: 'hood',
     primary: blueprint.appearance.primary,
-    secondary: '#202126',
-    accent: '#763d38',
+    secondary: '#263a39',
+    accent: '#92364e',
   }
   blueprint.combat.weaponProfile = 'one-hand-sword'
   blueprint.combat.temperament = 'defensive'
