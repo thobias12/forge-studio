@@ -3,6 +3,7 @@ import type { ForgeAnimationSet } from '../animationBindings'
 import type { ForgeCharacterBlueprint } from '../characterBlueprint'
 import { playLibraryAudio } from './ForgeAnimationAudio'
 import { bindCharacterBlueprint } from './ForgeBlueprintRuntime'
+import { installForgeSkillRuntime } from './ForgeSkillRuntime'
 import { registerSkillboundRuntime, unregisterSkillboundRuntime } from './SkillboundRuntimeBridge'
 
 const installed = new WeakSet<object>()
@@ -49,6 +50,7 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
   wrapNoopWhenPaused(proto, 'updateLoot')
   wrapNoopWhenPaused(proto, 'startDodge')
   wrapTimedAbility(proto)
+  installForgeSkillRuntime(RuntimeClass)
 }
 
 function wrapTimedAbility(proto: any) {
