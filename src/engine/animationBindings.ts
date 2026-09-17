@@ -21,6 +21,7 @@ export type ForgeAnimationEvent = {
   id: string
   kind: ForgeAnimationEventKind
   time: number
+  assetId?: string
 }
 
 export type ForgeAnimationActionBinding = {
@@ -153,6 +154,7 @@ function normalizeEvents(value: unknown): ForgeAnimationEvent[] | undefined {
       id: typeof raw.id === 'string' && raw.id ? raw.id : `${raw.kind}-${index}`,
       kind: raw.kind as ForgeAnimationEventKind,
       time: Math.max(0, Number(raw.time)),
+      assetId: typeof raw.assetId === 'string' && raw.assetId ? raw.assetId : undefined,
     }))
     .sort((a, b) => a.time - b.time)
   return events.length ? events : undefined
