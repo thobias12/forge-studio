@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import './engine/runtime/ForgeEquipmentRuntime'
 import App from './App'
 import { installPropSelectionAssist } from './lib/propSelectionAssist'
+import { hydrateSkillboundProjectAssets } from './engine/projectAssetSync'
 import './gameplay-content-management.css'
 import './hud-runtime-layout.css'
 import './hud-runtime-orbs.css'
@@ -14,8 +15,10 @@ import './rpg-core-v145.css'
 // made the Maps route capable of doing huge amounts of work during scene creation.
 installPropSelectionAssist()
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+void hydrateSkillboundProjectAssets().catch(() => undefined).finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  )
+})
