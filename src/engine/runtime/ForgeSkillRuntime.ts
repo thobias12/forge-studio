@@ -21,6 +21,7 @@ export function installForgeSkillRuntime(RuntimeClass: { prototype: any }) {
   const originalCooldowns = proto.updateCooldowns
   if (typeof originalCooldowns === 'function') {
     proto.updateCooldowns = function (delta: number, ...args: unknown[]) {
+      ensureHotbarInput(this)
       const result = originalCooldowns.call(this, delta, ...args)
       if (!this.__forgeProfilePaused) {
         ensureMana(this)
@@ -59,6 +60,7 @@ export function installForgeSkillRuntime(RuntimeClass: { prototype: any }) {
   const originalSnapshot = proto.makeSnapshot
   if (typeof originalSnapshot === 'function') {
     proto.makeSnapshot = function (...args: unknown[]) {
+      ensureHotbarInput(this)
       const base = originalSnapshot.apply(this, args)
       ensureMana(this)
       const ids = hotbarIds(this)
@@ -94,6 +96,15 @@ export function installForgeSkillRuntime(RuntimeClass: { prototype: any }) {
     }
   }
 
+  const originalDispose = proto.dispose
+  if (typeof originalDispose === 'function') {
+    proto.dispose = function (...args: unknown[]) {
+      if (this.__forgeSkillKeyHandler) window.removeEventListener('keydown', this.__forgeSkillKeyHandler, true)
+      this.__forgeSkillKeyHandler = undefined
+      return originalDispose.apply(this, args)
+    }
+  }
+
   proto.setManaState = function (mana?: number, maxMana?: number) {
     const configured = Math.max(1, Number(maxMana ?? this.gameplay?.player?.maxMana ?? this.playerDefinition?.maxMana ?? 100))
     this.__forgeMaxMana = configured
@@ -103,9 +114,10 @@ export function installForgeSkillRuntime(RuntimeClass: { prototype: any }) {
 
   proto.useAbilitySlot = function (index: number) {
     const ids = hotbarIds(this)
-    const id = ids[Math.max(0, Math.floor(index))]
+    const slot = Math.max(0, Math.floor(index))
+    const id = ids[slot]
     if (!id) {
-      this.setMessage?.(`Skill slot ${Math.max(0, Math.floor(index)) + 1} is empty. Assign it in Skill Forge.`, 1.8)
+      this.setMessage?.(`Skill slot ${slot + 1} is empty. Assign it in Skill Forge.`, 1.8)
       this.emitState?.()
       return false
     }
@@ -125,7 +137,7 @@ export function abilityManaCost(runtime: any, ability: ForgeAbilityDefinition) {
 function hotbarIds(runtime: any) {
   const player = runtime.playerDefinition ?? runtime.gameplay?.player
   const configured = Array.isArray(player?.hotbar) ? player.hotbar : player?.activeAbilities
-  const ids = Array.isArray(configured) ? configured.filter((id: unknown) => typeof id === 'string' && id).slice(0, 5) : []
+  const ids = Array.isArray(configured) ? configured.filter((id: unknown) => typeof id === 'string').slice(0, 5) : []
   while (ids.length < 5) ids.push('')
   return ids
 }
@@ -144,9 +156,30 @@ function ensureMana(runtime: any) {
   runtime.__forgeMana = clampMana(savedMana ?? runtime.__forgeMaxMana, runtime.__forgeMaxMana)
 }
 
+function ensureHotbarInput(runtime: any) {
+  if (runtime.__forgeSkillKeyHandler || typeof window === 'undefined') return
+  const handler = (event: KeyboardEvent) => {
+    if (runtime.disposed || runtime.__forgeProfilePaused || event.repeat || isTextInput(event.target)) return
+    const index = Number(event.key) - 1
+    if (!Number.isInteger(index) || index < 0 || index > 4) return
+    runtime.useAbilitySlot?.(index)
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  runtime.__forgeSkillKeyHandler = handler
+  window.addEventListener('keydown', handler, true)
+}
+
 function playerManaRegen(runtime: any) {
   const value = Number(runtime.gameplay?.player?.manaRegen ?? runtime.playerDefinition?.manaRegen ?? 14)
   return Number.isFinite(value) ? Math.max(0, value) : 14
+}
+
+function isTextInput(target: EventTarget | null) {
+  const element = target as HTMLElement | null
+  if (!element) return false
+  const tag = element.tagName?.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || element.isContentEditable
 }
 
 function clampMana(value: number, max: number) {
