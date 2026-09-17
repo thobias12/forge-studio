@@ -1,4 +1,5 @@
 // @ts-nocheck
+import type { ForgeAnimationSet } from '../animationBindings'
 import type { ForgeCharacterBlueprint } from '../characterBlueprint'
 import { bindCharacterBlueprint } from './ForgeBlueprintRuntime'
 import { registerSkillboundRuntime, unregisterSkillboundRuntime } from './SkillboundRuntimeBridge'
@@ -46,7 +47,44 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
   wrapNoopWhenPaused(proto, 'updateEnemies')
   wrapNoopWhenPaused(proto, 'updateLoot')
   wrapNoopWhenPaused(proto, 'startDodge')
-  wrapNoopWhenPaused(proto, 'performAbility')
+  wrapTimedAbility(proto)
+}
+
+function wrapTimedAbility(proto: any) {
+  const original = proto.performAbility
+  if (typeof original !== 'function') return
+  proto.performAbility = function (ability: any) {
+    if (this.__forgeProfilePaused) return
+
+    const set = this.playerVisual?.forgeAnimationSet as ForgeAnimationSet | undefined
+    const basicId = this.gameplay?.player?.basicAbility
+    const action = ability?.id === basicId ? 'attackPrimary' : 'cast'
+    const hitMarker = set?.actions?.[action]?.events?.find((event) => event.kind === 'hit')
+    const delayMs = Math.max(0, Number(hitMarker?.time ?? 0) * 1000)
+    if (delayMs < 12) return original.call(this, ability)
+
+    const queuedDamage: Array<{ enemy: unknown; args: unknown[] }> = []
+    const damageEnemy = this.damageEnemy
+    if (typeof damageEnemy !== 'function') return original.call(this, ability)
+
+    this.damageEnemy = function (enemy: unknown, ...args: unknown[]) {
+      queuedDamage.push({ enemy, args })
+    }
+    try {
+      original.call(this, ability)
+    } finally {
+      this.damageEnemy = damageEnemy
+    }
+
+    if (!queuedDamage.length) return
+    window.setTimeout(() => {
+      if (this.disposed || this.playerHealth <= 0) return
+      for (const hit of queuedDamage) {
+        try { damageEnemy.call(this, hit.enemy, ...hit.args) } catch { /* target may have despawned during the windup */ }
+      }
+      this.emitState?.()
+    }, delayMs)
+  }
 }
 
 function wrapNoopWhenPaused(proto: any, method: string) {
