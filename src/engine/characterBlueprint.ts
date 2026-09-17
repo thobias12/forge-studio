@@ -132,6 +132,16 @@ export function blueprintFromConfig(config: ForgeCharacterConfig, base?: ForgeCh
 
 export function blueprintToConfig(blueprint: ForgeCharacterBlueprint): ForgeCharacterConfig {
   const config = cloneForgeCharacterConfig(blueprint.lineage)
+  const starterClass = blueprint.entityKind === 'player'
+    ? blueprint.role === 'ranged'
+      ? 'thornwarden'
+      : blueprint.role === 'caster'
+        ? 'voidweaver'
+        : blueprint.role === 'melee'
+          ? 'duskstrider'
+          : undefined
+    : undefined
+
   return {
     ...config,
     name: `${blueprint.name} Concept`,
@@ -148,7 +158,8 @@ export function blueprintToConfig(blueprint: ForgeCharacterBlueprint): ForgeChar
     primary: blueprint.appearance.primary,
     secondary: blueprint.appearance.secondary,
     accent: blueprint.appearance.accent,
-  }
+    ...(starterClass ? { starterClass } : {}),
+  } as ForgeCharacterConfig
 }
 
 export function characterBlueprintBlob(blueprint: ForgeCharacterBlueprint) {
