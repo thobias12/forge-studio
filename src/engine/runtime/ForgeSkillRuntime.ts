@@ -18,6 +18,18 @@ export function installForgeSkillRuntime(RuntimeClass: { prototype: any }) {
   if (installed.has(proto)) return
   installed.add(proto)
 
+  const originalGetSkillAbility = proto.getSkillAbility
+  if (typeof originalGetSkillAbility === 'function') {
+    proto.getSkillAbility = function (...args: unknown[]) {
+      const first = hotbarIds(this)[0]
+      if (first) {
+        const ability = this.gameplay?.abilities?.find?.((candidate: ForgeAbilityDefinition) => candidate.id === first)
+        if (ability) return ability
+      }
+      return originalGetSkillAbility.apply(this, args)
+    }
+  }
+
   const originalCooldowns = proto.updateCooldowns
   if (typeof originalCooldowns === 'function') {
     proto.updateCooldowns = function (delta: number, ...args: unknown[]) {
