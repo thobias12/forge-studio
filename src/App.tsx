@@ -23,6 +23,7 @@ import {
   Swords,
   UserRoundCog,
   WandSparkles,
+  Zap,
   Skull,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -32,6 +33,7 @@ import ProjectPlay from './pages/ProjectPlay'
 import ProjectValidation from './pages/ProjectValidation'
 import WorldForge from './pages/WorldForge'
 import GameplayForge from './pages/GameplayForge'
+import SkillForge from './pages/SkillForge'
 import ItemForge from './pages/ItemForge'
 import EncounterForge from './pages/EncounterForge'
 import BossForge from './pages/BossForge'
@@ -72,7 +74,7 @@ import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings'
+type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -106,6 +108,7 @@ const navGroups: NavGroup[] = [
     label: 'GAMEPLAY',
     items: [
       { id: 'gameplay', label: 'Gameplay Forge', icon: Swords },
+      { id: 'skillforge', label: 'Skill Forge', icon: Zap },
       { id: 'encounterforge', label: 'Encounter Forge', icon: Crosshair },
       { id: 'bossforge', label: 'Boss Forge', icon: Crown },
       { id: 'itemforge', label: 'Item Forge', icon: PackagePlus },
@@ -132,7 +135,7 @@ const navGroups: NavGroup[] = [
 ]
 
 const nav: NavItem[] = navGroups.flatMap((group) => group.items)
-const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'animations', 'play', 'validation'])
+const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'skillforge', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'animations', 'play', 'validation'])
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -227,6 +230,7 @@ export default function App() {
           {page === 'projects' && <ProjectManager onOpenWorld={() => navigate('world')} onOpenGameplay={() => navigate('gameplay')} />}
           {page === 'world' && <WorldForge />}
           {page === 'gameplay' && <GameplayForge onOpenTool={(target) => navigate(target)} />}
+          {page === 'skillforge' && <SkillForge />}
           {page === 'encounterforge' && <EncounterForge />}
           {page === 'bossforge' && <BossForge />}
           {page === 'itemforge' && <ItemForge />}
