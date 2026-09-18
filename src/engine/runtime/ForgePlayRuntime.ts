@@ -1110,6 +1110,7 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
   const indices: number[] = []
   const palette = runtimeBiomePalette(region.biome)
   const surfacePalette = runtimeSurfacePalette(region.biome)
+  const treeVariantColors = runtimeTreeVariantColors(region.biome, palette.tree)
   const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
   const mossColor = new THREE.Color(surfacePalette.moss)
   const soilColor = new THREE.Color(surfacePalette.soil)
@@ -1457,18 +1458,27 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     color: 0x382c22,
     roughness: 1,
   })
-  const treeLowerMaterial = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(palette.tree).multiplyScalar(.94),
-    roughness: 1,
-  })
-  const treeMiddleMaterial = new THREE.MeshStandardMaterial({
-    color: palette.tree,
-    roughness: 1,
-  })
-  const treeUpperMaterial = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(palette.tree).multiplyScalar(1.08),
-    roughness: 1,
-  })
+  const treeLowerMaterials = treeVariantColors.map(
+    (color) =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(color).multiplyScalar(.9),
+        roughness: 1,
+      }),
+  )
+  const treeMiddleMaterials = treeVariantColors.map(
+    (color) =>
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness: 1,
+      }),
+  )
+  const treeUpperMaterials = treeVariantColors.map(
+    (color) =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(color).multiplyScalar(1.1),
+        roughness: 1,
+      }),
+  )
   const treeLowerGeometries: THREE.BufferGeometry[] = [
     new THREE.ConeGeometry(1.52, 2.75, 7),
     new THREE.ConeGeometry(1.72, 2.35, 8),
@@ -1560,24 +1570,16 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       patch.receiveShadow = true
       patch.renderOrder = 2
       scene.add(patch)
-    } else if (item.type === 'leaf-patch' || item.type === 'mud-patch' || item.type === 'corrupt-scar') {
+    } else if (item.type === 'leaf-patch' || item.type === 'mud-patch') {
       const material =
         item.type === 'leaf-patch'
           ? leafPatchMaterial
-          : item.type === 'mud-patch'
-            ? mudPatchMaterial
-            : corruptScarMaterial
+          : mudPatchMaterial
       const patch = new THREE.Mesh(signaturePatchGeometry, material)
       patch.position.set(item.x, item.y + .031, item.z)
       patch.rotation.y = item.rotation
-      const widthScale =
-        item.type === 'corrupt-scar' ? 1.7 :
-          item.type === 'mud-patch' ? 1.55 :
-            1.45
-      const depthScale =
-        item.type === 'corrupt-scar' ? .48 :
-          item.type === 'mud-patch' ? .74 :
-            .68
+      const widthScale = item.type === 'mud-patch' ? 1.55 : 1.45
+      const depthScale = item.type === 'mud-patch' ? .74 : .68
       patch.scale.set(
         item.scale * widthScale * (1 + item.variant * .07),
         1,
@@ -1586,6 +1588,54 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       patch.receiveShadow = true
       patch.renderOrder = 2
       scene.add(patch)
+    } else if (item.type === 'corrupt-scar') {
+      for (let piece = 0; piece < 3; piece += 1) {
+        const angle = item.rotation + piece * 2.17 + item.variant * .13
+        const radius = piece === 0 ? 0 : (.34 + piece * .12) * item.scale
+        const patch = new THREE.Mesh(signaturePatchGeometry, corruptScarMaterial)
+        patch.position.set(
+          item.x + Math.cos(angle) * radius,
+          item.y + .032 + piece * .002,
+          item.z + Math.sin(angle) * radius,
+        )
+        patch.rotation.y = angle + piece * .27
+        patch.scale.set(
+          item.scale * (1.05 + piece * .2),
+          1,
+          item.scale * (.28 + (piece % 2) * .16),
+        )
+        patch.receiveShadow = true
+        patch.renderOrder = 2
+        scene.add(patch)
+      }
+
+      const corruptSpikeGeometry = new THREE.ConeGeometry(.12, .58, 5)
+      const corruptSpikeMaterial = new THREE.MeshStandardMaterial({
+        color: 0x4f3158,
+        roughness: 1,
+      })
+      for (let spike = 0; spike < 2; spike += 1) {
+        const angle = item.rotation + .75 + spike * 2.75 + item.variant * .19
+        const radius = (.38 + spike * .2) * item.scale
+        const spikeMesh = new THREE.Mesh(
+          corruptSpikeGeometry,
+          corruptSpikeMaterial,
+        )
+        const spikeScale = item.scale * (.72 + spike * .18)
+        spikeMesh.position.set(
+          item.x + Math.cos(angle) * radius,
+          item.y + .24 * spikeScale,
+          item.z + Math.sin(angle) * radius,
+        )
+        spikeMesh.rotation.set(
+          spike ? -.12 : .09,
+          angle,
+          spike ? .14 : -.1,
+        )
+        spikeMesh.scale.setScalar(spikeScale)
+        spikeMesh.castShadow = true
+        scene.add(spikeMesh)
+      }
     } else if (item.type === 'flower-patch') {
       for (let petal = 0; petal < 5; petal += 1) {
         const angle = item.rotation + petal * 2.399
@@ -1684,51 +1734,72 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       tree.add(trunk)
 
       const broadleaf = item.variant === 2
+      const variant = item.variant
+      const tierJitter = .055 + variant * .015
       const lower = new THREE.Mesh(
-        treeLowerGeometries[item.variant],
-        treeLowerMaterial,
+        treeLowerGeometries[variant],
+        treeLowerMaterials[variant],
       )
       lower.position.set(
-        broadleaf ? -.22 : 0,
-        broadleaf ? 3.7 : 3.4,
-        broadleaf ? .05 : 0,
+        broadleaf ? -.22 : (variant % 2 ? -1 : 1) * tierJitter,
+        broadleaf ? 3.7 : 3.32,
+        broadleaf ? .05 : (variant < 2 ? 1 : -1) * tierJitter * .55,
       )
-      if (broadleaf) lower.scale.y = 1.06
+      lower.rotation.set(
+        broadleaf ? 0 : (variant - 1.5) * .012,
+        -.08 - variant * .018,
+        broadleaf ? 0 : (variant % 2 ? -.018 : .018),
+      )
+      lower.scale.set(
+        broadleaf ? 1 : 1.05,
+        broadleaf ? 1.06 : .96,
+        broadleaf ? 1 : .94,
+      )
       lower.castShadow = true
       tree.add(lower)
 
       const middle = new THREE.Mesh(
-        treeMiddleGeometries[item.variant],
-        treeMiddleMaterial,
+        treeMiddleGeometries[variant],
+        treeMiddleMaterials[variant],
       )
       middle.position.set(
-        broadleaf ? .3 : 0,
-        broadleaf ? 4.25 : 4.3,
-        broadleaf ? -.12 : 0,
+        broadleaf ? .3 : (variant % 2 ? 1 : -1) * tierJitter * 1.5,
+        broadleaf ? 4.25 : 4.25,
+        broadleaf ? -.12 : (variant < 2 ? -1 : 1) * tierJitter,
       )
-      const middleScale = broadleaf ? .94 : .82
+      middle.rotation.set(
+        broadleaf ? 0 : (1.5 - variant) * .016,
+        .11 + variant * .026,
+        broadleaf ? 0 : (variant % 2 ? .022 : -.022),
+      )
+      const middleScale = broadleaf ? .94 : .78
       middle.scale.set(
-        middleScale,
-        middleScale * (broadleaf ? 1.08 : 1),
-        middleScale,
+        middleScale * (broadleaf ? 1 : 1.04),
+        middleScale * (broadleaf ? 1.08 : .94),
+        middleScale * (broadleaf ? 1 : .92),
       )
       middle.castShadow = true
       tree.add(middle)
 
       const upper = new THREE.Mesh(
-        treeUpperGeometries[item.variant],
-        treeUpperMaterial,
+        treeUpperGeometries[variant],
+        treeUpperMaterials[variant],
       )
       upper.position.set(
-        broadleaf ? .04 : 0,
-        broadleaf ? 4.75 : 5.08,
-        broadleaf ? .26 : 0,
+        broadleaf ? .04 : (variant % 3 - 1) * tierJitter * 1.1,
+        broadleaf ? 4.75 : 5.03,
+        broadleaf ? .26 : (variant % 2 ? -.7 : .8) * tierJitter,
       )
-      const upperScale = broadleaf ? .78 : .62
+      upper.rotation.set(
+        broadleaf ? 0 : (variant - 1.5) * .02,
+        -.16 + variant * .035,
+        broadleaf ? 0 : (variant % 2 ? -.028 : .024),
+      )
+      const upperScale = broadleaf ? .78 : .57
       upper.scale.set(
-        upperScale,
-        upperScale * (broadleaf ? 1.08 : 1),
-        upperScale,
+        upperScale * (broadleaf ? 1 : 1.02),
+        upperScale * (broadleaf ? 1.08 : .92),
+        upperScale * (broadleaf ? 1 : .9),
       )
       upper.castShadow = true
       tree.add(upper)
@@ -2104,18 +2175,32 @@ function runtimeBox(
 function runtimeBiomePalette(biome: string) {
   const value = biome.toLowerCase()
   if (value.includes('autumn')) return { ground: 0x5a4d32, low: 0x3c4933, high: 0x74654a, tree: 0x73502b, fern: 0x596137, rock: 0x67645b }
-  if (value.includes('highland')) return { ground: 0x505548, low: 0x3b4741, high: 0x85877b, tree: 0x2d402e, fern: 0x4a5b3d, rock: 0x858a82 }
-  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) return { ground: 0x27382f, low: 0x1e3934, high: 0x465849, tree: 0x203328, fern: 0x2e6040, rock: 0x505c55 }
+  if (value.includes('highland')) return { ground: 0x4b5148, low: 0x39453f, high: 0x747a70, tree: 0x2d402e, fern: 0x4a5b3d, rock: 0x737a73 }
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) return { ground: 0x24352d, low: 0x172f2a, high: 0x415346, tree: 0x1b3024, fern: 0x315f42, rock: 0x4b5751 }
   if (value.includes('corrupt')) return { ground: 0x413444, low: 0x302b3d, high: 0x6a526e, tree: 0x342d3b, fern: 0x5b3c63, rock: 0x75657a }
   if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) return { ground: 0x6a633f, low: 0x506040, high: 0x8b8258, tree: 0x425838, fern: 0x637043, rock: 0x777468 }
   return { ground: 0x28412c, low: 0x203929, high: 0x526049, tree: 0x183824, fern: 0x2e6039, rock: 0x596159 }
 }
 
+function runtimeTreeVariantColors(biome: string, fallback: number) {
+  const value = biome.toLowerCase()
+  if (value.includes('autumn')) {
+    return [0x8d552d, 0xb06f31, 0x71402a, 0x45503a]
+  }
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) {
+    return [0x1b3024, 0x263c2d, 0x304735, 0x1d3528]
+  }
+  if (value.includes('corrupt')) {
+    return [0x342d3b, 0x403344, 0x2d3039, 0x4b394c]
+  }
+  return [fallback, fallback, fallback, fallback]
+}
+
 function runtimeSurfacePalette(biome: string) {
   const value = biome.toLowerCase()
   if (value.includes('autumn')) return { forestFloor: 0x473d2c, moss: 0x62613a, soil: 0x6a5538, meadow: 0x6b6840, scrub: 0x564b31, rocky: 0x6e6759 }
-  if (value.includes('highland')) return { forestFloor: 0x444a40, moss: 0x58624d, soil: 0x685f4b, meadow: 0x64704f, scrub: 0x515943, rocky: 0x858a82 }
-  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) return { forestFloor: 0x21342b, moss: 0x356348, soil: 0x45483a, meadow: 0x416449, scrub: 0x2b4c3a, rocky: 0x536059 }
+  if (value.includes('highland')) return { forestFloor: 0x41483f, moss: 0x55604c, soil: 0x625b49, meadow: 0x606c4d, scrub: 0x4d5641, rocky: 0x747a70 }
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) return { forestFloor: 0x1c3028, moss: 0x2d6044, soil: 0x3b4135, meadow: 0x395a42, scrub: 0x274839, rocky: 0x4d5a53 }
   if (value.includes('corrupt')) return { forestFloor: 0x352d3b, moss: 0x55405d, soil: 0x604b56, meadow: 0x624e66, scrub: 0x49374f, rocky: 0x75657a }
   if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) return { forestFloor: 0x505039, moss: 0x607042, soil: 0x79613f, meadow: 0x85804d, scrub: 0x66603d, rocky: 0x7b796b }
   return { forestFloor: 0x203625, moss: 0x365c38, soil: 0x5b503b, meadow: 0x4b6743, scrub: 0x304b34, rocky: 0x62685f }
