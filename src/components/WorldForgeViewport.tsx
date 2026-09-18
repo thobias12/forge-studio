@@ -834,7 +834,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   const addGroundPatches = (
     items: typeof leafPatches,
-    color: THREE.ColorRepresentation,
+    color: number | THREE.Color,
     widthScale: number,
     depthScale: number,
   ) => {
