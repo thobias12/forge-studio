@@ -42,6 +42,18 @@ import {
   forgePoiVisualScale,
   forgeTreePresentationScale,
 } from '../worldScale'
+import {
+  DEFAULT_WORLD_ENVIRONMENT,
+  advanceWorldHour,
+  applyWorldEnvironmentToScene,
+  createWorldWeatherVisuals,
+  markWorldWindMaterial,
+  resetWorldEnvironmentSceneCache,
+  sampleWorldEnvironment,
+  updateWorldWeatherVisuals,
+  type WorldWeather,
+  type WorldWeatherVisuals,
+} from '../worldEnvironment'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -150,6 +162,12 @@ export class ForgePlayRuntime {
   private navigation!: ForgeNavigationGrid
   private playerVisual?: ForgeCharacterVisualBinding
   private ambientVisuals?: WorldAmbientVisuals
+  private weatherVisuals?: WorldWeatherVisuals
+  private environmentHour = DEFAULT_WORLD_ENVIRONMENT.hour
+  private environmentWeather: WorldWeather = DEFAULT_WORLD_ENVIRONMENT.weather
+  private environmentPaused = DEFAULT_WORLD_ENVIRONMENT.paused
+  private environmentSpeed = DEFAULT_WORLD_ENVIRONMENT.speed
+  private environmentElapsed = 0
   private equippedModel?: THREE.Object3D
   private inventory: string[] = []
   private equippedWeaponId: string | undefined
@@ -251,8 +269,16 @@ export class ForgePlayRuntime {
     this.corpses.forEach((corpse) => corpse.visual?.dispose())
     this.libraryVfx.forEach((effect) => effect.dispose())
     this.scene.traverse((object) => {
-      if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Sprite)) return
-      if (object instanceof THREE.Mesh) object.geometry.dispose()
+      if (
+        !(object instanceof THREE.Mesh) &&
+        !(object instanceof THREE.Sprite) &&
+        !(object instanceof THREE.Points)
+      ) {
+        return
+      }
+      if (object instanceof THREE.Mesh || object instanceof THREE.Points) {
+        object.geometry.dispose()
+      }
       const material = object.material
       const materials = Array.isArray(material) ? material : [material]
       materials.forEach((entry) => {
@@ -290,6 +316,32 @@ export class ForgePlayRuntime {
   resetProgress() {
     this.skipFinalSave = true
     clearRuntimeSave(this.saveKey)
+  }
+
+  setEnvironmentHour(hour: number) {
+    const wrapped = hour % 24
+    this.environmentHour = wrapped < 0 ? wrapped + 24 : wrapped
+  }
+
+  setEnvironmentWeather(weather: WorldWeather) {
+    this.environmentWeather = weather
+  }
+
+  setEnvironmentPaused(paused: boolean) {
+    this.environmentPaused = paused
+  }
+
+  setEnvironmentSpeed(speed: number) {
+    this.environmentSpeed = THREE.MathUtils.clamp(speed, .25, 16)
+  }
+
+  getEnvironmentState() {
+    return {
+      hour: this.environmentHour,
+      weather: this.environmentWeather,
+      paused: this.environmentPaused,
+      speed: this.environmentSpeed,
+    }
   }
 
   equipItem(itemId: string) {
@@ -362,17 +414,19 @@ export class ForgePlayRuntime {
 
   private buildLighting() {
     const moodStyle = runtimeMoodStyle(this.region.mood)
-    this.scene.add(
-      new THREE.HemisphereLight(
-        moodStyle.hemisphereSky,
-        moodStyle.hemisphereGround,
-        moodStyle.hemisphere,
-      ),
+    const hemisphere = new THREE.HemisphereLight(
+      moodStyle.hemisphereSky,
+      moodStyle.hemisphereGround,
+      moodStyle.hemisphere,
     )
+    hemisphere.name = 'WorldMoodHemisphere'
+    this.scene.add(hemisphere)
+
     const sun = new THREE.DirectionalLight(
       moodStyle.sunColor,
       moodStyle.sun,
     )
+    sun.name = 'WorldMoodSun'
     sun.position.set(-30, 42, 18)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
@@ -386,6 +440,7 @@ export class ForgePlayRuntime {
       moodStyle.fillColor,
       moodStyle.fill,
     )
+    fill.name = 'WorldMoodFill'
     fill.position.set(46, 28, -52)
     this.scene.add(fill)
   }
@@ -408,6 +463,9 @@ export class ForgePlayRuntime {
       addGeneratedPois(this.scene, this.region, this.obstacles)
       this.ambientVisuals = buildWorldAmbientVisuals(this.region)
       this.scene.add(this.ambientVisuals.group)
+      this.weatherVisuals = createWorldWeatherVisuals(this.region)
+      this.scene.add(this.weatherVisuals.group)
+      resetWorldEnvironmentSceneCache(this.scene)
       return
     }
 
@@ -616,9 +674,45 @@ export class ForgePlayRuntime {
     this.updateTextEffects(delta)
     this.updateCamera(delta)
     this.updateCameraOcclusion(delta)
+
+    this.environmentElapsed += delta
+    if (!this.environmentPaused) {
+      this.environmentHour = advanceWorldHour(
+        this.environmentHour,
+        delta,
+        this.environmentSpeed,
+      )
+    }
+    const environment = sampleWorldEnvironment(
+      this.region.mood,
+      this.environmentHour,
+      this.environmentWeather,
+      this.environmentElapsed,
+      this.region.seed,
+    )
+    applyWorldEnvironmentToScene(
+      this.scene,
+      this.renderer,
+      environment,
+      this.environmentElapsed,
+    )
+    if (this.weatherVisuals) {
+      updateWorldWeatherVisuals(
+        this.weatherVisuals,
+        this.camera,
+        environment,
+        this.environmentElapsed,
+        delta,
+      )
+    }
+
     this.updatePersistence(delta)
     if (this.ambientVisuals) {
-      updateWorldAmbientVisuals(this.ambientVisuals, now / 1000)
+      updateWorldAmbientVisuals(
+        this.ambientVisuals,
+        now / 1000,
+        environment,
+      )
     }
     this.renderer.render(this.scene, this.camera)
     this.animationFrame = requestAnimationFrame(this.animate)
@@ -1344,12 +1438,14 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }))
+  mesh.name = 'GeneratedTerrain'
   mesh.receiveShadow = true
   return mesh
 }
 
 function makeGeneratedStream(region: GeneratedRegion) {
   const group = new THREE.Group()
+  group.name = 'GeneratedStream'
   {
     const issues = streamRenderContinuityIssues(region)
     if (issues.length) console.warn('[Play Region] River continuity', issues)
@@ -1373,6 +1469,7 @@ function makeGeneratedStream(region: GeneratedRegion) {
       side: THREE.DoubleSide,
     }),
   )
+  water.name = 'GeneratedWaterSurface'
   water.castShadow = false
   water.receiveShadow = false
   water.renderOrder = 20
@@ -1393,6 +1490,7 @@ function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
       polygonOffsetUnits: -1,
     }),
   )
+  road.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
   road.receiveShadow = true
   return road
 }
@@ -1773,30 +1871,42 @@ function addGeneratedDressing(
   })
 
   const treeTrunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
-  const treeTrunkMaterial = new THREE.MeshStandardMaterial({
-    color: 0x382c22,
-    roughness: 1,
-  })
+  const treeTrunkMaterial = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: 0x382c22,
+      roughness: 1,
+    }),
+    .16,
+  )
   const treeLowerMaterials = treeVariantColors.map(
     (color) =>
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color(color).multiplyScalar(.9),
-        roughness: 1,
-      }),
+      markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color(color).multiplyScalar(.9),
+          roughness: 1,
+        }),
+        .48,
+      ),
   )
   const treeMiddleMaterials = treeVariantColors.map(
     (color) =>
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness: 1,
-      }),
+      markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: 1,
+        }),
+        .68,
+      ),
   )
   const treeUpperMaterials = treeVariantColors.map(
     (color) =>
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color(color).multiplyScalar(1.1),
-        roughness: 1,
-      }),
+      markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color(color).multiplyScalar(1.1),
+          roughness: 1,
+        }),
+        .9,
+      ),
   )
   const treeLowerGeometries: THREE.BufferGeometry[] = [
     new THREE.ConeGeometry(1.52, 2.75, 7),
@@ -1825,10 +1935,13 @@ function addGeneratedDressing(
   const deadTreeLowerGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
   const deadTreeUpperGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
   const deadTreeBranchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
-  const deadTreeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x493b31,
-    roughness: 1,
-  })
+  const deadTreeMaterial = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: 0x493b31,
+      roughness: 1,
+    }),
+    .24,
+  )
 
   const signaturePatchGeometry = new THREE.CircleGeometry(1, 9)
   signaturePatchGeometry.rotateX(-Math.PI / 2)
@@ -2294,7 +2407,10 @@ function addGeneratedDressing(
     } else if (item.type === 'fern') {
       const fern = new THREE.Mesh(
         new THREE.ConeGeometry(.28 * item.scale, .6 * item.scale, 5),
-        new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 }),
+        markWorldWindMaterial(
+          new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 }),
+          .72,
+        ),
       )
       fern.position.set(item.x, item.y + .27 * item.scale, item.z)
       fern.rotation.y = item.rotation
@@ -2302,7 +2418,10 @@ function addGeneratedDressing(
     } else if (item.type === 'grass') {
       const grass = new THREE.Mesh(
         new THREE.ConeGeometry(.18 * item.scale, .58 * item.scale, 5),
-        new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 }),
+        markWorldWindMaterial(
+          new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 }),
+          .9,
+        ),
       )
       grass.position.set(item.x, item.y + .22 * item.scale, item.z)
       grass.rotation.y = item.rotation
@@ -2318,7 +2437,10 @@ function addGeneratedDressing(
       shrub.castShadow = true
       scene.add(shrub)
     } else if (item.type === 'reeds') {
-      const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.reeds, roughness: 1 })
+      const material = markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({ color: groundCoverColors.reeds, roughness: 1 }),
+        1,
+      )
       const bladesPerCluster = 6
       for (let blade = 0; blade < bladesPerCluster; blade += 1) {
         const angle = item.rotation + blade * 1.37 + item.variant * .16
@@ -2480,6 +2602,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       }
 
       const fireGlow = new THREE.PointLight(0xff8738, .9, 6)
+      fireGlow.userData.forgeEnvironmentLightBase = .9
       fireGlow.position.set(0, .7, 0)
       group.add(fireGlow)
 
@@ -2612,6 +2735,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       }
 
       const shrineGlow = new THREE.PointLight(0xd6b36d, 1.15, 7)
+      shrineGlow.userData.forgeEnvironmentLightBase = 1.15
       shrineGlow.position.set(0, 1.5, .1)
       group.add(shrineGlow)
     } else if (poi.type === 'standing-stones') {

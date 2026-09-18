@@ -7,6 +7,10 @@ import {
   streamWaterSurfaceRows,
   type GeneratedRegion,
 } from './guidedWorld'
+import {
+  markWorldWindMaterial,
+  type WorldEnvironmentSample,
+} from './worldEnvironment'
 
 export type WorldAmbientVisuals = {
   group: THREE.Group
@@ -74,12 +78,16 @@ export function buildWorldAmbientVisuals(
 export function updateWorldAmbientVisuals(
   visuals: WorldAmbientVisuals,
   time: number,
+  environment?: WorldEnvironmentSample,
 ) {
   for (const actor of visuals.actors) {
     const kind = actor.userData.ambientKind as string | undefined
     const phase = Number(actor.userData.phase ?? 0)
 
     if (kind === 'firefly') {
+      const activity = environment?.fireflyActivity ?? 1
+      actor.visible = activity > .025
+      if (!actor.visible) continue
       actor.rotation.y = phase + time * .18
       actor.children.forEach((child, index) => {
         const baseX = Number(child.userData.baseX ?? child.position.x)
@@ -92,7 +100,9 @@ export function updateWorldAmbientVisuals(
           ? child.material
           : undefined
         if (material instanceof THREE.MeshBasicMaterial) {
-          material.opacity = .58 + Math.sin(time * 2.6 + phase + index) * .22
+          material.opacity =
+            (.58 + Math.sin(time * 2.6 + phase + index) * .22) *
+            activity
         }
       })
       continue
@@ -107,7 +117,10 @@ export function updateWorldAmbientVisuals(
       const normalX = -tangentZ
       const normalZ = tangentX
       const range = Number(actor.userData.range ?? .8)
-      const speed = Number(actor.userData.speed ?? .55)
+      const activity = environment?.fishActivity ?? 1
+      actor.visible = activity > .08
+      if (!actor.visible) continue
+      const speed = Number(actor.userData.speed ?? .55) * (.55 + activity * .45)
       const swim = time * speed + phase
       const travel = Math.sin(swim) * range
       const side = Math.sin(swim * 1.63 + phase * .7) * .12
@@ -137,11 +150,14 @@ export function updateWorldAmbientVisuals(
     }
 
     if (kind === 'bird') {
+      const activity = environment?.birdActivity ?? 1
+      actor.visible = activity > .06
+      if (!actor.visible) continue
       const anchorX = Number(actor.userData.anchorX ?? actor.position.x)
       const anchorY = Number(actor.userData.anchorY ?? actor.position.y)
       const anchorZ = Number(actor.userData.anchorZ ?? actor.position.z)
       const radius = Number(actor.userData.radius ?? 3.2)
-      const speed = Number(actor.userData.speed ?? .19)
+      const speed = Number(actor.userData.speed ?? .19) * (.72 + activity * .28)
       const angle = phase + time * speed
       actor.position.set(
         anchorX + Math.cos(angle) * radius,
@@ -161,8 +177,13 @@ export function updateWorldAmbientVisuals(
       const glow = actor.getObjectByName('AmbientLanternGlow')
       if (glow instanceof THREE.PointLight) {
         const base = Number(actor.userData.baseIntensity ?? .95)
+        const activity = environment?.lanternActivity ?? 1
         glow.intensity =
-          base * (.9 + Math.sin(time * 7.2 + phase) * .06 + Math.sin(time * 3.1 + phase * 2) * .04)
+          base *
+          activity *
+          (.9 +
+            Math.sin(time * 7.2 + phase) * .06 +
+            Math.sin(time * 3.1 + phase * 2) * .04)
       }
     }
   }
@@ -543,10 +564,13 @@ function addGrass(
       region.mood === 'deadwood' ? .68 :
         region.mood === 'bleak' ? .76 :
           1
-  const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(baseColor).multiplyScalar(moodScalar),
-    roughness: 1,
-  })
+  const material = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(baseColor).multiplyScalar(moodScalar),
+      roughness: 1,
+    }),
+    .92,
+  )
   const geometry = new THREE.ConeGeometry(.065, .62, 4)
   const bladesPerCluster = 4
   const mesh = new THREE.InstancedMesh(
@@ -601,19 +625,28 @@ function addFlowers(
 ) {
   if (!anchors.length) return
   const stemGeometry = new THREE.CylinderGeometry(.018, .026, .38, 5)
-  const stemMaterial = new THREE.MeshStandardMaterial({
-    color: 0x486b42,
-    roughness: 1,
-  })
+  const stemMaterial = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: 0x486b42,
+      roughness: 1,
+    }),
+    .82,
+  )
   const headGeometry = new THREE.DodecahedronGeometry(.072, 0)
-  const warm = new THREE.MeshStandardMaterial({
-    color: region.biome.toLowerCase().includes('autumn') ? 0xc9954d : 0xd7c76e,
-    roughness: .92,
-  })
-  const cool = new THREE.MeshStandardMaterial({
-    color: region.biome.toLowerCase().includes('corrupt') ? 0x9d7eb5 : 0x9889c7,
-    roughness: .92,
-  })
+  const warm = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: region.biome.toLowerCase().includes('autumn') ? 0xc9954d : 0xd7c76e,
+      roughness: .92,
+    }),
+    .55,
+  )
+  const cool = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: region.biome.toLowerCase().includes('corrupt') ? 0x9d7eb5 : 0x9889c7,
+      roughness: .92,
+    }),
+    .55,
+  )
   const flowersPerCluster = 3
   const stems = new THREE.InstancedMesh(
     stemGeometry,
@@ -1111,10 +1144,13 @@ function addRiverbankLife(
   const root = new THREE.Group()
   root.name = 'AmbientRiverbankLife'
 
-  const reedMaterial = new THREE.MeshStandardMaterial({
-    color: region.mood === 'bleak' ? 0x59634d : 0x607653,
-    roughness: 1,
-  })
+  const reedMaterial = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: region.mood === 'bleak' ? 0x59634d : 0x607653,
+      roughness: 1,
+    }),
+    1,
+  )
   const rockMaterial = new THREE.MeshStandardMaterial({
     color: region.mood === 'dark' ? 0x48534c : 0x5b655d,
     roughness: 1,
@@ -1376,17 +1412,20 @@ function addBoundaryTreeline(
     color: darkMood ? 0x30291f : 0x3c3025,
     roughness: 1,
   })
-  const canopyMaterial = new THREE.MeshStandardMaterial({
-    color:
-      region.mood === 'deadwood'
-        ? 0x343a30
-        : region.mood === 'bleak'
-          ? 0x34413a
-          : region.mood === 'dark'
-            ? 0x203b2a
-            : 0x294b31,
-    roughness: 1,
-  })
+  const canopyMaterial = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color:
+        region.mood === 'deadwood'
+          ? 0x343a30
+          : region.mood === 'bleak'
+            ? 0x34413a
+            : region.mood === 'dark'
+              ? 0x203b2a
+              : 0x294b31,
+      roughness: 1,
+    }),
+    .4,
+  )
 
   const trunkGeometry = new THREE.CylinderGeometry(.18, .3, 3.4, 6)
   const canopyGeometry = new THREE.ConeGeometry(1.45, 3.15, 7)
