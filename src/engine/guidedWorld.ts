@@ -407,7 +407,7 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   return a + (b - a) * tz
 }
 
-export function streamRenderProfile(region: GeneratedRegion, extension = 62) {
+export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
   const points = region.terrain.stream
   if (points.length < 2) {
     return {
@@ -446,16 +446,21 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 62) {
   const extendedPoints: GeneratedWorldPoint[] = []
   const extendedWidths: number[] = []
   const extendedHeights: number[] = []
-  const steps = 5
+  const steps = 7
+  const startCurveSign = hashSeed(`${region.seed}:river-render-start`) % 2 === 0 ? 1 : -1
+  const endCurveSign = hashSeed(`${region.seed}:river-render-end`) % 2 === 0 ? 1 : -1
 
   for (let step = steps; step >= 1; step -= 1) {
     const t = step / steps
     const distance = extension * t
+    const curve = Math.sin(t * Math.PI * .5) * Math.min(6.5, extension * .13) * startCurveSign
+    const perpendicular = { x: -startDir.z, z: startDir.x }
     extendedPoints.push({
-      x: points[0].x + startDir.x * distance,
-      z: points[0].z + startDir.z * distance,
+      x: points[0].x + startDir.x * distance + perpendicular.x * curve,
+      z: points[0].z + startDir.z * distance + perpendicular.z * curve,
     })
-    extendedWidths.push(widths[0] * lerp(.28, .82, 1 - t))
+    const taper = .05 + Math.pow(1 - t, 1.18) * .95
+    extendedWidths.push(widths[0] * taper)
     extendedHeights.push(heights[0] + startSlope * step)
   }
 
@@ -468,11 +473,14 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 62) {
   for (let step = 1; step <= steps; step += 1) {
     const t = step / steps
     const distance = extension * t
+    const curve = Math.sin(t * Math.PI * .5) * Math.min(6.5, extension * .13) * endCurveSign
+    const perpendicular = { x: -endDir.z, z: endDir.x }
     extendedPoints.push({
-      x: points[points.length - 1].x + endDir.x * distance,
-      z: points[points.length - 1].z + endDir.z * distance,
+      x: points[points.length - 1].x + endDir.x * distance + perpendicular.x * curve,
+      z: points[points.length - 1].z + endDir.z * distance + perpendicular.z * curve,
     })
-    extendedWidths.push(widths[widths.length - 1] * lerp(.82, .28, t))
+    const taper = .05 + Math.pow(1 - t, 1.18) * .95
+    extendedWidths.push(widths[widths.length - 1] * taper)
     extendedHeights.push(heights[heights.length - 1] + endSlope * step)
   }
 
@@ -516,6 +524,56 @@ function outwardStreamDirection(
   }
 
   return direction
+}
+
+export function visibleStreamRenderHeight(
+  region: GeneratedRegion,
+  nominalHeight: number,
+  x: number,
+  z: number,
+  offset = .055,
+) {
+  const inside =
+    x >= region.bounds.minX - .001 &&
+    x <= region.bounds.maxX + .001 &&
+    z >= region.bounds.minZ - .001 &&
+    z <= region.bounds.maxZ + .001
+
+  if (!inside) return nominalHeight + offset
+
+  // The heightfield is relatively coarse compared with a narrow stream.
+  // Clamp visible water above the final bilinear terrain sample so a terrain
+  // triangle can never bridge across the carved channel and hide the river.
+  return Math.max(
+    nominalHeight + offset,
+    sampleTerrainHeight(region, x, z) + .055,
+  )
+}
+
+export function streamRenderContinuityIssues(region: GeneratedRegion) {
+  const profile = streamRenderProfile(region)
+  const issues: string[] = []
+
+  if (
+    profile.points.length !== profile.widths.length ||
+    profile.points.length !== profile.heights.length
+  ) {
+    issues.push('Stream render profile arrays have mismatched lengths.')
+    return issues
+  }
+
+  for (let index = 1; index < profile.points.length; index += 1) {
+    const previous = profile.points[index - 1]
+    const current = profile.points[index]
+    const distance = Math.hypot(current.x - previous.x, current.z - previous.z)
+    const localWidth = Math.max(profile.widths[index - 1] ?? 1, profile.widths[index] ?? 1)
+    const allowed = Math.max(11, localWidth * 5.5)
+    if (distance > allowed) {
+      issues.push(`Stream render segment ${index - 1}->${index} is too long (${round(distance, 2)}).`)
+    }
+  }
+
+  return issues
 }
 
 export function sampleStreamHeight(region: GeneratedRegion, x: number, z: number) {
