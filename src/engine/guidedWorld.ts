@@ -355,6 +355,7 @@ export function generateGuidedRegion(
   // Run river clearance last so no later crossing/approach shaping can reintroduce
   // a segment that clips the occupancy corridor outside the crossing zone.
   enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
+  repairResidualRiverPathIncursions(paths, riverMask, crossings, bounds)
 
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
@@ -1402,6 +1403,106 @@ function enforcePathsOutsideRiverMask(
   }
 }
 
+function findResidualRiverPathViolation(
+  path: GeneratedWorldPath,
+  mask: RiverOccupancyMask,
+  crossings: GeneratedWorldCrossing[],
+) {
+  for (const point of pathClearanceSamples(path, .42)) {
+    const river = riverOccupancySample(mask, point.x, point.z)
+    const footprintHalfWidth = pathFootprintHalfWidth(point.width)
+    const required = footprintHalfWidth + .34
+    if (river.signedDistance >= required) continue
+    if (crossingAllowsRiverOccupancy(
+      point.x,
+      point.z,
+      crossings,
+      river.radius,
+      footprintHalfWidth,
+    )) continue
+
+    return {
+      point,
+      river,
+      footprintHalfWidth,
+    }
+  }
+
+  return undefined
+}
+
+function repairResidualRiverPathIncursions(
+  paths: GeneratedWorldPath[],
+  mask: RiverOccupancyMask,
+  crossings: GeneratedWorldCrossing[],
+  bounds: GeneratedRegion['bounds'],
+) {
+  if (mask.points.length < 2) return
+
+  const clampDetour = (point: GeneratedWorldPoint) => ({
+    x: clamp(point.x, bounds.minX + .6, bounds.maxX - .6),
+    z: clamp(point.z, bounds.minZ + .6, bounds.maxZ - .6),
+  })
+
+  // The iterative solver handles almost every case. Remaining failures are
+  // usually tangential branch segments whose endpoints are both legal but whose
+  // straight chord still cuts the curved river corridor. Insert a local detour
+  // control point on the same bank, then let the normal solver relax it.
+  for (let repairPass = 0; repairPass < 6; repairPass += 1) {
+    let inserted = false
+
+    for (const path of paths) {
+      const violation = findResidualRiverPathViolation(path, mask, crossings)
+      if (!violation) continue
+
+      const segmentIndex = violation.point.segmentIndex
+      const t = violation.point.t
+      if (segmentIndex === undefined || t === undefined || segmentIndex <= 0) {
+        continue
+      }
+
+      const width = violation.point.width
+      const river = violation.river
+      let dx = violation.point.x - river.x
+      let dz = violation.point.z - river.z
+      let length = Math.hypot(dx, dz)
+
+      if (length < .001) {
+        const sign = hashSeed(
+          `river-detour:${path.id}:${segmentIndex}:${repairPass}`,
+        ) % 2 === 0 ? 1 : -1
+        dx = -river.tangentZ * sign
+        dz = river.tangentX * sign
+        length = 1
+      }
+
+      const targetDistance =
+        river.radius +
+        pathFootprintHalfWidth(width) +
+        .92
+      const detour = clampDetour({
+        x: river.x + dx / length * targetDistance,
+        z: river.z + dz / length * targetDistance,
+      })
+
+      path.points.splice(segmentIndex, 0, detour)
+      path.widths.splice(
+        segmentIndex,
+        0,
+        round(Math.min(width, path.width * 1.02), 3),
+      )
+      inserted = true
+    }
+
+    if (!inserted) break
+    enforcePathsOutsideRiverMask(paths, mask, crossings, bounds)
+  }
+
+  // Finish with the ordinary footprint solver so any newly inserted detour
+  // points and their neighboring chords satisfy the same contract as validation.
+  enforcePathsOutsideRiverMask(paths, mask, crossings, bounds)
+}
+
 function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[], seed: number) {
   return connections.flatMap((link) => {
     const from = nodes.find((node) => node.id === link.from)
@@ -1415,7 +1516,7 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
     const nz = dx / length
     const bend = (random() - .5) * Math.min(link.kind === 'main' ? 7.5 : 5.5, length * .22)
     const secondBend = (random() - .5) * Math.min(link.kind === 'main' ? 3.2 : 2.3, length * .11)
-    const baseWidth = link.kind === 'main' ? 3.15 : 1.32
+    const baseWidth = link.kind === 'main' ? 3.05 : 1.04
     const points: GeneratedWorldPoint[] = []
     const widths: number[] = []
     const segments = Math.max(10, Math.round(length / 2.35))
