@@ -1247,7 +1247,6 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
 function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
   const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x62685f, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x444943, roughness: 1 })
-  const wood = new THREE.MeshStandardMaterial({ color: 0x55402f, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5742, roughness: 1 })
 
   for (const poi of region.pois) {
