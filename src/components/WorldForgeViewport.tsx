@@ -1821,12 +1821,22 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     addBox(group, [.05, 2.55, 2.8], [2.65, .5, .7], darkStone)
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
     const tents = poi.type === 'settlement' ? 5 : 3
+    const tentRandom = seededVisualRandom(`${poi.id}:tent-layout`)
     for (let i = 0; i < tents; i += 1) {
-      const angle = i / tents * Math.PI * 2 + .35
+      const baseAngle = i / tents * Math.PI * 2 + .35
+      const angle = baseAngle + (tentRandom() - .5) * .3
       const tent = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.2, 4), cloth)
-      const tentRadius = poi.type === 'settlement' ? 4.5 : 3.7
-      tent.position.set(Math.cos(angle) * tentRadius, 1.05, Math.sin(angle) * tentRadius)
-      tent.rotation.y = Math.PI / 4 + angle
+      const baseRadius = poi.type === 'settlement' ? 4.5 : 3.7
+      const tentRadius = baseRadius + (tentRandom() - .5) * .9
+      tent.position.set(
+        Math.cos(angle) * tentRadius,
+        1.05,
+        Math.sin(angle) * tentRadius,
+      )
+      tent.rotation.y =
+        Math.PI / 4 +
+        angle +
+        (tentRandom() - .5) * .34
       tent.castShadow = true
       group.add(tent)
     }
@@ -1896,9 +1906,15 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
       const angle = i / 8 * Math.PI * 2
       addBox(group, [Math.cos(angle) * 1.58, 7.08, Math.sin(angle) * 1.58], [.5, .68, .5], darkStone, [0, -angle, 0])
     }
-    const doorway = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.85), new THREE.MeshBasicMaterial({ color: 0x090b09, side: THREE.DoubleSide }))
-    doorway.position.set(0, .98, 2.18)
-    group.add(doorway)
+    const doorwayRecess = new THREE.Mesh(
+      new THREE.BoxGeometry(1.02, 1.72, .18),
+      new THREE.MeshStandardMaterial({ color: 0x161914, roughness: 1 }),
+    )
+    doorwayRecess.position.set(0, .96, 1.98)
+    group.add(doorwayRecess)
+    addBox(group, [-.63, 1.02, 2.05], [.2, 1.95, .28], darkStone)
+    addBox(group, [.63, 1.02, 2.05], [.2, 1.95, .28], darkStone)
+    addBox(group, [0, 1.95, 2.05], [1.46, .22, .3], darkStone)
     addBox(group, [-2.8, .7, -1.6], [.55, 1.4, 3.4], darkStone, [0, .38, .18])
   } else if (poi.type === 'dungeon') {
     addBox(group, [-1.7, 1.5, 0], [.82, 3, .9], stone)
@@ -1964,61 +1980,248 @@ function addPoiEnvironment(
   const random = seededVisualRandom(poi.id)
   const jitter = (amount = .24) => (random() - .5) * amount
 
-  const groundColors: Record<string, number> = {
-    ruins: 0x313128,
-    graveyard: 0x292b23,
-    camp: 0x3a2f20,
-    settlement: 0x3d3221,
-    shrine: 0x303229,
-    'standing-stones': 0x303329,
-    'beast-den': 0x29251f,
-    watchtower: 0x313027,
-    dungeon: 0x292b28,
-  }
-  const groundRadius: Record<string, [number, number]> = {
-    ruins: [6.2, 5.8],
-    graveyard: [6.2, 6.4],
-    camp: [5.2, 4.8],
-    settlement: [7.2, 6.3],
-    shrine: [5.1, 4.8],
-    'standing-stones': [5.5, 5.2],
-    'beast-den': [4.7, 4.3],
-    watchtower: [5.4, 5],
-    dungeon: [5.8, 5.1],
+  type GroundProfile = {
+    core: number
+    edge: number
+    width: number
+    depth: number
+    coreOpacity: number
+    edgeOpacity: number
   }
 
-  const groundSize = groundRadius[poi.type] ?? [5, 4.7]
-  const groundMaterial = new THREE.MeshStandardMaterial({
-    color: groundColors[poi.type] ?? 0x313027,
-    roughness: 1,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  })
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 18), groundMaterial)
-  ground.rotation.x = -Math.PI / 2
-  ground.position.y = .035
-  ground.scale.set(groundSize[0], groundSize[1], 1)
-  ground.receiveShadow = true
-  ground.userData.forgePoiGround = true
-  ground.renderOrder = 2
-  group.add(ground)
+  const groundProfiles: Record<string, GroundProfile> = {
+    ruins: {
+      core: 0x49483a,
+      edge: 0x46503b,
+      width: 3.9,
+      depth: 3.6,
+      coreOpacity: .46,
+      edgeOpacity: .22,
+    },
+    graveyard: {
+      core: 0x414333,
+      edge: 0x42513a,
+      width: 3.65,
+      depth: 3.45,
+      coreOpacity: .48,
+      edgeOpacity: .2,
+    },
+    camp: {
+      core: 0x5a4127,
+      edge: 0x4b5131,
+      width: 3.7,
+      depth: 3.35,
+      coreOpacity: .54,
+      edgeOpacity: .24,
+    },
+    settlement: {
+      core: 0x5b432a,
+      edge: 0x4c5232,
+      width: 4.7,
+      depth: 4.2,
+      coreOpacity: .56,
+      edgeOpacity: .25,
+    },
+    shrine: {
+      core: 0x46503d,
+      edge: 0x40573e,
+      width: 2.85,
+      depth: 2.6,
+      coreOpacity: .3,
+      edgeOpacity: .16,
+    },
+    'standing-stones': {
+      core: 0x46503d,
+      edge: 0x40573e,
+      width: 3.45,
+      depth: 3.25,
+      coreOpacity: .3,
+      edgeOpacity: .16,
+    },
+    'beast-den': {
+      core: 0x453526,
+      edge: 0x3f4a31,
+      width: 3.45,
+      depth: 2.9,
+      coreOpacity: .58,
+      edgeOpacity: .24,
+    },
+    watchtower: {
+      core: 0x484536,
+      edge: 0x43503a,
+      width: 3.1,
+      depth: 2.9,
+      coreOpacity: .44,
+      edgeOpacity: .2,
+    },
+    dungeon: {
+      core: 0x42423a,
+      edge: 0x414f3a,
+      width: 3.55,
+      depth: 3.15,
+      coreOpacity: .5,
+      edgeOpacity: .22,
+    },
+  }
 
-  // A worn entrance apron always points toward local +Z, which is aligned with
-  // the existing POI access parent by forgePoiPresentationRotation().
-  const apron = new THREE.Mesh(
-    new THREE.PlaneGeometry(
-      poi.type === 'settlement' ? 3.4 : 2.7,
-      poi.type === 'settlement' ? 5.4 : 4.5,
-    ),
-    groundMaterial,
+  const profile = groundProfiles[poi.type] ?? groundProfiles.ruins
+
+  const irregularGroundGeometry = (phase: number, points = 11) => {
+    const shape = new THREE.Shape()
+    for (let index = 0; index < points; index += 1) {
+      const angle = index / points * Math.PI * 2
+      const wobble =
+        .83 +
+        .12 * Math.sin(index * 2.31 + phase) +
+        .08 * Math.sin(index * 4.17 + phase * 1.7)
+      const x = Math.cos(angle) * wobble
+      const y = Math.sin(angle) * wobble
+      if (index === 0) shape.moveTo(x, y)
+      else shape.lineTo(x, y)
+    }
+    shape.closePath()
+    return new THREE.ShapeGeometry(shape)
+  }
+
+  const addGroundPatch = (
+    x: number,
+    z: number,
+    width: number,
+    depth: number,
+    color: number,
+    opacity: number,
+    rotation: number,
+    phase: number,
+    renderOrder: number,
+  ) => {
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 1,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    })
+    const patch = new THREE.Mesh(irregularGroundGeometry(phase), material)
+    patch.rotation.x = -Math.PI / 2
+    patch.rotation.z = rotation
+    patch.position.set(x, .034 + renderOrder * .002, z)
+    patch.scale.set(width, depth, 1)
+    patch.receiveShadow = true
+    patch.userData.forgePoiGround = true
+    patch.renderOrder = renderOrder
+    group.add(patch)
+  }
+
+  // Keep the darkest wear under the actual landmark and bias it away from the
+  // local +Z entrance so the generated access path remains visually readable.
+  addGroundPatch(
+    0,
+    -.45,
+    profile.width,
+    profile.depth * .84,
+    profile.core,
+    profile.coreOpacity,
+    -.06,
+    .4,
+    2,
   )
-  apron.rotation.x = -Math.PI / 2
-  apron.position.set(0, .041, groundSize[1] * .72)
-  apron.receiveShadow = true
-  apron.userData.forgePoiGround = true
-  apron.renderOrder = 3
-  group.add(apron)
+  addGroundPatch(
+    -profile.width * .34,
+    .08,
+    profile.width * .58,
+    profile.depth * .6,
+    profile.edge,
+    profile.edgeOpacity,
+    .28,
+    1.7,
+    3,
+  )
+  addGroundPatch(
+    profile.width * .35,
+    -.02,
+    profile.width * .56,
+    profile.depth * .57,
+    profile.edge,
+    profile.edgeOpacity * .92,
+    -.34,
+    2.9,
+    3,
+  )
+  addGroundPatch(
+    -.08,
+    -profile.depth * .58,
+    profile.width * .7,
+    profile.depth * .42,
+    profile.edge,
+    profile.edgeOpacity * .78,
+    .12,
+    4.2,
+    3,
+  )
+
+  // Two light side patches frame the entrance instead of painting over the
+  // centreline. The branch/road underneath therefore stays visible.
+  addGroundPatch(
+    -profile.width * .48,
+    profile.depth * .64,
+    profile.width * .3,
+    profile.depth * .28,
+    profile.edge,
+    profile.edgeOpacity * .56,
+    .18,
+    5.3,
+    3,
+  )
+  addGroundPatch(
+    profile.width * .48,
+    profile.depth * .64,
+    profile.width * .3,
+    profile.depth * .28,
+    profile.edge,
+    profile.edgeOpacity * .52,
+    -.22,
+    6.1,
+    3,
+  )
+
+  const addBlendTuft = (
+    x: number,
+    z: number,
+    scale: number,
+    rotation: number,
+  ) => {
+    const tuft = new THREE.Mesh(
+      new THREE.ConeGeometry(.11, .48, 4),
+      green,
+    )
+    tuft.position.set(x, .23 * scale, z)
+    tuft.rotation.set(.05, rotation, -.08)
+    tuft.scale.set(scale, scale, scale * .72)
+    tuft.castShadow = false
+    group.add(tuft)
+  }
+
+  const tuftAngles = [
+    -.25,
+    .38,
+    2.15,
+    2.75,
+    3.55,
+    4.05,
+  ]
+  tuftAngles.forEach((angle, index) => {
+    const radiusX = profile.width * (.86 + (index % 2) * .07)
+    const radiusZ = profile.depth * (.83 + ((index + 1) % 2) * .08)
+    addBlendTuft(
+      Math.cos(angle) * radiusX,
+      Math.sin(angle) * radiusZ - .12,
+      .72 + (index % 3) * .12,
+      angle + .3,
+    )
+  })
 
   const addRockAt = (x: number, z: number, scale = 1) => {
     const mesh = new THREE.Mesh(
