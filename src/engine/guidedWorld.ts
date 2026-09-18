@@ -1043,19 +1043,18 @@ function buildDressing(
   const random = seededRandom(seed)
   const settings = worldSettings(region)
   const sizeFactor = settings.size === 'large' ? 1.35 : settings.size === 'small' ? .72 : 1
-  const target = Math.round((210 + settings.forestDensity * 500) * sizeFactor)
+  const target = Math.round((250 + settings.forestDensity * 560) * sizeFactor)
   const dressing: GeneratedWorldDressing[] = []
   const clusterCount = Math.max(6, Math.round((7 + settings.forestDensity * 10) * sizeFactor))
-  const clusters = Array.from({ length: clusterCount }, (_, index) => ({
+  const clusters = Array.from({ length: clusterCount }, () => ({
     x: bounds.minX + random() * (bounds.maxX - bounds.minX),
     z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
     radius: 13 + random() * 20,
     strength: .48 + random() * .52,
-    phase: index * 1.91 + random() * 4,
   }))
   let attempts = 0
 
-  while (dressing.length < target && attempts < target * 14) {
+  while (dressing.length < target && attempts < target * 16) {
     attempts += 1
     const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
     const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
@@ -1063,10 +1062,11 @@ function buildDressing(
     const streamDistance = terrain.stream.length ? distanceToPolyline(x, z, terrain.stream) : Infinity
     const clearing = nearestClearing(x, z, terrain.clearings)
     const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
+    const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
-    if (pathDistance < 2.45 || streamDistance < 3.1 || poiDistance < 3.8) continue
+    if (pathDistance < 2.35 || poiDistance < 3.6 || streamDistance < 1.15) continue
     const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
-    if (random() < openPenalty * (.82 + settings.openSpace * .16)) continue
+    if (random() < openPenalty * (.76 + settings.openSpace * .18)) continue
 
     const edgeDistance = Math.min(
       x - bounds.minX,
@@ -1082,37 +1082,52 @@ function buildDressing(
       const influence = 1 - distance / cluster.radius
       clusterDensity = Math.max(clusterDensity, influence * influence * cluster.strength)
     }
+
     const broadNoise = valueNoise2D(x * .031 + 12.3, z * .031 - 17.7, seed ^ 0xA24BAED4)
-    const density = clamp(
+    let density = clamp(
       settings.forestDensity * (.18 + clusterDensity * 1.08 + broadNoise * .42) + edgeBoost,
       0,
       1,
     )
-    if (random() > density) continue
+    density *= 1 - micro.meadow * .72
+    density *= 1 - micro.rocky * .18
+    density += micro['forest-floor'] * .12 + micro.scrub * .08
+
+    const nearRiver = streamDistance < 5
+    if (!nearRiver && random() > clamp(density, .05, 1)) continue
 
     const roll = random()
     let type: WorldDressingType
-    const treeThreshold = clamp(.42 + density * .46, .48, .9)
-    if (roll < treeThreshold) type = 'tree'
-    else if (roll < treeThreshold + .12) type = 'rock'
-    else if (roll < treeThreshold + .22) type = 'fern'
-    else if (roll < treeThreshold + .28) type = 'fallen-log'
-    else type = 'stump'
+    const treeThreshold = clamp(.4 + density * .44, .42, .88)
+
+    if (nearRiver && random() < .58) type = 'reeds'
+    else if (micro.rocky > .45 && roll < .58) type = 'rock'
+    else if (micro.meadow > .42 && roll < .66) type = roll < .38 ? 'grass' : 'shrub'
+    else if (micro.scrub > .42 && roll < .68) type = roll < .42 ? 'shrub' : 'fern'
+    else if (roll < treeThreshold) type = 'tree'
+    else if (roll < treeThreshold + .1) type = 'rock'
+    else if (roll < treeThreshold + .19) type = 'fern'
+    else if (roll < treeThreshold + .25) type = 'fallen-log'
+    else if (roll < treeThreshold + .3) type = 'stump'
+    else type = random() > .5 ? 'shrub' : 'grass'
 
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
+    const baseScale = type === 'tree'
+      ? .7 + random() * .9
+      : type === 'grass' || type === 'reeds'
+        ? .45 + random() * .55
+        : type === 'shrub'
+          ? .55 + random() * .65
+          : .55 + random() * .82
+
     dressing.push({
       id: `dress-${dressing.length}`,
       type,
       x: round(x, 2),
       y: round(y, 2),
       z: round(z, 2),
-      scale: round(
-        type === 'tree'
-          ? (.7 + random() * .9) * clusterVariation
-          : (.55 + random() * .82) * clusterVariation,
-        2,
-      ),
+      scale: round(baseScale * clusterVariation, 2),
       rotation: round(random() * Math.PI * 2, 3),
       variant: Math.floor(random() * 4),
     })
