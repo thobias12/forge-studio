@@ -1958,15 +1958,29 @@ function addPoiEnvironment(
   const random = seededVisualRandom(poi.id)
   const addRock = (radius: number, scale = 1) => {
     const angle = random() * Math.PI * 2
-    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.28 + random() * .32, 0), random() > .45 ? stone : darkStone)
-    mesh.position.set(Math.cos(angle) * radius, .16 + random() * .12, Math.sin(angle) * radius)
-    mesh.scale.set(scale * (1 + random() * .35), scale * (.55 + random() * .3), scale)
+    const mesh = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(.28 + random() * .32, 0),
+      random() > .45 ? stone : darkStone,
+    )
+    mesh.position.set(
+      Math.cos(angle) * radius,
+      .16 + random() * .12,
+      Math.sin(angle) * radius,
+    )
+    mesh.scale.set(
+      scale * (1 + random() * .35),
+      scale * (.55 + random() * .3),
+      scale,
+    )
     mesh.rotation.y = random() * Math.PI
     group.add(mesh)
   }
   const addShrub = (radius: number) => {
     const angle = random() * Math.PI * 2
-    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.42 + random() * .2, 0), green)
+    const mesh = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(.42 + random() * .2, 0),
+      green,
+    )
     mesh.position.set(Math.cos(angle) * radius, .35, Math.sin(angle) * radius)
     mesh.scale.y = .7
     mesh.rotation.y = random() * Math.PI
@@ -1974,43 +1988,158 @@ function addPoiEnvironment(
   }
   const addTimber = (radius: number) => {
     const angle = random() * Math.PI * 2
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, 1.6 + random() * 1.4, 6), wood)
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(.12, .16, 1.6 + random() * 1.4, 6),
+      wood,
+    )
     mesh.rotation.z = Math.PI / 2
     mesh.rotation.y = random() * Math.PI
     mesh.position.set(Math.cos(angle) * radius, .16, Math.sin(angle) * radius)
     group.add(mesh)
   }
+  const addFenceSegment = (
+    x: number,
+    z: number,
+    rotation: number,
+    length = 2.2,
+  ) => {
+    addBox(group, [x, .42, z], [length, .12, .12], wood, [0, rotation, 0])
+    for (const side of [-1, 1]) {
+      addBox(
+        group,
+        [
+          x + Math.cos(rotation) * length * .42 * side,
+          .42,
+          z - Math.sin(rotation) * length * .42 * side,
+        ],
+        [.11, .82, .11],
+        wood,
+      )
+    }
+  }
+  const addMarkerPair = (
+    distance: number,
+    gap: number,
+    material: THREE.MeshStandardMaterial,
+    height = 1.45,
+  ) => {
+    for (const side of [-1, 1]) {
+      addBox(
+        group,
+        [side * gap, height * .5, distance],
+        [.28, height, .28],
+        material,
+      )
+    }
+  }
+  const addOuterStone = (
+    x: number,
+    z: number,
+    height = .85,
+  ) => {
+    addBox(
+      group,
+      [x, height * .5, z],
+      [.48, height, .42],
+      darkStone,
+      [0, (random() - .5) * .28, 0],
+    )
+  }
 
   if (poi.type === 'ruins' || poi.type === 'watchtower') {
-    for (let i = 0; i < 12; i += 1) addRock(3 + random() * 3.2, .8 + random() * .55)
-    for (let i = 0; i < 5; i += 1) addShrub(4 + random() * 2.7)
-    for (let i = 0; i < 3; i += 1) addTimber(3.8 + random() * 2.2)
+    for (let i = 0; i < 16; i += 1) {
+      addRock(4.2 + random() * 4.4, .72 + random() * .58)
+    }
+    for (let i = 0; i < 7; i += 1) addShrub(5.2 + random() * 3.8)
+    for (let i = 0; i < 5; i += 1) addTimber(4.8 + random() * 3.3)
+    for (let i = 0; i < 5; i += 1) {
+      const angle = -.95 + i * .48
+      const radius = 7.1 + (i % 2) * .8
+      const x = Math.cos(angle) * radius
+      const z = Math.sin(angle) * radius
+      addFenceSegment(x, z, angle + Math.PI / 2, 1.7 + (i % 3) * .35)
+    }
+    addMarkerPair(6.2, 1.75, poi.type === 'ruins' ? darkStone : wood, 1.7)
   } else if (poi.type === 'graveyard') {
     for (let i = -2; i <= 2; i += 1) {
       addBox(group, [i * 1.25, .28, -2.6], [.09, .55, 1.05], wood, [0, .02 * i, 0])
     }
-    for (let i = 0; i < 7; i += 1) addShrub(3.8 + random() * 2.5)
+    for (let i = 0; i < 9; i += 1) addShrub(4.6 + random() * 3.7)
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = -2; col <= 2; col += 1) {
+        addBox(
+          group,
+          [
+            col * 1.35 + (row ? .35 : -.2),
+            .5,
+            4.45 + row * 1.7 + (Math.abs(col) % 2) * .22,
+          ],
+          [.32, 1 + ((row + col + 5) % 2) * .18, .18],
+          stone,
+          [0, (col - row) * .045, 0],
+        )
+      }
+    }
+    addMarkerPair(7.2, 2.45, darkStone, 1.8)
+    addFenceSegment(-4.8, 5.7, .15, 2.6)
+    addFenceSegment(4.8, 5.7, -.15, 2.6)
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
-    for (let i = 0; i < (poi.type === 'settlement' ? 7 : 5); i += 1) addTimber(3.1 + random() * 2.8)
-    for (let i = 0; i < (poi.type === 'settlement' ? 5 : 4); i += 1) {
+    const settlement = poi.type === 'settlement'
+    for (let i = 0; i < (settlement ? 10 : 7); i += 1) {
+      addTimber(4 + random() * (settlement ? 4.6 : 3.5))
+    }
+    for (let i = 0; i < (settlement ? 8 : 5); i += 1) {
       const angle = random() * Math.PI * 2
+      const radius = 3.8 + random() * (settlement ? 4.3 : 3.1)
       addBox(
         group,
-        [Math.cos(angle) * (3 + random() * 2.5), .32, Math.sin(angle) * (3 + random() * 2.5)],
+        [Math.cos(angle) * radius, .32, Math.sin(angle) * radius],
         [.6, .6, .6],
         wood,
         [0, random() * Math.PI, 0],
       )
     }
+    for (let i = 0; i < (settlement ? 6 : 3); i += 1) {
+      const angle = .35 + i * (Math.PI * 1.3 / Math.max(1, (settlement ? 5 : 2)))
+      const radius = settlement ? 8.3 : 6.7
+      addFenceSegment(
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+        angle + Math.PI / 2,
+        settlement ? 2.5 : 1.9,
+      )
+    }
+    addMarkerPair(settlement ? 7.5 : 6.2, settlement ? 2.2 : 1.7, wood, 1.6)
   } else if (poi.type === 'shrine' || poi.type === 'standing-stones') {
-    for (let i = 0; i < 10; i += 1) addRock(3.1 + random() * 2, .65 + random() * .32)
-    for (let i = 0; i < 5; i += 1) addShrub(3.8 + random() * 2.1)
+    for (let i = 0; i < 13; i += 1) addRock(3.8 + random() * 3.6, .62 + random() * .4)
+    for (let i = 0; i < 7; i += 1) addShrub(4.8 + random() * 3)
+    for (let i = 0; i < 4; i += 1) {
+      const angle = i / 4 * Math.PI * 2 + .25
+      const radius = 6.6
+      addOuterStone(Math.cos(angle) * radius, Math.sin(angle) * radius, 1 + (i % 2) * .25)
+    }
+    addMarkerPair(6.1, 1.55, stone, 1.35)
   } else if (poi.type === 'beast-den') {
-    for (let i = 0; i < 7; i += 1) addRock(2.2 + random() * 2.1, .8 + random() * .4)
-    for (let i = 0; i < 3; i += 1) addTimber(2.5 + random() * 2)
+    for (let i = 0; i < 10; i += 1) {
+      addRock(2.8 + random() * 3.6, .72 + random() * .48)
+    }
+    for (let i = 0; i < 5; i += 1) addTimber(3.4 + random() * 3)
+    for (let i = 0; i < 4; i += 1) addShrub(4.4 + random() * 2.4)
   } else if (poi.type === 'dungeon') {
-    for (let i = 0; i < 7; i += 1) addRock(2.8 + random() * 2.1, .75 + random() * .45)
-    for (let i = 0; i < 2; i += 1) addShrub(3.8 + random() * 1.5)
+    for (let i = 0; i < 11; i += 1) {
+      addRock(3.8 + random() * 4, .68 + random() * .5)
+    }
+    for (let i = 0; i < 5; i += 1) addShrub(4.8 + random() * 3)
+    for (let i = 0; i < 4; i += 1) {
+      const angle = -.7 + i * .48
+      const radius = 7.2 + (i % 2) * .65
+      addOuterStone(
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+        1.05 + (i % 2) * .35,
+      )
+    }
+    addMarkerPair(6.7, 2.05, darkStone, 1.9)
   }
 }
 
