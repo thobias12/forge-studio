@@ -1332,21 +1332,21 @@ function disposeGroup(root?: THREE.Object3D) {
 function editorBiomePalette(biome: string) {
   const value = biome.toLowerCase()
   if (value.includes('autumn')) return { ground: 0x5a4d32, low: 0x3c4933, mid: 0x66573b, high: 0x74654a, tree: 0x73502b, fern: 0x596137, rock: 0x67645b }
-  if (value.includes('highland')) return { ground: 0x46513e, low: 0x35443a, mid: 0x56604d, high: 0x74786a, tree: 0x30442f, fern: 0x495c3b, rock: 0x767b70 }
-  if (value.includes('marsh')) return { ground: 0x303d31, low: 0x253b35, mid: 0x3d4b3e, high: 0x50584a, tree: 0x26372d, fern: 0x35543c, rock: 0x596158 }
-  if (value.includes('corrupt')) return { ground: 0x3a303d, low: 0x2d2939, mid: 0x493b4c, high: 0x59495c, tree: 0x342d3b, fern: 0x49374f, rock: 0x655868 }
-  if (value.includes('farmland')) return { ground: 0x5b553a, low: 0x46523b, mid: 0x686044, high: 0x756f53, tree: 0x405235, fern: 0x53613b, rock: 0x6d6c5f }
-  return { ground: 0x2c442f, low: 0x263d2e, mid: 0x3b4e36, high: 0x54604a, tree: 0x203b28, fern: 0x31583a, rock: 0x596159 }
+  if (value.includes('highland')) return { ground: 0x505548, low: 0x3b4741, mid: 0x656b5e, high: 0x85877b, tree: 0x2d402e, fern: 0x4a5b3d, rock: 0x858a82 }
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) return { ground: 0x27382f, low: 0x1e3934, mid: 0x334b3e, high: 0x465849, tree: 0x203328, fern: 0x2e6040, rock: 0x505c55 }
+  if (value.includes('corrupt')) return { ground: 0x413444, low: 0x302b3d, mid: 0x554258, high: 0x6a526e, tree: 0x342d3b, fern: 0x5b3c63, rock: 0x75657a }
+  if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) return { ground: 0x6a633f, low: 0x506040, mid: 0x77704a, high: 0x8b8258, tree: 0x425838, fern: 0x637043, rock: 0x777468 }
+  return { ground: 0x28412c, low: 0x203929, mid: 0x354b33, high: 0x526049, tree: 0x183824, fern: 0x2e6039, rock: 0x596159 }
 }
 
 function editorSurfacePalette(biome: string) {
   const value = biome.toLowerCase()
   if (value.includes('autumn')) return { forestFloor: 0x473d2c, moss: 0x62613a, soil: 0x6a5538, meadow: 0x6b6840, scrub: 0x564b31, rocky: 0x6e6759 }
-  if (value.includes('highland')) return { forestFloor: 0x3f4939, moss: 0x59654a, soil: 0x625a47, meadow: 0x596849, scrub: 0x4b563f, rocky: 0x73786d }
-  if (value.includes('marsh')) return { forestFloor: 0x26372e, moss: 0x3f5a43, soil: 0x4a4938, meadow: 0x496047, scrub: 0x31493a, rocky: 0x5a6259 }
-  if (value.includes('corrupt')) return { forestFloor: 0x322b37, moss: 0x4b3b50, soil: 0x57464f, meadow: 0x57475a, scrub: 0x403344, rocky: 0x6a5e6d }
-  if (value.includes('farmland')) return { forestFloor: 0x4b4c34, moss: 0x5a653e, soil: 0x6c5a3c, meadow: 0x727047, scrub: 0x5c5838, rocky: 0x6e6d61 }
-  return { forestFloor: 0x253a29, moss: 0x3c5738, soil: 0x5d523d, meadow: 0x506447, scrub: 0x344a35, rocky: 0x62685f }
+  if (value.includes('highland')) return { forestFloor: 0x444a40, moss: 0x58624d, soil: 0x685f4b, meadow: 0x64704f, scrub: 0x515943, rocky: 0x858a82 }
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) return { forestFloor: 0x21342b, moss: 0x356348, soil: 0x45483a, meadow: 0x416449, scrub: 0x2b4c3a, rocky: 0x536059 }
+  if (value.includes('corrupt')) return { forestFloor: 0x352d3b, moss: 0x55405d, soil: 0x604b56, meadow: 0x624e66, scrub: 0x49374f, rocky: 0x75657a }
+  if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) return { forestFloor: 0x505039, moss: 0x607042, soil: 0x79613f, meadow: 0x85804d, scrub: 0x66603d, rocky: 0x7b796b }
+  return { forestFloor: 0x203625, moss: 0x365c38, soil: 0x5b503b, meadow: 0x4b6743, scrub: 0x304b34, rocky: 0x62685f }
 }
 
 function hashUnit(value: string) {
