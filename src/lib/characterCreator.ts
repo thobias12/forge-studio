@@ -7,11 +7,16 @@ export type FacialHairStyle = 'none' | 'stubble' | 'short' | 'full'
 
 export type CharacterIdentityRecipe = {
   format: 'SkillboundCharacterIdentity'
-  version: 1
+  version: 2
   id: string
   name: string
   classId: SkillboundClass
   seed: number
+  modelAssets: {
+    bodyAssetId?: string
+    headAssetId?: string
+    hairAssetId?: string
+  }
   appearance: {
     facePreset: FacePreset
     skinTone: string
@@ -121,6 +126,7 @@ export function createDefaultIdentity(classId: SkillboundClass = 'duskstrider'):
     name: definition.name,
     classId,
     seed: Math.floor(Math.random() * 1_000_000),
+    modelAssets: {},
     appearance: {
       facePreset: 'balanced',
       skinTone: SKIN_TONES[1],
@@ -167,6 +173,7 @@ export function randomizeIdentity(current: CharacterIdentityRecipe): CharacterId
     ...current,
     id: crypto.randomUUID(),
     seed: Math.floor(Math.random() * 1_000_000),
+    modelAssets: { ...current.modelAssets },
     appearance: {
       facePreset: faces[Math.floor(Math.random() * faces.length)],
       skinTone: pick(SKIN_TONES),
@@ -192,4 +199,21 @@ export function randomizeIdentity(current: CharacterIdentityRecipe): CharacterId
 
 function pick<T>(values: readonly T[]) {
   return values[Math.floor(Math.random() * values.length)]
+}
+
+
+export function normalizeIdentityRecipe(value: unknown): CharacterIdentityRecipe {
+  const raw = value as Partial<CharacterIdentityRecipe> & { version?: number; modelAssets?: CharacterIdentityRecipe['modelAssets'] }
+  const classId: SkillboundClass = raw.classId && raw.classId in CLASS_DEFINITIONS ? raw.classId : 'duskstrider'
+  const fallback = createDefaultIdentity(classId)
+  return {
+    ...fallback,
+    ...raw,
+    format: 'SkillboundCharacterIdentity',
+    version: 2,
+    classId,
+    modelAssets: { ...(raw.modelAssets ?? {}) },
+    appearance: { ...fallback.appearance, ...(raw.appearance ?? {}) },
+    body: { ...fallback.body, ...(raw.body ?? {}) },
+  }
 }
