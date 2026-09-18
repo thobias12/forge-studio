@@ -342,12 +342,52 @@ export function generateGuidedRegion(
   )
 
   resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
+  separatePostRiverLandmarks(nodes, riverMask, bounds)
+  resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
+  separatePostRiverLandmarks(nodes, riverMask, bounds)
 
-  const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+  pruneBadLoopConnections(nodes, connections)
+  pruneOrphanBranchTopology(nodes, connections)
+  rebalancePoiAnchors(nodes, connections, riverMask)
+
+  // Find the likely bridge neighborhoods once using the cleaned graph, then move
+  // ordinary branch/POI junctions away from those areas before building the final
+  // road network. Provisional paths are discarded after this topology pass.
+  const provisionalPaths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+  smoothWorldJunctions(provisionalPaths, nodes)
+  shapeLandmarkApproaches(provisionalPaths, nodes)
+  const provisionalCrossings = buildCrossings(
+    provisionalPaths,
+    frozenHydrology.points,
+    layerSeeds.routes,
+    settings,
+  )
+
+  if (reanchorBranchesAwayFromCrossings(nodes, connections, provisionalCrossings)) {
+    pruneBadLoopConnections(nodes, connections)
+    pruneOrphanBranchTopology(nodes, connections)
+    resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
+  }
+
+  let paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
   smoothWorldJunctions(paths, nodes)
   shapeLandmarkApproaches(paths, nodes)
 
-  const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  let crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+
+  // Re-check against the actual selected crossings. If selection moved after the
+  // provisional topology pass, move ordinary branch joins once more and rebuild
+  // so the final graph—not only the preview graph—respects bridge neighborhoods.
+  if (reanchorBranchesAwayFromCrossings(nodes, connections, crossings)) {
+    pruneBadLoopConnections(nodes, connections)
+    pruneOrphanBranchTopology(nodes, connections)
+    resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
+    paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+    smoothWorldJunctions(paths, nodes)
+    shapeLandmarkApproaches(paths, nodes)
+    crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  }
+
   for (const crossing of crossings) {
     const path = paths.find((item) => item.id === crossing.pathId)
     if (path) shapePathAtCrossing(path, crossing)
@@ -1028,6 +1068,20 @@ export function validateGeneratedRegion(
     }
   }
 
+  for (let index = 0; index < pois.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < pois.length; otherIndex += 1) {
+      const a = pois[index]
+      const b = pois[otherIndex]
+      const distance = Math.hypot(a.x - b.x, a.z - b.z)
+      const required = a.radius + b.radius + 1.2
+      if (distance < required) {
+        issues.push(
+          `${a.label} overlaps ${b.label} after final world-layout resolution.`,
+        )
+      }
+    }
+  }
+
   if (riverMask && riverMask.points.length > 1) {
     for (const poi of pois) {
       const sample = riverOccupancySample(riverMask, poi.x, poi.z)
@@ -1217,6 +1271,395 @@ function resolveNodesOutsideRiverMask(
       )
     }
   }
+}
+
+function separatePostRiverLandmarks(
+  nodes: GeneratedRegionNode[],
+  mask: RiverOccupancyMask,
+  bounds: GeneratedRegion['bounds'],
+) {
+  const landmarks = nodes.filter((node) => node.kind === 'landmark')
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+
+  for (let index = 0; index < landmarks.length; index += 1) {
+    const node = landmarks[index]
+    const earlier = landmarks.slice(0, index)
+    const river = riverOccupancySample(mask, node.x, node.z)
+    const overlaps = earlier.some((other) =>
+      Math.hypot(node.x - other.x, node.z - other.z) <
+        node.radius + other.radius + 2.6
+    )
+    if (!overlaps && river.signedDistance >= node.radius + 1.5) continue
+
+    const parent = node.parentId ? nodeMap.get(node.parentId) : undefined
+    const center = parent ?? node
+    const currentDistance = parent
+      ? Math.hypot(node.x - parent.x, node.z - parent.z)
+      : node.radius + 7
+    const baseDistance = Math.max(node.radius + 5.5, currentDistance)
+    const phase = (hashSeed(`poi-separation:${node.id}`) % 6283) / 1000
+
+    let best:
+      | { x: number; z: number; score: number; valid: boolean }
+      | undefined
+
+    for (const ringScale of [1, 1.18, 1.38, 1.6]) {
+      const radius = baseDistance * ringScale
+      for (let step = 0; step < 24; step += 1) {
+        const angle = phase + step / 24 * Math.PI * 2
+        const x = center.x + Math.cos(angle) * radius
+        const z = center.z + Math.sin(angle) * radius
+        if (
+          x <= bounds.minX + node.radius ||
+          x >= bounds.maxX - node.radius ||
+          z <= bounds.minZ + node.radius ||
+          z >= bounds.maxZ - node.radius
+        ) continue
+
+        const riverSample = riverOccupancySample(mask, x, z)
+        const riverGap = riverSample.signedDistance - (node.radius + 1.5)
+        let landmarkGap = Infinity
+        for (const other of earlier) {
+          landmarkGap = Math.min(
+            landmarkGap,
+            Math.hypot(x - other.x, z - other.z) -
+              (node.radius + other.radius + 2.6),
+          )
+        }
+
+        const valid = riverGap >= 0 && landmarkGap >= 0
+        const score =
+          Math.min(12, riverGap) * .55 +
+          Math.min(14, landmarkGap) -
+          Math.abs(ringScale - 1) * 2.2
+
+        if (
+          !best ||
+          (valid && !best.valid) ||
+          (valid === best.valid && score > best.score)
+        ) {
+          best = { x, z, score, valid }
+        }
+      }
+    }
+
+    if (best) {
+      node.x = round(best.x, 3)
+      node.z = round(best.z, 3)
+    }
+  }
+}
+
+function pruneOrphanBranchTopology(
+  nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
+) {
+  let changed = true
+
+  while (changed) {
+    changed = false
+    const protectedParents = new Set(
+      nodes
+        .filter((node) =>
+          node.parentId &&
+          (node.kind === 'landmark' || node.kind === 'encounter')
+        )
+        .map((node) => node.parentId!),
+    )
+
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+      const node = nodes[index]
+      if (node.kind !== 'branch' || protectedParents.has(node.id)) continue
+
+      const incident = connections.filter(
+        (connection) => connection.from === node.id || connection.to === node.id,
+      )
+      const touchesLandmark = incident.some((connection) => {
+        const otherId = connection.from === node.id ? connection.to : connection.from
+        return nodes.find((candidate) => candidate.id === otherId)?.kind === 'landmark'
+      })
+      if (touchesLandmark || incident.length > 1) continue
+
+      nodes.splice(index, 1)
+      for (let connectionIndex = connections.length - 1; connectionIndex >= 0; connectionIndex -= 1) {
+        const connection = connections[connectionIndex]
+        if (connection.from === node.id || connection.to === node.id) {
+          connections.splice(connectionIndex, 1)
+        }
+      }
+      changed = true
+    }
+  }
+}
+
+function pruneBadLoopConnections(
+  nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
+) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const mainConnections = connections.filter((connection) => connection.kind === 'main')
+  const rejected = new Set<string>()
+
+  for (const connection of connections) {
+    if (!connection.id.startsWith('loop-')) continue
+    const from = nodeMap.get(connection.from)
+    const to = nodeMap.get(connection.to)
+    if (!from || !to) {
+      rejected.add(connection.id)
+      continue
+    }
+
+    const dx = to.x - from.x
+    const dz = to.z - from.z
+    const length = Math.hypot(dx, dz)
+    if (length < 8) {
+      rejected.add(connection.id)
+      continue
+    }
+
+    let bad = false
+    for (const main of mainConnections) {
+      if (
+        main.from === connection.from ||
+        main.to === connection.from ||
+        main.from === connection.to ||
+        main.to === connection.to
+      ) continue
+
+      const a = nodeMap.get(main.from)
+      const b = nodeMap.get(main.to)
+      if (!a || !b) continue
+      const hit = segmentIntersection(from, to, a, b)
+      if (hit) {
+        bad = true
+        break
+      }
+
+      const mainDirection = normalized2(b.x - a.x, b.z - a.z)
+      const loopDirection = normalized2(dx, dz)
+      const cross = Math.abs(
+        mainDirection.x * loopDirection.z -
+        mainDirection.z * loopDirection.x,
+      )
+      if (cross >= .32) continue
+
+      let closeSamples = 0
+      for (const t of [.25, .5, .75]) {
+        const x = lerp(from.x, to.x, t)
+        const z = lerp(from.z, to.z, t)
+        if (distanceToSegment(x, z, a, b) < 3.6) closeSamples += 1
+      }
+      if (closeSamples >= 2) {
+        bad = true
+        break
+      }
+    }
+
+    if (!bad) {
+      const routeEndpoint =
+        from.kind === 'route' ? from :
+          to.kind === 'route' ? to :
+            undefined
+      if (routeEndpoint && length > 15) {
+        const incoming = normalized2(
+          (routeEndpoint === from ? to.x - from.x : from.x - to.x),
+          (routeEndpoint === from ? to.z - from.z : from.z - to.z),
+        )
+        const mainNeighbors = mainConnections.flatMap((main) => {
+          if (main.from === routeEndpoint.id) {
+            const neighbor = nodeMap.get(main.to)
+            return neighbor ? [neighbor] : []
+          }
+          if (main.to === routeEndpoint.id) {
+            const neighbor = nodeMap.get(main.from)
+            return neighbor ? [neighbor] : []
+          }
+          return []
+        })
+
+        if (mainNeighbors.length) {
+          const axis = normalized2(
+            mainNeighbors[mainNeighbors.length - 1].x - mainNeighbors[0].x,
+            mainNeighbors[mainNeighbors.length - 1].z - mainNeighbors[0].z,
+          )
+          const cross = Math.abs(axis.x * incoming.z - axis.z * incoming.x)
+          if (cross < .3) bad = true
+        }
+      }
+    }
+
+    if (bad) rejected.add(connection.id)
+  }
+
+  for (let index = connections.length - 1; index >= 0; index -= 1) {
+    if (rejected.has(connections[index].id)) connections.splice(index, 1)
+  }
+}
+
+function rebalancePoiAnchors(
+  nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
+  mask: RiverOccupancyMask,
+) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const poiConnections = connections.filter((connection) => {
+    const from = nodeMap.get(connection.from)
+    const to = nodeMap.get(connection.to)
+    return (
+      connection.kind === 'branch' &&
+      (from?.kind === 'landmark' || to?.kind === 'landmark')
+    )
+  })
+  const anchorUse = new Map<string, number>()
+
+  for (const connection of poiConnections) {
+    const from = nodeMap.get(connection.from)
+    const to = nodeMap.get(connection.to)
+    if (!from || !to) continue
+
+    const landmark = from.kind === 'landmark' ? from : to
+    const anchor = from.kind === 'landmark' ? to : from
+    const uses = anchorUse.get(anchor.id) ?? 0
+    anchorUse.set(anchor.id, uses + 1)
+    if (uses === 0) continue
+
+    const candidates = nodes
+      .filter((candidate) =>
+        (candidate.kind === 'route' || candidate.kind === 'branch') &&
+        candidate.id !== anchor.id &&
+        Math.hypot(candidate.x - landmark.x, candidate.z - landmark.z) <= 34 &&
+        riverOccupancySample(mask, candidate.x, candidate.z).signedDistance >= 4.5
+      )
+      .sort((a, b) => {
+        const aLoad = anchorUse.get(a.id) ?? 0
+        const bLoad = anchorUse.get(b.id) ?? 0
+        return (
+          Math.hypot(a.x - landmark.x, a.z - landmark.z) + aLoad * 9 -
+          (Math.hypot(b.x - landmark.x, b.z - landmark.z) + bLoad * 9)
+        )
+      })
+
+    const candidate = candidates[0]
+    if (!candidate) continue
+
+    if (connection.from === anchor.id) connection.from = candidate.id
+    else connection.to = candidate.id
+    if (landmark.parentId === anchor.id) landmark.parentId = candidate.id
+    anchorUse.set(candidate.id, (anchorUse.get(candidate.id) ?? 0) + 1)
+  }
+}
+
+function reanchorBranchesAwayFromCrossings(
+  nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
+  crossings: GeneratedWorldCrossing[],
+) {
+  if (!crossings.length) return false
+
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const mainConnections = connections.filter((connection) => connection.kind === 'main')
+  const mainNeighbors = new Map<string, Set<string>>()
+  const branchLoad = new Map<string, number>()
+
+  for (const connection of mainConnections) {
+    const from = mainNeighbors.get(connection.from) ?? new Set<string>()
+    const to = mainNeighbors.get(connection.to) ?? new Set<string>()
+    from.add(connection.to)
+    to.add(connection.from)
+    mainNeighbors.set(connection.from, from)
+    mainNeighbors.set(connection.to, to)
+  }
+
+  for (const connection of connections) {
+    if (connection.kind !== 'branch') continue
+    for (const nodeId of [connection.from, connection.to]) {
+      const node = nodeMap.get(nodeId)
+      if (node?.kind === 'route') {
+        branchLoad.set(node.id, (branchLoad.get(node.id) ?? 0) + 1)
+      }
+    }
+  }
+
+  let changed = false
+  for (const connection of connections) {
+    if (connection.kind !== 'branch') continue
+    if (crossings.some((crossing) => crossing.pathId === connection.id)) continue
+
+    const from = nodeMap.get(connection.from)
+    const to = nodeMap.get(connection.to)
+    if (!from || !to) continue
+
+    const anchor =
+      from.kind === 'route' ? from :
+        to.kind === 'route' ? to :
+          undefined
+    if (!anchor) continue
+
+    const nearestCrossing = [...crossings].sort((a, b) =>
+      Math.hypot(anchor.x - a.x, anchor.z - a.z) -
+      Math.hypot(anchor.x - b.x, anchor.z - b.z)
+    )[0]
+    if (!nearestCrossing) continue
+    const crossingDistance = Math.hypot(
+      anchor.x - nearestCrossing.x,
+      anchor.z - nearestCrossing.z,
+    )
+    if (crossingDistance >= 12) continue
+
+    const other = anchor === from ? to : from
+    const candidateIds = new Set<string>()
+    const firstHop = [...(mainNeighbors.get(anchor.id) ?? [])]
+    for (const id of firstHop) {
+      candidateIds.add(id)
+      for (const second of mainNeighbors.get(id) ?? []) {
+        if (second !== anchor.id) candidateIds.add(second)
+      }
+    }
+
+    const currentLength = Math.hypot(other.x - anchor.x, other.z - anchor.z)
+    const candidates = [...candidateIds]
+      .map((id) => nodeMap.get(id))
+      .filter((candidate): candidate is GeneratedRegionNode =>
+        Boolean(candidate) &&
+        (candidate!.kind === 'route' ||
+          candidate!.kind === 'entry' ||
+          candidate!.kind === 'exit')
+      )
+      .filter((candidate) => {
+        const minCrossingDistance = Math.min(
+          ...crossings.map((crossing) =>
+            Math.hypot(candidate.x - crossing.x, candidate.z - crossing.z)
+          ),
+        )
+        const length = Math.hypot(other.x - candidate.x, other.z - candidate.z)
+        return (
+          minCrossingDistance >= 14 &&
+          length <= Math.min(50, currentLength * 1.7 + 8)
+        )
+      })
+      .sort((a, b) => {
+        const aScore =
+          Math.hypot(other.x - a.x, other.z - a.z) +
+          (branchLoad.get(a.id) ?? 0) * 7
+        const bScore =
+          Math.hypot(other.x - b.x, other.z - b.z) +
+          (branchLoad.get(b.id) ?? 0) * 7
+        return aScore - bScore
+      })
+
+    const candidate = candidates[0]
+    if (!candidate) continue
+
+    if (connection.from === anchor.id) connection.from = candidate.id
+    else connection.to = candidate.id
+    if (other.parentId === anchor.id) other.parentId = candidate.id
+
+    branchLoad.set(anchor.id, Math.max(0, (branchLoad.get(anchor.id) ?? 1) - 1))
+    branchLoad.set(candidate.id, (branchLoad.get(candidate.id) ?? 0) + 1)
+    changed = true
+  }
+
+  return changed
 }
 
 function pathFootprintHalfWidth(width: number) {
@@ -1692,7 +2135,12 @@ function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegio
     if (!node) continue
 
     const main = connected.filter((path) => path.kind === 'main')
-    const mainAxis = main.length >= 2 ? junctionMainAxis(node, main) : undefined
+    const mainAxis =
+      main.length >= 2
+        ? junctionMainAxis(node, main)
+        : connected.length >= 3
+          ? junctionMainAxis(node, connected)
+          : undefined
     const sharedMainWidth = main.length ? Math.max(...main.map((path) => path.width)) : 0
 
     for (const path of connected) {
