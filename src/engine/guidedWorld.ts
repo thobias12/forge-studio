@@ -2,7 +2,7 @@ import type { ForgeRegionDefinition } from './forgeProject'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
-export type WorldDressingType = 'tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch'
+export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch'
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
 
 export type GeneratedMicroBiome = {
@@ -3950,8 +3950,9 @@ function buildDressing(
     else if (micro.meadow * profile.meadowBias > .36 && roll < clamp(.54 + profile.meadowBias * .16, .64, .94)) type = roll < .62 ? 'grass' : 'shrub'
     else if (micro.moss * profile.mossBias > .42 && roll < clamp(.45 + profile.mossBias * .13, .54, .88)) type = roll < .22 ? 'rock' : 'fern'
     else if (micro.scrub * profile.scrubBias > .38 && roll < clamp(.5 + profile.scrubBias * .14, .6, .9)) type = roll < .5 ? 'shrub' : 'fern'
-    else if (roll < treeThreshold) type = 'tree'
-    else if (roll < treeThreshold + .08 * profile.rockBias) type = 'rock'
+    else if (roll < treeThreshold) {
+      type = random() < profile.deadTreeBias ? 'dead-tree' : 'tree'
+    } else if (roll < treeThreshold + .08 * profile.rockBias) type = 'rock'
     else if (roll < treeThreshold + .19) type = 'fern'
     else if (roll < treeThreshold + .25) type = 'fallen-log'
     else if (roll < treeThreshold + .3) type = 'stump'
@@ -3959,7 +3960,7 @@ function buildDressing(
 
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
-    const baseScale = type === 'tree'
+    const baseScale = type === 'tree' || type === 'dead-tree'
       ? (.7 + random() * .9) * profile.treeScale
       : type === 'rock'
         ? (.55 + random() * .82) * profile.rockScale
@@ -4258,6 +4259,7 @@ function biomeIdentityProfile(biome: string) {
       scrubBias: 1.02,
       forestFloorBias: .92,
       reedBias: .72,
+      deadTreeBias: .025,
       signatureTypes: [
         'meadow', 'meadow', 'forest-floor', 'scrub',
         'rocky', 'meadow', 'forest-floor',
@@ -4267,25 +4269,26 @@ function biomeIdentityProfile(biome: string) {
 
   if (value.includes('highland')) {
     return {
-      reliefScale: 1.65,
-      reliefFeatureScale: 1.22,
+      reliefScale: 1.9,
+      reliefFeatureScale: 1.32,
       forestScale: .5,
       edgeScale: .32,
       clusterScale: .68,
       clusterRadiusScale: .82,
       clearingStrength: .82,
-      dressingScale: .86,
+      dressingScale: .94,
       microScale: 1.12,
       microRadiusScale: 1.16,
       treeBias: .48,
       treeScale: .92,
-      rockBias: 1.9,
+      rockBias: 2.05,
       rockScale: 1.22,
       meadowBias: .72,
       mossBias: .42,
       scrubBias: 1.15,
       forestFloorBias: .58,
       reedBias: .45,
+      deadTreeBias: .08,
       signatureTypes: [
         'rocky', 'rocky', 'rocky', 'scrub',
         'meadow', 'rocky', 'forest-floor',
@@ -4299,10 +4302,10 @@ function biomeIdentityProfile(biome: string) {
       reliefFeatureScale: .72,
       forestScale: .7,
       edgeScale: .52,
-      clusterScale: .92,
-      clusterRadiusScale: 1.12,
+      clusterScale: 1.05,
+      clusterRadiusScale: 1.28,
       clearingStrength: 1.1,
-      dressingScale: 1.08,
+      dressingScale: 1.12,
       microScale: 1.18,
       microRadiusScale: 1.18,
       treeBias: .72,
@@ -4314,6 +4317,7 @@ function biomeIdentityProfile(biome: string) {
       scrubBias: 1.25,
       forestFloorBias: 1.18,
       reedBias: 1.55,
+      deadTreeBias: .14,
       signatureTypes: [
         'moss', 'moss', 'moss', 'scrub',
         'forest-floor', 'moss', 'meadow',
@@ -4327,8 +4331,8 @@ function biomeIdentityProfile(biome: string) {
       reliefFeatureScale: 1.08,
       forestScale: .55,
       edgeScale: .38,
-      clusterScale: .72,
-      clusterRadiusScale: .9,
+      clusterScale: .86,
+      clusterRadiusScale: 1.05,
       clearingStrength: .9,
       dressingScale: .86,
       microScale: 1.1,
@@ -4342,6 +4346,7 @@ function biomeIdentityProfile(biome: string) {
       scrubBias: 1.6,
       forestFloorBias: .72,
       reedBias: .52,
+      deadTreeBias: .3,
       signatureTypes: [
         'scrub', 'rocky', 'scrub', 'forest-floor',
         'rocky', 'scrub', 'moss',
@@ -4353,15 +4358,15 @@ function biomeIdentityProfile(biome: string) {
     return {
       reliefScale: .62,
       reliefFeatureScale: .72,
-      forestScale: .3,
+      forestScale: .34,
       edgeScale: .12,
-      clusterScale: .42,
-      clusterRadiusScale: .72,
+      clusterScale: .55,
+      clusterRadiusScale: .9,
       clearingStrength: 1.48,
-      dressingScale: .7,
+      dressingScale: .82,
       microScale: 1.08,
       microRadiusScale: 1.28,
-      treeBias: .28,
+      treeBias: .34,
       treeScale: .9,
       rockBias: .48,
       rockScale: .92,
@@ -4370,6 +4375,7 @@ function biomeIdentityProfile(biome: string) {
       scrubBias: .62,
       forestFloorBias: .38,
       reedBias: .5,
+      deadTreeBias: .015,
       signatureTypes: [
         'meadow', 'meadow', 'meadow', 'scrub',
         'meadow', 'forest-floor', 'meadow',
@@ -4400,6 +4406,7 @@ function biomeIdentityProfile(biome: string) {
     scrubBias: .78,
     forestFloorBias: 1.55,
     reedBias: .78,
+    deadTreeBias: .035,
     signatureTypes: [
       'forest-floor', 'forest-floor', 'moss', 'scrub',
       'forest-floor', 'meadow', 'moss',
