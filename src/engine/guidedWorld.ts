@@ -472,6 +472,7 @@ export function generateGuidedRegion(
     pois,
     riverMask,
     layerSeeds.dressing,
+    layerSeeds.terrain,
   )
   const validation = validateGeneratedRegion(
     nodes,
@@ -3794,6 +3795,7 @@ function buildDressing(
   pois: GeneratedWorldPoi[],
   riverMask: RiverOccupancyMask,
   seed: number,
+  terrainSeed: number,
 ) {
   const random = seededRandom(seed)
   const settings = worldSettings(region)
@@ -3825,7 +3827,7 @@ function buildDressing(
       terrain.clearings,
       x,
       z,
-      seed ^ 0x51ED270B,
+      terrainSeed,
     )
     if (random() < openPenalty * (.8 + settings.openSpace * .16)) continue
 
