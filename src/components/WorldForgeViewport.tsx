@@ -264,11 +264,11 @@ function buildTerrain(region: GeneratedRegion) {
       else color.set(palette.ground)
 
       const surface = sampleTerrainSurface(region, x, z)
-      color.lerp(forestFloorColor, surface.forestFloor * .34)
-      color.lerp(mossColor, surface.moss * .28)
-      color.lerp(meadowColor, surface.meadow * .42)
-      color.lerp(scrubColor, surface.scrub * .28)
-      color.lerp(rockyColor, surface.rocky * .38)
+      color.lerp(forestFloorColor, surface.forestFloor * .27)
+      color.lerp(mossColor, surface.moss * .22)
+      color.lerp(meadowColor, surface.meadow * .31)
+      color.lerp(scrubColor, surface.scrub * .2)
+      color.lerp(rockyColor, surface.rocky * .29)
       color.lerp(soilColor, Math.max(surface.soil * .24, surface.poiWear * .68, surface.roadWear * .42))
       const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
       colors.push(color.r * variation, color.g * variation, color.b * variation)
@@ -378,19 +378,13 @@ function makeRibbonGeometry(
   const indices: number[] = []
 
   points.forEach((point, index) => {
-    const prev = points[Math.max(0, index - 1)]
-    const next = points[Math.min(points.length - 1, index + 1)]
-    const dx = next.x - prev.x
-    const dz = next.z - prev.z
-    const length = Math.max(.001, Math.hypot(dx, dz))
-    const nx = -dz / length
-    const nz = dx / length
     const half = (widths[index] ?? widths[0] ?? 1) / 2
+    const join = ribbonJoinOffset(points, index, half)
+    const leftX = point.x + join.x
+    const leftZ = point.z + join.z
+    const rightX = point.x - join.x
+    const rightZ = point.z - join.z
 
-    const leftX = point.x + nx * half
-    const leftZ = point.z + nz * half
-    const rightX = point.x - nx * half
-    const rightZ = point.z - nz * half
     positions.push(
       leftX, heightAt(leftX, leftZ), leftZ,
       rightX, heightAt(rightX, rightZ), rightZ,
@@ -399,10 +393,7 @@ function makeRibbonGeometry(
 
     if (index < points.length - 1) {
       const a = index * 2
-      const b = a + 1
-      const c = a + 3
-      const d = a + 2
-      indices.push(a, d, b, b, d, c)
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
     }
   })
 
@@ -424,19 +415,12 @@ function makeProfileRibbonGeometry(
   const indices: number[] = []
 
   points.forEach((point, index) => {
-    const prev = points[Math.max(0, index - 1)]
-    const next = points[Math.min(points.length - 1, index + 1)]
-    const dx = next.x - prev.x
-    const dz = next.z - prev.z
-    const length = Math.max(.001, Math.hypot(dx, dz))
-    const nx = -dz / length
-    const nz = dx / length
     const half = (widths[index] ?? widths[0] ?? 1) / 2
+    const join = ribbonJoinOffset(points, index, half)
     const y = (heights[index] ?? heights[0] ?? 0) + heightOffset
-
     positions.push(
-      point.x + nx * half, y, point.z + nz * half,
-      point.x - nx * half, y, point.z - nz * half,
+      point.x + join.x, y, point.z + join.z,
+      point.x - join.x, y, point.z - join.z,
     )
 
     if (index < points.length - 1) {
@@ -450,6 +434,65 @@ function makeProfileRibbonGeometry(
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
+}
+
+function ribbonJoinOffset(
+  points: Array<{ x: number; z: number }>,
+  index: number,
+  halfWidth: number,
+) {
+  if (points.length < 2) return { x: halfWidth, z: 0 }
+
+  const point = points[index]
+  const previous = points[Math.max(0, index - 1)]
+  const next = points[Math.min(points.length - 1, index + 1)]
+
+  if (index === 0) {
+    const direction = normalizeRibbon2(next.x - point.x, next.z - point.z)
+    return { x: -direction.z * halfWidth, z: direction.x * halfWidth }
+  }
+  if (index === points.length - 1) {
+    const direction = normalizeRibbon2(point.x - previous.x, point.z - previous.z)
+    return { x: -direction.z * halfWidth, z: direction.x * halfWidth }
+  }
+
+  const incomingLength = Math.max(.001, Math.hypot(point.x - previous.x, point.z - previous.z))
+  const outgoingLength = Math.max(.001, Math.hypot(next.x - point.x, next.z - point.z))
+  const incoming = normalizeRibbon2(point.x - previous.x, point.z - previous.z)
+  const outgoing = normalizeRibbon2(next.x - point.x, next.z - point.z)
+  const dot = THREE.MathUtils.clamp(incoming.x * outgoing.x + incoming.z * outgoing.z, -1, 1)
+
+  const incomingNormal = { x: -incoming.z, z: incoming.x }
+  const outgoingNormal = { x: -outgoing.z, z: outgoing.x }
+  let miter = normalizeRibbon2(
+    incomingNormal.x + outgoingNormal.x,
+    incomingNormal.z + outgoingNormal.z,
+  )
+
+  // Near a reversal the summed normal becomes unstable. Use the outgoing
+  // segment normal and shrink the join rather than letting the ribbon cross itself.
+  if (dot < -.2 || Math.hypot(miter.x, miter.z) < .001) {
+    miter = outgoingNormal
+  }
+
+  const denominator = Math.max(
+    .34,
+    Math.abs(miter.x * outgoingNormal.x + miter.z * outgoingNormal.z),
+  )
+  const desiredScale = halfWidth / denominator
+  const segmentLimit = Math.min(incomingLength, outgoingLength) * .42
+  const maxScale = Math.max(
+    halfWidth * .62,
+    Math.min(halfWidth * 1.42, segmentLimit),
+  )
+  const scale = Math.min(desiredScale, maxScale)
+
+  return { x: miter.x * scale, z: miter.z * scale }
+}
+
+function normalizeRibbon2(x: number, z: number) {
+  const length = Math.max(.00001, Math.hypot(x, z))
+  return { x: x / length, z: z / length }
 }
 
 function addDressing(region: GeneratedRegion, group: THREE.Group) {
