@@ -92,6 +92,19 @@ export type GeneratedWorldTerrain = {
   clearings: Array<{ x: number; z: number; radius: number }>
 }
 
+type TerrainFoundation = {
+  resolution: number
+  width: number
+  depth: number
+  heights: number[]
+}
+
+type FrozenHydrology = {
+  points: GeneratedWorldPoint[]
+  widths: number[]
+  heights: number[]
+}
+
 export type WorldGenerationLayerSeeds = {
   terrain: number
   routes: number
@@ -324,21 +337,32 @@ export function generateGuidedRegion(
       nodeId: node.id,
       contentRef: node.contentRef,
     }))
-  const terrainDraft = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
-  let crossings = buildCrossings(paths, terrainDraft.stream, layerSeeds.routes, settings)
-  let terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
-
-  // Crossing planning may have reshaped roads after the draft river was solved.
-  // Reconcile every bridge/ford against the finished stream centerline before
-  // dressing/validation so a rendered bridge can never drift off the water.
-  const reconciledCrossings = reconcileCrossingsWithFinalStream(paths, crossings, terrain.stream)
-  crossings = reconciledCrossings.crossings
-  if (reconciledCrossings.pathsChanged) {
-    terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
-  }
+  // Frozen Hydrology Pipeline:
+  // 1) solve the land + river exactly once,
+  // 2) choose immutable crossing anchors on that river,
+  // 3) route roads through those anchors,
+  // 4) shape terrain around the final roads without ever solving water again.
+  const terrainFoundation = buildTerrainFoundation(region, bounds, layerSeeds.terrain)
+  const frozenHydrology = buildFrozenHydrology(
+    terrainFoundation,
+    bounds,
+    layerSeeds.terrain,
+    settings.water,
+  )
+  const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  const terrain = buildTerrainFromFrozenHydrology(
+    region,
+    bounds,
+    paths,
+    clearings,
+    pois,
+    layerSeeds.terrain,
+    terrainFoundation,
+    frozenHydrology,
+  )
 
   const dressing = buildDressing(region, bounds, terrain, paths, pois, layerSeeds.dressing)
-  const validation = validateGeneratedRegion(nodes, connections, paths, crossings, terrain.stream)
+  const validation = validateGeneratedRegion(nodes, connections, paths, crossings, terrain.stream, bounds)
   const seed = composeWorldSeed(layerSeeds)
 
   return {
@@ -457,6 +481,7 @@ export function validateGeneratedRegion(
   paths: GeneratedWorldPath[] = [],
   crossings: GeneratedWorldCrossing[] = [],
   stream: GeneratedWorldPoint[] = [],
+  bounds?: GeneratedRegion['bounds'],
 ) {
   const issues: string[] = []
   const entry = nodes.find((item) => item.kind === 'entry')
@@ -494,6 +519,22 @@ export function validateGeneratedRegion(
     else if (Math.hypot(to.x - from.x, to.z - from.z) > 52) issues.push(`Connection ${link.id} is too long for reliable traversal.`)
   }
 
+  if (stream.length > 1 && bounds) {
+    const firstSides = boundarySides(stream[0], bounds)
+    const lastSides = boundarySides(stream[stream.length - 1], bounds)
+    const opposite: Record<string, string> = {
+      minX: 'maxX',
+      maxX: 'minX',
+      minZ: 'maxZ',
+      maxZ: 'minZ',
+    }
+    if (!firstSides.length || !lastSides.length) {
+      issues.push('River must begin and end on the region boundary.')
+    } else if (!firstSides.some((side) => lastSides.includes(opposite[side]))) {
+      issues.push('River endpoints must terminate on opposite region boundaries.')
+    }
+  }
+
   if (stream.length > 1) {
     for (const crossing of crossings) {
       const path = paths.find((item) => item.id === crossing.pathId)
@@ -509,6 +550,19 @@ export function validateGeneratedRegion(
   }
 
   return { valid: issues.length === 0, issues }
+}
+
+function boundarySides(
+  point: GeneratedWorldPoint,
+  bounds: GeneratedRegion['bounds'],
+  tolerance = .015,
+) {
+  const sides: string[] = []
+  if (Math.abs(point.x - bounds.minX) <= tolerance) sides.push('minX')
+  if (Math.abs(point.x - bounds.maxX) <= tolerance) sides.push('maxX')
+  if (Math.abs(point.z - bounds.minZ) <= tolerance) sides.push('minZ')
+  if (Math.abs(point.z - bounds.maxZ) <= tolerance) sides.push('maxZ')
+  return sides
 }
 
 export function randomWorldSeed() {
@@ -954,128 +1008,11 @@ function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldC
 }
 
 
-function reconcileCrossingsWithFinalStream(
-  paths: GeneratedWorldPath[],
-  crossings: GeneratedWorldCrossing[],
-  stream: GeneratedWorldPoint[],
-) {
-  if (stream.length < 2) return { crossings: [] as GeneratedWorldCrossing[], pathsChanged: false }
-
-  let pathsChanged = false
-  const finalized: GeneratedWorldCrossing[] = []
-
-  for (const source of crossings) {
-    const path = paths.find((item) => item.id === source.pathId)
-    if (!path || path.points.length < 2) continue
-
-    const crossing = { ...source }
-    const exactHit = closestPathStreamIntersection(path, stream, crossing)
-    const streamTarget = exactHit ?? closestPointOnPolyline(crossing.x, crossing.z, stream)
-    const moved = Math.hypot(crossing.x - streamTarget.x, crossing.z - streamTarget.z)
-
-    crossing.x = round(streamTarget.x, 3)
-    crossing.z = round(streamTarget.z, 3)
-
-    const roadDistance = distanceToPolyline(crossing.x, crossing.z, path.points)
-    if (moved > .08 || roadDistance > .18 || !exactHit) {
-      reroutePathViaCrossing(path, crossing)
-      pathsChanged = true
-    }
-
-    shapePathAtCrossing(path, crossing)
-    crossing.rotation = round(pathDirectionAtPoint(path, crossing.x, crossing.z), 4)
-    pathsChanged = true
-
-    const finalStreamDistance = distanceToPolyline(crossing.x, crossing.z, stream)
-    const finalRoadDistance = distanceToPolyline(crossing.x, crossing.z, path.points)
-    if (finalStreamDistance <= .2 && finalRoadDistance <= .25) finalized.push(crossing)
-  }
-
-  return { crossings: finalized, pathsChanged }
-}
-
-function closestPathStreamIntersection(
-  path: GeneratedWorldPath,
-  stream: GeneratedWorldPoint[],
-  crossing: GeneratedWorldCrossing,
-) {
-  let best: GeneratedWorldPoint | undefined
-  let bestDistance = Infinity
-
-  for (let pathIndex = 1; pathIndex < path.points.length; pathIndex += 1) {
-    const a = path.points[pathIndex - 1]
-    const b = path.points[pathIndex]
-    for (let streamIndex = 1; streamIndex < stream.length; streamIndex += 1) {
-      const c = stream[streamIndex - 1]
-      const d = stream[streamIndex]
-      const hit = segmentIntersection(a, b, c, d)
-      if (!hit) continue
-      const distance = Math.hypot(hit.x - crossing.x, hit.z - crossing.z)
-      if (distance >= bestDistance) continue
-      bestDistance = distance
-      best = hit
-    }
-  }
-
-  return best
-}
-
-function closestPointOnPolyline(x: number, z: number, points: GeneratedWorldPoint[]) {
-  let best = { x: points[0]?.x ?? x, z: points[0]?.z ?? z, distance: Infinity }
-
-  for (let index = 1; index < points.length; index += 1) {
-    const a = points[index - 1]
-    const b = points[index]
-    const dx = b.x - a.x
-    const dz = b.z - a.z
-    const lengthSq = dx * dx + dz * dz
-    const t = lengthSq > .00001
-      ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
-      : 0
-    const px = a.x + dx * t
-    const pz = a.z + dz * t
-    const distance = Math.hypot(x - px, z - pz)
-    if (distance < best.distance) best = { x: px, z: pz, distance }
-  }
-
-  return best
-}
-
-function pathDirectionAtPoint(path: GeneratedWorldPath, x: number, z: number) {
-  let bestIndex = 1
-  let bestDistance = Infinity
-
-  for (let index = 1; index < path.points.length; index += 1) {
-    const a = path.points[index - 1]
-    const b = path.points[index]
-    const dx = b.x - a.x
-    const dz = b.z - a.z
-    const lengthSq = dx * dx + dz * dz
-    const t = lengthSq > .00001
-      ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
-      : 0
-    const px = a.x + dx * t
-    const pz = a.z + dz * t
-    const distance = Math.hypot(x - px, z - pz)
-    if (distance < bestDistance) {
-      bestDistance = distance
-      bestIndex = index
-    }
-  }
-
-  const a = path.points[Math.max(0, bestIndex - 1)]
-  const b = path.points[Math.min(path.points.length - 1, bestIndex)]
-  return Math.atan2(b.z - a.z, b.x - a.x)
-}
-
-function buildTerrain(
+function buildTerrainFoundation(
   region: ForgeRegionDefinition,
   bounds: GeneratedRegion['bounds'],
-  paths: GeneratedWorldPath[],
-  clearings: GeneratedWorldTerrain['clearings'],
-  pois: GeneratedWorldPoi[],
   seed: number,
-): GeneratedWorldTerrain {
+): TerrainFoundation {
   const settings = worldSettings(region)
   const resolution = settings.size === 'large' ? 73 : settings.size === 'small' ? 53 : 65
   const width = bounds.maxX - bounds.minX
@@ -1083,7 +1020,6 @@ function buildTerrain(
   const heights: number[] = []
   const amplitude = (.55 + settings.elevation * 4.7) * (.68 + settings.verticality * .64)
 
-  // Pass 1: build uninterrupted land. Water does not dictate the shape yet.
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
     const z = bounds.minZ + zIndex / (resolution - 1) * depth
     for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
@@ -1093,43 +1029,86 @@ function buildTerrain(
       const n2 = valueNoise2D(x * .061 + 17.2, z * .061 - 9.4, seed ^ 0x9E3779B9)
       const n3 = valueNoise2D(x * .13 - 31.8, z * .13 + 11.7, seed ^ 0x85EBCA6B)
       const valley = valueNoise2D(x * .0075 + 23.1, z * .0075 - 17.4, seed ^ 0xB5297A4D)
-      let height = ((n0 - .5) * .86 + (n1 - .5) * 1.5 + (n2 - .5) * .58 + (n3 - .5) * .18 + (valley - .5) * .52) * amplitude
+      let height = (
+        (n0 - .5) * .86 +
+        (n1 - .5) * 1.5 +
+        (n2 - .5) * .58 +
+        (n3 - .5) * .18 +
+        (valley - .5) * .52
+      ) * amplitude
 
       if (settings.cliffs > .08) {
-        const ridge = Math.abs(valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5) * 2
+        const ridge = Math.abs(
+          valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5,
+        ) * 2
         if (ridge > .68) height += (ridge - .68) * 5.5 * settings.cliffs
       }
       heights.push(round(height, 4))
     }
   }
 
-  // Pass 2: solve a low-cost route over the actual heightfield and make it flow from
-  // the higher map edge toward the lower one.
-  const hydrology = settings.water > .08
-    ? solveHydrology(bounds, resolution, heights, seed, settings.water)
-    : { points: [] as GeneratedWorldPoint[], widths: [] as number[], heights: [] as number[] }
+  return { resolution, width, depth, heights }
+}
 
-  // Pass 3: carve a bed and sloped banks into the heightfield around that route.
+function buildFrozenHydrology(
+  foundation: TerrainFoundation,
+  bounds: GeneratedRegion['bounds'],
+  seed: number,
+  water: number,
+): FrozenHydrology {
+  if (water <= .08) return { points: [], widths: [], heights: [] }
+  return solveHydrology(
+    bounds,
+    foundation.resolution,
+    foundation.heights,
+    seed,
+    water,
+  )
+}
+
+function buildTerrainFromFrozenHydrology(
+  region: ForgeRegionDefinition,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  clearings: GeneratedWorldTerrain['clearings'],
+  pois: GeneratedWorldPoi[],
+  seed: number,
+  foundation: TerrainFoundation,
+  hydrology: FrozenHydrology,
+): GeneratedWorldTerrain {
+  const settings = worldSettings(region)
+  const { resolution, width, depth } = foundation
+  const heights = [...foundation.heights]
+
+  // Carve the already-frozen river. No hydrology solving is allowed after this point.
   if (hydrology.points.length > 1) {
     for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
       const z = bounds.minZ + zIndex / (resolution - 1) * depth
       for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
         const x = bounds.minX + xIndex / (resolution - 1) * width
         const index = zIndex * resolution + xIndex
-        const sample = nearestHydrologySample(x, z, hydrology.points, hydrology.widths, hydrology.heights)
+        const sample = nearestHydrologySample(
+          x,
+          z,
+          hydrology.points,
+          hydrology.widths,
+          hydrology.heights,
+        )
         const bankWidth = sample.width * 2.15 + 2.8
         if (sample.distance >= bankWidth) continue
 
         const normalized = sample.distance / Math.max(.001, bankWidth)
         const channel = 1 - smoothstep(clamp(normalized, 0, 1))
         const bedTarget = sample.height - .34 + Math.pow(normalized, 1.45) * 1.08
-        heights[index] = round(Math.min(heights[index], lerp(heights[index], bedTarget, channel * .94)), 4)
+        heights[index] = round(
+          Math.min(heights[index], lerp(heights[index], bedTarget, channel * .94)),
+          4,
+        )
       }
     }
   }
 
-  // Pass 4: preserve readable hills while relaxing the terrain immediately under roads.
-  // This keeps the broad landscape stronger without turning traversal routes into rollercoasters.
+  // Roads react to the frozen river, never the other way around.
   const preRoadHeights = [...heights]
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
     const z = bounds.minZ + zIndex / (resolution - 1) * depth
@@ -1139,18 +1118,39 @@ function buildTerrain(
       if (!nearest) continue
       const corridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
       if (nearest.distance >= corridor) continue
+
       if (hydrology.points.length > 1) {
-        const river = nearestHydrologySample(x, z, hydrology.points, hydrology.widths, hydrology.heights)
+        const river = nearestHydrologySample(
+          x,
+          z,
+          hydrology.points,
+          hydrology.widths,
+          hydrology.heights,
+        )
         if (river.distance < river.width * 1.9 + 1.6) continue
       }
+
       const influence = 1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))
-      const targetHeight = sampleGridHeight(bounds, resolution, preRoadHeights, nearest.x, nearest.z)
+      const targetHeight = sampleGridHeight(
+        bounds,
+        resolution,
+        preRoadHeights,
+        nearest.x,
+        nearest.z,
+      )
       const index = zIndex * resolution + xIndex
-      heights[index] = round(lerp(heights[index], targetHeight, influence * (nearest.kind === 'main' ? .72 : .56)), 4)
+      heights[index] = round(
+        lerp(
+          heights[index],
+          targetHeight,
+          influence * (nearest.kind === 'main' ? .72 : .56),
+        ),
+        4,
+      )
     }
   }
 
-  // Pass 5: POIs gently terrace the existing landscape instead of placing a flat disc.
+  // POIs terrace locally but may not overwrite the frozen river corridor.
   for (const poi of pois) {
     const centerHeight = sampleGridHeight(bounds, resolution, heights, poi.x, poi.z)
     for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
@@ -1160,11 +1160,16 @@ function buildTerrain(
         const distance = Math.hypot(x - poi.x, z - poi.z)
         const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
         if (distance >= terraceRadius) continue
-        const riverDistance = hydrology.points.length > 1 ? distanceToPolyline(x, z, hydrology.points) : Infinity
+        const riverDistance = hydrology.points.length > 1
+          ? distanceToPolyline(x, z, hydrology.points)
+          : Infinity
         if (riverDistance < 3.5) continue
         const influence = 1 - smoothstep(clamp(distance / terraceRadius, 0, 1))
         const index = zIndex * resolution + xIndex
-        heights[index] = round(lerp(heights[index], centerHeight, influence * .48), 4)
+        heights[index] = round(
+          lerp(heights[index], centerHeight, influence * .48),
+          4,
+        )
       }
     }
   }
@@ -1189,9 +1194,9 @@ function buildTerrain(
     depth,
     heights,
     waterLevel: round(waterLevel, 3),
-    stream: hydrology.points,
-    streamWidths: hydrology.widths,
-    streamHeights: hydrology.heights,
+    stream: hydrology.points.map((point) => ({ ...point })),
+    streamWidths: [...hydrology.widths],
+    streamHeights: [...hydrology.heights],
     microBiomes,
     clearings,
   }
@@ -1291,6 +1296,7 @@ function solveHydrology(
   points = limitHydrologyCurvature(points, water)
   points = smoothPolyline(points, 1)
   points = limitHydrologyCurvature(points, water)
+  points = pinHydrologyEndpoints(points, bounds, flowLeftToRight)
 
   const random = seededRandom(hashSeed(`${seed}:hydrology-width`))
   const widths = points.map((_, index) => {
@@ -1312,6 +1318,40 @@ function solveHydrology(
     widths,
     heights: streamHeights.map((height) => round(height, 3)),
   }
+}
+
+function pinHydrologyEndpoints(
+  points: GeneratedWorldPoint[],
+  bounds: GeneratedRegion['bounds'],
+  flowLeftToRight: boolean,
+) {
+  if (points.length < 2) return points
+  const result = points.map((point) => ({ ...point }))
+  const firstX = flowLeftToRight ? bounds.minX : bounds.maxX
+  const lastX = flowLeftToRight ? bounds.maxX : bounds.minX
+
+  result[0] = {
+    x: firstX,
+    z: clamp(result[0].z, bounds.minZ, bounds.maxZ),
+  }
+  result[result.length - 1] = {
+    x: lastX,
+    z: clamp(result[result.length - 1].z, bounds.minZ, bounds.maxZ),
+  }
+
+  // Keep the first interior samples moving inward from the pinned edge so the
+  // river cannot double back and visually terminate just inside the map.
+  if (result.length >= 4) {
+    const inset = Math.max(.75, (bounds.maxX - bounds.minX) / Math.max(24, result.length * .7))
+    result[1].x = flowLeftToRight
+      ? Math.max(result[1].x, bounds.minX + inset)
+      : Math.min(result[1].x, bounds.maxX - inset)
+    result[result.length - 2].x = flowLeftToRight
+      ? Math.min(result[result.length - 2].x, bounds.maxX - inset)
+      : Math.max(result[result.length - 2].x, bounds.minX + inset)
+  }
+
+  return result
 }
 
 function nearestHydrologySample(
