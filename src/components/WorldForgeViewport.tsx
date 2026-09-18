@@ -213,6 +213,7 @@ function buildTerrain(region: GeneratedRegion) {
   const colors: number[] = []
   const indices: number[] = []
   const color = new THREE.Color()
+  const palette = editorBiomePalette(region.biome)
 
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
     const z = bounds.minZ + zIndex / (resolution - 1) * (bounds.maxZ - bounds.minZ)
@@ -222,10 +223,10 @@ function buildTerrain(region: GeneratedRegion) {
       positions.push(x, height, z)
 
       const normalized = THREE.MathUtils.clamp((height + 2.5) / 7, 0, 1)
-      if (height < terrain.waterLevel + .45) color.set(0x263d2e)
-      else if (normalized > .72) color.set(0x54604a)
-      else if (normalized > .52) color.set(0x3b4e36)
-      else color.set(0x2c442f)
+      if (height < terrain.waterLevel + .45) color.set(palette.low)
+      else if (normalized > .72) color.set(palette.high)
+      else if (normalized > .52) color.set(palette.mid)
+      else color.set(palette.ground)
       const variation = .88 + hashUnit(`${xIndex}:${zIndex}:${region.layerSeeds.terrain}`) * .18
       colors.push(color.r * variation, color.g * variation, color.b * variation)
     }
@@ -349,12 +350,13 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const ferns = region.dressing.filter((item) => item.type === 'fern')
   const logs = region.dressing.filter((item) => item.type === 'fallen-log')
   const stumps = region.dressing.filter((item) => item.type === 'stump')
+  const palette = editorBiomePalette(region.biome)
 
   if (trees.length) {
     const trunkGeometry = new THREE.CylinderGeometry(.22, .34, 3, 6)
     const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 })
     const crownGeometry = new THREE.ConeGeometry(1.45, 4.2, 7)
-    const crownMaterial = new THREE.MeshStandardMaterial({ color: 0x203b28, roughness: 1 })
+    const crownMaterial = new THREE.MeshStandardMaterial({ color: palette.tree, roughness: 1 })
     const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
     const crowns = new THREE.InstancedMesh(crownGeometry, crownMaterial, trees.length)
     const matrix = new THREE.Matrix4()
@@ -380,7 +382,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (rocks.length) {
     const geometry = new THREE.DodecahedronGeometry(.7, 0)
-    const material = new THREE.MeshStandardMaterial({ color: 0x566057, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: palette.rock, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, rocks.length)
     setInstances(mesh, rocks, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .35 * item.scale, item.z),
@@ -394,7 +396,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (ferns.length) {
     const geometry = new THREE.ConeGeometry(.38, .72, 5)
-    const material = new THREE.MeshStandardMaterial({ color: 0x31583a, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: palette.fern, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, ferns.length)
     setInstances(mesh, ferns, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .31 * item.scale, item.z),
@@ -603,6 +605,16 @@ function disposeGroup(root?: THREE.Object3D) {
     })
   })
   materials.forEach((material) => material.dispose())
+}
+
+function editorBiomePalette(biome: string) {
+  const value = biome.toLowerCase()
+  if (value.includes('autumn')) return { ground: 0x5a4d32, low: 0x3c4933, mid: 0x66573b, high: 0x74654a, tree: 0x73502b, fern: 0x596137, rock: 0x67645b }
+  if (value.includes('highland')) return { ground: 0x46513e, low: 0x35443a, mid: 0x56604d, high: 0x74786a, tree: 0x30442f, fern: 0x495c3b, rock: 0x767b70 }
+  if (value.includes('marsh')) return { ground: 0x303d31, low: 0x253b35, mid: 0x3d4b3e, high: 0x50584a, tree: 0x26372d, fern: 0x35543c, rock: 0x596158 }
+  if (value.includes('corrupt')) return { ground: 0x3a303d, low: 0x2d2939, mid: 0x493b4c, high: 0x59495c, tree: 0x342d3b, fern: 0x49374f, rock: 0x655868 }
+  if (value.includes('farmland')) return { ground: 0x5b553a, low: 0x46523b, mid: 0x686044, high: 0x756f53, tree: 0x405235, fern: 0x53613b, rock: 0x6d6c5f }
+  return { ground: 0x2c442f, low: 0x263d2e, mid: 0x3b4e36, high: 0x54604a, tree: 0x203b28, fern: 0x31583a, rock: 0x596159 }
 }
 
 function hashUnit(value: string) {
