@@ -26,7 +26,7 @@ export const FORGE_WORLD_SCALE = {
   regionEdgeMargin: 30.5,
 
   playCameraFov: 48,
-  playCameraDistance: 25.5,
+  playCameraDistance: 23.5,
   playCameraMinDistance: 20.5,
   playCameraMaxDistance: 36,
   playCameraWheelStep: 1.5,
@@ -54,10 +54,11 @@ export function forgeTreePresentationScale(scale: number) {
 
 export function forgePoiVisualScale(type: string) {
   const base = FORGE_WORLD_SCALE.poiVisualScale
-  if (type === 'settlement') return base * 1.1
-  if (type === 'ruins') return base * 1.08
-  if (type === 'graveyard') return base * 1.06
-  if (type === 'watchtower') return base * 1.05
+  if (type === 'settlement') return base * 1.15
+  if (type === 'ruins' || type === 'graveyard') return base * 1.12
+  if (type === 'watchtower' || type === 'dungeon') return base * 1.08
+  if (type === 'camp') return base * 1.06
+  if (type === 'shrine' || type === 'standing-stones') return base * 1.05
   return base
 }
 
