@@ -719,23 +719,19 @@ export function streamWaterSurfaceRows(
     const halfWidth = width * .5
     const nominalHeight = profile.heights[index] ?? profile.heights[0] ?? region.terrain.waterLevel
     const lanePoints: Array<{ x: number; z: number }> = []
-    let safeHeight = nominalHeight + clearance
+    const waterHeight = nominalHeight + clearance
 
     for (let lane = 0; lane < lanes; lane += 1) {
       const across = lanes === 1 ? 0 : lane / (lanes - 1) * 2 - 1
       const x = center.x + normal.x * halfWidth * across
       const z = center.z + normal.z * halfWidth * across
       lanePoints.push({ x, z })
-      safeHeight = Math.max(
-        safeHeight,
-        visibleStreamRenderHeight(region, nominalHeight, x, z, clearance),
-      )
     }
 
     rows.push({
       x: center.x,
       z: center.z,
-      y: safeHeight,
+      y: waterHeight,
       width,
       nominalHeight,
       points: lanePoints,
@@ -771,18 +767,34 @@ export function streamRenderContinuityIssues(region: GeneratedRegion) {
   const surface = streamWaterSurfaceRows(region, 5, .065)
   for (let rowIndex = 0; rowIndex < surface.rows.length; rowIndex += 1) {
     const row = surface.rows[rowIndex]
+    const nextRow = surface.rows[Math.min(surface.rows.length - 1, rowIndex + 1)]
     for (let laneIndex = 0; laneIndex < row.points.length; laneIndex += 1) {
       const point = row.points[laneIndex]
-      const inside =
-        point.x >= region.bounds.minX &&
-        point.x <= region.bounds.maxX &&
-        point.z >= region.bounds.minZ &&
-        point.z <= region.bounds.maxZ
-      if (!inside) continue
-      const terrainHeight = sampleRenderedTerrainHeight(region, point.x, point.z)
-      if (row.y < terrainHeight + .06) {
-        issues.push(`Terrain protrudes through stream row ${rowIndex}, lane ${laneIndex}.`)
-        break
+      const samples = [{ x: point.x, z: point.z, waterY: row.y }]
+
+      if (nextRow && nextRow !== row) {
+        const nextPoint = nextRow.points[laneIndex]
+        if (nextPoint) {
+          samples.push({
+            x: (point.x + nextPoint.x) * .5,
+            z: (point.z + nextPoint.z) * .5,
+            waterY: (row.y + nextRow.y) * .5,
+          })
+        }
+      }
+
+      for (const sample of samples) {
+        const inside =
+          sample.x >= region.bounds.minX &&
+          sample.x <= region.bounds.maxX &&
+          sample.z >= region.bounds.minZ &&
+          sample.z <= region.bounds.maxZ
+        if (!inside) continue
+        const terrainHeight = sampleRenderedTerrainHeight(region, sample.x, sample.z)
+        if (sample.waterY < terrainHeight + .06) {
+          issues.push(`Terrain protrudes through stream row ${rowIndex}, lane ${laneIndex}.`)
+          break
+        }
       }
     }
   }
@@ -1782,6 +1794,38 @@ function buildTerrainFromFrozenHydrology(
           lerp(heights[index], centerHeight, influence * .48),
           4,
         )
+      }
+    }
+  }
+
+  // Final water-footprint safety carve.
+  // Water now stays on the smooth frozen hydrology surface instead of being
+  // lifted row-by-row above terrain. To guarantee that the rendered terrain
+  // can never poke through the water from any camera angle, lower every grid
+  // vertex that could belong to a triangle intersecting the visible river.
+  if (hydrology.points.length > 1) {
+    const cellWidth = width / Math.max(1, resolution - 1)
+    const cellDepth = depth / Math.max(1, resolution - 1)
+    const trianglePadding = Math.hypot(cellWidth, cellDepth) * 1.08
+    const bedClearance = .18
+
+    for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+      const z = bounds.minZ + zIndex / (resolution - 1) * depth
+      for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+        const x = bounds.minX + xIndex / (resolution - 1) * width
+        const sample = nearestHydrologySample(
+          x,
+          z,
+          hydrology.points,
+          hydrology.widths,
+          hydrology.heights,
+        )
+        const protectedRadius = sample.width * .5 + trianglePadding
+        if (sample.distance > protectedRadius) continue
+
+        const index = zIndex * resolution + xIndex
+        const target = sample.height - bedClearance
+        if (heights[index] > target) heights[index] = round(target, 4)
       }
     }
   }
