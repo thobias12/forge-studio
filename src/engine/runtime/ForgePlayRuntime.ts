@@ -1437,8 +1437,35 @@ function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion[
 
 function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
   const palette = runtimeBiomePalette(region.biome)
+  const surfacePalette = runtimeSurfacePalette(region.biome)
+  const bankPatchGeometry = new THREE.CircleGeometry(1, 10)
+  bankPatchGeometry.rotateX(-Math.PI / 2)
+  const bankPatchColor = new THREE.Color(surfacePalette.soil)
+    .lerp(new THREE.Color(palette.low), .34)
+    .multiplyScalar(.82)
+  const bankPatchMaterial = new THREE.MeshStandardMaterial({
+    color: bankPatchColor,
+    roughness: 1,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  })
+
   for (const item of region.dressing) {
-    if (item.type === 'tree') {
+    if (item.type === 'bank-patch') {
+      const patch = new THREE.Mesh(bankPatchGeometry, bankPatchMaterial)
+      patch.position.set(item.x, item.y + .028, item.z)
+      patch.rotation.y = item.rotation
+      patch.scale.set(
+        item.scale * (1.38 + item.variant * .11),
+        1,
+        item.scale * (.42 + (item.variant % 2) * .08),
+      )
+      patch.receiveShadow = true
+      patch.renderOrder = 2
+      scene.add(patch)
+    } else if (item.type === 'tree') {
       const trunk = new THREE.Mesh(
         new THREE.CylinderGeometry(.2 * item.scale, .32 * item.scale, 2.7 * item.scale, 6),
         new THREE.MeshStandardMaterial({ color: 0x3a2b21, roughness: 1 }),
