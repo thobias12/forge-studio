@@ -366,7 +366,7 @@ function buildStream(region: GeneratedRegion) {
   const group = new THREE.Group()
   group.name = 'GeneratedStream'
 
-  if (import.meta.env.DEV) {
+  {
     const issues = streamRenderContinuityIssues(region)
     if (issues.length) console.warn('[World Forge] River continuity', issues)
   }
