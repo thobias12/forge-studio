@@ -7,6 +7,11 @@ import { isItemEquipped, itemRuntimeDescription } from '../engine/equipment'
 import { itemVisual } from '../engine/itemPresentation'
 import { resolveGameplayForRole } from '../engine/playerLoadout'
 import type { GeneratedRegion } from '../engine/guidedWorld'
+import {
+  DEFAULT_WORLD_ENVIRONMENT,
+  formatWorldHour,
+  type WorldWeather,
+} from '../engine/worldEnvironment'
 import { mergeAdventurePlayerState, type ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
@@ -69,6 +74,19 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   const [dungeonPlayerState, setDungeonPlayerState] = useState<ForgeAdventurePlayerState>()
   const [nearDungeon, setNearDungeon] = useState(false)
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({})
+  const [showEnvironment, setShowEnvironment] = useState(false)
+  const [environmentHour, setEnvironmentHour] = useState(
+    DEFAULT_WORLD_ENVIRONMENT.hour,
+  )
+  const [environmentWeather, setEnvironmentWeather] = useState<WorldWeather>(
+    DEFAULT_WORLD_ENVIRONMENT.weather,
+  )
+  const [environmentPaused, setEnvironmentPaused] = useState(
+    DEFAULT_WORLD_ENVIRONMENT.paused,
+  )
+  const [environmentSpeed, setEnvironmentSpeed] = useState(
+    DEFAULT_WORLD_ENVIRONMENT.speed,
+  )
 
   const baseGameplay = workspace?.gameplay
   const gameplay = useMemo(() => baseGameplay ? resolveGameplayForRole(baseGameplay, profile?.blueprint.role) : undefined, [baseGameplay, profile?.blueprint.role])
@@ -127,6 +145,10 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     } as any)
     runtimeRef.current = runtime
     ;(runtime as any).setPaused?.(paused)
+    runtime.setEnvironmentHour(environmentHour)
+    runtime.setEnvironmentWeather(environmentWeather)
+    runtime.setEnvironmentPaused(environmentPaused)
+    runtime.setEnvironmentSpeed(environmentSpeed)
     const initial = runtime.getSnapshot() as SkillboundRuntimeState
     setSnapshot(initial)
     onSnapshot?.(initial)
@@ -139,6 +161,27 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   useEffect(() => {
     ;(runtimeRef.current as any)?.setPaused?.(paused)
   }, [paused])
+
+  useEffect(() => {
+    runtimeRef.current?.setEnvironmentWeather(environmentWeather)
+  }, [environmentWeather])
+
+  useEffect(() => {
+    runtimeRef.current?.setEnvironmentPaused(environmentPaused)
+  }, [environmentPaused])
+
+  useEffect(() => {
+    runtimeRef.current?.setEnvironmentSpeed(environmentSpeed)
+  }, [environmentSpeed])
+
+  useEffect(() => {
+    if (activeDungeonId) return
+    const timer = window.setInterval(() => {
+      const environment = runtimeRef.current?.getEnvironmentState()
+      if (environment) setEnvironmentHour(environment.hour)
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [activeDungeonId])
 
   useEffect(() => {
     if (!dungeonAnchor || activeDungeonId || paused) {
@@ -164,6 +207,11 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   const reset = () => {
     runtimeRef.current?.resetProgress()
     setSession((value) => value + 1)
+  }
+
+  const setRuntimeHour = (hour: number) => {
+    setEnvironmentHour(hour)
+    runtimeRef.current?.setEnvironmentHour(hour)
   }
 
   const enterDungeon = useCallback(() => {
@@ -255,7 +303,66 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     <div className="skillbound-runtime-actions">
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
       <button onClick={reset}>Reset run</button>
+      <button
+        className={showEnvironment ? 'active' : ''}
+        onClick={() => setShowEnvironment((value) => !value)}
+      >
+        Environment
+      </button>
     </div>
+
+    {showEnvironment && <div className="skillbound-environment-debug">
+      <header>
+        <span>WORLD ENVIRONMENT</span>
+        <strong>{formatWorldHour(environmentHour)}</strong>
+      </header>
+      <label>
+        <span>Time</span>
+        <input
+          type="range"
+          min={0}
+          max={23.75}
+          step={.25}
+          value={environmentHour}
+          onChange={(event) => setRuntimeHour(Number(event.target.value))}
+        />
+      </label>
+      <label>
+        <span>Weather</span>
+        <select
+          value={environmentWeather}
+          onChange={(event) =>
+            setEnvironmentWeather(event.target.value as WorldWeather)
+          }
+        >
+          <option value="clear">Clear</option>
+          <option value="cloudy">Cloudy</option>
+          <option value="mist">Mist</option>
+          <option value="rain">Rain</option>
+          <option value="storm">Storm</option>
+        </select>
+      </label>
+      <div>
+        <button
+          className={environmentPaused ? 'active' : ''}
+          onClick={() => setEnvironmentPaused((value) => !value)}
+        >
+          {environmentPaused ? 'Resume cycle' : 'Pause cycle'}
+        </button>
+        <select
+          value={environmentSpeed}
+          onChange={(event) => setEnvironmentSpeed(Number(event.target.value))}
+        >
+          <option value={.5}>0.5×</option>
+          <option value={1}>1×</option>
+          <option value={2}>2×</option>
+          <option value={4}>4×</option>
+          <option value={8}>8×</option>
+          <option value={16}>16×</option>
+        </select>
+      </div>
+      <small>30 min = 24 in-game hours at 1×</small>
+    </div>}
 
     {dungeonAnchor && <div className={`skillbound-dungeon-available ${nearDungeon ? 'near' : ''}`}><span>DUNGEON ENTRANCE</span><strong>{dungeonAnchor.label}</strong><small>{nearDungeon ? 'Press E to enter' : 'Travel to the generated entrance · authored in Map Studio'}</small></div>}
     {snapshot.message && hudModuleVisible(hudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
