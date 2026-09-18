@@ -531,6 +531,7 @@ export class ForgePlayRuntime {
     this.ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
     this.raycaster.setFromCamera(this.ndc, this.camera)
     this.raycaster.ray.intersectPlane(this.floorPlane, this.mouseWorld)
+    if (this.region.version >= 2) this.mouseWorld.y = sampleTerrainHeight(this.region, this.mouseWorld.x, this.mouseWorld.z)
   }
 
   private onPointerDown = (event: PointerEvent) => {
@@ -1081,6 +1082,256 @@ function chooseAbilityClip(ability: ForgeAbilityDefinition, clips: THREE.Animati
   return clips.find((clip) => tokens.some((token) => clip.name.toLowerCase().includes(token)))
     ?? clips.find((clip) => /attack|cast|slash|strike|swing|skill/i.test(clip.name))
     ?? clips[0]
+}
+
+function makeGeneratedTerrain(region: GeneratedRegion) {
+  const { terrain, bounds } = region
+  const resolution = terrain.resolution
+  const positions: number[] = []
+  const colors: number[] = []
+  const indices: number[] = []
+  const palette = runtimeBiomePalette(region.biome)
+  const color = new THREE.Color()
+
+  for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+    const z = bounds.minZ + zIndex / (resolution - 1) * (bounds.maxZ - bounds.minZ)
+    for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+      const x = bounds.minX + xIndex / (resolution - 1) * (bounds.maxX - bounds.minX)
+      const height = terrain.heights[zIndex * resolution + xIndex] ?? 0
+      positions.push(x, height, z)
+      color.set(height > 2.4 ? palette.high : height < terrain.waterLevel + .45 ? palette.low : palette.ground)
+      const variation = .9 + hashUnit(`terrain:${xIndex}:${zIndex}:${region.seed}`) * .14
+      colors.push(color.r * variation, color.g * variation, color.b * variation)
+    }
+  }
+
+  for (let z = 0; z < resolution - 1; z += 1) {
+    for (let x = 0; x < resolution - 1; x += 1) {
+      const a = z * resolution + x
+      const b = a + 1
+      const c = (z + 1) * resolution + x + 1
+      const d = (z + 1) * resolution + x
+      indices.push(a, d, b, b, d, c)
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }))
+  mesh.receiveShadow = true
+  return mesh
+}
+
+function makeGeneratedStream(region: GeneratedRegion) {
+  const geometry = makeRuntimeRibbon(region.terrain.stream, 2.6, () => region.terrain.waterLevel + .06)
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({ color: 0x315b60, roughness: .32, transparent: true, opacity: .82, side: THREE.DoubleSide }),
+  )
+  mesh.receiveShadow = true
+  return mesh
+}
+
+function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
+  const geometry = makeRuntimeRibbon(path.points, path.width, (x, z) => sampleTerrainHeight(region, x, z) + .06)
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: path.kind === 'main' ? 0x68563e : 0x4a4435,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  )
+  mesh.receiveShadow = true
+  return mesh
+}
+
+function makeRuntimeRibbon(
+  points: Array<{ x: number; z: number }>,
+  width: number,
+  heightAt: (x: number, z: number) => number,
+) {
+  const positions: number[] = []
+  const indices: number[] = []
+  points.forEach((point, index) => {
+    const prev = points[Math.max(0, index - 1)]
+    const next = points[Math.min(points.length - 1, index + 1)]
+    const dx = next.x - prev.x
+    const dz = next.z - prev.z
+    const length = Math.max(.001, Math.hypot(dx, dz))
+    const nx = -dz / length
+    const nz = dx / length
+    const half = width / 2
+    const lx = point.x + nx * half
+    const lz = point.z + nz * half
+    const rx = point.x - nx * half
+    const rz = point.z - nz * half
+    positions.push(lx, heightAt(lx, lz), lz, rx, heightAt(rx, rz), rz)
+    if (index < points.length - 1) {
+      const a = index * 2
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+    }
+  })
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
+  const palette = runtimeBiomePalette(region.biome)
+  for (const item of region.dressing) {
+    if (item.type === 'tree') {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(.2 * item.scale, .32 * item.scale, 2.7 * item.scale, 6),
+        new THREE.MeshStandardMaterial({ color: 0x3a2b21, roughness: 1 }),
+      )
+      trunk.position.set(item.x, item.y + 1.3 * item.scale, item.z)
+      trunk.rotation.y = item.rotation
+      trunk.castShadow = true
+      const crown = new THREE.Mesh(
+        new THREE.ConeGeometry(1.25 * item.scale, 3.8 * item.scale, 7),
+        new THREE.MeshStandardMaterial({ color: palette.tree, roughness: 1 }),
+      )
+      crown.position.set(item.x, item.y + 3.75 * item.scale, item.z)
+      crown.rotation.y = item.rotation
+      crown.castShadow = true
+      scene.add(trunk, crown)
+      obstacles.push({ x: item.x, z: item.z, radius: .38 * item.scale })
+    } else if (item.type === 'rock') {
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(.62 * item.scale, 0),
+        new THREE.MeshStandardMaterial({ color: palette.rock, roughness: 1 }),
+      )
+      rock.position.set(item.x, item.y + .3 * item.scale, item.z)
+      rock.scale.y = .65
+      rock.rotation.set(item.rotation * .12, item.rotation, item.rotation * .08)
+      rock.castShadow = true
+      scene.add(rock)
+      obstacles.push({ x: item.x, z: item.z, radius: .45 * item.scale })
+    } else if (item.type === 'fallen-log') {
+      const log = new THREE.Mesh(
+        new THREE.CylinderGeometry(.22, .28, 2.2 * item.scale, 7),
+        new THREE.MeshStandardMaterial({ color: 0x443227, roughness: 1 }),
+      )
+      log.rotation.set(Math.PI / 2, item.rotation, 0)
+      log.position.set(item.x, item.y + .22, item.z)
+      log.castShadow = true
+      scene.add(log)
+    } else if (item.type === 'stump') {
+      const stump = new THREE.Mesh(
+        new THREE.CylinderGeometry(.34 * item.scale, .44 * item.scale, .58 * item.scale, 7),
+        new THREE.MeshStandardMaterial({ color: 0x49362a, roughness: 1 }),
+      )
+      stump.position.set(item.x, item.y + .28 * item.scale, item.z)
+      stump.castShadow = true
+      scene.add(stump)
+    } else {
+      const fern = new THREE.Mesh(
+        new THREE.ConeGeometry(.28 * item.scale, .6 * item.scale, 5),
+        new THREE.MeshStandardMaterial({ color: palette.fern, roughness: 1 }),
+      )
+      fern.position.set(item.x, item.y + .27 * item.scale, item.z)
+      fern.rotation.y = item.rotation
+      scene.add(fern)
+    }
+  }
+}
+
+function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
+  const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x62685f, roughness: 1 })
+  const darkStone = new THREE.MeshStandardMaterial({ color: 0x444943, roughness: 1 })
+  const wood = new THREE.MeshStandardMaterial({ color: 0x55402f, roughness: 1 })
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5742, roughness: 1 })
+
+  for (const poi of region.pois) {
+    const group = new THREE.Group()
+    group.position.set(poi.x, sampleTerrainHeight(region, poi.x, poi.z), poi.z)
+    group.rotation.y = poi.rotation
+
+    if (poi.type === 'ruins') {
+      runtimeBox(group, -2, .8, 0, .65, 1.6, 4.6, stoneMaterial)
+      runtimeBox(group, 1.65, .55, .9, .65, 1.1, 2.6, darkStone)
+      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 })
+    } else if (poi.type === 'camp' || poi.type === 'settlement') {
+      const count = poi.type === 'settlement' ? 4 : 2
+      for (let i = 0; i < count; i += 1) {
+        const angle = i / count * Math.PI * 2
+        const tent = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2, 4), cloth)
+        tent.position.set(Math.cos(angle) * 2.7, 1, Math.sin(angle) * 2.7)
+        tent.rotation.y = angle + Math.PI / 4
+        tent.castShadow = true
+        group.add(tent)
+      }
+    } else if (poi.type === 'watchtower') {
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 5.5, 7), stoneMaterial)
+      tower.position.y = 2.7
+      tower.castShadow = true
+      group.add(tower)
+      obstacles.push({ x: poi.x, z: poi.z, radius: 1.8 })
+    } else if (poi.type === 'dungeon') {
+      runtimeBox(group, -1.45, 1.25, 0, .7, 2.5, .8, stoneMaterial)
+      runtimeBox(group, 1.45, 1.25, 0, .7, 2.5, .8, stoneMaterial)
+      runtimeBox(group, 0, 2.55, 0, 3.5, .65, .85, darkStone)
+      obstacles.push({ x: poi.x - 1.45, z: poi.z, radius: .7 })
+      obstacles.push({ x: poi.x + 1.45, z: poi.z, radius: .7 })
+    } else if (poi.type === 'shrine') {
+      runtimeBox(group, 0, .3, 0, 2, .6, 1.6, darkStone)
+      runtimeBox(group, 0, 1.35, 0, .65, 2.1, .5, stoneMaterial)
+    } else if (poi.type === 'standing-stones') {
+      runtimeBox(group, -1.35, 1.25, .25, .7, 2.5, .7, stoneMaterial)
+      runtimeBox(group, 0, 1.5, 0, .8, 3, .75, stoneMaterial)
+      runtimeBox(group, 1.35, 1.25, .25, .7, 2.5, .7, stoneMaterial)
+    } else if (poi.type === 'graveyard') {
+      for (let i = 0; i < 8; i += 1) runtimeBox(group, -2 + i % 4 * 1.3, .5, -1 + Math.floor(i / 4) * 2, .4, 1, .18, stoneMaterial)
+    } else if (poi.type === 'beast-den') {
+      const den = new THREE.Mesh(new THREE.TorusGeometry(1.65, .5, 7, 12, Math.PI), darkStone)
+      den.rotation.x = Math.PI / 2
+      den.position.y = 1
+      den.castShadow = true
+      group.add(den)
+    }
+
+    group.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = true
+        object.receiveShadow = true
+      }
+    })
+    scene.add(group)
+  }
+}
+
+function runtimeBox(
+  group: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  depth: number,
+  material: THREE.Material,
+) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material)
+  mesh.position.set(x, y, z)
+  mesh.castShadow = true
+  group.add(mesh)
+}
+
+function runtimeBiomePalette(biome: string) {
+  const value = biome.toLowerCase()
+  if (value.includes('autumn')) return { ground: 0x584b32, low: 0x3d4932, high: 0x6d6245, tree: 0x694b2a, fern: 0x555e32, rock: 0x66635a }
+  if (value.includes('highland')) return { ground: 0x46513d, low: 0x37463a, high: 0x6c7062, tree: 0x31452f, fern: 0x485b3a, rock: 0x73786d }
+  if (value.includes('marsh')) return { ground: 0x303c30, low: 0x273b35, high: 0x465044, tree: 0x26372d, fern: 0x35533b, rock: 0x565f56 }
+  if (value.includes('corrupt')) return { ground: 0x3a303b, low: 0x30293a, high: 0x544457, tree: 0x342d3b, fern: 0x47364d, rock: 0x625665 }
+  if (value.includes('farmland')) return { ground: 0x5b5539, low: 0x48543b, high: 0x6c684d, tree: 0x405134, fern: 0x53603a, rock: 0x6c6b5e }
+  return { ground: 0x2d4631, low: 0x263c2e, high: 0x53604a, tree: 0x203b28, fern: 0x31583a, rock: 0x596159 }
 }
 
 function makePath(from: GeneratedRegionNode, to: GeneratedRegionNode, width: number) {
