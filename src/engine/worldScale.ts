@@ -26,9 +26,16 @@ export const FORGE_WORLD_SCALE = {
   regionEdgeMargin: 30.5,
 
   playCameraFov: 48,
-  playCameraDistance: 31,
-  playCameraMinDistance: 23,
-  playCameraMaxDistance: 43,
+  playCameraDistance: 25.5,
+  playCameraMinDistance: 20.5,
+  playCameraMaxDistance: 36,
+  playCameraWheelStep: 1.5,
+  playCameraHorizontalScale: 0.63,
+  playCameraVerticalScale: 0.6,
+  playCameraLookAtHeight: 1.05,
+
+  largeTreeSoftCapStart: 1.75,
+  largeTreeCompression: 0.62,
 
   bridgeDeckWidthScale: 0.96,
   bridgeLengthScale: 1.58,
@@ -37,6 +44,22 @@ export const FORGE_WORLD_SCALE = {
   bridgeRailThickness: 0.14,
   bridgePostHeight: 0.9,
 } as const
+
+export function forgeTreePresentationScale(scale: number) {
+  const threshold = FORGE_WORLD_SCALE.largeTreeSoftCapStart
+  if (scale <= threshold) return scale
+  return threshold +
+    (scale - threshold) * FORGE_WORLD_SCALE.largeTreeCompression
+}
+
+export function forgePoiVisualScale(type: string) {
+  const base = FORGE_WORLD_SCALE.poiVisualScale
+  if (type === 'settlement') return base * 1.1
+  if (type === 'ruins') return base * 1.08
+  if (type === 'graveyard') return base * 1.06
+  if (type === 'watchtower') return base * 1.05
+  return base
+}
 
 export function forgeBridgeDimensions(crossingWidth: number) {
   return {

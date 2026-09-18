@@ -20,7 +20,12 @@ import {
   updateWorldAmbientVisuals,
   type WorldAmbientVisuals,
 } from '../engine/worldAmbient'
-import { FORGE_WORLD_SCALE, forgeBridgeDimensions } from '../engine/worldScale'
+import {
+  FORGE_WORLD_SCALE,
+  forgeBridgeDimensions,
+  forgePoiVisualScale,
+  forgeTreePresentationScale,
+} from '../engine/worldScale'
 
 type Props = {
   region: GeneratedRegion
@@ -1217,6 +1222,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
     const scale = new THREE.Vector3()
 
     trees.forEach((item, index) => {
+      const displayScale = forgeTreePresentationScale(item.scale)
       quaternion.setFromEuler(
         new THREE.Euler(
           corruptTrees ? (item.variant - 1.5) * .035 : 0,
@@ -1225,12 +1231,12 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         ),
       )
       scale.set(
-        item.scale * (.9 + item.variant * .02),
-        item.scale * (1 + item.variant * .025),
-        item.scale * (.9 + item.variant * .02),
+        displayScale * (.9 + item.variant * .02),
+        displayScale * (1 + item.variant * .025),
+        displayScale * (.9 + item.variant * .02),
       )
       matrix.compose(
-        new THREE.Vector3(item.x, item.y + 1.66 * item.scale, item.z),
+        new THREE.Vector3(item.x, item.y + 1.66 * displayScale, item.z),
         quaternion,
         scale,
       )
@@ -1306,6 +1312,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       )
 
       items.forEach((item, index) => {
+        const displayScale = forgeTreePresentationScale(item.scale)
         const broadleaf = variant === 2
         const cos = Math.cos(item.rotation)
         const sin = Math.sin(item.rotation)
@@ -1315,10 +1322,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         })
         const tierJitter =
           (.055 + variant * .015) *
-          item.scale *
+          displayScale *
           (corruptTrees ? 1.5 : 1)
         const lowerOffset = broadleaf
-          ? worldOffset(-.22 * item.scale, .05 * item.scale)
+          ? worldOffset(-.22 * displayScale, .05 * displayScale)
           : worldOffset(
               (variant % 2 ? -1 : 1) * tierJitter,
               (variant < 2 ? 1 : -1) * tierJitter * .55,
@@ -1333,14 +1340,14 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
           ),
         )
         scale.set(
-          item.scale * (broadleaf ? 1 : 1.05),
-          item.scale * (broadleaf ? 1.06 : .96),
-          item.scale * (broadleaf ? 1 : .94),
+          displayScale * (broadleaf ? 1 : 1.05),
+          displayScale * (broadleaf ? 1.06 : .96),
+          displayScale * (broadleaf ? 1 : .94),
         )
         matrix.compose(
           new THREE.Vector3(
             item.x + lowerOffset.x,
-            item.y + (broadleaf ? 3.7 : 3.32) * item.scale,
+            item.y + (broadleaf ? 3.7 : 3.32) * displayScale,
             item.z + lowerOffset.z,
           ),
           quaternion,
@@ -1349,7 +1356,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         lower.setMatrixAt(index, matrix)
 
         const middleOffset = broadleaf
-          ? worldOffset(.3 * item.scale, -.12 * item.scale)
+          ? worldOffset(.3 * displayScale, -.12 * displayScale)
           : worldOffset(
               (variant % 2 ? 1 : -1) * tierJitter * 1.5,
               (variant < 2 ? -1 : 1) * tierJitter,
@@ -1365,14 +1372,14 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
           ),
         )
         scale.set(
-          item.scale * middleScale * (broadleaf ? 1 : 1.04),
-          item.scale * middleScale * (broadleaf ? 1.08 : .94),
-          item.scale * middleScale * (broadleaf ? 1 : .92),
+          displayScale * middleScale * (broadleaf ? 1 : 1.04),
+          displayScale * middleScale * (broadleaf ? 1.08 : .94),
+          displayScale * middleScale * (broadleaf ? 1 : .92),
         )
         matrix.compose(
           new THREE.Vector3(
             item.x + middleOffset.x,
-            item.y + (broadleaf ? 4.25 : 4.25) * item.scale,
+            item.y + (broadleaf ? 4.25 : 4.25) * displayScale,
             item.z + middleOffset.z,
           ),
           quaternion,
@@ -1381,7 +1388,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         middle.setMatrixAt(index, matrix)
 
         const upperOffset = broadleaf
-          ? worldOffset(.04 * item.scale, .26 * item.scale)
+          ? worldOffset(.04 * displayScale, .26 * displayScale)
           : worldOffset(
               (variant % 3 - 1) * tierJitter * 1.1,
               (variant % 2 ? -.7 : .8) * tierJitter,
@@ -1397,14 +1404,14 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
           ),
         )
         scale.set(
-          item.scale * upperScale * (broadleaf ? 1 : 1.02),
-          item.scale * upperScale * (broadleaf ? 1.08 : .92),
-          item.scale * upperScale * (broadleaf ? 1 : .9),
+          displayScale * upperScale * (broadleaf ? 1 : 1.02),
+          displayScale * upperScale * (broadleaf ? 1.08 : .92),
+          displayScale * upperScale * (broadleaf ? 1 : .9),
         )
         matrix.compose(
           new THREE.Vector3(
             item.x + upperOffset.x,
-            item.y + (broadleaf ? 4.75 : 5.03) * item.scale,
+            item.y + (broadleaf ? 4.75 : 5.03) * displayScale,
             item.z + upperOffset.z,
           ),
           quaternion,
@@ -1413,10 +1420,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         upper.setMatrixAt(index, matrix)
 
         const accentOffset = broadleaf
-          ? worldOffset(.42 * item.scale, .18 * item.scale)
+          ? worldOffset(.42 * displayScale, .18 * displayScale)
           : worldOffset(
-              (variant % 2 ? -.42 : .38) * item.scale,
-              (variant < 2 ? .28 : -.24) * item.scale,
+              (variant % 2 ? -.42 : .38) * displayScale,
+              (variant < 2 ? .28 : -.24) * displayScale,
             )
         quaternion.setFromEuler(
           new THREE.Euler(
@@ -1427,14 +1434,14 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         )
         const accentScale = broadleaf ? .72 : .66 + variant * .035
         scale.set(
-          item.scale * accentScale * (broadleaf ? 1.05 : 1.18),
-          item.scale * accentScale * (broadleaf ? .92 : .78),
-          item.scale * accentScale,
+          displayScale * accentScale * (broadleaf ? 1.05 : 1.18),
+          displayScale * accentScale * (broadleaf ? .92 : .78),
+          displayScale * accentScale,
         )
         matrix.compose(
           new THREE.Vector3(
             item.x + accentOffset.x,
-            item.y + (broadleaf ? 4.12 : 3.92 + variant * .06) * item.scale,
+            item.y + (broadleaf ? 4.12 : 3.92 + variant * .06) * displayScale,
             item.z + accentOffset.z,
           ),
           quaternion,
@@ -1787,9 +1794,10 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   const group = new THREE.Group()
   group.name = `POI_${poi.type}`
   const y = sampleTerrainHeight(region, poi.x, poi.z)
+  const poiVisualScale = forgePoiVisualScale(poi.type)
   group.position.set(poi.x, y, poi.z)
   group.rotation.y = poi.rotation
-  group.scale.setScalar(FORGE_WORLD_SCALE.poiVisualScale)
+  group.scale.setScalar(poiVisualScale)
 
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
@@ -1899,7 +1907,7 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   addPoiEnvironment(group, poi, stone, darkStone, wood, green)
 
   const label = makeLabelSprite(poi.label)
-  const labelScaleCompensation = 1 / FORGE_WORLD_SCALE.poiVisualScale
+  const labelScaleCompensation = 1 / poiVisualScale
   label.position.set(
     0,
     Math.max(3.5, poi.radius * .58) * labelScaleCompensation,
