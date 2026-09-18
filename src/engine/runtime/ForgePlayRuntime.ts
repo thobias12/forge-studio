@@ -1110,7 +1110,6 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
   const indices: number[] = []
   const palette = runtimeBiomePalette(region.biome)
   const surfacePalette = runtimeSurfacePalette(region.biome)
-  const treeVariantColors = runtimeTreeVariantColors(region.biome, palette.tree)
   const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
   const mossColor = new THREE.Color(surfacePalette.moss)
   const soilColor = new THREE.Color(surfacePalette.soil)
@@ -1439,6 +1438,7 @@ function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion[
 function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
   const palette = runtimeBiomePalette(region.biome)
   const surfacePalette = runtimeSurfacePalette(region.biome)
+  const treeVariantColors = runtimeTreeVariantColors(region.biome, palette.tree)
   const bankPatchGeometry = new THREE.CircleGeometry(1, 10)
   bankPatchGeometry.rotateX(-Math.PI / 2)
   const bankPatchColor = new THREE.Color(surfacePalette.soil)
