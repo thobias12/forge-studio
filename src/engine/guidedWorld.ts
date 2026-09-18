@@ -2,7 +2,7 @@ import type { ForgeRegionDefinition } from './forgeProject'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
-export type WorldDressingType = 'tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds'
+export type WorldDressingType = 'tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch'
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
 
 export type GeneratedMicroBiome = {
@@ -2449,36 +2449,97 @@ function appendRiverbankDressing(
   riverMask: RiverOccupancyMask,
   random: () => number,
 ) {
-  if (terrain.stream.length < 4) return
+  if (terrain.stream.length < 4 || riverMask.points.length < 2) return
+
+  const isClearBankPoint = (x: number, z: number, pathClearance: number) => {
+    if (x <= bounds.minX || x >= bounds.maxX || z <= bounds.minZ || z >= bounds.maxZ) return false
+    if (distanceToPaths(x, z, paths) < pathClearance) return false
+    if (pois.some((poi) => Math.hypot(x - poi.x, z - poi.z) < poi.radius + 2.4)) return false
+    return true
+  }
+
   for (let index = 2; index < terrain.stream.length - 2; index += 3) {
     const point = terrain.stream[index]
     const prev = terrain.stream[index - 1]
     const next = terrain.stream[index + 1]
     const tangent = normalized2(next.x - prev.x, next.z - prev.z)
     const normal = { x: -tangent.z, z: tangent.x }
+    const localWidth = terrain.streamWidths[index] ?? terrain.streamWidths[0] ?? 2
+    const halfWaterWidth = localWidth * .5
 
     for (const side of [-1, 1]) {
-      const clusterSize = 1 + Math.floor(random() * 3)
+      // A low, irregular earth patch breaks up the mathematically clean grass/water
+      // seam without introducing another river mesh or touching water depth logic.
+      if (random() < .82) {
+        const patchOffset = halfWaterWidth + .32 + random() * .72
+        const patchAlong = (random() - .5) * 3.2
+        const patchX = point.x + normal.x * patchOffset * side + tangent.x * patchAlong
+        const patchZ = point.z + normal.z * patchOffset * side + tangent.z * patchAlong
+        const hydro = nearestHydrologySample(
+          patchX,
+          patchZ,
+          terrain.stream,
+          terrain.streamWidths,
+          terrain.streamHeights,
+        )
+
+        if (
+          hydro.distance >= hydro.width * .5 + .12 &&
+          hydro.distance <= hydro.width * .5 + 1.45 &&
+          isClearBankPoint(patchX, patchZ, 3.2)
+        ) {
+          dressing.push({
+            id: `riverbank-patch-${index}-${side}`,
+            type: 'bank-patch',
+            x: round(patchX, 2),
+            y: round(sampleTerrainHeight({ terrain, bounds }, patchX, patchZ), 2),
+            z: round(patchZ, 2),
+            scale: round(.85 + random() * 1.15, 2),
+            rotation: round(Math.atan2(-tangent.z, tangent.x) + (random() - .5) * .28, 3),
+            variant: Math.floor(random() * 4),
+          })
+        }
+      }
+
+      // Shoreline props intentionally sit much closer to the actual water edge than
+      // general biome dressing, which still respects the wider gameplay occupancy mask.
+      const clusterSize = 1 + Math.floor(random() * 2)
       for (let itemIndex = 0; itemIndex < clusterSize; itemIndex += 1) {
-        const occupancy = riverOccupancySample(riverMask, point.x, point.z)
-        const bankOffset = occupancy.radius + .45 + random() * 2.15
-        const along = (random() - .5) * 4.2
+        const bankOffset = halfWaterWidth + .48 + random() * 1.3
+        const along = (random() - .5) * 4
         const x = point.x + normal.x * bankOffset * side + tangent.x * along
         const z = point.z + normal.z * bankOffset * side + tangent.z * along
-        if (x <= bounds.minX || x >= bounds.maxX || z <= bounds.minZ || z >= bounds.maxZ) continue
-        if (riverOccupancySample(riverMask, x, z).signedDistance < .2) continue
-        if (distanceToPaths(x, z, paths) < 2) continue
-        if (pois.some((poi) => Math.hypot(x - poi.x, z - poi.z) < poi.radius + 2)) continue
+        if (!isClearBankPoint(x, z, 2.75)) continue
+
+        const hydro = nearestHydrologySample(
+          x,
+          z,
+          terrain.stream,
+          terrain.streamWidths,
+          terrain.streamHeights,
+        )
+        if (hydro.distance < hydro.width * .5 + .16 || hydro.distance > hydro.width * .5 + 2.15) continue
 
         const roll = random()
-        const type: WorldDressingType = roll < .5 ? 'reeds' : roll < .78 ? 'rock' : 'shrub'
+        const type: WorldDressingType =
+          roll < .42 ? 'reeds'
+            : roll < .7 ? 'rock'
+              : roll < .88 ? 'grass'
+                : 'shrub'
         dressing.push({
           id: `riverbank-${index}-${side}-${itemIndex}`,
           type,
           x: round(x, 2),
           y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
           z: round(z, 2),
-          scale: round(type === 'rock' ? .55 + random() * .65 : .5 + random() * .55, 2),
+          scale: round(
+            type === 'rock'
+              ? .42 + random() * .58
+              : type === 'grass'
+                ? .42 + random() * .42
+                : .48 + random() * .5,
+            2,
+          ),
           rotation: round(random() * Math.PI * 2, 3),
           variant: Math.floor(random() * 4),
         })
