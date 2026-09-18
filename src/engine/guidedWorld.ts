@@ -512,7 +512,10 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
         z: from.z + dz * eased + nz * lateral,
       })
       const junctionBlend = .9 + Math.pow(Math.abs(t - .5) * 2, 2) * .13
-      const naturalVariation = 1 + Math.sin(t * Math.PI * 2 + widthPhase) * .07
+      const naturalVariation =
+        1 +
+        Math.sin(t * Math.PI * 1.35 + widthPhase) * .045 +
+        Math.sin(t * Math.PI * .62 + widthPhase * .37) * .025
       widths.push(round(baseWidth * junctionBlend * naturalVariation, 3))
     }
 
@@ -956,7 +959,9 @@ function solveHydrology(
   }))
   points = smoothPolyline(points, 2)
   points = meanderHydrologyPath(points, bounds, resolution, heights, seed, water)
+  points = limitHydrologyCurvature(points, water)
   points = smoothPolyline(points, 1)
+  points = limitHydrologyCurvature(points, water)
 
   const random = seededRandom(hashSeed(`${seed}:hydrology-width`))
   const widths = points.map((_, index) => {
@@ -1067,7 +1072,7 @@ function buildMicroBiomes(
       x: round(x, 2),
       z: round(z, 2),
       radius: round(10 + random() * 15, 2),
-      strength: round(.68 + random() * .32, 3),
+      strength: round(.58 + random() * .3, 3),
     })
   }
   return biomes
@@ -1084,24 +1089,49 @@ function microBiomeInfluence(microBiomes: GeneratedMicroBiome[], x: number, z: n
 
   for (const biome of microBiomes) {
     const biomeSeed = hashSeed(biome.id)
-    const warpScale = biome.radius * .22
-    const warpX = (valueNoise2D(x * .043 + 11.7, z * .043 - 9.2, biomeSeed ^ 0xA24BAED4) - .5) * warpScale
-    const warpZ = (valueNoise2D(x * .043 - 7.4, z * .043 + 13.6, biomeSeed ^ 0x9FB21C65) - .5) * warpScale
-    const dx = x + warpX - biome.x
-    const dz = z + warpZ - biome.z
-    const angle = (biomeSeed % 6283) / 1000
-    const cos = Math.cos(angle)
-    const sin = Math.sin(angle)
-    const rx = dx * cos - dz * sin
-    const rz = dx * sin + dz * cos
-    const stretch = .68 + ((biomeSeed >>> 9) % 1000) / 1000 * .72
-    const edgeNoise = (valueNoise2D(x * .085, z * .085, biomeSeed ^ 0xD3A2646C) - .5) * biome.radius * .2
-    const warpedDistance = Math.hypot(rx / stretch, rz * stretch) + edgeNoise
-    if (warpedDistance >= biome.radius * 1.08) continue
+    const lobeCount = 3 + (biomeSeed % 2)
+    let biomeInfluence = 0
 
-    const normalized = clamp(warpedDistance / Math.max(.001, biome.radius), 0, 1)
-    const influence = (1 - smoothstep(normalized)) * biome.strength
-    result[biome.type] = Math.max(result[biome.type], influence)
+    for (let lobe = 0; lobe < lobeCount; lobe += 1) {
+      const lobeSeed = hashSeed(`${biome.id}:lobe:${lobe}`)
+      const angle = ((lobeSeed % 6283) / 1000) + lobe * 1.77
+      const offsetRadius = lobe === 0
+        ? 0
+        : biome.radius * (.16 + ((lobeSeed >>> 8) % 1000) / 1000 * .28)
+      const centerX = biome.x + Math.cos(angle) * offsetRadius
+      const centerZ = biome.z + Math.sin(angle) * offsetRadius
+
+      const warpScale = biome.radius * (.12 + lobe * .018)
+      const warpX = (valueNoise2D(x * .055 + lobe * 5.7, z * .055 - 9.2, lobeSeed ^ 0xA24BAED4) - .5) * warpScale
+      const warpZ = (valueNoise2D(x * .055 - 7.4, z * .055 + lobe * 6.1, lobeSeed ^ 0x9FB21C65) - .5) * warpScale
+      const dx = x + warpX - centerX
+      const dz = z + warpZ - centerZ
+
+      const rotate = ((lobeSeed >>> 3) % 6283) / 1000
+      const cos = Math.cos(rotate)
+      const sin = Math.sin(rotate)
+      const rx = dx * cos - dz * sin
+      const rz = dx * sin + dz * cos
+      const stretch = .72 + ((lobeSeed >>> 11) % 1000) / 1000 * .58
+      const lobeRadius = biome.radius * (
+        lobe === 0
+          ? .64
+          : .42 + ((lobeSeed >>> 17) % 1000) / 1000 * .22
+      )
+      const edgeNoise = (valueNoise2D(x * .11, z * .11, lobeSeed ^ 0xD3A2646C) - .5) * lobeRadius * .18
+      const warpedDistance = Math.hypot(rx / stretch, rz * stretch) + edgeNoise
+      if (warpedDistance >= lobeRadius * 1.08) continue
+
+      const normalized = clamp(warpedDistance / Math.max(.001, lobeRadius), 0, 1)
+      const base = 1 - smoothstep(normalized)
+      const interiorA = valueNoise2D(x * .12 + lobe * 2.7, z * .12 - lobe * 1.9, lobeSeed ^ 0x7FEB352D)
+      const interiorB = valueNoise2D(x * .24 - 3.1, z * .24 + 6.7, lobeSeed ^ 0x846CA68B)
+      const breakup = .58 + interiorA * .3 + interiorB * .12
+      const lobeInfluence = base * breakup * biome.strength
+      biomeInfluence = Math.max(biomeInfluence, lobeInfluence)
+    }
+
+    result[biome.type] = Math.max(result[biome.type], clamp(biomeInfluence, 0, 1))
   }
   return result
 }
@@ -1358,34 +1388,92 @@ function meanderHydrologyPath(
 ) {
   if (points.length < 5) return points
   const result = points.map((point) => ({ ...point }))
-  const amplitude = 1.8 + water * 3.2
+  const baseAmplitude = 1.35 + water * 2.15
   const phase = (hashSeed(`${seed}:meander-phase`) % 6283) / 1000
 
   for (let index = 2; index < points.length - 2; index += 1) {
     const point = points[index]
-    const prev = points[index - 2]
-    const next = points[index + 2]
-    const tangent = normalized2(next.x - prev.x, next.z - prev.z)
+    const prev = points[index - 1]
+    const next = points[index + 1]
+    const prevFar = points[index - 2]
+    const nextFar = points[index + 2]
+    const tangent = normalized2(nextFar.x - prevFar.x, nextFar.z - prevFar.z)
     const normal = { x: -tangent.z, z: tangent.x }
+    const localSpacing = Math.max(
+      .001,
+      Math.min(
+        Math.hypot(point.x - prev.x, point.z - prev.z),
+        Math.hypot(next.x - point.x, next.z - point.z),
+      ),
+    )
+    const incoming = normalized2(point.x - prev.x, point.z - prev.z)
+    const outgoing = normalized2(next.x - point.x, next.z - point.z)
+    const turnDot = clamp(incoming.x * outgoing.x + incoming.z * outgoing.z, -1, 1)
+    const sharpness = (1 - turnDot) * .5
+    const curvatureAllowance = 1 - sharpness * .72
+    const localMaxOffset = Math.max(
+      .45,
+      Math.min(baseAmplitude, localSpacing * (.58 + water * .08)) * curvatureAllowance,
+    )
+
     const t = index / Math.max(1, points.length - 1)
     const noise = valueNoise2D(point.x * .035, point.z * .035, seed ^ 0x68E31DA4) - .5
-    const desired = Math.sin(t * Math.PI * 5.2 + phase) * amplitude * .72 + noise * amplitude
+    const rawDesired =
+      Math.sin(t * Math.PI * 4.6 + phase) * baseAmplitude * .62 +
+      noise * baseAmplitude * .72
+    const desired = clamp(rawDesired, -localMaxOffset, localMaxOffset)
 
     let best = point
     let bestScore = Infinity
-    for (let sampleIndex = -4; sampleIndex <= 4; sampleIndex += 1) {
-      const offset = desired + sampleIndex * amplitude * .18
+    for (let sampleIndex = -3; sampleIndex <= 3; sampleIndex += 1) {
+      const offset = clamp(
+        desired + sampleIndex * localMaxOffset * .18,
+        -localMaxOffset,
+        localMaxOffset,
+      )
       const x = clamp(point.x + normal.x * offset, bounds.minX + 4, bounds.maxX - 4)
       const z = clamp(point.z + normal.z * offset, bounds.minZ + 4, bounds.maxZ - 4)
       const height = sampleGridHeight(bounds, resolution, heights, x, z)
-      const deviationPenalty = Math.abs(offset - desired) * .12
-      const score = height * .5 + deviationPenalty
+      const deviationPenalty = Math.abs(offset - desired) * .17
+      const bendPenalty = sharpness * Math.abs(offset) * .22
+      const score = height * .5 + deviationPenalty + bendPenalty
       if (score < bestScore) {
         bestScore = score
         best = { x, z }
       }
     }
     result[index] = best
+  }
+
+  return result
+}
+
+function limitHydrologyCurvature(points: GeneratedWorldPoint[], water: number) {
+  if (points.length < 5) return points
+  const result = points.map((point) => ({ ...point }))
+  const minDot = .28 - water * .08
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    const source = result.map((point) => ({ ...point }))
+    for (let index = 1; index < source.length - 1; index += 1) {
+      const prev = source[index - 1]
+      const point = source[index]
+      const next = source[index + 1]
+      const incoming = normalized2(point.x - prev.x, point.z - prev.z)
+      const outgoing = normalized2(next.x - point.x, next.z - point.z)
+      const dot = clamp(incoming.x * outgoing.x + incoming.z * outgoing.z, -1, 1)
+      if (dot >= minDot) continue
+
+      const midpoint = {
+        x: (prev.x + next.x) * .5,
+        z: (prev.z + next.z) * .5,
+      }
+      const correction = clamp((minDot - dot) / (1 + minDot), 0, .68)
+      result[index] = {
+        x: lerp(point.x, midpoint.x, correction),
+        z: lerp(point.z, midpoint.z, correction),
+      }
+    }
   }
 
   return result
