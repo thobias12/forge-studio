@@ -193,6 +193,15 @@ function buildRegionScene(region: GeneratedRegion) {
     const mesh = makePathRibbon(region, path)
     ;(path.kind === 'main' ? route : branches).add(mesh)
   }
+
+  for (const node of region.nodes) {
+    const incident = incidentPaths(region, node.x, node.z)
+    if (incident.length < 2) continue
+    const hasMain = incident.some((path) => path.kind === 'main')
+    const patch = makeJunctionPatch(region, node.x, node.z, incident, node.id)
+    ;(hasMain ? route : branches).add(patch)
+  }
+
   for (const crossing of region.crossings) {
     const crossingMesh = makeCrossing(region, crossing)
     route.add(crossingMesh)
@@ -289,39 +298,158 @@ function buildStream(region: GeneratedRegion) {
   const widths = region.terrain.streamWidths.length === points.length
     ? region.terrain.streamWidths
     : points.map(() => 2.3)
-  const geometry = makeRibbonGeometry(points, widths, () => region.terrain.waterLevel + .045)
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x315f63,
-    roughness: .28,
-    metalness: .05,
-    transparent: true,
-    opacity: .82,
-    side: THREE.DoubleSide,
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.name = 'GeneratedStream'
-  mesh.receiveShadow = true
-  return mesh
+
+  const group = new THREE.Group()
+  group.name = 'GeneratedStream'
+
+  const bankWidths = widths.map((width) => width * 1.72 + .55)
+  const bank = new THREE.Mesh(
+    makeRibbonGeometry(points, bankWidths, () => region.terrain.waterLevel + .028),
+    new THREE.MeshStandardMaterial({
+      color: 0x354238,
+      roughness: 1,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    }),
+  )
+  bank.receiveShadow = true
+  group.add(bank)
+
+  const water = new THREE.Mesh(
+    makeRibbonGeometry(points, widths, () => region.terrain.waterLevel + .052),
+    new THREE.MeshStandardMaterial({
+      color: 0x355f61,
+      roughness: .34,
+      metalness: .03,
+      transparent: true,
+      opacity: .84,
+      side: THREE.DoubleSide,
+    }),
+  )
+  water.receiveShadow = true
+  group.add(water)
+  return group
 }
 
 function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
-  const geometry = makeRibbonGeometry(
-    path.points,
-    path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width),
-    (x, z) => sampleTerrainHeight(region, x, z) + .055,
+  const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
+  const group = new THREE.Group()
+  group.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
+
+  const shoulderWidths = widths.map((width) => width * (path.kind === 'main' ? 1.5 : 1.62) + .25)
+  const shoulder = new THREE.Mesh(
+    makeRibbonGeometry(path.points, shoulderWidths, (x, z) => sampleTerrainHeight(region, x, z) + .036),
+    new THREE.MeshStandardMaterial({
+      color: path.kind === 'main' ? 0x49503d : 0x41483a,
+      roughness: 1,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: 0,
+      polygonOffsetUnits: 0,
+    }),
   )
-  const material = new THREE.MeshStandardMaterial({
-    color: path.kind === 'main' ? 0x6b5940 : 0x4f4938,
-    roughness: 1,
-    metalness: 0,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
+  shoulder.receiveShadow = true
+  group.add(shoulder)
+
+  const road = new THREE.Mesh(
+    makeRibbonGeometry(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + .058),
+    new THREE.MeshStandardMaterial({
+      color: path.kind === 'main' ? 0x5b513f : 0x4a493d,
+      roughness: 1,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  )
+  road.receiveShadow = true
+  group.add(road)
+  return group
+}
+
+function incidentPaths(region: GeneratedRegion, x: number, z: number) {
+  return region.paths.filter((path) => {
+    const first = path.points[0]
+    const last = path.points[path.points.length - 1]
+    return Math.hypot(first.x - x, first.z - z) < .35 || Math.hypot(last.x - x, last.z - z) < .35
   })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
-  mesh.receiveShadow = true
-  return mesh
+}
+
+function makeJunctionPatch(
+  region: GeneratedRegion,
+  x: number,
+  z: number,
+  paths: GeneratedWorldPath[],
+  seedKey: string,
+) {
+  const group = new THREE.Group()
+  group.name = 'RoadJunction'
+
+  const hasMain = paths.some((path) => path.kind === 'main')
+  const maxWidth = Math.max(...paths.map((path) => path.width))
+  const coreRadius = Math.max(1.45, maxWidth * (hasMain ? .92 : .82))
+  const shoulderRadius = coreRadius * 1.48
+
+  const shoulder = new THREE.Mesh(
+    makeTerrainPatchGeometry(region, x, z, shoulderRadius, seedKey + ':shoulder', .038),
+    new THREE.MeshStandardMaterial({
+      color: hasMain ? 0x49503d : 0x41483a,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: 0,
+      polygonOffsetUnits: 0,
+    }),
+  )
+  shoulder.receiveShadow = true
+  group.add(shoulder)
+
+  const core = new THREE.Mesh(
+    makeTerrainPatchGeometry(region, x, z, coreRadius, seedKey + ':core', .06),
+    new THREE.MeshStandardMaterial({
+      color: hasMain ? 0x5b513f : 0x4a493d,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  )
+  core.receiveShadow = true
+  group.add(core)
+  return group
+}
+
+function makeTerrainPatchGeometry(
+  region: GeneratedRegion,
+  x: number,
+  z: number,
+  radius: number,
+  seedKey: string,
+  heightOffset: number,
+) {
+  const segments = 14
+  const positions: number[] = [x, sampleTerrainHeight(region, x, z) + heightOffset, z]
+  const indices: number[] = []
+
+  for (let index = 0; index < segments; index += 1) {
+    const angle = index / segments * Math.PI * 2
+    const wobble = .82 + hashUnit(`${seedKey}:${index}`) * .28
+    const px = x + Math.cos(angle) * radius * wobble
+    const pz = z + Math.sin(angle) * radius * wobble
+    positions.push(px, sampleTerrainHeight(region, px, pz) + heightOffset, pz)
+  }
+
+  for (let index = 0; index < segments; index += 1) {
+    const next = index === segments - 1 ? 1 : index + 2
+    indices.push(0, index + 1, next)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
 }
 
 function makeRibbonGeometry(
@@ -381,29 +509,47 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   if (trees.length) {
     const trunkGeometry = new THREE.CylinderGeometry(.22, .34, 3, 6)
     const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 })
-    const crownGeometry = new THREE.ConeGeometry(1.45, 4.2, 7)
-    const crownMaterial = new THREE.MeshStandardMaterial({ color: palette.tree, roughness: 1 })
     const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
-    const crowns = new THREE.InstancedMesh(crownGeometry, crownMaterial, trees.length)
     const matrix = new THREE.Matrix4()
     const quaternion = new THREE.Quaternion()
     const scale = new THREE.Vector3()
 
     trees.forEach((item, index) => {
       quaternion.setFromEuler(new THREE.Euler(0, item.rotation, 0))
-      scale.set(item.scale, item.scale * (1 + item.variant * .04), item.scale)
+      scale.set(item.scale * (.94 + item.variant * .025), item.scale * (1 + item.variant * .035), item.scale * (.94 + item.variant * .025))
       matrix.compose(new THREE.Vector3(item.x, item.y + 1.45 * item.scale, item.z), quaternion, scale)
       trunks.setMatrixAt(index, matrix)
-
-      const crownScale = item.scale * (.9 + item.variant * .055)
-      scale.set(crownScale, crownScale, crownScale)
-      matrix.compose(new THREE.Vector3(item.x, item.y + 4.05 * item.scale, item.z), quaternion, scale)
-      crowns.setMatrixAt(index, matrix)
     })
     trunks.castShadow = true
     trunks.receiveShadow = true
-    crowns.castShadow = true
-    group.add(trunks, crowns)
+    group.add(trunks)
+
+    const buckets = [0, 1, 2, 3].map((variant) => trees.filter((item) => item.variant === variant))
+    const geometries: THREE.BufferGeometry[] = [
+      new THREE.ConeGeometry(1.38, 4.35, 7),
+      new THREE.ConeGeometry(1.62, 3.65, 8),
+      new THREE.DodecahedronGeometry(1.42, 0),
+      new THREE.ConeGeometry(1.2, 4.7, 6),
+    ]
+    const crownMaterial = new THREE.MeshStandardMaterial({ color: palette.tree, roughness: 1 })
+
+    buckets.forEach((items, variant) => {
+      if (!items.length) return
+      const crowns = new THREE.InstancedMesh(geometries[variant], crownMaterial, items.length)
+      items.forEach((item, index) => {
+        quaternion.setFromEuler(new THREE.Euler(0, item.rotation, 0))
+        const yScale = variant === 2 ? 1.38 : 1
+        scale.set(item.scale, item.scale * yScale, item.scale)
+        matrix.compose(
+          new THREE.Vector3(item.x, item.y + (variant === 2 ? 3.85 : 4.05) * item.scale, item.z),
+          quaternion,
+          scale,
+        )
+        crowns.setMatrixAt(index, matrix)
+      })
+      crowns.castShadow = true
+      group.add(crowns)
+    })
   }
 
   if (rocks.length) {
@@ -495,18 +641,18 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
     const length = Math.max(5.4, crossing.width * 1.7)
     const plankCount = Math.max(7, Math.round(length / .55))
     for (let index = 0; index < plankCount; index += 1) {
-      const z = -length / 2 + (index + .5) * (length / plankCount)
+      const x = -length / 2 + (index + .5) * (length / plankCount)
       const plank = new THREE.Mesh(
-        new THREE.BoxGeometry(crossing.width, .12, length / plankCount * .9),
+        new THREE.BoxGeometry(length / plankCount * .9, .12, crossing.width),
         plankMaterial,
       )
-      plank.position.set(0, 0, z)
+      plank.position.set(x, 0, 0)
       plank.castShadow = true
       group.add(plank)
     }
     for (const side of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(.12, .16, length), railMaterial)
-      rail.position.set(side * crossing.width * .54, .34, 0)
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(length, .16, .12), railMaterial)
+      rail.position.set(0, .34, side * crossing.width * .54)
       rail.castShadow = true
       group.add(rail)
     }
@@ -517,7 +663,7 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
       const t = index / (count - 1) - .5
       const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(.42 + (index % 2) * .08, 0), stoneMaterial)
       stone.position.set(t * crossing.width * 1.8, .06 + (index % 2) * .025, Math.sin(index * 1.7) * .24)
-      stone.scale.y = .5
+      stone.scale.set(1.15, .5, .9)
       stone.rotation.y = index * .7
       group.add(stone)
     }
@@ -536,7 +682,7 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5842, roughness: 1 })
   const clearing = new THREE.Mesh(
-    new THREE.CircleGeometry(poi.radius * 1.05, 20),
+    makeLocalIrregularPatchGeometry(poi.radius * 1.08, poi.id),
     new THREE.MeshStandardMaterial({
       color: poi.type === 'camp' || poi.type === 'settlement' ? 0x4d4933 : 0x384638,
       roughness: 1,
@@ -648,6 +794,26 @@ function addEntryExitMarkers(region: GeneratedRegion, group: THREE.Group) {
   }
 }
 
+function makeLocalIrregularPatchGeometry(radius: number, seedKey: string) {
+  const segments = 18
+  const positions: number[] = [0, 0, 0]
+  const indices: number[] = []
+  for (let index = 0; index < segments; index += 1) {
+    const angle = index / segments * Math.PI * 2
+    const wobble = .76 + hashUnit(`${seedKey}:clearing:${index}`) * .32
+    positions.push(Math.cos(angle) * radius * wobble, 0, Math.sin(angle) * radius * wobble)
+  }
+  for (let index = 0; index < segments; index += 1) {
+    const next = index === segments - 1 ? 1 : index + 2
+    indices.push(0, index + 1, next)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
 function addBox(
   group: THREE.Group,
   position: [number, number, number],
@@ -680,7 +846,7 @@ function makeLabelSprite(text: string) {
   texture.colorSpace = THREE.SRGBColorSpace
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
   const sprite = new THREE.Sprite(material)
-  sprite.scale.set(7.4, 1.4, 1)
+  sprite.scale.set(5.6, 1.02, 1)
   return sprite
 }
 
