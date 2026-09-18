@@ -15,6 +15,11 @@ import {
   type GeneratedWorldPath,
   type GeneratedWorldPoi,
 } from '../engine/guidedWorld'
+import {
+  buildWorldAmbientVisuals,
+  updateWorldAmbientVisuals,
+  type WorldAmbientVisuals,
+} from '../engine/worldAmbient'
 
 type Props = {
   region: GeneratedRegion
@@ -38,6 +43,7 @@ type ViewState = {
   biome?: THREE.Group
   boundary?: THREE.Group
   riverDebug?: THREE.Group
+  ambient?: WorldAmbientVisuals
   observer?: ResizeObserver
   raf?: number
 }
@@ -110,6 +116,12 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
 
     const frame = () => {
       controls.update()
+      if (stateRef.current.ambient) {
+        updateWorldAmbientVisuals(
+          stateRef.current.ambient,
+          performance.now() / 1000,
+        )
+      }
       renderer.render(scene, camera)
       stateRef.current.raf = requestAnimationFrame(frame)
     }
@@ -145,6 +157,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     state.biome = built.biome
     state.boundary = built.boundary
     state.riverDebug = built.riverDebug
+    state.ambient = built.ambient
     state.scene.add(built.root)
 
     const width = region.bounds.maxX - region.bounds.minX
@@ -251,6 +264,8 @@ function buildRegionScene(region: GeneratedRegion) {
   const biome = new THREE.Group()
   biome.name = 'BiomeDressing'
   addDressing(region, biome)
+  const ambient = buildWorldAmbientVisuals(region)
+  biome.add(ambient.group)
   root.add(biome)
 
   const landmarks = new THREE.Group()
@@ -259,7 +274,16 @@ function buildRegionScene(region: GeneratedRegion) {
   addEntryExitMarkers(region, landmarks)
   root.add(landmarks)
 
-  return { root, route, branches, landmarks, biome, boundary, riverDebug }
+  return {
+    root,
+    route,
+    branches,
+    landmarks,
+    biome,
+    boundary,
+    riverDebug,
+    ambient,
+  }
 }
 
 function buildRiverDiagnostics(region: GeneratedRegion) {

@@ -29,6 +29,11 @@ import {
   type ForgeRuntimeLootSave,
 } from './ForgeGameSave'
 import { ForgeNavigationGrid, type ForgeNavigationObstacle } from './ForgeNavigation'
+import {
+  buildWorldAmbientVisuals,
+  updateWorldAmbientVisuals,
+  type WorldAmbientVisuals,
+} from '../worldAmbient'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -135,6 +140,7 @@ export class ForgePlayRuntime {
   private readonly tempRight = new THREE.Vector3()
   private navigation!: ForgeNavigationGrid
   private playerVisual?: ForgeCharacterVisualBinding
+  private ambientVisuals?: WorldAmbientVisuals
   private equippedModel?: THREE.Object3D
   private inventory: string[] = []
   private equippedWeaponId: string | undefined
@@ -386,6 +392,8 @@ export class ForgePlayRuntime {
       appendRuntimeRiverObstacles(this.region, this.obstacles)
       addGeneratedDressing(this.scene, this.region, this.obstacles)
       addGeneratedPois(this.scene, this.region, this.obstacles)
+      this.ambientVisuals = buildWorldAmbientVisuals(this.region)
+      this.scene.add(this.ambientVisuals.group)
       return
     }
 
@@ -428,7 +436,7 @@ export class ForgePlayRuntime {
     const playerZ = THREE.MathUtils.clamp(z, this.region.bounds.minZ, this.region.bounds.maxZ)
     this.player.position.set(
       playerX,
-      this.region.version >= 2 ? sampleTerrainHeight(this.region, playerX, playerZ) : 0,
+      this.region.version >= 2 ? runtimeWalkSurfaceHeight(this.region, playerX, playerZ) : 0,
       playerZ,
     )
     this.mouseWorld.set(this.player.position.x - 4, 0, this.player.position.z - 4)
@@ -481,7 +489,7 @@ export class ForgePlayRuntime {
     telegraph.position.y = 0.045
     telegraph.visible = false
     group.add(placeholder, healthBack, healthFill, telegraph)
-    group.position.set(x, this.region.version >= 2 ? sampleTerrainHeight(this.region, x, z) : 0, z)
+    group.position.set(x, this.region.version >= 2 ? runtimeWalkSurfaceHeight(this.region, x, z) : 0, z)
     this.scene.add(group)
     const enemy: RuntimeEnemy = {
       id,
@@ -552,7 +560,13 @@ export class ForgePlayRuntime {
     this.ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
     this.raycaster.setFromCamera(this.ndc, this.camera)
     this.raycaster.ray.intersectPlane(this.floorPlane, this.mouseWorld)
-    if (this.region.version >= 2) this.mouseWorld.y = sampleTerrainHeight(this.region, this.mouseWorld.x, this.mouseWorld.z)
+    if (this.region.version >= 2) {
+      this.mouseWorld.y = runtimeWalkSurfaceHeight(
+        this.region,
+        this.mouseWorld.x,
+        this.mouseWorld.z,
+      )
+    }
   }
 
   private onPointerDown = (event: PointerEvent) => {
@@ -583,6 +597,9 @@ export class ForgePlayRuntime {
     this.updateTextEffects(delta)
     this.updateCamera(delta)
     this.updatePersistence(delta)
+    if (this.ambientVisuals) {
+      updateWorldAmbientVisuals(this.ambientVisuals, now / 1000)
+    }
     this.renderer.render(this.scene, this.camera)
     this.animationFrame = requestAnimationFrame(this.animate)
   }
@@ -773,7 +790,13 @@ export class ForgePlayRuntime {
     fallback.position.y = 0.55
     fallback.castShadow = true
     group.add(fallback, glow)
-    group.position.set(save.x, this.region.version >= 2 ? sampleTerrainHeight(this.region, save.x, save.z) : 0, save.z)
+    group.position.set(
+      save.x,
+      this.region.version >= 2
+        ? runtimeWalkSurfaceHeight(this.region, save.x, save.z)
+        : 0,
+      save.z,
+    )
     this.scene.add(group)
     const drop: RuntimeLoot = { save: { ...save }, group, fallback, age: 0 }
     this.loot.push(drop)
@@ -903,7 +926,13 @@ export class ForgePlayRuntime {
     const entry = this.region.nodes.find((node) => node.kind === 'entry') ?? this.region.nodes[0]
     const respawnX = entry?.x ?? 0
     const respawnZ = entry?.z ?? 0
-    this.player.position.set(respawnX, this.region.version >= 2 ? sampleTerrainHeight(this.region, respawnX, respawnZ) : 0, respawnZ)
+    this.player.position.set(
+      respawnX,
+      this.region.version >= 2
+        ? runtimeWalkSurfaceHeight(this.region, respawnX, respawnZ)
+        : 0,
+      respawnZ,
+    )
     this.playerHealth = this.playerDefinition.maxHealth
     this.focusEnemyId = undefined
     this.setMessage('You fell in battle and returned to the region entry. Enemy progress is preserved.', 4)
@@ -1003,7 +1032,13 @@ export class ForgePlayRuntime {
     }
     actor.position.x = next.x
     actor.position.z = next.z
-    if (this.region.version >= 2) actor.position.y = sampleTerrainHeight(this.region, next.x, next.z)
+    if (this.region.version >= 2) {
+      actor.position.y = runtimeWalkSurfaceHeight(
+        this.region,
+        next.x,
+        next.z,
+      )
+    }
   }
 
   private spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
@@ -1464,6 +1499,49 @@ function appendRuntimeRiverObstacles(
       radius: Math.max(.34, row.width * .5 - .28),
     })
   }
+}
+
+
+function runtimeWalkSurfaceHeight(
+  region: GeneratedRegion,
+  x: number,
+  z: number,
+) {
+  const terrainHeight = sampleTerrainHeight(region, x, z)
+  let surfaceHeight = terrainHeight
+
+  for (const crossing of region.crossings) {
+    if (crossing.kind !== 'bridge') continue
+
+    const dx = x - crossing.x
+    const dz = z - crossing.z
+    const cos = Math.cos(crossing.rotation)
+    const sin = Math.sin(crossing.rotation)
+    const localX = dx * cos - dz * sin
+    const localZ = dx * sin + dz * cos
+    const length = Math.max(4.2, crossing.width * 1.35)
+    const deckWidth = crossing.width * .92
+
+    if (
+      Math.abs(localX) > length * .5 + .12 ||
+      Math.abs(localZ) > deckWidth * .5 + .08
+    ) {
+      continue
+    }
+
+    const streamHeight = sampleStreamHeight(
+      region,
+      crossing.x,
+      crossing.z,
+    )
+    const bridgeCenterHeight = Math.max(
+      streamHeight + .3,
+      sampleTerrainHeight(region, crossing.x, crossing.z) + .1,
+    )
+    surfaceHeight = Math.max(surfaceHeight, bridgeCenterHeight + .058)
+  }
+
+  return surfaceHeight
 }
 
 function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossings'][number]) {
