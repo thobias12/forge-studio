@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  Bone, Box, Download, Eye, EyeOff, Library, Pause, Play, RefreshCw, Save,
-  Sparkles, Swords, UserRound, WandSparkles,
+  AlertTriangle, Bone, Box, Download, Eye, EyeOff, FileUp, Library, Pause, Play,
+  RefreshCw, Save, Sparkles, Swords, UserRound, WandSparkles,
 } from 'lucide-react'
 import CharacterForgePreview from '../components/CharacterForgePreview'
 import {
@@ -11,6 +11,7 @@ import {
   SKIN_TONES,
   createDefaultIdentity,
   identityToForgeConfig,
+  normalizeIdentityRecipe,
   randomizeIdentity,
   type CharacterIdentityRecipe,
   type FacePreset,
@@ -18,7 +19,13 @@ import {
   type HairStyle,
   type SkillboundClass,
 } from '../lib/characterCreator'
-import { saveAsset } from '../lib/library'
+import {
+  characterAssetCompatibility,
+  isCharacterCreatorAsset,
+  registerCharacterAsset,
+  type CharacterAssetRole,
+} from '../lib/characterAssetRegistry'
+import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import '../character-forge.css'
 
 const PRESET_KEY = 'forge-character-creator-identities-v1'
@@ -58,11 +65,23 @@ export default function CharacterForge() {
   const [stats, setStats] = useState({ bones: 0, skinnedMeshes: 0, triangles: 0 })
   const [status, setStatus] = useState('Create the player identity here. Armor, clothing and weapons stay in the separate equipment system.')
   const [busy, setBusy] = useState(false)
+  const [assetBusy, setAssetBusy] = useState<CharacterAssetRole>()
   const [saved, setSaved] = useState<SavedIdentity[]>(() => readPresets())
   const [savedId, setSavedId] = useState('')
+  const [library, setLibrary] = useState<LibraryAsset[]>([])
+
+  useEffect(() => {
+    void listAssets().then(setLibrary).catch(() => setStatus('Could not read the Shared Asset Library.'))
+  }, [])
 
   const config = useMemo(() => identityToForgeConfig(identity), [identity])
   const classDefinition = CLASS_DEFINITIONS[identity.classId]
+  const bodyAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'body')), [library])
+  const headAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'head')), [library])
+  const hairAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'hair')), [library])
+  const bodyAsset = bodyAssets.find((asset) => asset.id === identity.modelAssets.bodyAssetId)
+  const headAsset = headAssets.find((asset) => asset.id === identity.modelAssets.headAssetId)
+  const hairAsset = hairAssets.find((asset) => asset.id === identity.modelAssets.hairAssetId)
 
   const patchAppearance = <K extends keyof CharacterIdentityRecipe['appearance']>(
     key: K,
@@ -79,6 +98,35 @@ export default function CharacterForge() {
     ...current,
     body: { ...current.body, [key]: value },
   }))
+
+  const patchModelAsset = (role: CharacterAssetRole, assetId?: string) => {
+    const key = role === 'body' ? 'bodyAssetId' : role === 'head' ? 'headAssetId' : 'hairAssetId'
+    setIdentity((current) => ({
+      ...current,
+      modelAssets: { ...current.modelAssets, [key]: assetId || undefined },
+    }))
+    const asset = library.find((item) => item.id === assetId)
+    setStatus(asset
+      ? asset.name + ' selected as the ' + role + ' model.'
+      : 'Using the generated placeholder ' + role + ' until a custom asset is selected.')
+  }
+
+  const importCharacterPart = async (role: CharacterAssetRole, file?: File) => {
+    if (!file) return
+    setAssetBusy(role)
+    setStatus('Inspecting ' + file.name + ' as a ' + role + ' asset…')
+    try {
+      const result = await registerCharacterAsset(file, role)
+      setLibrary((items) => [result.asset, ...items.filter((item) => item.id !== result.asset.id)])
+      patchModelAsset(role, result.asset.id)
+      const summary = result.inspection.messages.join(' ')
+      setStatus(result.asset.name + ' registered. ' + summary)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not register that character asset.')
+    } finally {
+      setAssetBusy(undefined)
+    }
+  }
 
   const chooseClass = (classId: SkillboundClass) => {
     setIdentity((current) => {
@@ -98,7 +146,7 @@ export default function CharacterForge() {
 
   const randomize = () => {
     setIdentity((current) => randomizeIdentity(current))
-    setStatus('Appearance randomized. Equipment and starting loadout were not changed.')
+    setStatus('Appearance randomized. Selected model assets and equipment were not changed.')
   }
 
   const savePreset = () => {
@@ -116,8 +164,9 @@ export default function CharacterForge() {
   const loadPreset = () => {
     const item = saved.find((entry) => entry.id === savedId)
     if (!item) return
-    setIdentity(structuredClone(item.recipe))
-    setStatus(item.recipe.name + ' restored.')
+    const normalized = normalizeIdentityRecipe(item.recipe)
+    setIdentity(normalized)
+    setStatus(normalized.name + ' restored.')
   }
 
   const saveToLibrary = async () => {
@@ -149,7 +198,7 @@ export default function CharacterForge() {
     anchor.download = slug(identity.name) + '.character.json'
     anchor.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setStatus(identity.name + ' identity recipe downloaded. It contains no equipped armor or weapons.')
+    setStatus(identity.name + ' identity recipe downloaded. Model asset IDs are referenced separately from equipment.')
   }
 
   return <div className="character-forge character-creator-v1">
@@ -170,6 +219,38 @@ export default function CharacterForge() {
       </div>
 
       <div className="cf-section">
+        <span className="cf-label">MODEL ASSETS</span>
+        <CharacterAssetPicker
+          label="Base body"
+          role="body"
+          selectedId={identity.modelAssets.bodyAssetId}
+          assets={bodyAssets}
+          busy={assetBusy === 'body'}
+          onSelect={(value) => patchModelAsset('body', value)}
+          onImport={(file) => void importCharacterPart('body', file)}
+        />
+        <CharacterAssetPicker
+          label="Head"
+          role="head"
+          selectedId={identity.modelAssets.headAssetId}
+          assets={headAssets}
+          busy={assetBusy === 'head'}
+          onSelect={(value) => patchModelAsset('head', value)}
+          onImport={(file) => void importCharacterPart('head', file)}
+        />
+        <CharacterAssetPicker
+          label="Hair model"
+          role="hair"
+          selectedId={identity.modelAssets.hairAssetId}
+          assets={hairAssets}
+          busy={assetBusy === 'hair'}
+          onSelect={(value) => patchModelAsset('hair', value)}
+          onImport={(file) => void importCharacterPart('hair', file)}
+        />
+        <p className="cf-equipment-note">GLB only. Body assets are checked for skinning and ForgeHumanoidV1 bone names. Head and hair assets attach at the Head bone and never become equipment.</p>
+      </div>
+
+      <div className="cf-section">
         <span className="cf-label">SAVED CHARACTERS</span>
         <div className="cf-preset-row">
           <select value={savedId} onChange={(event) => setSavedId(event.target.value)}>
@@ -185,7 +266,7 @@ export default function CharacterForge() {
         <Bone size={16}/>
         <div>
           <strong>Identity and equipment are separate</strong>
-          <span>This creator stores class, face, hair, colors and body features only. Armor, clothing and weapons are equipped by the game/equipment system.</span>
+          <span>Body, head and hair are character identity assets. Armor, clothing and weapons remain in the equipment system and are not baked into the creator recipe.</span>
         </div>
       </div>
     </aside>
@@ -203,6 +284,9 @@ export default function CharacterForge() {
         <CharacterForgePreview
           config={config}
           identity={identity}
+          bodyAsset={bodyAsset}
+          headAsset={headAsset}
+          hairAsset={hairAsset}
           animation={animation}
           playing={playing}
           showRig={showRig}
@@ -212,7 +296,7 @@ export default function CharacterForge() {
         <div className="cf-preview-badges">
           <span><Bone size={12}/>{stats.bones} bones</span>
           <span>{stats.triangles.toLocaleString()} tris</span>
-          <span>identity only</span>
+          <span>{bodyAsset ? 'custom body' : 'generated fallback'}</span>
         </div>
         <div className="cf-animation-bar">
           <button className="cf-play" onClick={() => setPlaying((value) => !value)}>{playing ? <Pause size={14}/> : <Play size={14}/>}</button>
@@ -239,7 +323,7 @@ export default function CharacterForge() {
           </select>
         </label>
         <label className="cf-field">
-          <span>Hair style</span>
+          <span>Generated hair fallback</span>
           <select value={identity.appearance.hairStyle} onChange={(event) => patchAppearance('hairStyle', event.target.value as HairStyle)}>
             {HAIR_STYLES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
           </select>
@@ -260,6 +344,7 @@ export default function CharacterForge() {
 
       <div className="cf-inspector-section">
         <span className="cf-label">BODY FEATURES</span>
+        {bodyAsset && <div className="cf-asset-warning"><AlertTriangle size={12}/><span>Custom body selected. These values remain in the recipe; authored morph targets will be able to consume them later.</span></div>}
         <div className="cf-slider-group cf-slider-group-compact">
           <Slider label="Height" value={identity.body.height} min={.9} max={1.08} step={.01} onChange={(value) => patchBody('height', value)}/>
           <Slider label="Build" value={identity.body.build} min={.86} max={1.08} step={.01} onChange={(value) => patchBody('build', value)}/>
@@ -286,9 +371,34 @@ export default function CharacterForge() {
       <div className="cf-export">
         <button className="cf-library-button" disabled={busy} onClick={() => void saveToLibrary()}><Library size={14}/>{busy ? 'Saving…' : 'Save identity to Library'}</button>
         <button className="cf-export-button" onClick={downloadRecipe}><Download size={14}/>Download character recipe</button>
-        <small>Recipe contains class + body/appearance choices only. Equipment uses separate item IDs and slots.</small>
+        <small>Recipe references body/head/hair asset IDs. Armor and weapons remain separate inventory/equipment data.</small>
       </div>
     </aside>
+  </div>
+}
+
+function CharacterAssetPicker({ label, role, selectedId, assets, busy, onSelect, onImport }: {
+  label: string
+  role: CharacterAssetRole
+  selectedId?: string
+  assets: LibraryAsset[]
+  busy: boolean
+  onSelect: (id?: string) => void
+  onImport: (file?: File) => void
+}) {
+  const selected = assets.find((asset) => asset.id === selectedId)
+  return <div className="cf-asset-picker">
+    <div className="cf-asset-picker-label"><span>{label}</span>{selected && <em className={characterAssetCompatibility(selected)}>{characterAssetCompatibility(selected)}</em>}</div>
+    <div className="cf-asset-picker-row">
+      <select value={selectedId ?? ''} onChange={(event) => onSelect(event.target.value || undefined)}>
+        <option value="">Generated placeholder</option>
+        {assets.map((asset) => <option value={asset.id} key={asset.id}>{asset.name}</option>)}
+      </select>
+      <label className={busy ? 'disabled' : ''} title={'Import ' + role + ' GLB'}>
+        <FileUp size={13}/>
+        <input disabled={busy} type="file" accept=".glb,model/gltf-binary" onChange={(event) => onImport(event.target.files?.[0])}/>
+      </label>
+    </div>
   </div>
 }
 
@@ -342,7 +452,11 @@ function slug(value: string) {
 function readPresets(): SavedIdentity[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(PRESET_KEY) ?? '[]')
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((item) => ({
+      ...item,
+      recipe: normalizeIdentityRecipe(item.recipe),
+    }))
   } catch {
     return []
   }
