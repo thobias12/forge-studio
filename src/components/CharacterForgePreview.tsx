@@ -3,6 +3,9 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { createProceduralCharacter, disposeForgeCharacter, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
 import { createConceptForgeCharacter } from '../engine/conceptCharacterV2'
+import { createProceduralBaseHumanoidV2 } from '../engine/proceduralHumanoidV2'
+import { applyCharacterIdentityVisuals } from '../engine/characterIdentityVisuals'
+import type { CharacterIdentityRecipe } from '../lib/characterCreator'
 
 type Props = {
   config: ForgeCharacterConfig
@@ -12,10 +15,11 @@ type Props = {
   showHitbox: boolean
   cameraMode?: 'studio' | 'arpg'
   conceptMode?: boolean
+  identity?: CharacterIdentityRecipe
   onStats?: (stats: { bones: number; skinnedMeshes: number; triangles: number }) => void
 }
 
-export default function CharacterForgePreview({ config, animation, playing, showRig, showHitbox, cameraMode = 'studio', conceptMode = false, onStats }: Props) {
+export default function CharacterForgePreview({ config, animation, playing, showRig, showHitbox, cameraMode = 'studio', conceptMode = false, identity, onStats }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<{ root?: THREE.Group; helper?: THREE.SkeletonHelper; hitbox?: THREE.Mesh; mixer?: THREE.AnimationMixer; action?: THREE.AnimationAction; clips?: THREE.AnimationClip[] }>({})
   const callbackRef = useRef(onStats)
@@ -87,7 +91,12 @@ export default function CharacterForgePreview({ config, animation, playing, show
     if (state.hitbox) { state.scene.remove(state.hitbox); state.hitbox.geometry.dispose(); const mat = state.hitbox.material; if (!Array.isArray(mat)) mat.dispose(); state.hitbox = undefined }
     if (state.root) { state.scene.remove(state.root); disposeForgeCharacter(state.root) }
 
-    const build = conceptMode ? createConceptForgeCharacter(config) : createProceduralCharacter(config)
+    const build = identity
+      ? createProceduralBaseHumanoidV2(config, identity.classId)
+      : conceptMode
+        ? createConceptForgeCharacter(config)
+        : createProceduralCharacter(config)
+    if (identity) applyCharacterIdentityVisuals(build, identity)
     state.root = build.root; state.clips = build.clips; state.scene.add(build.root); callbackRef.current?.(build.stats)
     state.mixer = new THREE.AnimationMixer(build.root)
     const clip = build.clips.find((entry) => entry.name === animation) ?? build.clips[0]
@@ -114,7 +123,7 @@ export default function CharacterForgePreview({ config, animation, playing, show
       state.camera.lookAt(state.controls.target)
       state.controls.update()
     }
-  }, [config, cameraMode, conceptMode])
+  }, [config, cameraMode, conceptMode, identity])
 
   useEffect(() => {
     const state = stateRef.current

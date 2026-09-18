@@ -75,6 +75,53 @@ export function createProceduralStarterHumanoidV2(config: ForgeCharacterConfig, 
   return build
 }
 
+export function createProceduralBaseHumanoidV2(config: ForgeCharacterConfig, starterClass: SkillboundStarterClass): ForgeCharacterBuild {
+  const styled: ForgeCharacterConfig = {
+    ...config,
+    species: 'bandit',
+    armor: 'none',
+    headwear: 'none',
+    weapon: 'none',
+    asymmetry: 0,
+  }
+  const build = createProceduralCharacter(styled)
+  stripOldVisuals(build.root)
+  const palette = paletteFor(config, starterClass)
+
+  buildBaseBody(build, palette, styled, starterClass)
+
+  build.root.userData.forgeCharacter = {
+    ...build.root.userData.forgeCharacter,
+    version: 12,
+    archetypeVersion: 12,
+    starterClass,
+    artStyle: 'evergrow-procedural-humanoid-v2-base',
+    generatorId: 'ProceduralHumanoidV2',
+    generatorVersion: 2,
+    recipe: 'identity-base',
+    generatedFromCode: true,
+    identityBase: true,
+    equipmentBakedIn: false,
+    visualRebuild: true,
+    seamlessAssembly: true,
+    headStyle: 'profile-loft-head-v1',
+    bodyStyle: 'profile-loft-humanoid-v1',
+    weaponPolicy: 'equipment-system',
+    previewWeapon: false,
+    mocapFacingYaw: Math.PI,
+  }
+
+  build.root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return
+    object.castShadow = true
+    object.receiveShadow = false
+    object.frustumCulled = false
+  })
+  build.root.updateMatrixWorld(true)
+  build.stats = recount(build)
+  return build
+}
+
 function styledConfig(config: ForgeCharacterConfig, cls: SkillboundStarterClass): ForgeCharacterConfig {
   const p = BODY[cls]
   return {
