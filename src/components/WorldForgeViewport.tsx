@@ -20,6 +20,7 @@ import {
   updateWorldAmbientVisuals,
   type WorldAmbientVisuals,
 } from '../engine/worldAmbient'
+import { FORGE_WORLD_SCALE, forgeBridgeDimensions } from '../engine/worldScale'
 
 type Props = {
   region: GeneratedRegion
@@ -1724,8 +1725,7 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
   if (crossing.kind === 'bridge') {
     const plankMaterial = new THREE.MeshStandardMaterial({ color: 0x67503a, roughness: .95 })
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49382b, roughness: 1 })
-    const bridgeWidth = crossing.width * .92
-    const length = Math.max(4.2, crossing.width * 1.35)
+    const { width: bridgeWidth, length } = forgeBridgeDimensions(crossing.width)
     const plankCount = Math.max(6, Math.round(length / .5))
     for (let index = 0; index < plankCount; index += 1) {
       const x = -length / 2 + (index + .5) * (length / plankCount)
@@ -1738,10 +1738,35 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
       group.add(plank)
     }
     for (const side of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(length, .16, .12), railMaterial)
-      rail.position.set(0, .3, side * bridgeWidth * .54)
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          length,
+          FORGE_WORLD_SCALE.bridgeRailThickness,
+          .12,
+        ),
+        railMaterial,
+      )
+      rail.position.set(
+        0,
+        FORGE_WORLD_SCALE.bridgeRailHeight,
+        side * bridgeWidth * .54,
+      )
       rail.castShadow = true
       group.add(rail)
+
+      for (const x of [-length * .42, 0, length * .42]) {
+        const post = new THREE.Mesh(
+          new THREE.BoxGeometry(.13, FORGE_WORLD_SCALE.bridgePostHeight, .13),
+          railMaterial,
+        )
+        post.position.set(
+          x,
+          FORGE_WORLD_SCALE.bridgePostHeight * .5,
+          side * bridgeWidth * .54,
+        )
+        post.castShadow = true
+        group.add(post)
+      }
     }
   } else {
     const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x77766b, roughness: 1 })
@@ -1764,6 +1789,7 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   const y = sampleTerrainHeight(region, poi.x, poi.z)
   group.position.set(poi.x, y, poi.z)
   group.rotation.y = poi.rotation
+  group.scale.setScalar(FORGE_WORLD_SCALE.poiVisualScale)
 
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
@@ -1873,7 +1899,13 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   addPoiEnvironment(group, poi, stone, darkStone, wood, green)
 
   const label = makeLabelSprite(poi.label)
-  label.position.set(0, Math.max(3.5, poi.radius * .58), 0)
+  const labelScaleCompensation = 1 / FORGE_WORLD_SCALE.poiVisualScale
+  label.position.set(
+    0,
+    Math.max(3.5, poi.radius * .58) * labelScaleCompensation,
+    0,
+  )
+  label.scale.multiplyScalar(labelScaleCompensation)
   group.add(label)
   group.traverse((object) => {
     if (object instanceof THREE.Mesh) {
