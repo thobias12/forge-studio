@@ -130,6 +130,7 @@ export class ForgePlayRuntime {
   private readonly ndc = new THREE.Vector2()
   private readonly floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private readonly obstacles: CircleObstacle[] = []
+  private readonly cameraOccluders: THREE.Group[] = []
   private readonly enemies: RuntimeEnemy[] = []
   private readonly loot: RuntimeLoot[] = []
   private readonly corpses: RuntimeCorpse[] = []
@@ -398,7 +399,12 @@ export class ForgePlayRuntime {
       for (const path of this.region.paths) this.scene.add(makeGeneratedPath(this.region, path))
       for (const crossing of this.region.crossings) this.scene.add(makeRuntimeCrossing(this.region, crossing))
       appendRuntimeRiverObstacles(this.region, this.obstacles)
-      addGeneratedDressing(this.scene, this.region, this.obstacles)
+      addGeneratedDressing(
+        this.scene,
+        this.region,
+        this.obstacles,
+        this.cameraOccluders,
+      )
       addGeneratedPois(this.scene, this.region, this.obstacles)
       this.ambientVisuals = buildWorldAmbientVisuals(this.region)
       this.scene.add(this.ambientVisuals.group)
@@ -609,12 +615,102 @@ export class ForgePlayRuntime {
     this.updateLibraryVfx(delta)
     this.updateTextEffects(delta)
     this.updateCamera(delta)
+    this.updateCameraOcclusion(delta)
     this.updatePersistence(delta)
     if (this.ambientVisuals) {
       updateWorldAmbientVisuals(this.ambientVisuals, now / 1000)
     }
     this.renderer.render(this.scene, this.camera)
     this.animationFrame = requestAnimationFrame(this.animate)
+  }
+
+  private updateCameraOcclusion(delta: number) {
+    if (!this.cameraOccluders.length) return
+
+    const targetX = this.player.position.x
+    const targetY =
+      this.player.position.y +
+      FORGE_WORLD_SCALE.playCameraLookAtHeight
+    const targetZ = this.player.position.z
+    const cameraX = this.camera.position.x
+    const cameraY = this.camera.position.y
+    const cameraZ = this.camera.position.z
+    const dx = targetX - cameraX
+    const dz = targetZ - cameraZ
+    const lengthSq = dx * dx + dz * dz
+
+    if (lengthSq < .001) return
+
+    for (const root of this.cameraOccluders) {
+      const rx = root.position.x - cameraX
+      const rz = root.position.z - cameraZ
+      const t = THREE.MathUtils.clamp(
+        (rx * dx + rz * dz) / lengthSq,
+        0,
+        1,
+      )
+      const closestX = cameraX + dx * t
+      const closestZ = cameraZ + dz * t
+      const distance = Math.hypot(
+        root.position.x - closestX,
+        root.position.z - closestZ,
+      )
+      const radius = Number(root.userData.forgeOcclusionRadius ?? 1.5)
+      const height = Number(root.userData.forgeOcclusionHeight ?? 5)
+      const lineY = THREE.MathUtils.lerp(cameraY, targetY, t)
+      const blocks =
+        t > .06 &&
+        t < .965 &&
+        distance < radius &&
+        lineY < root.position.y + height + .35
+      const targetOpacity = blocks ? .3 : 1
+      const current = Number(root.userData.forgeOcclusionOpacity ?? 1)
+      const response = targetOpacity < current ? 9 : 5.5
+      const next =
+        targetOpacity +
+        (current - targetOpacity) * Math.exp(-response * delta)
+
+      root.userData.forgeOcclusionOpacity =
+        Math.abs(next - targetOpacity) < .006 ? targetOpacity : next
+
+      if (
+        targetOpacity < .999 ||
+        current < .999 ||
+        root.userData.forgeOcclusionMaterialsReady
+      ) {
+        this.ensureCameraOccluderMaterials(root)
+        const opacity = Number(root.userData.forgeOcclusionOpacity)
+        root.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return
+          const materials = Array.isArray(object.material)
+            ? object.material
+            : [object.material]
+          materials.forEach((material) => {
+            const transparent = opacity < .995
+            if (material.transparent !== transparent) {
+              material.transparent = transparent
+              material.needsUpdate = true
+            }
+            material.opacity = opacity
+            material.depthWrite = opacity > .56
+          })
+        })
+      }
+    }
+  }
+
+  private ensureCameraOccluderMaterials(root: THREE.Group) {
+    if (root.userData.forgeOcclusionMaterialsReady) return
+
+    root.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return
+      if (Array.isArray(object.material)) {
+        object.material = object.material.map((material) => material.clone())
+      } else {
+        object.material = object.material.clone()
+      }
+    })
+    root.userData.forgeOcclusionMaterialsReady = true
   }
 
   private updateCooldowns(delta: number) {
@@ -1639,7 +1735,12 @@ function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion[
   return group
 }
 
-function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
+function addGeneratedDressing(
+  scene: THREE.Scene,
+  region: GeneratedRegion,
+  obstacles: CircleObstacle[],
+  cameraOccluders: THREE.Group[] = [],
+) {
   const palette = runtimeMoodPalette(
     runtimeBiomePalette(region.biome),
     region.mood,
@@ -2086,6 +2187,13 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       accent.castShadow = true
       tree.add(accent)
 
+      tree.userData.forgeCameraOccluder = true
+      tree.userData.forgeOcclusionRadius =
+        (broadleaf ? 1.72 : 1.48) * displayScale
+      tree.userData.forgeOcclusionHeight = 6.35 * displayScale
+      tree.userData.forgeOcclusionOpacity = 1
+      cameraOccluders.push(tree)
+
       scene.add(tree)
       obstacles.push({ x: item.x, z: item.z, radius: .44 * displayScale })
     } else if (item.type === 'dead-tree') {
@@ -2146,6 +2254,12 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       branchB.scale.set(.72, .88, .72)
       branchB.castShadow = true
       tree.add(branchB)
+
+      tree.userData.forgeCameraOccluder = true
+      tree.userData.forgeOcclusionRadius = .72 * item.scale
+      tree.userData.forgeOcclusionHeight = 5.15 * item.scale
+      tree.userData.forgeOcclusionOpacity = 1
+      cameraOccluders.push(tree)
 
       scene.add(tree)
       obstacles.push({ x: item.x, z: item.z, radius: .36 * item.scale })

@@ -4,6 +4,7 @@ import {
   riverOccupancySample,
   sampleTerrainHeight,
   sampleTerrainSurface,
+  streamWaterSurfaceRows,
   type GeneratedRegion,
 } from './guidedWorld'
 
@@ -60,6 +61,13 @@ export function buildWorldAmbientVisuals(
   addFireflies(group, actors, region, anchors.filter((item) => item.kind === 'firefly'))
   addBirds(group, actors, region, anchors.filter((item) => item.kind === 'bird'))
 
+  // v1.61 living-world presentation layers. These are deterministic visual
+  // systems only: they do not alter roads, hydrology, crossings or navigation.
+  addEnvironmentalMicroScenes(group, region)
+  addRiverbankLife(group, region)
+  addFishSchools(group, actors, region)
+  addBoundaryTreeline(group, region)
+
   return { group, actors }
 }
 
@@ -86,6 +94,44 @@ export function updateWorldAmbientVisuals(
         if (material instanceof THREE.MeshBasicMaterial) {
           material.opacity = .58 + Math.sin(time * 2.6 + phase + index) * .22
         }
+      })
+      continue
+    }
+
+    if (kind === 'fish') {
+      const anchorX = Number(actor.userData.anchorX ?? actor.position.x)
+      const anchorY = Number(actor.userData.anchorY ?? actor.position.y)
+      const anchorZ = Number(actor.userData.anchorZ ?? actor.position.z)
+      const tangentX = Number(actor.userData.tangentX ?? 0)
+      const tangentZ = Number(actor.userData.tangentZ ?? 1)
+      const normalX = -tangentZ
+      const normalZ = tangentX
+      const range = Number(actor.userData.range ?? .8)
+      const speed = Number(actor.userData.speed ?? .55)
+      const swim = time * speed + phase
+      const travel = Math.sin(swim) * range
+      const side = Math.sin(swim * 1.63 + phase * .7) * .12
+      const direction = Math.cos(swim) >= 0 ? 1 : -1
+
+      actor.position.set(
+        anchorX + tangentX * travel + normalX * side,
+        anchorY + Math.sin(swim * 2.1) * .012,
+        anchorZ + tangentZ * travel + normalZ * side,
+      )
+      actor.rotation.y = Math.atan2(
+        tangentX * direction,
+        tangentZ * direction,
+      )
+
+      actor.children.forEach((fish, index) => {
+        const baseX = Number(fish.userData.baseX ?? fish.position.x)
+        const baseZ = Number(fish.userData.baseZ ?? fish.position.z)
+        fish.position.x =
+          baseX + Math.sin(time * 1.8 + phase + index * .9) * .025
+        fish.position.z =
+          baseZ + Math.cos(time * 1.35 + phase + index) * .02
+        fish.rotation.y =
+          Math.sin(time * 2.35 + phase + index * .7) * .08
       })
       continue
     }
@@ -262,9 +308,9 @@ function buildAmbientAnchors(region: GeneratedRegion) {
 
   const fireflyBase =
     region.mood === 'deadwood'
-      ? 15
+      ? 18
       : region.mood === 'dark'
-        ? 12
+        ? 15
         : isMarsh
           ? 8
           : isCorrupt
@@ -705,7 +751,7 @@ function addLanterns(
     root.scale.setScalar(item.scale)
     root.userData.ambientKind = 'lantern'
     root.userData.phase = item.rotation + item.variant
-    root.userData.baseIntensity = darkMood ? 1.45 : .92
+    root.userData.baseIntensity = darkMood ? 1.62 : 1.02
 
     const post = new THREE.Mesh(
       new THREE.CylinderGeometry(.045, .065, .72, 6),
@@ -738,8 +784,8 @@ function addLanterns(
 
     const glow = new THREE.PointLight(
       0xffaa55,
-      darkMood ? 1.45 : .92,
-      darkMood ? 7.5 : 5.8,
+      darkMood ? 1.62 : 1.02,
+      darkMood ? 9 : 6.6,
       2,
     )
     glow.name = 'AmbientLanternGlow'
@@ -848,6 +894,578 @@ function addBirds(
     group.add(bird)
     actors.push(bird)
   }
+}
+
+function addEnvironmentalMicroScenes(
+  group: THREE.Group,
+  region: GeneratedRegion,
+) {
+  const random = seededAmbientRandom(region.seed ^ 0x61a0b17)
+  const width = region.bounds.maxX - region.bounds.minX
+  const depth = region.bounds.maxZ - region.bounds.minZ
+  const area = Math.max(1, width * depth)
+  const targetCount = THREE.MathUtils.clamp(
+    Math.round(Math.sqrt(area) / 8.5),
+    7,
+    15,
+  )
+
+  const root = new THREE.Group()
+  root.name = 'AmbientMicroScenes'
+
+  const rockMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'deadwood' ? 0x555247 : 0x5b6258,
+    roughness: 1,
+  })
+  const woodMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'bleak' ? 0x443d36 : 0x4a3628,
+    roughness: 1,
+  })
+  const greenMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'dark' || region.mood === 'deadwood'
+      ? 0x29402f
+      : 0x385b3c,
+    roughness: 1,
+  })
+  const flowerMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'deadwood' ? 0x9b966d : 0xc9b968,
+    roughness: 1,
+  })
+  const boneMaterial = new THREE.MeshStandardMaterial({
+    color: 0xa8a28d,
+    roughness: 1,
+  })
+
+  let placed = 0
+  let attempts = 0
+  while (placed < targetCount && attempts < targetCount * 36) {
+    attempts += 1
+    const x =
+      region.bounds.minX +
+      5 +
+      random() * Math.max(1, width - 10)
+    const z =
+      region.bounds.minZ +
+      5 +
+      random() * Math.max(1, depth - 10)
+
+    if (!ambientGroundAllowed(region, x, z, 2.4, 2.5)) continue
+
+    const pathDistance = distanceToPaths(region, x, z)
+    if (pathDistance > 17 && random() < .55) continue
+
+    const scene = new THREE.Group()
+    scene.position.set(x, sampleTerrainHeight(region, x, z), z)
+    scene.rotation.y = random() * Math.PI * 2
+    const variant = Math.floor(random() * 5)
+
+    if (variant === 0) {
+      // Mossy stone pocket.
+      for (let index = 0; index < 4; index += 1) {
+        const angle = index * 1.47 + random() * .35
+        const radius = .45 + index * .18
+        const rock = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(.22 + random() * .18, 0),
+          rockMaterial,
+        )
+        rock.position.set(
+          Math.cos(angle) * radius,
+          .13 + random() * .07,
+          Math.sin(angle) * radius,
+        )
+        rock.scale.y = .55 + random() * .22
+        rock.rotation.y = random() * Math.PI
+        scene.add(rock)
+      }
+      const shrub = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(.42, 0),
+        greenMaterial,
+      )
+      shrub.position.set(-.52, .3, .35)
+      shrub.scale.set(1, .68, 1)
+      scene.add(shrub)
+    } else if (variant === 1) {
+      // Old stump with a few chopped pieces.
+      const stump = new THREE.Mesh(
+        new THREE.CylinderGeometry(.29, .38, .48, 7),
+        woodMaterial,
+      )
+      stump.position.y = .24
+      scene.add(stump)
+      for (let index = 0; index < 3; index += 1) {
+        const log = new THREE.Mesh(
+          new THREE.CylinderGeometry(.09, .12, .72 + index * .08, 6),
+          woodMaterial,
+        )
+        log.position.set(.55 + index * .2, .11, -.2 + index * .18)
+        log.rotation.set(Math.PI / 2, .25 + index * .34, 0)
+        scene.add(log)
+      }
+    } else if (variant === 2) {
+      // Mushroom/root pocket.
+      for (let index = 0; index < 5; index += 1) {
+        const angle = index * 1.22
+        const radius = .25 + (index % 3) * .2
+        const stem = new THREE.Mesh(
+          new THREE.CylinderGeometry(.035, .05, .22, 5),
+          new THREE.MeshStandardMaterial({
+            color: 0xc6bea2,
+            roughness: 1,
+          }),
+        )
+        stem.position.set(
+          Math.cos(angle) * radius,
+          .11,
+          Math.sin(angle) * radius,
+        )
+        const cap = new THREE.Mesh(
+          new THREE.SphereGeometry(.11 + (index % 2) * .03, 7, 4),
+          new THREE.MeshStandardMaterial({
+            color: region.mood === 'deadwood' ? 0xa9b9a9 : 0x8d6656,
+            roughness: 1,
+          }),
+        )
+        cap.scale.y = .42
+        cap.position.set(stem.position.x, .24, stem.position.z)
+        scene.add(stem, cap)
+      }
+      const rootPiece = new THREE.Mesh(
+        new THREE.CylinderGeometry(.055, .09, 1.35, 5),
+        woodMaterial,
+      )
+      rootPiece.position.set(.1, .08, -.5)
+      rootPiece.rotation.set(Math.PI / 2, .62, 0)
+      scene.add(rootPiece)
+    } else if (variant === 3) {
+      // Small flower clearing.
+      for (let index = 0; index < 10; index += 1) {
+        const angle = index * 2.31
+        const radius = .2 + (index % 5) * .2
+        const flower = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(.055 + (index % 2) * .015, 0),
+          flowerMaterial,
+        )
+        flower.position.set(
+          Math.cos(angle) * radius,
+          .12 + (index % 3) * .02,
+          Math.sin(angle) * radius,
+        )
+        scene.add(flower)
+      }
+    } else {
+      // Trail-side remains: a broken marker and tiny bone fragments.
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(.055, .085, .95, 6),
+        woodMaterial,
+      )
+      post.position.set(-.35, .42, 0)
+      post.rotation.z = -.13
+      scene.add(post)
+      const cross = new THREE.Mesh(
+        new THREE.BoxGeometry(.68, .07, .08),
+        woodMaterial,
+      )
+      cross.position.set(-.3, .68, 0)
+      cross.rotation.z = .12
+      scene.add(cross)
+      for (let index = 0; index < 2; index += 1) {
+        const bone = new THREE.Mesh(
+          new THREE.CylinderGeometry(.025, .035, .52, 5),
+          boneMaterial,
+        )
+        bone.position.set(.25 + index * .28, .045, .18 - index * .24)
+        bone.rotation.set(Math.PI / 2, .55 + index * .8, 0)
+        scene.add(bone)
+      }
+    }
+
+    scene.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = false
+        object.receiveShadow = true
+      }
+    })
+    root.add(scene)
+    placed += 1
+  }
+
+  group.add(root)
+}
+
+function addRiverbankLife(
+  group: THREE.Group,
+  region: GeneratedRegion,
+) {
+  if (region.terrain.stream.length < 2) return
+
+  const rows = streamWaterSurfaceRows(region, 5, .065).rows.filter(
+    (row) =>
+      row.x > region.bounds.minX + 1.2 &&
+      row.x < region.bounds.maxX - 1.2 &&
+      row.z > region.bounds.minZ + 1.2 &&
+      row.z < region.bounds.maxZ - 1.2,
+  )
+  if (rows.length < 4) return
+
+  const random = seededAmbientRandom(region.seed ^ 0x41b4a3)
+  const root = new THREE.Group()
+  root.name = 'AmbientRiverbankLife'
+
+  const reedMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'bleak' ? 0x59634d : 0x607653,
+    roughness: 1,
+  })
+  const rockMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'dark' ? 0x48534c : 0x5b655d,
+    roughness: 1,
+  })
+  const mudMaterial = new THREE.MeshStandardMaterial({
+    color: region.mood === 'deadwood' ? 0x4b4232 : 0x4a4937,
+    roughness: 1,
+    transparent: true,
+    opacity: .42,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  })
+  const woodMaterial = new THREE.MeshStandardMaterial({
+    color: 0x443329,
+    roughness: 1,
+  })
+
+  const count = THREE.MathUtils.clamp(
+    Math.round(rows.length / 28),
+    8,
+    18,
+  )
+
+  for (let site = 0; site < count; site += 1) {
+    const target =
+      ((site + .45) / count) * (rows.length - 1) +
+      (random() - .5) * Math.min(18, rows.length / count)
+    const index = THREE.MathUtils.clamp(
+      Math.round(target),
+      1,
+      rows.length - 2,
+    )
+    const row = rows[index]
+    if (nearAmbientCrossing(region, row.x, row.z, 4.4)) continue
+
+    const previous = rows[index - 1]
+    const next = rows[index + 1]
+    const dx = next.x - previous.x
+    const dz = next.z - previous.z
+    const length = Math.hypot(dx, dz) || 1
+    const tangentX = dx / length
+    const tangentZ = dz / length
+    const normalX = -tangentZ
+    const normalZ = tangentX
+    const side = random() < .5 ? -1 : 1
+    const offset = row.width * .5 + .52 + random() * .65
+    const x = row.x + normalX * offset * side
+    const z = row.z + normalZ * offset * side
+
+    if (
+      x < region.bounds.minX + .7 ||
+      x > region.bounds.maxX - .7 ||
+      z < region.bounds.minZ + .7 ||
+      z > region.bounds.maxZ - .7
+    ) {
+      continue
+    }
+
+    const y = sampleTerrainHeight(region, x, z)
+
+    const patch = new THREE.Mesh(
+      new THREE.CircleGeometry(.72 + random() * .38, 9),
+      mudMaterial,
+    )
+    patch.rotation.x = -Math.PI / 2
+    patch.rotation.z = random() * Math.PI
+    patch.scale.set(1.25, .7, 1)
+    patch.position.set(x, y + .018, z)
+    patch.renderOrder = 2
+    root.add(patch)
+
+    const reedCount = 4 + Math.floor(random() * 4)
+    for (let blade = 0; blade < reedCount; blade += 1) {
+      const angle = random() * Math.PI * 2
+      const radius = .12 + random() * .38
+      const reed = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          .022,
+          .04,
+          .62 + random() * .48,
+          5,
+        ),
+        reedMaterial,
+      )
+      reed.position.set(
+        x + Math.cos(angle) * radius,
+        y + .34,
+        z + Math.sin(angle) * radius,
+      )
+      reed.rotation.z = (random() - .5) * .08
+      root.add(reed)
+    }
+
+    for (let rockIndex = 0; rockIndex < 2; rockIndex += 1) {
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(.16 + random() * .15, 0),
+        rockMaterial,
+      )
+      rock.position.set(
+        x + (random() - .5) * 1.1,
+        y + .11,
+        z + (random() - .5) * .85,
+      )
+      rock.scale.y = .55 + random() * .2
+      rock.rotation.y = random() * Math.PI
+      root.add(rock)
+    }
+
+    if (site % 4 === 1) {
+      const driftwood = new THREE.Mesh(
+        new THREE.CylinderGeometry(.07, .1, 1.25 + random() * .55, 6),
+        woodMaterial,
+      )
+      driftwood.position.set(
+        x + tangentX * .45,
+        y + .1,
+        z + tangentZ * .45,
+      )
+      driftwood.rotation.set(Math.PI / 2, Math.atan2(tangentX, tangentZ), 0)
+      root.add(driftwood)
+    }
+  }
+
+  root.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = false
+      object.receiveShadow = true
+    }
+  })
+  group.add(root)
+}
+
+function addFishSchools(
+  group: THREE.Group,
+  actors: THREE.Object3D[],
+  region: GeneratedRegion,
+) {
+  if (region.terrain.stream.length < 2) return
+
+  const rows = streamWaterSurfaceRows(region, 5, .065).rows.filter(
+    (row) =>
+      row.width >= 1.35 &&
+      row.x > region.bounds.minX + 1 &&
+      row.x < region.bounds.maxX - 1 &&
+      row.z > region.bounds.minZ + 1 &&
+      row.z < region.bounds.maxZ - 1 &&
+      !nearAmbientCrossing(region, row.x, row.z, 4.8),
+  )
+  if (rows.length < 6) return
+
+  const random = seededAmbientRandom(region.seed ^ 0xf15c4e)
+  const moodBase =
+    region.mood === 'deadwood' ? 2 :
+      region.mood === 'bleak' ? 2 :
+        region.mood === 'dark' ? 3 :
+          5
+  const schoolCount = Math.min(
+    moodBase,
+    Math.max(1, Math.floor(rows.length / 36)),
+  )
+
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color:
+      region.mood === 'deadwood' || region.mood === 'bleak'
+        ? 0x48534d
+        : 0x5d7168,
+    roughness: .58,
+    metalness: .04,
+  })
+  const tailMaterial = new THREE.MeshStandardMaterial({
+    color:
+      region.mood === 'deadwood' || region.mood === 'bleak'
+        ? 0x3e4742
+        : 0x4d6259,
+    roughness: .7,
+  })
+
+  for (let school = 0; school < schoolCount; school += 1) {
+    const target =
+      ((school + 1) / (schoolCount + 1)) * (rows.length - 1) +
+      (random() - .5) * Math.min(24, rows.length / schoolCount)
+    const index = THREE.MathUtils.clamp(
+      Math.round(target),
+      1,
+      rows.length - 2,
+    )
+    const row = rows[index]
+    const previous = rows[index - 1]
+    const next = rows[index + 1]
+    const dx = next.x - previous.x
+    const dz = next.z - previous.z
+    const length = Math.hypot(dx, dz) || 1
+    const tangentX = dx / length
+    const tangentZ = dz / length
+
+    const root = new THREE.Group()
+    root.userData.ambientKind = 'fish'
+    root.userData.phase = random() * Math.PI * 2
+    root.userData.anchorX = row.x
+    root.userData.anchorY = row.y + .035
+    root.userData.anchorZ = row.z
+    root.userData.tangentX = tangentX
+    root.userData.tangentZ = tangentZ
+    root.userData.range = Math.min(1.15, Math.max(.48, row.width * .28))
+    root.userData.speed = .42 + random() * .18
+
+    const fishCount = 3 + Math.floor(random() * 3)
+    for (let fishIndex = 0; fishIndex < fishCount; fishIndex += 1) {
+      const fish = new THREE.Group()
+      const body = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(.13, 0),
+        bodyMaterial,
+      )
+      body.scale.set(1, .48, 1.65)
+      body.castShadow = false
+
+      const tail = new THREE.Mesh(
+        new THREE.ConeGeometry(.085, .2, 3),
+        tailMaterial,
+      )
+      tail.rotation.x = Math.PI / 2
+      tail.position.z = -.23
+
+      fish.add(body, tail)
+      const localX = (random() - .5) * Math.min(.62, row.width * .28)
+      const localZ = (fishIndex - (fishCount - 1) * .5) * .22
+      fish.position.set(localX, (random() - .5) * .025, localZ)
+      fish.userData.baseX = localX
+      fish.userData.baseZ = localZ
+      fish.scale.setScalar(.78 + random() * .34)
+      root.add(fish)
+    }
+
+    root.position.set(
+      row.x,
+      row.y + .035,
+      row.z,
+    )
+    group.add(root)
+    actors.push(root)
+  }
+}
+
+function addBoundaryTreeline(
+  group: THREE.Group,
+  region: GeneratedRegion,
+) {
+  const random = seededAmbientRandom(region.seed ^ 0xb0a4d4)
+  const root = new THREE.Group()
+  root.name = 'WorldBoundaryTreeline'
+
+  const darkMood =
+    region.mood === 'dark' ||
+    region.mood === 'deadwood' ||
+    region.mood === 'bleak'
+  const trunkMaterial = new THREE.MeshStandardMaterial({
+    color: darkMood ? 0x30291f : 0x3c3025,
+    roughness: 1,
+  })
+  const canopyMaterial = new THREE.MeshStandardMaterial({
+    color:
+      region.mood === 'deadwood'
+        ? 0x343a30
+        : region.mood === 'bleak'
+          ? 0x34413a
+          : region.mood === 'dark'
+            ? 0x203b2a
+            : 0x294b31,
+    roughness: 1,
+  })
+
+  const trunkGeometry = new THREE.CylinderGeometry(.18, .3, 3.4, 6)
+  const canopyGeometry = new THREE.ConeGeometry(1.45, 3.15, 7)
+  const width = region.bounds.maxX - region.bounds.minX
+  const depth = region.bounds.maxZ - region.bounds.minZ
+  const count = THREE.MathUtils.clamp(
+    Math.round((width + depth) / 3.6),
+    48,
+    78,
+  )
+
+  for (let index = 0; index < count; index += 1) {
+    const side = index % 4
+    const t = random()
+    const outward = 5 + random() * 9
+    let x = 0
+    let z = 0
+    let sampleX = 0
+    let sampleZ = 0
+
+    if (side === 0) {
+      x = THREE.MathUtils.lerp(region.bounds.minX, region.bounds.maxX, t)
+      z = region.bounds.minZ - outward
+      sampleX = x
+      sampleZ = region.bounds.minZ
+    } else if (side === 1) {
+      x = region.bounds.maxX + outward
+      z = THREE.MathUtils.lerp(region.bounds.minZ, region.bounds.maxZ, t)
+      sampleX = region.bounds.maxX
+      sampleZ = z
+    } else if (side === 2) {
+      x = THREE.MathUtils.lerp(region.bounds.minX, region.bounds.maxX, t)
+      z = region.bounds.maxZ + outward
+      sampleX = x
+      sampleZ = region.bounds.maxZ
+    } else {
+      x = region.bounds.minX - outward
+      z = THREE.MathUtils.lerp(region.bounds.minZ, region.bounds.maxZ, t)
+      sampleX = region.bounds.minX
+      sampleZ = z
+    }
+
+    const y = sampleTerrainHeight(region, sampleX, sampleZ)
+    const tree = new THREE.Group()
+    tree.position.set(x, y, z)
+    tree.rotation.y = random() * Math.PI * 2
+    const scale = 1.1 + random() * .85
+    tree.scale.setScalar(scale)
+
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial)
+    trunk.position.y = 1.7
+    const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial)
+    canopy.position.y = 4.1
+    canopy.rotation.y = random() * .5
+
+    tree.add(trunk, canopy)
+    root.add(tree)
+  }
+
+  root.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = false
+      object.receiveShadow = false
+    }
+  })
+  group.add(root)
+}
+
+function nearAmbientCrossing(
+  region: GeneratedRegion,
+  x: number,
+  z: number,
+  extra: number,
+) {
+  return region.crossings.some(
+    (crossing) =>
+      Math.hypot(x - crossing.x, z - crossing.z) <
+      Math.max(extra, crossing.width * 1.7 + 1.2),
+  )
 }
 
 function seededAmbientRandom(seed: number) {
