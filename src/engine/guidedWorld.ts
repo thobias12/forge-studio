@@ -484,10 +484,58 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
     extendedHeights.push(heights[heights.length - 1] + endSlope * step)
   }
 
+  return densifyStreamRenderProfile(
+    extendedPoints,
+    extendedWidths,
+    extendedHeights,
+    1.2,
+  )
+}
+
+function densifyStreamRenderProfile(
+  points: GeneratedWorldPoint[],
+  widths: number[],
+  heights: number[],
+  spacing: number,
+) {
+  if (points.length < 2) {
+    return {
+      points: points.map((point) => ({ ...point })),
+      widths: [...widths],
+      heights: [...heights],
+    }
+  }
+
+  const densePoints: GeneratedWorldPoint[] = [{ ...points[0] }]
+  const denseWidths: number[] = [widths[0] ?? 1]
+  const denseHeights: number[] = [heights[0] ?? 0]
+  const maxSpacing = Math.max(.65, spacing)
+
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]
+    const current = points[index]
+    const previousWidth = widths[index - 1] ?? widths[0] ?? 1
+    const currentWidth = widths[index] ?? previousWidth
+    const previousHeight = heights[index - 1] ?? heights[0] ?? 0
+    const currentHeight = heights[index] ?? previousHeight
+    const distance = Math.hypot(current.x - previous.x, current.z - previous.z)
+    const sections = Math.max(1, Math.ceil(distance / maxSpacing))
+
+    for (let section = 1; section <= sections; section += 1) {
+      const t = section / sections
+      densePoints.push({
+        x: lerp(previous.x, current.x, t),
+        z: lerp(previous.z, current.z, t),
+      })
+      denseWidths.push(lerp(previousWidth, currentWidth, t))
+      denseHeights.push(lerp(previousHeight, currentHeight, t))
+    }
+  }
+
   return {
-    points: extendedPoints,
-    widths: extendedWidths,
-    heights: extendedHeights,
+    points: densePoints,
+    widths: denseWidths,
+    heights: denseHeights,
   }
 }
 
@@ -567,7 +615,7 @@ export function streamRenderContinuityIssues(region: GeneratedRegion) {
     const current = profile.points[index]
     const distance = Math.hypot(current.x - previous.x, current.z - previous.z)
     const localWidth = Math.max(profile.widths[index - 1] ?? 1, profile.widths[index] ?? 1)
-    const allowed = Math.max(11, localWidth * 5.5)
+    const allowed = Math.max(1.65, localWidth * 1.15)
     if (distance > allowed) {
       issues.push(`Stream render segment ${index - 1}->${index} is too long (${round(distance, 2)}).`)
     }
