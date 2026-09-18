@@ -1450,7 +1450,7 @@ function repairResidualRiverPathIncursions(
   // usually tangential branch segments whose endpoints are both legal but whose
   // straight chord still cuts the curved river corridor. Insert a local detour
   // control point on the same bank, then let the normal solver relax it.
-  for (let repairPass = 0; repairPass < 6; repairPass += 1) {
+  for (let repairPass = 0; repairPass < 12; repairPass += 1) {
     let inserted = false
 
     for (const path of paths) {
@@ -1508,7 +1508,77 @@ function repairResidualRiverPathIncursions(
     enforcePathsOutsideRiverMask(paths, mask, crossings, bounds)
   }
 
-  // Finish with the ordinary footprint solver so any newly inserted detour
+  // Rare fallback: if a long/tangential path still has an incursion after
+  // local detours, densify that path and project every non-crossing sample onto
+  // the safe bank. This runs before terrain/validation, so an invalid path is
+  // repaired in generation rather than merely reported by the viewport.
+  for (const path of paths) {
+    if (!findResidualRiverPathViolation(path, mask, crossings)) continue
+
+    const nextPoints: GeneratedWorldPoint[] = []
+    const nextWidths: number[] = []
+
+    for (let segmentIndex = 1; segmentIndex < path.points.length; segmentIndex += 1) {
+      const a = path.points[segmentIndex - 1]
+      const b = path.points[segmentIndex]
+      const aWidth = path.widths[segmentIndex - 1] ?? path.width
+      const bWidth = path.widths[segmentIndex] ?? path.width
+      const segmentLength = Math.hypot(b.x - a.x, b.z - a.z)
+      const steps = Math.max(2, Math.ceil(segmentLength / .42))
+
+      for (let step = 0; step < steps; step += 1) {
+        if (segmentIndex > 1 && step === 0) continue
+        const t = step / steps
+        const width = lerp(aWidth, bWidth, t)
+        let point = {
+          x: lerp(a.x, b.x, t),
+          z: lerp(a.z, b.z, t),
+        }
+        const river = riverOccupancySample(mask, point.x, point.z)
+        const footprintHalfWidth = pathFootprintHalfWidth(width)
+        const required = footprintHalfWidth + .62
+
+        if (
+          river.signedDistance < required &&
+          !crossingAllowsRiverOccupancy(
+            point.x,
+            point.z,
+            crossings,
+            river.radius,
+            footprintHalfWidth,
+          )
+        ) {
+          let dx = point.x - river.x
+          let dz = point.z - river.z
+          let length = Math.hypot(dx, dz)
+          if (length < .001) {
+            const sign = hashSeed(
+              `river-dense-side:${path.id}:${segmentIndex}:${step}`,
+            ) % 2 === 0 ? 1 : -1
+            dx = -river.tangentZ * sign
+            dz = river.tangentX * sign
+            length = 1
+          }
+          const targetDistance = river.radius + required + .22
+          point = clampDetour({
+            x: river.x + dx / length * targetDistance,
+            z: river.z + dz / length * targetDistance,
+          })
+        }
+
+        nextPoints.push(point)
+        nextWidths.push(round(width, 3))
+      }
+    }
+
+    const lastIndex = path.points.length - 1
+    nextPoints.push({ ...path.points[lastIndex] })
+    nextWidths.push(path.widths[lastIndex] ?? path.width)
+    path.points = nextPoints
+    path.widths = nextWidths
+  }
+
+  // Finish with the ordinary footprint solver so any newly inserted/densified
   // points and their neighboring chords satisfy the same contract as validation.
   enforcePathsOutsideRiverMask(paths, mask, crossings, bounds)
 }
