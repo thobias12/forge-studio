@@ -10,6 +10,15 @@
 .world-forge-map-3d .world-forge-map-legend{z-index:3;backdrop-filter:blur(8px)}
 .world-forge-map-legend .biome{background:#31583a}
 .world-forge-camera-hint{position:absolute;right:16px;bottom:15px;z-index:3;padding:6px 8px;border:1px solid #2c3a31;border-radius:6px;background:#0a100ddd;color:#718178;font-size:9px;pointer-events:none}
+.world-forge-river-debug-legend{position:absolute;left:16px;top:14px;z-index:5;display:flex;flex-wrap:wrap;gap:7px 11px;max-width:520px;padding:8px 10px;border:1px solid #405149;border-radius:7px;background:#08100ddd;color:#aebbb4;font-size:9px;pointer-events:none;backdrop-filter:blur(8px)}
+.world-forge-river-debug-legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.world-forge-river-debug-legend i{display:inline-block;width:10px;height:4px;border-radius:999px}
+.world-forge-river-debug-legend .raw{background:#ff3ccf}
+.world-forge-river-debug-legend .profile{background:#35e8ff}
+.world-forge-river-debug-legend .rows{background:#ffe85b}
+.world-forge-river-debug-legend .bounds{background:#ffffff}
+.world-forge-river-debug-legend .start{width:8px;height:8px;border-radius:50%;background:#63ff85}
+.world-forge-river-debug-legend .end{width:8px;height:8px;border-radius:50%;background:#ff5b5b}
 .world-forge-preset{width:100%;margin-top:9px!important;background:#18251d!important;border-color:#3c5c48!important;color:#b8d2c0!important;font-size:10px!important}
 .generation-locks p{margin:-3px 0 9px;color:#627168;font-size:9px;line-height:1.45}
 .generation-locks>button{display:grid;grid-template-columns:16px minmax(0,1fr) auto;width:100%;margin:5px 0;padding:7px 8px!important;text-align:left;justify-content:stretch!important;font-size:9px!important}
