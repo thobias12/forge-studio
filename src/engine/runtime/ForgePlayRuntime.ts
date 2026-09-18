@@ -7,7 +7,7 @@ import type {
   ForgePlayerDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import type { GeneratedRegion, GeneratedRegionNode } from '../guidedWorld'
+import { sampleTerrainHeight, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
 import {
   bindCharacterAsset,
   disposeBoundObject,
@@ -358,6 +358,16 @@ export class ForgePlayRuntime {
   }
 
   private buildRegion() {
+    if (this.region.version >= 2 && this.region.terrain) {
+      const ground = makeGeneratedTerrain(this.region)
+      this.scene.add(ground)
+      if (this.region.terrain.stream.length > 1) this.scene.add(makeGeneratedStream(this.region))
+      for (const path of this.region.paths) this.scene.add(makeGeneratedPath(this.region, path))
+      addGeneratedDressing(this.scene, this.region, this.obstacles)
+      addGeneratedPois(this.scene, this.region, this.obstacles)
+      return
+    }
+
     const { bounds } = this.region
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(bounds.maxX - bounds.minX + 32, bounds.maxZ - bounds.minZ + 32),
@@ -393,10 +403,12 @@ export class ForgePlayRuntime {
     const entry = this.region.nodes.find((node) => node.kind === 'entry') ?? this.region.nodes[0]
     const x = savedPlayer?.x ?? entry?.x ?? 0
     const z = savedPlayer?.z ?? entry?.z ?? 0
+    const playerX = THREE.MathUtils.clamp(x, this.region.bounds.minX, this.region.bounds.maxX)
+    const playerZ = THREE.MathUtils.clamp(z, this.region.bounds.minZ, this.region.bounds.maxZ)
     this.player.position.set(
-      THREE.MathUtils.clamp(x, this.region.bounds.minX, this.region.bounds.maxX),
-      0,
-      THREE.MathUtils.clamp(z, this.region.bounds.minZ, this.region.bounds.maxZ),
+      playerX,
+      this.region.version >= 2 ? sampleTerrainHeight(this.region, playerX, playerZ) : 0,
+      playerZ,
     )
     this.mouseWorld.set(this.player.position.x - 4, 0, this.player.position.z - 4)
     this.scene.add(this.player)
@@ -448,7 +460,7 @@ export class ForgePlayRuntime {
     telegraph.position.y = 0.045
     telegraph.visible = false
     group.add(placeholder, healthBack, healthFill, telegraph)
-    group.position.set(x, 0, z)
+    group.position.set(x, this.region.version >= 2 ? sampleTerrainHeight(this.region, x, z) : 0, z)
     this.scene.add(group)
     const enemy: RuntimeEnemy = {
       id,
@@ -739,7 +751,7 @@ export class ForgePlayRuntime {
     fallback.position.y = 0.55
     fallback.castShadow = true
     group.add(fallback, glow)
-    group.position.set(save.x, 0, save.z)
+    group.position.set(save.x, this.region.version >= 2 ? sampleTerrainHeight(this.region, save.x, save.z) : 0, save.z)
     this.scene.add(group)
     const drop: RuntimeLoot = { save: { ...save }, group, fallback, age: 0 }
     this.loot.push(drop)
@@ -867,7 +879,9 @@ export class ForgePlayRuntime {
 
   private respawnPlayer() {
     const entry = this.region.nodes.find((node) => node.kind === 'entry') ?? this.region.nodes[0]
-    this.player.position.set(entry?.x ?? 0, 0, entry?.z ?? 0)
+    const respawnX = entry?.x ?? 0
+    const respawnZ = entry?.z ?? 0
+    this.player.position.set(respawnX, this.region.version >= 2 ? sampleTerrainHeight(this.region, respawnX, respawnZ) : 0, respawnZ)
     this.playerHealth = this.playerDefinition.maxHealth
     this.focusEnemyId = undefined
     this.setMessage('You fell in battle and returned to the region entry. Enemy progress is preserved.', 4)
@@ -967,6 +981,7 @@ export class ForgePlayRuntime {
     }
     actor.position.x = next.x
     actor.position.z = next.z
+    if (this.region.version >= 2) actor.position.y = sampleTerrainHeight(this.region, next.x, next.z)
   }
 
   private spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
