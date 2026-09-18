@@ -408,6 +408,13 @@ export function generateGuidedRegion(
   smoothWorldJunctions(paths, nodes)
   shapeLandmarkApproaches(paths, nodes)
 
+  if (separatePoisFromRenderedMainRoad(nodes, paths, riverMask, bounds)) {
+    repairPoiRoadAccess(nodes, connections, riverMask, bounds)
+    paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+    smoothWorldJunctions(paths, nodes)
+    shapeLandmarkApproaches(paths, nodes)
+  }
+
   // Final stabilization rule: side trails never own a river crossing. Any
   // branch/POI spur that would enter the river corridor is omitted, together
   // with downstream disconnected trail pieces, instead of being stretched to a
@@ -1115,6 +1122,21 @@ export function validateGeneratedRegion(
     }
   }
 
+  const mainRoadPaths = paths.filter((path) => path.kind === 'main')
+  for (const poi of pois) {
+    const nearest = nearestPathSample(mainRoadPaths, poi.x, poi.z)
+    if (!nearest) continue
+    const required =
+      poi.radius +
+      pathFootprintHalfWidth(nearest.width) +
+      1.35
+    if (nearest.distance < required) {
+      issues.push(
+        `${poi.label} overlaps the final main-road footprint.`,
+      )
+    }
+  }
+
   for (let index = 0; index < pois.length; index += 1) {
     for (let otherIndex = index + 1; otherIndex < pois.length; otherIndex += 1) {
       const a = pois[index]
@@ -1421,8 +1443,34 @@ function repairPoiRoadAccess(
   const landmarks = nodes.filter((node) => node.kind === 'landmark')
   if (!routeNodes.length || !landmarks.length) return
 
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const mainSegments = connections
+    .filter((connection) => connection.kind === 'main')
+    .flatMap((connection) => {
+      const from = nodeMap.get(connection.from)
+      const to = nodeMap.get(connection.to)
+      return from && to ? [{ from, to }] : []
+    })
+
   const accessWidth = .96
   const pathClearance = pathFootprintHalfWidth(accessWidth) + 1.15
+  const mainRoadDistance = (x: number, z: number) => {
+    let best = Infinity
+    for (const segment of mainSegments) {
+      best = Math.min(
+        best,
+        distanceToSegment(x, z, segment.from, segment.to),
+      )
+    }
+    return best
+  }
+  const poiRoadClearance = (landmark: GeneratedRegionNode) =>
+    landmark.radius + 4.2
+  const clearOfMainRoad = (
+    landmark: GeneratedRegionNode,
+    x: number,
+    z: number,
+  ) => mainRoadDistance(x, z) >= poiRoadClearance(landmark)
 
   const segmentIsSafe = (
     a: GeneratedWorldPoint,
@@ -1485,7 +1533,8 @@ function repairPoiRoadAccess(
         currentAnchor.kind === 'entry' ||
         currentAnchor.kind === 'exit') &&
       currentLength <= 30 &&
-      segmentIsSafe(currentAnchor, landmark, .35)
+      segmentIsSafe(currentAnchor, landmark, .35) &&
+      clearOfMainRoad(landmark, landmark.x, landmark.z)
     ) {
       landmark.parentId = currentAnchor.id
       continue
@@ -1499,7 +1548,8 @@ function repairPoiRoadAccess(
       .filter(({ anchor, distance }) =>
         distance <= 30 &&
         riverOccupancySample(mask, anchor.x, anchor.z).signedDistance >= pathClearance + .35 &&
-        segmentIsSafe(anchor, landmark, .35)
+        segmentIsSafe(anchor, landmark, .35) &&
+        clearOfMainRoad(landmark, landmark.x, landmark.z)
       )
       .sort((a, b) => a.distance - b.distance)[0]
 
@@ -1529,53 +1579,83 @@ function repairPoiRoadAccess(
       | undefined
 
     for (const anchor of routeCandidates) {
-      const towardOriginal = Math.atan2(
-        original.z - anchor.z,
-        original.x - anchor.x,
+      const incident = mainSegments.filter(
+        (segment) =>
+          segment.from.id === anchor.id || segment.to.id === anchor.id,
       )
+      let tangent = { x: 1, z: 0 }
+      if (incident.length >= 2) {
+        const a = incident[0].from.id === anchor.id
+          ? incident[0].to
+          : incident[0].from
+        const b = incident[incident.length - 1].from.id === anchor.id
+          ? incident[incident.length - 1].to
+          : incident[incident.length - 1].from
+        tangent = normalized2(b.x - a.x, b.z - a.z)
+      } else if (incident.length === 1) {
+        const other = incident[0].from.id === anchor.id
+          ? incident[0].to
+          : incident[0].from
+        tangent = normalized2(other.x - anchor.x, other.z - anchor.z)
+      }
+      const normal = { x: -tangent.z, z: tangent.x }
+      const originalOffset = {
+        x: original.x - anchor.x,
+        z: original.z - anchor.z,
+      }
+      const sideDot = originalOffset.x * normal.x + originalOffset.z * normal.z
+      const preferredSide = Math.abs(sideDot) > .01
+        ? Math.sign(sideDot)
+        : (hashSeed(`poi-road-side:${landmark.id}:${anchor.id}`) % 2 === 0 ? 1 : -1)
+      const sides = [preferredSide, -preferredSide]
       const baseRadius = clamp(
-        Math.max(landmark.radius + 5.5, poiApproachDistance(landmark.poiType ?? 'ruins') * .82),
-        10,
-        18,
+        Math.max(
+          poiRoadClearance(landmark) + .8,
+          poiApproachDistance(landmark.poiType ?? 'ruins') + 3,
+        ),
+        11.5,
+        20,
       )
-      const angleOffsets = [
-        0,
-        .22, -.22,
-        .45, -.45,
-        .72, -.72,
-        1.02, -1.02,
-        1.35, -1.35,
-        Math.PI,
-      ]
 
-      for (const radiusScale of [1, 1.16, 1.34]) {
-        const radius = baseRadius * radiusScale
-        for (const angleOffset of angleOffsets) {
-          const angle = towardOriginal + angleOffset
-          const x = anchor.x + Math.cos(angle) * radius
-          const z = anchor.z + Math.sin(angle) * radius
+      for (const side of sides) {
+        for (const radiusScale of [1, 1.14, 1.3]) {
+          const radius = baseRadius * radiusScale
+          for (const along of [0, 2.4, -2.4, 4.5, -4.5]) {
+            const x =
+              anchor.x +
+              normal.x * side * radius +
+              tangent.x * along
+            const z =
+              anchor.z +
+              normal.z * side * radius +
+              tangent.z * along
 
-          if (
-            x <= bounds.minX + landmark.radius ||
-            x >= bounds.maxX - landmark.radius ||
-            z <= bounds.minZ + landmark.radius ||
-            z >= bounds.maxZ - landmark.radius
-          ) continue
+            if (
+              x <= bounds.minX + landmark.radius ||
+              x >= bounds.maxX - landmark.radius ||
+              z <= bounds.minZ + landmark.radius ||
+              z >= bounds.maxZ - landmark.radius
+            ) continue
 
-          const river = riverOccupancySample(mask, x, z)
-          if (river.signedDistance < landmark.radius + 1.8) continue
-          if (!hasLandmarkSpace(landmark, x, z)) continue
-          if (!segmentIsSafe(anchor, { x, z }, .5)) continue
+            const river = riverOccupancySample(mask, x, z)
+            if (river.signedDistance < landmark.radius + 1.8) continue
+            if (!hasLandmarkSpace(landmark, x, z)) continue
+            if (!clearOfMainRoad(landmark, x, z)) continue
+            if (!segmentIsSafe(anchor, { x, z }, .5)) continue
 
-          const moveDistance = Math.hypot(x - original.x, z - original.z)
-          const accessDistance = Math.hypot(x - anchor.x, z - anchor.z)
-          const score =
-            moveDistance +
-            accessDistance * .18 +
-            Math.abs(radiusScale - 1) * 3.5
+            const moveDistance = Math.hypot(x - original.x, z - original.z)
+            const accessDistance = Math.hypot(x - anchor.x, z - anchor.z)
+            const sidePenalty = side === preferredSide ? 0 : 3
+            const score =
+              moveDistance +
+              accessDistance * .14 +
+              Math.abs(radiusScale - 1) * 3 +
+              Math.abs(along) * .08 +
+              sidePenalty
 
-          if (!best || score < best.score) {
-            best = { anchor, x, z, score }
+            if (!best || score < best.score) {
+              best = { anchor, x, z, score }
+            }
           }
         }
       }
@@ -1840,6 +1920,126 @@ function reanchorBranchesAwayFromCrossings(
     branchLoad.set(anchor.id, Math.max(0, (branchLoad.get(anchor.id) ?? 1) - 1))
     branchLoad.set(candidate.id, (branchLoad.get(candidate.id) ?? 0) + 1)
     changed = true
+  }
+
+  return changed
+}
+
+function separatePoisFromRenderedMainRoad(
+  nodes: GeneratedRegionNode[],
+  paths: GeneratedWorldPath[],
+  mask: RiverOccupancyMask,
+  bounds: GeneratedRegion['bounds'],
+) {
+  const mainPaths = paths.filter((path) => path.kind === 'main')
+  const landmarks = nodes.filter((node) => node.kind === 'landmark')
+  if (!mainPaths.length || !landmarks.length) return false
+
+  const pathDistanceAt = (x: number, z: number) =>
+    nearestPathSample(mainPaths, x, z)
+  let changed = false
+
+  for (const landmark of landmarks) {
+    const nearest = pathDistanceAt(landmark.x, landmark.z)
+    if (!nearest) continue
+
+    const required =
+      landmark.radius +
+      pathFootprintHalfWidth(nearest.width) +
+      1.8
+    if (nearest.distance >= required) continue
+
+    const original = { x: landmark.x, z: landmark.z }
+    let preferredAngle = Math.atan2(
+      landmark.z - nearest.z,
+      landmark.x - nearest.x,
+    )
+    if (nearest.distance < .01) {
+      preferredAngle =
+        (hashSeed(`rendered-road-poi:${landmark.id}`) % 6283) / 1000
+    }
+
+    let best:
+      | { x: number; z: number; score: number }
+      | undefined
+
+    for (const radiusScale of [1, 1.12, 1.26]) {
+      const radius = (required + .9) * radiusScale
+      for (const offset of [
+        0,
+        .22, -.22,
+        .45, -.45,
+        .72, -.72,
+        1.02, -1.02,
+        1.35, -1.35,
+        Math.PI,
+      ]) {
+        const angle = preferredAngle + offset
+        const x = nearest.x + Math.cos(angle) * radius
+        const z = nearest.z + Math.sin(angle) * radius
+
+        if (
+          x <= bounds.minX + landmark.radius ||
+          x >= bounds.maxX - landmark.radius ||
+          z <= bounds.minZ + landmark.radius ||
+          z >= bounds.maxZ - landmark.radius
+        ) continue
+
+        const river = riverOccupancySample(mask, x, z)
+        if (river.signedDistance < landmark.radius + 1.8) continue
+
+        let overlaps = false
+        for (const other of landmarks) {
+          if (other.id === landmark.id) continue
+          if (
+            Math.hypot(x - other.x, z - other.z) <
+            landmark.radius + other.radius + 2.2
+          ) {
+            overlaps = true
+            break
+          }
+        }
+        if (overlaps) continue
+
+        const road = pathDistanceAt(x, z)
+        if (!road) continue
+        const candidateRequired =
+          landmark.radius +
+          pathFootprintHalfWidth(road.width) +
+          1.8
+        if (road.distance < candidateRequired) continue
+
+        // Do not move a POI through the river just to gain road clearance.
+        const moveLength = Math.hypot(x - original.x, z - original.z)
+        const steps = Math.max(2, Math.ceil(moveLength / .6))
+        let crossesRiver = false
+        for (let step = 0; step <= steps; step += 1) {
+          const t = step / steps
+          const sample = riverOccupancySample(
+            mask,
+            lerp(original.x, x, t),
+            lerp(original.z, z, t),
+          )
+          if (sample.signedDistance < landmark.radius + .5) {
+            crossesRiver = true
+            break
+          }
+        }
+        if (crossesRiver) continue
+
+        const score =
+          Math.hypot(x - original.x, z - original.z) +
+          Math.abs(radiusScale - 1) * 2 +
+          Math.abs(offset) * .35
+        if (!best || score < best.score) best = { x, z, score }
+      }
+    }
+
+    if (best) {
+      landmark.x = round(best.x, 3)
+      landmark.z = round(best.z, 3)
+      changed = true
+    }
   }
 
   return changed
