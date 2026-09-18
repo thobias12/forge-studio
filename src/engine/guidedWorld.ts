@@ -908,7 +908,7 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
       poiSoil +
       micro.rocky * .2 +
       roadWear * .76 +
-      crossingWear * .38 +
+      crossingWear * .2 +
       clearing * .12,
     0,
     1,
@@ -1941,7 +1941,14 @@ function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldC
   }
 
   path.points[pivot] = { x: crossing.x, z: crossing.z }
-  for (const [offset, distance] of [[-2, 4.6], [-1, 2.35], [1, 2.35], [2, 4.6]] as const) {
+  for (const [offset, distance] of [
+    [-3, 7.15],
+    [-2, 4.85],
+    [-1, 2.45],
+    [1, 2.45],
+    [2, 4.85],
+    [3, 7.15],
+  ] as const) {
     const index = pivot + offset
     if (index <= 0 || index >= path.points.length - 1) continue
     const sign = offset < 0 ? -1 : 1
@@ -1950,10 +1957,15 @@ function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldC
       z: crossing.z + direction.z * distance * sign,
     }
     if (path.widths[index] !== undefined) {
-      path.widths[index] = round(path.width * (Math.abs(offset) === 1 ? .96 : .9), 3)
+      const distanceFromBridge = Math.abs(offset)
+      const widthScale =
+        distanceFromBridge === 1 ? .94 :
+          distanceFromBridge === 2 ? .9 :
+            .94
+      path.widths[index] = round(path.width * widthScale, 3)
     }
   }
-  if (path.widths[pivot] !== undefined) path.widths[pivot] = round(path.width * .98, 3)
+  if (path.widths[pivot] !== undefined) path.widths[pivot] = round(path.width * .95, 3)
 }
 
 
@@ -2071,8 +2083,11 @@ function buildTerrainFromFrozenHydrology(
         z * .12 - 4.6,
         seed ^ 0x68E31DA4,
       )
-      const baseCorridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
-      const corridor = baseCorridor * (.88 + shoulderNoise * .24)
+      const baseCorridor =
+        nearest.kind === 'main'
+          ? nearest.width * .56 + 1.82
+          : nearest.width * .42 + .78
+      const corridor = baseCorridor * (.9 + shoulderNoise * .2)
       if (nearest.distance >= corridor) continue
 
       if (riverMask.points.length > 1) {
@@ -2099,7 +2114,7 @@ function buildTerrainFromFrozenHydrology(
         lerp(
           heights[index],
           targetHeight,
-          influence * (nearest.kind === 'main' ? .72 : .56),
+          influence * (nearest.kind === 'main' ? .6 : .34),
         ),
         4,
       )
@@ -2117,7 +2132,14 @@ function buildTerrainFromFrozenHydrology(
       for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
         const x = bounds.minX + xIndex / (resolution - 1) * width
         const distance = Math.hypot(x - poi.x, z - poi.z)
-        const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
+        const terraceScale =
+          poi.type === 'settlement' ? .9 :
+            poi.type === 'camp' ? .72 :
+              poi.type === 'graveyard' || poi.type === 'ruins' ? .6 :
+                poi.type === 'watchtower' || poi.type === 'dungeon' ? .56 :
+                  poi.type === 'shrine' || poi.type === 'standing-stones' ? .52 :
+                    .6
+        const terraceRadius = poi.radius * terraceScale
         const edgeNoise = valueNoise2D(
           (x - poi.x) * .14 + 6.1,
           (z - poi.z) * .14 - 3.7,
@@ -2135,7 +2157,7 @@ function buildTerrainFromFrozenHydrology(
           (.82 + edgeNoise * .18)
         const index = zIndex * resolution + xIndex
         heights[index] = round(
-          lerp(heights[index], centerHeight, influence * .48),
+          lerp(heights[index], centerHeight, influence * .32),
           4,
         )
       }
@@ -2847,7 +2869,7 @@ function appendRiverbankDressing(
     return true
   }
 
-  for (let index = 2; index < terrain.stream.length - 2; index += 3) {
+  for (let index = 2; index < terrain.stream.length - 2; index += 5) {
     const point = terrain.stream[index]
     const prev = terrain.stream[index - 1]
     const next = terrain.stream[index + 1]
@@ -2859,9 +2881,9 @@ function appendRiverbankDressing(
     for (const side of [-1, 1]) {
       // A low, irregular earth patch breaks up the mathematically clean grass/water
       // seam without introducing another river mesh or touching water depth logic.
-      if (random() < .82) {
+      if (random() < .5) {
         const patchOffset = halfWaterWidth + .32 + random() * .72
-        const patchAlong = (random() - .5) * 3.2
+        const patchAlong = (random() - .5) * 5.2
         const patchX = point.x + normal.x * patchOffset * side + tangent.x * patchAlong
         const patchZ = point.z + normal.z * patchOffset * side + tangent.z * patchAlong
         const hydro = nearestHydrologySample(
@@ -2883,7 +2905,7 @@ function appendRiverbankDressing(
             x: round(patchX, 2),
             y: round(sampleTerrainHeight({ terrain, bounds }, patchX, patchZ), 2),
             z: round(patchZ, 2),
-            scale: round(.85 + random() * 1.15, 2),
+            scale: round(1.05 + random() * 1.65, 2),
             rotation: round(Math.atan2(-tangent.z, tangent.x) + (random() - .5) * .28, 3),
             variant: Math.floor(random() * 4),
           })
@@ -3139,8 +3161,8 @@ function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z:
     const sin = Math.sin(-crossing.rotation)
     const along = dx * cos - dz * sin
     const across = dx * sin + dz * cos
-    const alongRadius = crossing.kind === 'bridge' ? 7.2 : 5.6
-    const acrossRadius = Math.max(2.4, crossing.width * 1.15)
+    const alongRadius = crossing.kind === 'bridge' ? 5.8 : 4.5
+    const acrossRadius = Math.max(1.7, crossing.width * .84)
     const normalized = Math.hypot(along / alongRadius, across / acrossRadius)
     if (normalized >= 1) continue
     best = Math.max(best, 1 - smoothstep(clamp(normalized, 0, 1)))
@@ -3159,11 +3181,11 @@ function pathEdgeWear(
 
   const shoulderWarp = (
     valueNoise2D(x * .16 + 9.4, z * .16 - 5.8, seed ^ 0x9E3779B9) - .5
-  ) * (nearest.kind === 'main' ? .9 : .55)
+  ) * (nearest.kind === 'main' ? .68 : .32)
   const halfWidth = nearest.width * .5
   const fadeBase = nearest.kind === 'main'
-    ? nearest.width * .9 + .9
-    : nearest.width * 1.05 + .65
+    ? nearest.width * .62 + .58
+    : nearest.width * .48 + .3
   const fadeNoise = valueNoise2D(
     x * .085 - 12.6,
     z * .085 + 3.2,
