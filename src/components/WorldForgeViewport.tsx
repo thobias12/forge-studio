@@ -461,7 +461,6 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
 
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
-  const wood = new THREE.MeshStandardMaterial({ color: 0x55402f, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5842, roughness: 1 })
 
   if (poi.type === 'ruins') {
