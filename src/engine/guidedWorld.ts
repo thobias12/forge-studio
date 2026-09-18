@@ -2449,7 +2449,7 @@ function appendRiverbankDressing(
   riverMask: RiverOccupancyMask,
   random: () => number,
 ) {
-  if (terrain.stream.length < 4) return
+  if (terrain.stream.length < 4 || riverMask.points.length < 2) return
 
   const isClearBankPoint = (x: number, z: number, pathClearance: number) => {
     if (x <= bounds.minX || x >= bounds.maxX || z <= bounds.minZ || z >= bounds.maxZ) return false
