@@ -681,7 +681,7 @@ export function visibleStreamRenderHeight(
   // triangle can never bridge across the carved channel and hide the river.
   return Math.max(
     nominalHeight + offset,
-    sampleRenderedTerrainHeight(region, x, z) + .055,
+    sampleRenderedTerrainHeight(region, x, z) + Math.max(.055, offset),
   )
 }
 
