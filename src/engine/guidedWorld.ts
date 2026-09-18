@@ -901,7 +901,10 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
   const clearing = clearingSurfaceInfluence(region.terrain.clearings, x, z, seed)
   const crossingWear = crossingApproachWear(region.crossings, x, z)
-  const roadWear = Math.max(pathEdgeWear(region.paths, x, z, seed), crossingWear * .7)
+  const roadWear = Math.max(
+    pathEdgeWear(region.paths, region.crossings, x, z, seed),
+    crossingWear * .62,
+  )
   const forestFloor = clamp(
     ((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92) *
       (1 - clearing * .5),
@@ -2210,8 +2213,13 @@ function buildTerrainFromFrozenHydrology(
         z * .21 + 8.4,
         seed ^ 0xB5297A4D,
       ) * .28
+      const junctionTaper = nearest.kind === 'branch'
+        ? smoothstep(clamp((nearest.endpointDistance - 1.6) / 5.4, 0, 1))
+        : 1
       const influence =
-        (1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))) * edgeBreakup
+        (1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))) *
+        edgeBreakup *
+        lerp(.18, 1, junctionTaper)
       const targetHeight = sampleGridHeight(
         bounds,
         resolution,
@@ -3139,8 +3147,24 @@ function calculateBounds(nodes: GeneratedRegionNode[], sizeScale: number) {
 }
 
 function nearestPathSample(paths: GeneratedWorldPath[], x: number, z: number) {
-  let best: { distance: number; x: number; z: number; width: number; kind: GeneratedWorldPath['kind'] } | undefined
+  let best: {
+    distance: number
+    x: number
+    z: number
+    width: number
+    kind: GeneratedWorldPath['kind']
+    pathId: string
+    endpointDistance: number
+  } | undefined
+
   for (const path of paths) {
+    const start = path.points[0]
+    const end = path.points[path.points.length - 1]
+    const endpointDistance = Math.min(
+      Math.hypot(x - start.x, z - start.z),
+      Math.hypot(x - end.x, z - end.z),
+    )
+
     for (let index = 1; index < path.points.length; index += 1) {
       const a = path.points[index - 1]
       const b = path.points[index]
@@ -3155,7 +3179,15 @@ function nearestPathSample(paths: GeneratedWorldPath[], x: number, z: number) {
       const distance = Math.hypot(x - px, z - pz)
       if (best && distance >= best.distance) continue
       const width = lerp(path.widths[index - 1] ?? path.width, path.widths[index] ?? path.width, t)
-      best = { distance, x: px, z: pz, width, kind: path.kind }
+      best = {
+        distance,
+        x: px,
+        z: pz,
+        width,
+        kind: path.kind,
+        pathId: path.id,
+        endpointDistance,
+      }
     }
   }
   return best
@@ -3282,6 +3314,7 @@ function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z:
 
 function pathEdgeWear(
   paths: GeneratedWorldPath[],
+  crossings: GeneratedWorldCrossing[],
   x: number,
   z: number,
   seed = 0,
@@ -3291,29 +3324,50 @@ function pathEdgeWear(
 
   const shoulderWarp = (
     valueNoise2D(x * .16 + 9.4, z * .16 - 5.8, seed ^ 0x9E3779B9) - .5
-  ) * (nearest.kind === 'main' ? .68 : .32)
+  ) * (nearest.kind === 'main' ? .58 : .2)
   const halfWidth = nearest.width * .5
   const fadeBase = nearest.kind === 'main'
-    ? nearest.width * .62 + .58
-    : nearest.width * .48 + .3
+    ? nearest.width * .54 + .48
+    : nearest.width * .34 + .2
   const fadeNoise = valueNoise2D(
     x * .085 - 12.6,
     z * .085 + 3.2,
     seed ^ 0x7FEB352D,
   )
-  const fade = fadeBase * (.78 + fadeNoise * .44)
+  const fade = fadeBase * (.82 + fadeNoise * .34)
   const effectiveDistance = Math.max(0, nearest.distance + shoulderWarp)
   if (effectiveDistance > halfWidth + fade) return 0
 
   const edgeDistance = Math.max(0, effectiveDistance - halfWidth)
   const influence =
     1 - smoothstep(clamp(edgeDistance / Math.max(.001, fade), 0, 1))
-  const breakup = .8 + valueNoise2D(
+  const breakup = .82 + valueNoise2D(
     x * .23 + 2.7,
     z * .23 - 8.1,
     seed ^ 0x846CA68B,
-  ) * .2
-  return clamp(influence * breakup, 0, 1)
+  ) * .18
+
+  let junctionScale = 1
+  if (nearest.kind === 'branch') {
+    const endpointFade = smoothstep(
+      clamp((nearest.endpointDistance - 1.4) / 5.8, 0, 1),
+    )
+    junctionScale *= lerp(.12, 1, endpointFade)
+
+    let crossingDistance = Infinity
+    for (const crossing of crossings) {
+      crossingDistance = Math.min(
+        crossingDistance,
+        Math.hypot(x - crossing.x, z - crossing.z),
+      )
+    }
+    const bridgeFade = smoothstep(
+      clamp((crossingDistance - 5.5) / 5.5, 0, 1),
+    )
+    junctionScale *= lerp(.14, 1, bridgeFade)
+  }
+
+  return clamp(influence * breakup * junctionScale, 0, 1)
 }
 
 function distanceToPaths(x: number, z: number, paths: GeneratedWorldPath[]) {
