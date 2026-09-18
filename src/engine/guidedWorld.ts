@@ -1611,7 +1611,7 @@ function reanchorBranchesAwayFromCrossings(
   let changed = false
   for (const connection of connections) {
     if (connection.kind !== 'branch') continue
-    if (!/^branch-link-\\d+-1$/.test(connection.id)) continue
+    if (!/^branch-link-\d+-1$/.test(connection.id)) continue
     if (crossings.some((crossing) => crossing.pathId === connection.id)) continue
 
     const from = nodeMap.get(connection.from)
@@ -2189,8 +2189,8 @@ function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegio
         const axisSign = away.x * mainAxis.x + away.z * mainAxis.z >= 0 ? 1 : -1
         const alongMain = { x: mainAxis.x * axisSign, z: mainAxis.z * axisSign }
         away = normalized2(
-          away.x * .48 + alongMain.x * .52,
-          away.z * .48 + alongMain.z * .52,
+          away.x * .72 + alongMain.x * .28,
+          away.z * .72 + alongMain.z * .28,
         )
       }
 
