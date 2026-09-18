@@ -1,6 +1,8 @@
 import type { ForgeRegionDefinition } from './forgeProject'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
+export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
+export type WorldDressingType = 'tree' | 'rock' | 'fern' | 'fallen-log' | 'stump'
 
 export type GeneratedRegionNode = {
   id: string
@@ -10,7 +12,7 @@ export type GeneratedRegionNode = {
   radius: number
   label: string
   parentId?: string
-  /** Optional authored content reached through this generated landmark. */
+  poiType?: WorldPoiType
   contentType?: 'dungeon'
   contentRef?: string
 }
@@ -22,100 +24,202 @@ export type GeneratedRegionConnection = {
   kind: 'main' | 'branch'
 }
 
+export type GeneratedWorldPoint = { x: number; z: number }
+
+export type GeneratedWorldPath = {
+  id: string
+  kind: 'main' | 'branch'
+  width: number
+  points: GeneratedWorldPoint[]
+}
+
+export type GeneratedWorldPoi = {
+  id: string
+  type: WorldPoiType
+  label: string
+  x: number
+  z: number
+  radius: number
+  rotation: number
+  nodeId: string
+  contentRef?: string
+}
+
+export type GeneratedWorldDressing = {
+  id: string
+  type: WorldDressingType
+  x: number
+  y: number
+  z: number
+  scale: number
+  rotation: number
+  variant: number
+}
+
+export type GeneratedWorldTerrain = {
+  resolution: number
+  width: number
+  depth: number
+  heights: number[]
+  waterLevel: number
+  stream: GeneratedWorldPoint[]
+  clearings: Array<{ x: number; z: number; radius: number }>
+}
+
+export type WorldGenerationLayerSeeds = {
+  terrain: number
+  routes: number
+  pois: number
+  dressing: number
+}
+
 export type GeneratedRegion = {
   format: 'forge-generated-region'
-  version: 1
+  version: 2
   seed: number
+  masterSeed: number
+  layerSeeds: WorldGenerationLayerSeeds
   generationVersion: number
   regionId: string
   regionName: string
   biome: string
   nodes: GeneratedRegionNode[]
   connections: GeneratedRegionConnection[]
+  paths: GeneratedWorldPath[]
+  pois: GeneratedWorldPoi[]
+  dressing: GeneratedWorldDressing[]
+  terrain: GeneratedWorldTerrain
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
   validation: { valid: boolean; issues: string[] }
 }
 
-export function generateGuidedRegion(region: ForgeRegionDefinition, worldSeed: number, generationVersion: number): GeneratedRegion {
-  const random = seededRandom(hashSeed(`${worldSeed}:${generationVersion}:${region.id}`))
-  const chunkCount = intRange(random, region.chunkRange[0], region.chunkRange[1])
-  const spacing = 16
-  const wander = region.mainPath === 'direct' ? 3.5 : region.mainPath === 'winding' ? 8 : 12
+export function createWorldLayerSeeds(masterSeed: number): WorldGenerationLayerSeeds {
+  return {
+    terrain: hashSeed(`${masterSeed}:terrain`),
+    routes: hashSeed(`${masterSeed}:routes`),
+    pois: hashSeed(`${masterSeed}:pois`),
+    dressing: hashSeed(`${masterSeed}:dressing`),
+  }
+}
+
+export function composeWorldSeed(seeds: WorldGenerationLayerSeeds) {
+  return hashSeed(`${seeds.terrain}:${seeds.routes}:${seeds.pois}:${seeds.dressing}`)
+}
+
+export function generateGuidedRegion(
+  region: ForgeRegionDefinition,
+  worldSeed: number,
+  generationVersion: number,
+  layerSeeds: WorldGenerationLayerSeeds = createWorldLayerSeeds(worldSeed),
+): GeneratedRegion {
+  const routeRandom = seededRandom(layerSeeds.routes)
+  const poiRandom = seededRandom(layerSeeds.pois)
+  const settings = worldSettings(region)
+  const sizeScale = settings.size === 'small' ? .82 : settings.size === 'large' ? 1.22 : 1
+  const chunkCount = Math.max(4, Math.round(intRange(routeRandom, region.chunkRange[0], region.chunkRange[1]) * sizeScale))
+  const spacing = 17.5 * sizeScale
+  const wanderBase = region.mainPath === 'direct' ? 4 : region.mainPath === 'winding' ? 9 : 14
+  const wander = wanderBase * (0.7 + settings.exploration * .7)
   const nodes: GeneratedRegionNode[] = []
   const connections: GeneratedRegionConnection[] = []
   const mainIds: string[] = []
 
-  let z = (random() - 0.5) * 8
+  let z = (routeRandom() - .5) * 10
   for (let index = 0; index <= chunkCount; index += 1) {
-    if (index > 0 && index < chunkCount) z += (random() - 0.5) * wander
-    z = clamp(z, -24, 24)
+    if (index > 0 && index < chunkCount) z += (routeRandom() - .5) * wander
+    z = clamp(z, -30 * sizeScale, 30 * sizeScale)
     const id = index === 0 ? 'entry' : index === chunkCount ? 'exit' : `route-${index}`
     const kind: GeneratedRegionNodeKind = index === 0 ? 'entry' : index === chunkCount ? 'exit' : 'route'
-    nodes.push({ id, kind, x: index * spacing, z, radius: kind === 'route' ? 8.5 : 10, label: kind === 'entry' ? 'Entry' : kind === 'exit' ? 'Exit' : `Clearing ${index}` })
+    nodes.push({
+      id,
+      kind,
+      x: index * spacing,
+      z,
+      radius: kind === 'route' ? 9 + settings.openSpace * 4 : 11,
+      label: kind === 'entry' ? 'Forest Edge' : kind === 'exit' ? 'Old Road' : `Clearing ${index}`,
+    })
     mainIds.push(id)
     if (index > 0) connections.push({ id: `main-${index - 1}-${index}`, from: mainIds[index - 1], to: id, kind: 'main' })
   }
 
-  const branchCount = intRange(random, region.branchRange[0], region.branchRange[1])
+  const branchTarget = intRange(routeRandom, region.branchRange[0], region.branchRange[1])
+  const branchCount = Math.max(1, Math.round(branchTarget * (.55 + settings.exploration * .85)))
   const usableMain = mainIds.slice(1, -1)
   const usedAnchors = new Set<string>()
+
   for (let branchIndex = 0; branchIndex < branchCount && usableMain.length; branchIndex += 1) {
-    let anchor = usableMain[Math.floor(random() * usableMain.length)]
+    let anchor = usableMain[Math.floor(routeRandom() * usableMain.length)]
     let guard = 0
-    while (usedAnchors.has(anchor) && guard < 8) {
-      anchor = usableMain[Math.floor(random() * usableMain.length)]
+    while (usedAnchors.has(anchor) && guard < 12) {
+      anchor = usableMain[Math.floor(routeRandom() * usableMain.length)]
       guard += 1
     }
     usedAnchors.add(anchor)
     const anchorNode = nodes.find((item) => item.id === anchor)!
-    const direction = random() > 0.5 ? 1 : -1
-    const length = intRange(random, 1, 3)
+    const direction = routeRandom() > .5 ? 1 : -1
+    const length = intRange(routeRandom, 1, settings.exploration > .7 ? 4 : 3)
     let previousId = anchor
+
     for (let step = 1; step <= length; step += 1) {
       const id = `branch-${branchIndex}-${step}`
       const branchNode: GeneratedRegionNode = {
         id,
         kind: 'branch',
-        x: anchorNode.x + step * spacing * (0.35 + random() * 0.22),
-        z: anchorNode.z + direction * step * spacing * (0.72 + random() * 0.16),
-        radius: 7.5,
-        label: `Side path ${branchIndex + 1}`,
+        x: anchorNode.x + step * spacing * (.28 + routeRandom() * .32),
+        z: anchorNode.z + direction * step * spacing * (.68 + routeRandom() * .22),
+        radius: 7 + settings.openSpace * 2.5,
+        label: `Side Trail ${branchIndex + 1}`,
         parentId: anchor,
       }
       nodes.push(branchNode)
       connections.push({ id: `branch-link-${branchIndex}-${step}`, from: previousId, to: id, kind: 'branch' })
       previousId = id
     }
+
+    if (settings.loops > .45 && routeRandom() < settings.loops && usableMain.length > 2) {
+      const candidates = nodes.filter((item) => item.kind === 'route' && item.id !== anchor && Math.abs(item.x - anchorNode.x) > spacing * 1.3)
+      const reconnect = candidates.sort((a, b) => distance2D(a, nodes.find((item) => item.id === previousId)!) - distance2D(b, nodes.find((item) => item.id === previousId)!))[0]
+      if (reconnect && distance2D(reconnect, nodes.find((item) => item.id === previousId)!) < 38 * sizeScale) {
+        connections.push({ id: `loop-${branchIndex}`, from: previousId, to: reconnect.id, kind: 'branch' })
+      }
+    }
   }
 
-  const landmarkCount = intRange(random, region.landmarkRange[0], region.landmarkRange[1])
+  const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+  const landmarkCount = Math.max(3, Math.round(intRange(poiRandom, region.landmarkRange[0], region.landmarkRange[1]) * (.75 + settings.poiDensity * .6)))
   const branchEnds = nodes.filter((item) => item.kind === 'branch' && !connections.some((link) => link.kind === 'branch' && link.from === item.id))
-  const landmarkTargets = [...branchEnds, ...nodes.filter((item) => item.kind === 'route')]
+  const landmarkTargets = [...branchEnds, ...shuffle(nodes.filter((item) => item.kind === 'route'), poiRandom)]
+  const poiTypes = poiPool(region)
+
   for (let index = 0; index < landmarkCount && landmarkTargets.length; index += 1) {
-    const target = landmarkTargets.splice(Math.floor(random() * landmarkTargets.length), 1)[0]
-    const feature = region.features[Math.floor(random() * Math.max(1, region.features.length))] ?? 'Landmark'
-    nodes.push({
+    const target = landmarkTargets.splice(Math.floor(poiRandom() * landmarkTargets.length), 1)[0]
+    const type = poiTypes[Math.floor(poiRandom() * poiTypes.length)]
+    const offsetAngle = poiRandom() * Math.PI * 2
+    const offsetDistance = target.kind === 'branch' ? 1.5 + poiRandom() * 2 : 3 + poiRandom() * 5
+    const node: GeneratedRegionNode = {
       id: `landmark-${index}`,
       kind: 'landmark',
-      x: target.x + (random() - 0.5) * 5,
-      z: target.z + (random() - 0.5) * 5,
-      radius: 4.5,
-      label: titleCase(feature),
+      x: target.x + Math.cos(offsetAngle) * offsetDistance,
+      z: target.z + Math.sin(offsetAngle) * offsetDistance,
+      radius: poiRadius(type),
+      label: poiLabel(type),
       parentId: target.id,
-    })
+      poiType: type,
+    }
+    nodes.push(node)
   }
 
-  const combatCandidates = nodes.filter((item) => item.kind === 'route')
-  if (combatCandidates.length) {
-    const target = combatCandidates[Math.floor(combatCandidates.length * (0.45 + random() * 0.35))]
-    nodes.push({
-      id: 'encounter-1',
-      kind: 'encounter',
-      x: target.x + 2.5,
-      z: target.z - 1.5,
-      radius: 5,
-      label: `${titleCase(region.enemyDensity)} encounter`,
+  if (poiRandom() < region.settlementChance) {
+    const target = nodes.filter((node) => node.kind === 'route')[Math.max(0, Math.floor(chunkCount * .55) - 1)]
+    if (target) nodes.push({
+      id: 'settlement-1',
+      kind: 'landmark',
+      x: target.x + 4,
+      z: target.z + 5,
+      radius: 10,
+      label: 'Wayfarer Camp',
       parentId: target.id,
+      poiType: 'settlement',
     })
   }
 
@@ -123,40 +227,106 @@ export function generateGuidedRegion(region: ForgeRegionDefinition, worldSeed: n
     const currentBranchEnds = nodes.filter((item) => item.kind === 'branch' && !connections.some((link) => link.kind === 'branch' && link.from === item.id))
     const fallback = nodes.filter((item) => item.kind === 'route')
     const candidates = currentBranchEnds.length ? currentBranchEnds : fallback
-    const anchor = candidates.length ? candidates[Math.floor(random() * candidates.length)] : nodes.find((item) => item.kind === 'exit') ?? nodes[0]
+    const anchor = candidates.length ? candidates[Math.floor(poiRandom() * candidates.length)] : nodes.find((item) => item.kind === 'exit') ?? nodes[0]
     if (anchor) {
       const direction = anchor.z >= 0 ? 1 : -1
       const id = `dungeon-${region.linkedDungeonId}`
-      nodes.push({
+      const dungeonNode: GeneratedRegionNode = {
         id,
         kind: 'landmark',
-        x: anchor.x + 7 + random() * 4,
-        z: anchor.z + direction * (9 + random() * 4),
-        radius: 6.5,
+        x: anchor.x + 7 + poiRandom() * 4,
+        z: anchor.z + direction * (8 + poiRandom() * 5),
+        radius: 7,
         label: titleCase(region.linkedDungeonId),
         parentId: anchor.id,
+        poiType: 'dungeon',
         contentType: 'dungeon',
         contentRef: region.linkedDungeonId,
-      })
+      }
+      nodes.push(dungeonNode)
       connections.push({ id: `dungeon-link-${region.linkedDungeonId}`, from: anchor.id, to: id, kind: 'branch' })
     }
   }
 
-  const bounds = calculateBounds(nodes)
+  const combatCandidates = nodes.filter((item) => item.kind === 'route' || item.kind === 'branch')
+  const encounterCount = region.enemyDensity === 'high' ? 3 : region.enemyDensity === 'low' ? 1 : 2
+  for (let index = 0; index < encounterCount && combatCandidates.length; index += 1) {
+    const targetIndex = Math.min(combatCandidates.length - 1, Math.floor((index + 1) / (encounterCount + 1) * combatCandidates.length))
+    const target = combatCandidates[targetIndex]
+    nodes.push({
+      id: `encounter-${index + 1}`,
+      kind: 'encounter',
+      x: target.x + 2 + poiRandom() * 2,
+      z: target.z + (poiRandom() - .5) * 4,
+      radius: 5.5,
+      label: `${titleCase(region.enemyDensity)} encounter`,
+      parentId: target.id,
+    })
+  }
+
+  const bounds = calculateBounds(nodes, sizeScale)
+  const clearings = nodes
+    .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
+    .map((node) => ({ x: node.x, z: node.z, radius: node.radius + (node.kind === 'landmark' ? 2 : 0) }))
+
+  const stream = settings.water > .08 ? buildStream(bounds, layerSeeds.terrain, settings.water) : []
+  const terrain = buildTerrain(region, bounds, paths, clearings, stream, layerSeeds.terrain)
+  const pois = nodes
+    .filter((node): node is GeneratedRegionNode & { poiType: WorldPoiType } => Boolean(node.poiType))
+    .map((node, index) => ({
+      id: `poi-${index}`,
+      type: node.poiType,
+      label: node.label,
+      x: node.x,
+      z: node.z,
+      radius: node.radius,
+      rotation: poiRandom() * Math.PI * 2,
+      nodeId: node.id,
+      contentRef: node.contentRef,
+    }))
+  const dressing = buildDressing(region, bounds, terrain, paths, pois, layerSeeds.dressing)
   const validation = validateGeneratedRegion(nodes, connections)
+  const seed = composeWorldSeed(layerSeeds)
+
   return {
     format: 'forge-generated-region',
-    version: 1,
-    seed: worldSeed,
+    version: 2,
+    seed,
+    masterSeed: worldSeed,
+    layerSeeds,
     generationVersion,
     regionId: region.id,
     regionName: region.name,
     biome: region.biome,
     nodes,
     connections,
+    paths,
+    pois,
+    dressing,
+    terrain,
     bounds,
     validation,
   }
+}
+
+export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'bounds'>, x: number, z: number) {
+  const { terrain, bounds } = region
+  const resolution = terrain.resolution
+  if (resolution < 2 || terrain.heights.length !== resolution * resolution) return 0
+  const u = clamp((x - bounds.minX) / Math.max(.001, bounds.maxX - bounds.minX), 0, 1)
+  const v = clamp((z - bounds.minZ) / Math.max(.001, bounds.maxZ - bounds.minZ), 0, 1)
+  const gx = u * (resolution - 1)
+  const gz = v * (resolution - 1)
+  const x0 = Math.floor(gx), z0 = Math.floor(gz)
+  const x1 = Math.min(resolution - 1, x0 + 1), z1 = Math.min(resolution - 1, z0 + 1)
+  const tx = gx - x0, tz = gz - z0
+  const h00 = terrain.heights[z0 * resolution + x0] ?? 0
+  const h10 = terrain.heights[z0 * resolution + x1] ?? h00
+  const h01 = terrain.heights[z1 * resolution + x0] ?? h00
+  const h11 = terrain.heights[z1 * resolution + x1] ?? h00
+  const a = h00 + (h10 - h00) * tx
+  const b = h01 + (h11 - h01) * tx
+  return a + (b - a) * tz
 }
 
 export function validateGeneratedRegion(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[]) {
@@ -193,7 +363,7 @@ export function validateGeneratedRegion(nodes: GeneratedRegionNode[], connection
     const from = nodes.find((item) => item.id === link.from)
     const to = nodes.find((item) => item.id === link.to)
     if (!from || !to) issues.push(`Broken connection ${link.id}.`)
-    else if (Math.hypot(to.x - from.x, to.z - from.z) > 32) issues.push(`Connection ${link.id} is too long for reliable traversal.`)
+    else if (Math.hypot(to.x - from.x, to.z - from.z) > 52) issues.push(`Connection ${link.id} is too long for reliable traversal.`)
   }
 
   return { valid: issues.length === 0, issues }
@@ -203,15 +373,268 @@ export function randomWorldSeed() {
   return Math.floor(1000000 + Math.random() * 8999999)
 }
 
-function calculateBounds(nodes: GeneratedRegionNode[]) {
+function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[], seed: number) {
+  return connections.flatMap((link) => {
+    const from = nodes.find((node) => node.id === link.from)
+    const to = nodes.find((node) => node.id === link.to)
+    if (!from || !to) return []
+    const random = seededRandom(hashSeed(`${seed}:${link.id}`))
+    const dx = to.x - from.x
+    const dz = to.z - from.z
+    const length = Math.max(.001, Math.hypot(dx, dz))
+    const nx = -dz / length
+    const nz = dx / length
+    const bend = (random() - .5) * Math.min(10, length * .28)
+    const secondBend = (random() - .5) * Math.min(6, length * .18)
+    const points: GeneratedWorldPoint[] = []
+    const segments = Math.max(5, Math.round(length / 5))
+    for (let index = 0; index <= segments; index += 1) {
+      const t = index / segments
+      const lateral = Math.sin(t * Math.PI) * bend + Math.sin(t * Math.PI * 2) * secondBend
+      points.push({
+        x: from.x + dx * t + nx * lateral,
+        z: from.z + dz * t + nz * lateral,
+      })
+    }
+    return [{
+      id: link.id,
+      kind: link.kind,
+      width: link.kind === 'main' ? 5.2 : 2.9,
+      points,
+    } satisfies GeneratedWorldPath]
+  })
+}
+
+function buildStream(bounds: GeneratedRegion['bounds'], seed: number, water: number) {
+  const random = seededRandom(hashSeed(`${seed}:stream`))
+  const points: GeneratedWorldPoint[] = []
+  const count = 14
+  const baseZ = bounds.minZ + (bounds.maxZ - bounds.minZ) * (.25 + random() * .5)
+  const amplitude = (5 + water * 10)
+  for (let index = 0; index < count; index += 1) {
+    const t = index / (count - 1)
+    points.push({
+      x: bounds.minX - 4 + (bounds.maxX - bounds.minX + 8) * t,
+      z: baseZ + Math.sin(t * Math.PI * 2 + random() * 2) * amplitude + (random() - .5) * 3,
+    })
+  }
+  return points
+}
+
+function buildTerrain(
+  region: ForgeRegionDefinition,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  clearings: GeneratedWorldTerrain['clearings'],
+  stream: GeneratedWorldPoint[],
+  seed: number,
+): GeneratedWorldTerrain {
+  const settings = worldSettings(region)
+  const resolution = settings.size === 'large' ? 53 : settings.size === 'small' ? 39 : 47
+  const width = bounds.maxX - bounds.minX
+  const depth = bounds.maxZ - bounds.minZ
+  const heights: number[] = []
+  const amplitude = .55 + settings.elevation * 4.7
+  const waterLevel = -.38 - settings.water * .18
+
+  for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+    const z = bounds.minZ + zIndex / (resolution - 1) * depth
+    for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+      const x = bounds.minX + xIndex / (resolution - 1) * width
+      const n1 = valueNoise2D(x * .026, z * .026, seed)
+      const n2 = valueNoise2D(x * .061 + 17.2, z * .061 - 9.4, seed ^ 0x9E3779B9)
+      const n3 = valueNoise2D(x * .13 - 31.8, z * .13 + 11.7, seed ^ 0x85EBCA6B)
+      let height = ((n1 - .5) * 1.45 + (n2 - .5) * .58 + (n3 - .5) * .18) * amplitude
+
+      if (settings.cliffs > .08) {
+        const ridge = Math.abs(valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5) * 2
+        if (ridge > .68) height += (ridge - .68) * 5.5 * settings.cliffs
+      }
+
+      const pathDistance = distanceToPaths(x, z, paths)
+      if (pathDistance < 5.5) {
+        const weight = 1 - pathDistance / 5.5
+        height *= 1 - weight * .72
+      }
+
+      const clearing = nearestClearing(x, z, clearings)
+      if (clearing) {
+        const weight = 1 - clearing.distance / clearing.radius
+        height *= 1 - clamp(weight, 0, 1) * .64
+      }
+
+      if (stream.length > 1) {
+        const streamDistance = distanceToPolyline(x, z, stream)
+        const valleyWidth = 4.5 + settings.water * 4
+        if (streamDistance < valleyWidth) {
+          const weight = 1 - streamDistance / valleyWidth
+          height = Math.min(height, waterLevel - .12 + (1 - weight) * .7)
+        }
+      }
+
+      heights.push(round(height, 3))
+    }
+  }
+
+  return { resolution, width, depth, heights, waterLevel, stream, clearings }
+}
+
+function buildDressing(
+  region: ForgeRegionDefinition,
+  bounds: GeneratedRegion['bounds'],
+  terrain: GeneratedWorldTerrain,
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  seed: number,
+) {
+  const random = seededRandom(seed)
+  const settings = worldSettings(region)
+  const sizeFactor = settings.size === 'large' ? 1.35 : settings.size === 'small' ? .72 : 1
+  const target = Math.round((180 + settings.forestDensity * 420) * sizeFactor)
+  const dressing: GeneratedWorldDressing[] = []
+  let attempts = 0
+
+  while (dressing.length < target && attempts < target * 8) {
+    attempts += 1
+    const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
+    const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+    const pathDistance = distanceToPaths(x, z, paths)
+    const streamDistance = terrain.stream.length ? distanceToPolyline(x, z, terrain.stream) : Infinity
+    const clearing = nearestClearing(x, z, terrain.clearings)
+    const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
+
+    const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
+    if (pathDistance < 3.4 || streamDistance < 2.7 || poiDistance < 1.8) continue
+    if (random() < openPenalty * (.75 + settings.openSpace * .2)) continue
+
+    const roll = random()
+    let type: WorldDressingType
+    if (roll < .69 * settings.forestDensity + .12) type = 'tree'
+    else if (roll < .82) type = 'rock'
+    else if (roll < .9) type = 'fern'
+    else if (roll < .96) type = 'fallen-log'
+    else type = 'stump'
+
+    const y = sampleTerrainHeight({ terrain, bounds }, x, z)
+    dressing.push({
+      id: `dress-${dressing.length}`,
+      type,
+      x: round(x, 2),
+      y: round(y, 2),
+      z: round(z, 2),
+      scale: round(type === 'tree' ? .72 + random() * .78 : .6 + random() * .75, 2),
+      rotation: round(random() * Math.PI * 2, 3),
+      variant: Math.floor(random() * 4),
+    })
+  }
+
+  return dressing
+}
+
+function poiPool(region: ForgeRegionDefinition): WorldPoiType[] {
+  const features = new Set(region.features.map((feature) => feature.toLowerCase()))
+  const pool: WorldPoiType[] = ['ruins', 'camp', 'shrine', 'standing-stones', 'beast-den', 'watchtower']
+  if (features.has('grave clusters') || features.has('graveyards')) pool.push('graveyard')
+  if (features.has('ruins')) pool.push('ruins', 'watchtower')
+  return pool
+}
+
+function poiRadius(type: WorldPoiType) {
+  if (type === 'settlement') return 10
+  if (type === 'watchtower' || type === 'dungeon') return 7
+  if (type === 'graveyard' || type === 'ruins') return 6.5
+  return 5.5
+}
+
+function poiLabel(type: WorldPoiType) {
+  return ({
+    ruins: 'Forgotten Ruins',
+    camp: 'Abandoned Camp',
+    shrine: 'Wayside Shrine',
+    'standing-stones': 'Standing Stones',
+    'beast-den': 'Beast Den',
+    graveyard: 'Old Graveyard',
+    watchtower: 'Ruined Watchtower',
+    settlement: 'Wayfarer Camp',
+    dungeon: 'Dungeon Entrance',
+  } satisfies Record<WorldPoiType, string>)[type]
+}
+
+function worldSettings(region: ForgeRegionDefinition) {
+  return {
+    size: region.worldGen?.size ?? 'medium',
+    elevation: clamp(region.worldGen?.elevation ?? .45, 0, 1),
+    cliffs: clamp(region.worldGen?.cliffs ?? .28, 0, 1),
+    water: clamp(region.worldGen?.water ?? .4, 0, 1),
+    forestDensity: clamp(region.worldGen?.forestDensity ?? .78, 0, 1),
+    openSpace: clamp(region.worldGen?.openSpace ?? .38, 0, 1),
+    exploration: clamp(region.worldGen?.exploration ?? .72, 0, 1),
+    loops: clamp(region.worldGen?.loops ?? .5, 0, 1),
+    secretPaths: clamp(region.worldGen?.secretPaths ?? .45, 0, 1),
+    verticality: clamp(region.worldGen?.verticality ?? .45, 0, 1),
+    poiDensity: clamp(region.worldGen?.poiDensity ?? .7, 0, 1),
+  } as const
+}
+
+function calculateBounds(nodes: GeneratedRegionNode[], sizeScale: number) {
   const xs = nodes.map((node) => node.x)
   const zs = nodes.map((node) => node.z)
+  const margin = 19 * sizeScale
   return {
-    minX: Math.min(...xs) - 14,
-    maxX: Math.max(...xs) + 14,
-    minZ: Math.min(...zs) - 14,
-    maxZ: Math.max(...zs) + 14,
+    minX: Math.min(...xs) - margin,
+    maxX: Math.max(...xs) + margin,
+    minZ: Math.min(...zs) - margin,
+    maxZ: Math.max(...zs) + margin,
   }
+}
+
+function distanceToPaths(x: number, z: number, paths: GeneratedWorldPath[]) {
+  let best = Infinity
+  for (const path of paths) best = Math.min(best, distanceToPolyline(x, z, path.points))
+  return best
+}
+
+function distanceToPolyline(x: number, z: number, points: GeneratedWorldPoint[]) {
+  let best = Infinity
+  for (let index = 1; index < points.length; index += 1) {
+    best = Math.min(best, distanceToSegment(x, z, points[index - 1], points[index]))
+  }
+  return best
+}
+
+function distanceToSegment(x: number, z: number, a: GeneratedWorldPoint, b: GeneratedWorldPoint) {
+  const dx = b.x - a.x
+  const dz = b.z - a.z
+  const lengthSq = dx * dx + dz * dz
+  if (lengthSq <= .00001) return Math.hypot(x - a.x, z - a.z)
+  const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
+  return Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t))
+}
+
+function nearestClearing(x: number, z: number, clearings: GeneratedWorldTerrain['clearings']) {
+  let best: { distance: number; radius: number } | undefined
+  for (const clearing of clearings) {
+    const distance = Math.hypot(x - clearing.x, z - clearing.z)
+    if (distance > clearing.radius) continue
+    if (!best || distance / clearing.radius < best.distance / best.radius) best = { distance, radius: clearing.radius }
+  }
+  return best
+}
+
+function valueNoise2D(x: number, z: number, seed: number) {
+  const x0 = Math.floor(x), z0 = Math.floor(z)
+  const tx = smoothstep(x - x0), tz = smoothstep(z - z0)
+  const a = hash2D(x0, z0, seed)
+  const b = hash2D(x0 + 1, z0, seed)
+  const c = hash2D(x0, z0 + 1, seed)
+  const d = hash2D(x0 + 1, z0 + 1, seed)
+  return lerp(lerp(a, b, tx), lerp(c, d, tx), tz)
+}
+
+function hash2D(x: number, z: number, seed: number) {
+  let value = Math.imul(x, 374761393) + Math.imul(z, 668265263) + seed * 69069
+  value = Math.imul(value ^ value >>> 13, 1274126177)
+  return ((value ^ value >>> 16) >>> 0) / 4294967295
 }
 
 function hashSeed(value: string) {
@@ -240,8 +663,34 @@ function intRange(random: () => number, min: number, max: number) {
   return Math.floor(low + random() * (high - low + 1))
 }
 
+function shuffle<T>(values: T[], random: () => number) {
+  const next = [...values]
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(random() * (index + 1))
+    ;[next[index], next[target]] = [next[target], next[index]]
+  }
+  return next
+}
+
+function distance2D(a: GeneratedRegionNode, b: GeneratedRegionNode) {
+  return Math.hypot(a.x - b.x, a.z - b.z)
+}
+
+function smoothstep(value: number) {
+  return value * value * (3 - 2 * value)
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function round(value: number, digits: number) {
+  const scale = 10 ** digits
+  return Math.round(value * scale) / scale
 }
 
 function titleCase(value: string) {
