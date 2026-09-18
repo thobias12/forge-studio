@@ -361,7 +361,6 @@ function buildStream(region: GeneratedRegion) {
   const points = profile.points
   if (points.length < 2) return undefined
   const widths = profile.widths
-  const heights = profile.heights
 
   const group = new THREE.Group()
   group.name = 'GeneratedStream'
