@@ -395,6 +395,12 @@ export function generateGuidedRegion(
   resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
   separatePostRiverLandmarks(nodes, riverMask, bounds)
 
+  // POIs that intentionally have an access path must never lose it just because
+  // their original parent landed across the river. Re-anchor them to a nearby
+  // main-road node with a short river-safe spur; if necessary, move the POI
+  // locally beside that road instead of silently dropping its rendered path.
+  repairPoiRoadAccess(nodes, connections, riverMask, bounds)
+
   pruneBadLoopConnections(nodes, connections)
   pruneOrphanBranchTopology(nodes, connections)
 
@@ -1092,6 +1098,23 @@ export function validateGeneratedRegion(
     }
   }
 
+  for (const landmark of nodes.filter((node) => node.kind === 'landmark')) {
+    const accessLinks = connections.filter((connection) =>
+      connection.kind === 'branch' &&
+      (connection.from === landmark.id || connection.to === landmark.id)
+    )
+    if (!accessLinks.length) continue
+
+    const rendered = accessLinks.some((connection) =>
+      paths.some((path) => path.id === connection.id)
+    )
+    if (!rendered) {
+      issues.push(
+        `${landmark.label} has a logical access link but no rendered road/trail path.`,
+      )
+    }
+  }
+
   for (let index = 0; index < pois.length; index += 1) {
     for (let otherIndex = index + 1; otherIndex < pois.length; otherIndex += 1) {
       const a = pois[index]
@@ -1382,6 +1405,186 @@ function separatePostRiverLandmarks(
     if (best) {
       node.x = round(best.x, 3)
       node.z = round(best.z, 3)
+    }
+  }
+}
+
+function repairPoiRoadAccess(
+  nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
+  mask: RiverOccupancyMask,
+  bounds: GeneratedRegion['bounds'],
+) {
+  const routeNodes = nodes.filter((node) =>
+    node.kind === 'route' || node.kind === 'entry' || node.kind === 'exit'
+  )
+  const landmarks = nodes.filter((node) => node.kind === 'landmark')
+  if (!routeNodes.length || !landmarks.length) return
+
+  const accessWidth = .96
+  const pathClearance = pathFootprintHalfWidth(accessWidth) + 1.15
+
+  const segmentIsSafe = (
+    a: GeneratedWorldPoint,
+    b: GeneratedWorldPoint,
+    extraClearance = 0,
+  ) => {
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    const steps = Math.max(2, Math.ceil(length / .48))
+    for (let step = 0; step <= steps; step += 1) {
+      const t = step / steps
+      const x = lerp(a.x, b.x, t)
+      const z = lerp(a.z, b.z, t)
+      const river = riverOccupancySample(mask, x, z)
+      if (river.signedDistance < pathClearance + extraClearance) return false
+    }
+    return true
+  }
+
+  const hasLandmarkSpace = (
+    landmark: GeneratedRegionNode,
+    x: number,
+    z: number,
+  ) => {
+    for (const other of landmarks) {
+      if (other.id === landmark.id) continue
+      const required = landmark.radius + other.radius + 2.2
+      if (Math.hypot(x - other.x, z - other.z) < required) return false
+    }
+    return true
+  }
+
+  const rewire = (
+    connection: GeneratedRegionConnection,
+    landmark: GeneratedRegionNode,
+    anchor: GeneratedRegionNode,
+  ) => {
+    if (connection.from === landmark.id) connection.to = anchor.id
+    else connection.from = anchor.id
+    landmark.parentId = anchor.id
+  }
+
+  for (const landmark of landmarks) {
+    const connection = connections.find((item) =>
+      item.kind === 'branch' &&
+      (item.from === landmark.id || item.to === landmark.id)
+    )
+    if (!connection) continue
+
+    const currentAnchorId =
+      connection.from === landmark.id ? connection.to : connection.from
+    const currentAnchor = nodes.find((node) => node.id === currentAnchorId)
+    const currentLength = currentAnchor
+      ? Math.hypot(landmark.x - currentAnchor.x, landmark.z - currentAnchor.z)
+      : Infinity
+
+    // A direct main-road spur that is already short and river-safe is ideal.
+    if (
+      currentAnchor &&
+      (currentAnchor.kind === 'route' ||
+        currentAnchor.kind === 'entry' ||
+        currentAnchor.kind === 'exit') &&
+      currentLength <= 30 &&
+      segmentIsSafe(currentAnchor, landmark, .35)
+    ) {
+      landmark.parentId = currentAnchor.id
+      continue
+    }
+
+    const direct = [...routeNodes]
+      .map((anchor) => ({
+        anchor,
+        distance: Math.hypot(landmark.x - anchor.x, landmark.z - anchor.z),
+      }))
+      .filter(({ anchor, distance }) =>
+        distance <= 30 &&
+        riverOccupancySample(mask, anchor.x, anchor.z).signedDistance >= pathClearance + .35 &&
+        segmentIsSafe(anchor, landmark, .35)
+      )
+      .sort((a, b) => a.distance - b.distance)[0]
+
+    if (direct) {
+      rewire(connection, landmark, direct.anchor)
+      continue
+    }
+
+    // No clean direct spur from the current POI position. Keep the landmark in
+    // the same local area where possible, but move it beside the nearest safe
+    // main-road chunk rather than leaving it stranded across the river.
+    const original = { x: landmark.x, z: landmark.z }
+    const routeCandidates = [...routeNodes]
+      .sort((a, b) =>
+        Math.hypot(a.x - original.x, a.z - original.z) -
+        Math.hypot(b.x - original.x, b.z - original.z)
+      )
+      .slice(0, 8)
+
+    let best:
+      | {
+          anchor: GeneratedRegionNode
+          x: number
+          z: number
+          score: number
+        }
+      | undefined
+
+    for (const anchor of routeCandidates) {
+      const towardOriginal = Math.atan2(
+        original.z - anchor.z,
+        original.x - anchor.x,
+      )
+      const baseRadius = clamp(
+        Math.max(landmark.radius + 5.5, poiApproachDistance(landmark.poiType ?? 'ruins') * .82),
+        10,
+        18,
+      )
+      const angleOffsets = [
+        0,
+        .22, -.22,
+        .45, -.45,
+        .72, -.72,
+        1.02, -1.02,
+        1.35, -1.35,
+        Math.PI,
+      ]
+
+      for (const radiusScale of [1, 1.16, 1.34]) {
+        const radius = baseRadius * radiusScale
+        for (const angleOffset of angleOffsets) {
+          const angle = towardOriginal + angleOffset
+          const x = anchor.x + Math.cos(angle) * radius
+          const z = anchor.z + Math.sin(angle) * radius
+
+          if (
+            x <= bounds.minX + landmark.radius ||
+            x >= bounds.maxX - landmark.radius ||
+            z <= bounds.minZ + landmark.radius ||
+            z >= bounds.maxZ - landmark.radius
+          ) continue
+
+          const river = riverOccupancySample(mask, x, z)
+          if (river.signedDistance < landmark.radius + 1.8) continue
+          if (!hasLandmarkSpace(landmark, x, z)) continue
+          if (!segmentIsSafe(anchor, { x, z }, .5)) continue
+
+          const moveDistance = Math.hypot(x - original.x, z - original.z)
+          const accessDistance = Math.hypot(x - anchor.x, z - anchor.z)
+          const score =
+            moveDistance +
+            accessDistance * .18 +
+            Math.abs(radiusScale - 1) * 3.5
+
+          if (!best || score < best.score) {
+            best = { anchor, x, z, score }
+          }
+        }
+      }
+    }
+
+    if (best) {
+      landmark.x = round(best.x, 3)
+      landmark.z = round(best.z, 3)
+      rewire(connection, landmark, best.anchor)
     }
   }
 }
