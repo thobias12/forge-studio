@@ -4334,7 +4334,7 @@ function biomeIdentityProfile(biome: string) {
       clusterScale: .86,
       clusterRadiusScale: 1.05,
       clearingStrength: .9,
-      dressingScale: .86,
+      dressingScale: .94,
       microScale: 1.1,
       microRadiusScale: 1.12,
       treeBias: .58,
