@@ -1716,8 +1716,8 @@ function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegio
         const axisSign = away.x * mainAxis.x + away.z * mainAxis.z >= 0 ? 1 : -1
         const alongMain = { x: mainAxis.x * axisSign, z: mainAxis.z * axisSign }
         away = normalized2(
-          away.x * .58 + alongMain.x * .42,
-          away.z * .58 + alongMain.z * .42,
+          away.x * .48 + alongMain.x * .52,
+          away.z * .48 + alongMain.z * .52,
         )
       }
 
@@ -1744,14 +1744,14 @@ function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegio
       const endpointWidth = path.kind === 'main'
         ? Math.max(path.width, sharedMainWidth)
         : sharedMainWidth > 0
-          ? Math.min(path.width * .66, sharedMainWidth * .24)
-          : path.width * .72
+          ? Math.min(path.width * .24, sharedMainWidth * .1)
+          : path.width * .62
       path.widths[endpointIndex] = round(endpointWidth, 3)
       if (path.widths[neighborIndex] !== undefined) {
-        path.widths[neighborIndex] = round(lerp(endpointWidth, path.width, .46), 3)
+        path.widths[neighborIndex] = round(lerp(endpointWidth, path.width, .38), 3)
       }
       if (path.widths[secondIndex] !== undefined) {
-        path.widths[secondIndex] = round(lerp(endpointWidth, path.width, .74), 3)
+        path.widths[secondIndex] = round(lerp(endpointWidth, path.width, .68), 3)
       }
       if (path.widths[thirdIndex] !== undefined) {
         path.widths[thirdIndex] = round(lerp(endpointWidth, path.width, .9), 3)
@@ -3303,8 +3303,8 @@ function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z:
     const sin = Math.sin(-crossing.rotation)
     const along = dx * cos - dz * sin
     const across = dx * sin + dz * cos
-    const alongRadius = crossing.kind === 'bridge' ? 5.8 : 4.5
-    const acrossRadius = Math.max(1.7, crossing.width * .84)
+    const alongRadius = crossing.kind === 'bridge' ? 4.9 : 4
+    const acrossRadius = Math.max(1.35, crossing.width * .68)
     const normalized = Math.hypot(along / alongRadius, across / acrossRadius)
     if (normalized >= 1) continue
     best = Math.max(best, 1 - smoothstep(clamp(normalized, 0, 1)))
@@ -3367,7 +3367,8 @@ function pathEdgeWear(
     junctionScale *= lerp(.14, 1, bridgeFade)
   }
 
-  return clamp(influence * breakup * junctionScale, 0, 1)
+  const trailStrength = nearest.kind === 'branch' ? .72 : 1
+  return clamp(influence * breakup * junctionScale * trailStrength, 0, 1)
 }
 
 function distanceToPaths(x: number, z: number, paths: GeneratedWorldPath[]) {
