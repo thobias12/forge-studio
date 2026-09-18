@@ -1286,7 +1286,7 @@ function makeRuntimeTerrainPatch(
   }
   for (let index = 0; index < segments; index += 1) {
     const next = index === segments - 1 ? 1 : index + 2
-    indices.push(0, index + 1, next)
+    indices.push(0, next, index + 1)
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
@@ -1536,7 +1536,7 @@ function makeRuntimeIrregularPatch(radius: number, seedKey: string) {
   }
   for (let index = 0; index < segments; index += 1) {
     const next = index === segments - 1 ? 1 : index + 2
-    indices.push(0, index + 1, next)
+    indices.push(0, next, index + 1)
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
