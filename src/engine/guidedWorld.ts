@@ -1193,6 +1193,7 @@ function pathClearanceSamples(path: GeneratedWorldPath, maxSpacing = .72) {
     x: number
     z: number
     width: number
+    pointIndex?: number
     segmentIndex?: number
     t?: number
   }> = []
@@ -1203,6 +1204,7 @@ function pathClearanceSamples(path: GeneratedWorldPath, maxSpacing = .72) {
       x: point.x,
       z: point.z,
       width: path.widths[Math.min(index, path.widths.length - 1)] ?? path.width,
+      pointIndex: index,
     })
 
     if (index === 0) continue
@@ -1456,11 +1458,7 @@ function repairResidualRiverPathIncursions(
       if (!violation) continue
 
       const segmentIndex = violation.point.segmentIndex
-      const t = violation.point.t
-      if (segmentIndex === undefined || t === undefined || segmentIndex <= 0) {
-        continue
-      }
-
+      const pointIndex = violation.point.pointIndex
       const width = violation.point.width
       const river = violation.river
       let dx = violation.point.x - river.x
@@ -1469,7 +1467,7 @@ function repairResidualRiverPathIncursions(
 
       if (length < .001) {
         const sign = hashSeed(
-          `river-detour:${path.id}:${segmentIndex}:${repairPass}`,
+          `river-detour:${path.id}:${segmentIndex ?? pointIndex ?? 0}:${repairPass}`,
         ) % 2 === 0 ? 1 : -1
         dx = -river.tangentZ * sign
         dz = river.tangentX * sign
@@ -1484,6 +1482,18 @@ function repairResidualRiverPathIncursions(
         x: river.x + dx / length * targetDistance,
         z: river.z + dz / length * targetDistance,
       })
+
+      if (
+        pointIndex !== undefined &&
+        pointIndex > 0 &&
+        pointIndex < path.points.length - 1
+      ) {
+        path.points[pointIndex] = detour
+        inserted = true
+        continue
+      }
+
+      if (segmentIndex === undefined || segmentIndex <= 0) continue
 
       path.points.splice(segmentIndex, 0, detour)
       path.widths.splice(
