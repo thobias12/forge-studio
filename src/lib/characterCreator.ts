@@ -121,7 +121,7 @@ export function createDefaultIdentity(classId: SkillboundClass = 'duskstrider'):
   const definition = CLASS_DEFINITIONS[classId]
   return {
     format: 'SkillboundCharacterIdentity',
-    version: 1,
+    version: 2,
     id: crypto.randomUUID(),
     name: definition.name,
     classId,
