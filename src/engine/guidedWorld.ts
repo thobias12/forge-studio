@@ -105,6 +105,12 @@ type FrozenHydrology = {
   heights: number[]
 }
 
+export type RiverOccupancyMask = {
+  points: GeneratedWorldPoint[]
+  widths: number[]
+  bankPadding: number
+}
+
 export type WorldGenerationLayerSeeds = {
   terrain: number
   routes: number
@@ -299,10 +305,6 @@ export function generateGuidedRegion(
     }
   }
 
-  const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
-  smoothWorldJunctions(paths, nodes)
-  shapeLandmarkApproaches(paths, nodes)
-
   const combatCandidates = nodes.filter((item) => item.kind === 'route' || item.kind === 'branch')
   const encounterCount = region.enemyDensity === 'high' ? 3 : region.enemyDensity === 'low' ? 1 : 2
   for (let index = 0; index < encounterCount && combatCandidates.length; index += 1) {
@@ -320,6 +322,38 @@ export function generateGuidedRegion(
   }
 
   const bounds = calculateBounds(nodes, sizeScale)
+
+  // River Occupancy Pipeline:
+  // 1) freeze hydrology from the untouched terrain foundation,
+  // 2) derive one bank-aware occupancy corridor from that frozen river,
+  // 3) move world nodes outside the corridor before final paths are built,
+  // 4) permit roads inside it only at explicit crossing anchors,
+  // 5) reuse the same mask for terrain shaping, dressing and validation.
+  const terrainFoundation = buildTerrainFoundation(region, bounds, layerSeeds.terrain)
+  const frozenHydrology = buildFrozenHydrology(
+    terrainFoundation,
+    bounds,
+    layerSeeds.terrain,
+    settings.water,
+  )
+  const riverMask = buildRiverOccupancyMask(
+    frozenHydrology.points,
+    frozenHydrology.widths,
+  )
+
+  resolveNodesOutsideRiverMask(nodes, riverMask, bounds)
+
+  const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+  smoothWorldJunctions(paths, nodes)
+  shapeLandmarkApproaches(paths, nodes)
+
+  const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
+  for (const crossing of crossings) {
+    const path = paths.find((item) => item.id === crossing.pathId)
+    if (path) shapePathAtCrossing(path, crossing)
+  }
+
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
     .map((node) => ({ x: node.x, z: node.z, radius: node.radius + (node.kind === 'landmark' ? 2 : 0) }))
@@ -337,19 +371,7 @@ export function generateGuidedRegion(
       nodeId: node.id,
       contentRef: node.contentRef,
     }))
-  // Frozen Hydrology Pipeline:
-  // 1) solve the land + river exactly once,
-  // 2) choose immutable crossing anchors on that river,
-  // 3) route roads through those anchors,
-  // 4) shape terrain around the final roads without ever solving water again.
-  const terrainFoundation = buildTerrainFoundation(region, bounds, layerSeeds.terrain)
-  const frozenHydrology = buildFrozenHydrology(
-    terrainFoundation,
-    bounds,
-    layerSeeds.terrain,
-    settings.water,
-  )
-  const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+
   const terrain = buildTerrainFromFrozenHydrology(
     region,
     bounds,
@@ -359,10 +381,28 @@ export function generateGuidedRegion(
     layerSeeds.terrain,
     terrainFoundation,
     frozenHydrology,
+    riverMask,
   )
 
-  const dressing = buildDressing(region, bounds, terrain, paths, pois, layerSeeds.dressing)
-  const validation = validateGeneratedRegion(nodes, connections, paths, crossings, terrain.stream, bounds)
+  const dressing = buildDressing(
+    region,
+    bounds,
+    terrain,
+    paths,
+    pois,
+    riverMask,
+    layerSeeds.dressing,
+  )
+  const validation = validateGeneratedRegion(
+    nodes,
+    connections,
+    paths,
+    crossings,
+    terrain.stream,
+    bounds,
+    riverMask,
+    pois,
+  )
   const seed = composeWorldSeed(layerSeeds)
 
   return {
@@ -825,6 +865,8 @@ export function validateGeneratedRegion(
   crossings: GeneratedWorldCrossing[] = [],
   stream: GeneratedWorldPoint[] = [],
   bounds?: GeneratedRegion['bounds'],
+  riverMask?: RiverOccupancyMask,
+  pois: GeneratedWorldPoi[] = [],
 ) {
   const issues: string[] = []
   const entry = nodes.find((item) => item.kind === 'entry')
@@ -892,6 +934,50 @@ export function validateGeneratedRegion(
     }
   }
 
+  if (riverMask && riverMask.points.length > 1) {
+    for (const poi of pois) {
+      const sample = riverOccupancySample(riverMask, poi.x, poi.z)
+      if (sample.signedDistance < poi.radius + .5) {
+        issues.push(`${poi.label} overlaps the final river occupancy corridor.`)
+      }
+    }
+
+    for (const path of paths) {
+      let illegal = false
+      for (let index = 0; index < path.points.length; index += 1) {
+        const samples = [path.points[index]]
+        if (index > 0) {
+          const previous = path.points[index - 1]
+          samples.push({
+            x: (previous.x + path.points[index].x) * .5,
+            z: (previous.z + path.points[index].z) * .5,
+          })
+        }
+
+        for (const point of samples) {
+          const river = riverOccupancySample(riverMask, point.x, point.z)
+          const pathWidth = path.widths[Math.min(index, path.widths.length - 1)] ?? path.width
+          const required = pathWidth * .5 + .2
+          if (river.signedDistance >= required) continue
+          if (crossingAllowsRiverOccupancy(
+            point.x,
+            point.z,
+            crossings,
+            river.radius,
+            pathWidth * .5,
+          )) continue
+          illegal = true
+          break
+        }
+        if (illegal) break
+      }
+
+      if (illegal) {
+        issues.push(`Path ${path.id} enters the river occupancy corridor outside an explicit crossing.`)
+      }
+    }
+  }
+
   return { valid: issues.length === 0, issues }
 }
 
@@ -910,6 +996,189 @@ function boundarySides(
 
 export function randomWorldSeed() {
   return Math.floor(1000000 + Math.random() * 8999999)
+}
+
+export function buildRiverOccupancyMask(
+  points: GeneratedWorldPoint[],
+  widths: number[],
+  bankPadding = .9,
+): RiverOccupancyMask {
+  return {
+    points: points.map((point) => ({ ...point })),
+    widths: points.map((_, index) => widths[index] ?? widths[0] ?? 2),
+    bankPadding,
+  }
+}
+
+function riverOccupancyRadius(width: number, bankPadding: number) {
+  // Must match the rendered bank ribbon in World Forge / Play Region:
+  // bank full width = streamWidth * 1.72 + .55.
+  return (width * 1.72 + .55) * .5 + bankPadding
+}
+
+export function riverOccupancySample(mask: RiverOccupancyMask, x: number, z: number) {
+  if (mask.points.length < 2) {
+    return {
+      distance: Infinity,
+      radius: 0,
+      signedDistance: Infinity,
+      x,
+      z,
+      tangentX: 1,
+      tangentZ: 0,
+    }
+  }
+
+  let best = {
+    distance: Infinity,
+    radius: riverOccupancyRadius(mask.widths[0] ?? 2, mask.bankPadding),
+    signedDistance: Infinity,
+    x: mask.points[0].x,
+    z: mask.points[0].z,
+    tangentX: 1,
+    tangentZ: 0,
+  }
+
+  for (let index = 1; index < mask.points.length; index += 1) {
+    const a = mask.points[index - 1]
+    const b = mask.points[index]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const lengthSq = dx * dx + dz * dz
+    const t = lengthSq > .00001
+      ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
+      : 0
+    const px = a.x + dx * t
+    const pz = a.z + dz * t
+    const distance = Math.hypot(x - px, z - pz)
+    if (distance >= best.distance) continue
+
+    const width = lerp(
+      mask.widths[index - 1] ?? mask.widths[0] ?? 2,
+      mask.widths[index] ?? mask.widths[index - 1] ?? 2,
+      t,
+    )
+    const radius = riverOccupancyRadius(width, mask.bankPadding)
+    const tangent = normalized2(dx, dz)
+    best = {
+      distance,
+      radius,
+      signedDistance: distance - radius,
+      x: px,
+      z: pz,
+      tangentX: tangent.x,
+      tangentZ: tangent.z,
+    }
+  }
+
+  return best
+}
+
+function resolveNodesOutsideRiverMask(
+  nodes: GeneratedRegionNode[],
+  mask: RiverOccupancyMask,
+  bounds: GeneratedRegion['bounds'],
+) {
+  if (mask.points.length < 2) return
+
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const node of nodes) {
+      const sample = riverOccupancySample(mask, node.x, node.z)
+      const clearance =
+        node.kind === 'landmark'
+          ? node.radius + 1.5
+          : node.kind === 'encounter'
+            ? node.radius + .85
+            : 2.8
+
+      if (sample.signedDistance >= clearance) continue
+
+      let dx = node.x - sample.x
+      let dz = node.z - sample.z
+      let length = Math.hypot(dx, dz)
+      if (length < .001) {
+        const sign = hashSeed(`river-node-side:${node.id}`) % 2 === 0 ? 1 : -1
+        dx = -sample.tangentZ * sign
+        dz = sample.tangentX * sign
+        length = 1
+      }
+
+      const targetDistance = sample.radius + clearance
+      node.x = clamp(
+        sample.x + dx / length * targetDistance,
+        bounds.minX + 1.25,
+        bounds.maxX - 1.25,
+      )
+      node.z = clamp(
+        sample.z + dz / length * targetDistance,
+        bounds.minZ + 1.25,
+        bounds.maxZ - 1.25,
+      )
+    }
+  }
+}
+
+function crossingAllowsRiverOccupancy(
+  x: number,
+  z: number,
+  crossings: GeneratedWorldCrossing[],
+  sampleRadius: number,
+  extra = 0,
+) {
+  return crossings.some((crossing) =>
+    Math.hypot(x - crossing.x, z - crossing.z) <= sampleRadius + 5.2 + extra
+  )
+}
+
+function enforcePathsOutsideRiverMask(
+  paths: GeneratedWorldPath[],
+  mask: RiverOccupancyMask,
+  crossings: GeneratedWorldCrossing[],
+  bounds: GeneratedRegion['bounds'],
+) {
+  if (mask.points.length < 2) return
+
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const path of paths) {
+      for (let index = 1; index < path.points.length - 1; index += 1) {
+        const point = path.points[index]
+        const sample = riverOccupancySample(mask, point.x, point.z)
+        const pathWidth = path.widths[index] ?? path.width
+        const requiredClearance = pathWidth * .5 + .5
+
+        if (sample.signedDistance >= requiredClearance) continue
+        if (crossingAllowsRiverOccupancy(
+          point.x,
+          point.z,
+          crossings,
+          sample.radius,
+          pathWidth * .5,
+        )) continue
+
+        let dx = point.x - sample.x
+        let dz = point.z - sample.z
+        let length = Math.hypot(dx, dz)
+        if (length < .001) {
+          const sign = hashSeed(`river-path-side:${path.id}:${index}`) % 2 === 0 ? 1 : -1
+          dx = -sample.tangentZ * sign
+          dz = sample.tangentX * sign
+          length = 1
+        }
+
+        const targetDistance = sample.radius + requiredClearance
+        point.x = clamp(
+          sample.x + dx / length * targetDistance,
+          bounds.minX + .5,
+          bounds.maxX - .5,
+        )
+        point.z = clamp(
+          sample.z + dz / length * targetDistance,
+          bounds.minZ + .5,
+          bounds.maxZ - .5,
+        )
+      }
+    }
+  }
 }
 
 function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[], seed: number) {
@@ -1423,6 +1692,7 @@ function buildTerrainFromFrozenHydrology(
   seed: number,
   foundation: TerrainFoundation,
   hydrology: FrozenHydrology,
+  riverMask: RiverOccupancyMask,
 ): GeneratedWorldTerrain {
   const settings = worldSettings(region)
   const { resolution, width, depth } = foundation
@@ -1467,15 +1737,9 @@ function buildTerrainFromFrozenHydrology(
       const corridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
       if (nearest.distance >= corridor) continue
 
-      if (hydrology.points.length > 1) {
-        const river = nearestHydrologySample(
-          x,
-          z,
-          hydrology.points,
-          hydrology.widths,
-          hydrology.heights,
-        )
-        if (river.distance < river.width * 1.9 + 1.6) continue
+      if (riverMask.points.length > 1) {
+        const river = riverOccupancySample(riverMask, x, z)
+        if (river.signedDistance < 1.05) continue
       }
 
       const influence = 1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))
@@ -1508,10 +1772,10 @@ function buildTerrainFromFrozenHydrology(
         const distance = Math.hypot(x - poi.x, z - poi.z)
         const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
         if (distance >= terraceRadius) continue
-        const riverDistance = hydrology.points.length > 1
-          ? distanceToPolyline(x, z, hydrology.points)
+        const riverClearance = riverMask.points.length > 1
+          ? riverOccupancySample(riverMask, x, z).signedDistance
           : Infinity
-        if (riverDistance < 3.5) continue
+        if (riverClearance < 1.5) continue
         const influence = 1 - smoothstep(clamp(distance / terraceRadius, 0, 1))
         const index = zIndex * resolution + xIndex
         heights[index] = round(
@@ -1859,6 +2123,7 @@ function buildDressing(
   terrain: GeneratedWorldTerrain,
   paths: GeneratedWorldPath[],
   pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
   seed: number,
 ) {
   const random = seededRandom(seed)
@@ -1880,12 +2145,14 @@ function buildDressing(
     const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
     const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
     const pathDistance = distanceToPaths(x, z, paths)
-    const streamDistance = terrain.stream.length ? distanceToPolyline(x, z, terrain.stream) : Infinity
+    const riverClearance = riverMask.points.length
+      ? riverOccupancySample(riverMask, x, z).signedDistance
+      : Infinity
     const clearing = nearestClearing(x, z, terrain.clearings)
     const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
     const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
-    if (pathDistance < 2.35 || poiDistance < 3.6 || streamDistance < 1.15) continue
+    if (pathDistance < 2.35 || poiDistance < 3.6 || riverClearance < .55) continue
     const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
     if (random() < openPenalty * (.76 + settings.openSpace * .18)) continue
 
@@ -1914,7 +2181,7 @@ function buildDressing(
     density *= 1 - micro.rocky * .18
     density += micro['forest-floor'] * .12 + micro.scrub * .08
 
-    const nearRiver = streamDistance < 5
+    const nearRiver = riverClearance < 3.8
     if (!nearRiver && random() > clamp(density, .05, 1)) continue
 
     const roll = random()
@@ -1954,7 +2221,7 @@ function buildDressing(
     })
   }
 
-  appendRiverbankDressing(dressing, terrain, bounds, paths, pois, random)
+  appendRiverbankDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   return dressing
 }
 
@@ -1964,6 +2231,7 @@ function appendRiverbankDressing(
   bounds: GeneratedRegion['bounds'],
   paths: GeneratedWorldPath[],
   pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
   random: () => number,
 ) {
   if (terrain.stream.length < 4) return
@@ -1973,16 +2241,17 @@ function appendRiverbankDressing(
     const next = terrain.stream[index + 1]
     const tangent = normalized2(next.x - prev.x, next.z - prev.z)
     const normal = { x: -tangent.z, z: tangent.x }
-    const width = terrain.streamWidths[index] ?? 2
 
     for (const side of [-1, 1]) {
       const clusterSize = 1 + Math.floor(random() * 3)
       for (let itemIndex = 0; itemIndex < clusterSize; itemIndex += 1) {
-        const bankOffset = width * .7 + 1 + random() * 2.4
+        const occupancy = riverOccupancySample(riverMask, point.x, point.z)
+        const bankOffset = occupancy.radius + .45 + random() * 2.15
         const along = (random() - .5) * 4.2
         const x = point.x + normal.x * bankOffset * side + tangent.x * along
         const z = point.z + normal.z * bankOffset * side + tangent.z * along
         if (x <= bounds.minX || x >= bounds.maxX || z <= bounds.minZ || z >= bounds.maxZ) continue
+        if (riverOccupancySample(riverMask, x, z).signedDistance < .2) continue
         if (distanceToPaths(x, z, paths) < 2) continue
         if (pois.some((poi) => Math.hypot(x - poi.x, z - poi.z) < poi.radius + 2)) continue
 

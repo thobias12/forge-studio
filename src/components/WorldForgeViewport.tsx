@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
+  buildRiverOccupancyMask,
+  riverOccupancySample,
   sampleStreamHeight,
   sampleTerrainHeight,
   streamRenderContinuityIssues,
@@ -193,6 +195,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
       <span><i className="raw"/>Raw frozen hydrology</span>
       <span><i className="profile"/>Render profile</span>
       <span><i className="rows"/>Water row centers</span>
+      <span><i className="mask"/>River occupancy</span>
       <span><i className="bounds"/>Terrain bounds</span>
       <span><i className="start"/>START</span>
       <span><i className="end"/>END</span>
@@ -260,6 +263,33 @@ function buildRiverDiagnostics(region: GeneratedRegion) {
   const rawHeights = region.terrain.streamHeights
   const profile = streamRenderProfile(region)
   const surface = streamWaterSurfaceRows(region, 5, .065)
+  const occupancyMask = buildRiverOccupancyMask(
+    region.terrain.stream,
+    region.terrain.streamWidths,
+  )
+
+  if (occupancyMask.points.length > 1) {
+    const left: THREE.Vector3[] = []
+    const right: THREE.Vector3[] = []
+    for (const point of occupancyMask.points) {
+      const sample = riverOccupancySample(occupancyMask, point.x, point.z)
+      const nx = -sample.tangentZ
+      const nz = sample.tangentX
+      const y = sampleTerrainHeight(region, point.x, point.z) + 1.02
+      left.push(new THREE.Vector3(
+        point.x + nx * sample.radius,
+        y,
+        point.z + nz * sample.radius,
+      ))
+      right.push(new THREE.Vector3(
+        point.x - nx * sample.radius,
+        y,
+        point.z - nz * sample.radius,
+      ))
+    }
+    group.add(makeRiverDebugLine(left, 0xff9f43))
+    group.add(makeRiverDebugLine(right, 0xff9f43))
+  }
 
   if (raw.length > 1) {
     const rawPoints = raw.map((point, index) => new THREE.Vector3(
