@@ -1010,7 +1010,6 @@ export function validateGeneratedRegion(
         issues.push(`Path ${path.id} enters the river occupancy corridor outside an explicit crossing.`)
       }
     }
-    }
   }
 
   return { valid: issues.length === 0, issues }
