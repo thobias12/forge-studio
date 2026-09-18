@@ -407,6 +407,73 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   return a + (b - a) * tz
 }
 
+export function streamRenderProfile(region: GeneratedRegion, extension = 26) {
+  const points = region.terrain.stream
+  if (points.length < 2) {
+    return {
+      points: points.map((point) => ({ ...point })),
+      widths: [...region.terrain.streamWidths],
+      heights: [...region.terrain.streamHeights],
+    }
+  }
+
+  const widths = region.terrain.streamWidths.length === points.length
+    ? region.terrain.streamWidths
+    : points.map(() => 2.3)
+  const heights = region.terrain.streamHeights.length === points.length
+    ? region.terrain.streamHeights
+    : points.map(() => region.terrain.waterLevel)
+
+  const startLookahead = points[Math.min(points.length - 1, 3)]
+  const endLookback = points[Math.max(0, points.length - 4)]
+  const startDir = normalized2(points[0].x - startLookahead.x, points[0].z - startLookahead.z)
+  const endDir = normalized2(
+    points[points.length - 1].x - endLookback.x,
+    points[points.length - 1].z - endLookback.z,
+  )
+  const startSlope = heights.length > 1 ? heights[0] - heights[1] : 0
+  const endSlope = heights.length > 1 ? heights[heights.length - 1] - heights[heights.length - 2] : 0
+
+  const extendedPoints: GeneratedWorldPoint[] = []
+  const extendedWidths: number[] = []
+  const extendedHeights: number[] = []
+  const steps = 3
+
+  for (let step = steps; step >= 1; step -= 1) {
+    const t = step / steps
+    const distance = extension * t
+    extendedPoints.push({
+      x: points[0].x + startDir.x * distance,
+      z: points[0].z + startDir.z * distance,
+    })
+    extendedWidths.push(widths[0] * lerp(.28, .82, 1 - t))
+    extendedHeights.push(heights[0] + startSlope * step)
+  }
+
+  for (let index = 0; index < points.length; index += 1) {
+    extendedPoints.push({ ...points[index] })
+    extendedWidths.push(widths[index])
+    extendedHeights.push(heights[index])
+  }
+
+  for (let step = 1; step <= steps; step += 1) {
+    const t = step / steps
+    const distance = extension * t
+    extendedPoints.push({
+      x: points[points.length - 1].x + endDir.x * distance,
+      z: points[points.length - 1].z + endDir.z * distance,
+    })
+    extendedWidths.push(widths[widths.length - 1] * lerp(.82, .28, t))
+    extendedHeights.push(heights[heights.length - 1] + endSlope * step)
+  }
+
+  return {
+    points: extendedPoints,
+    widths: extendedWidths,
+    heights: extendedHeights,
+  }
+}
+
 export function sampleStreamHeight(region: GeneratedRegion, x: number, z: number) {
   if (region.terrain.stream.length < 2 || region.terrain.streamHeights.length !== region.terrain.stream.length) {
     return region.terrain.waterLevel
@@ -779,6 +846,11 @@ function buildCrossings(
         const streamDir = normalized2(d.x - c.x, d.z - c.z)
         const perpendicular = Math.abs(roadDir.x * streamDir.z - roadDir.z * streamDir.x)
         const streamT = streamIndex / Math.max(1, stream.length - 1)
+
+        // Entrances/exits must read as river boundaries, not bridge locations.
+        // Reserve the first/last 15% of the frozen river as crossing-free space.
+        if (streamT < .15 || streamT > .85) continue
+
         const centerQuality = 1 - Math.abs(streamT - .5) * 2
         candidates.push({
           path,

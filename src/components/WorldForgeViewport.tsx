@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
   sampleStreamHeight,
   sampleTerrainHeight,
+  streamRenderProfile,
   sampleTerrainSurface,
   type GeneratedRegion,
   type GeneratedWorldPath,
@@ -16,6 +17,7 @@ type Props = {
   showBranches: boolean
   showLandmarks: boolean
   showBiome: boolean
+  showBoundary: boolean
 }
 
 type ViewState = {
@@ -28,11 +30,12 @@ type ViewState = {
   branches?: THREE.Group
   landmarks?: THREE.Group
   biome?: THREE.Group
+  boundary?: THREE.Group
   observer?: ResizeObserver
   raf?: number
 }
 
-export default function WorldForgeViewport({ region, showRoute, showBranches, showLandmarks, showBiome }: Props) {
+export default function WorldForgeViewport({ region, showRoute, showBranches, showLandmarks, showBiome, showBoundary }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ViewState>({})
 
@@ -127,6 +130,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     state.branches = built.branches
     state.landmarks = built.landmarks
     state.biome = built.biome
+    state.boundary = built.boundary
     state.scene.add(built.root)
 
     const width = region.bounds.maxX - region.bounds.minX
@@ -145,6 +149,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     built.branches.visible = showBranches
     built.landmarks.visible = showLandmarks
     built.biome.visible = showBiome
+    built.boundary.visible = showBoundary
   }, [region])
 
   useEffect(() => {
@@ -162,6 +167,10 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
   useEffect(() => {
     if (stateRef.current.biome) stateRef.current.biome.visible = showBiome
   }, [showBiome])
+
+  useEffect(() => {
+    if (stateRef.current.boundary) stateRef.current.boundary.visible = showBoundary
+  }, [showBoundary])
 
   return <div className="world-forge-map world-forge-map-3d" ref={hostRef}>
     <div className="world-forge-map-legend">
@@ -183,6 +192,10 @@ function buildRegionScene(region: GeneratedRegion) {
 
   const terrain = buildTerrain(region)
   root.add(terrain)
+
+  const boundary = buildTerrainBoundaryDebug(region)
+  boundary.visible = false
+  root.add(boundary)
 
   const stream = buildStream(region)
   if (stream) root.add(stream)
@@ -214,7 +227,46 @@ function buildRegionScene(region: GeneratedRegion) {
   addEntryExitMarkers(region, landmarks)
   root.add(landmarks)
 
-  return { root, route, branches, landmarks, biome }
+  return { root, route, branches, landmarks, biome, boundary }
+}
+
+function buildTerrainBoundaryDebug(region: GeneratedRegion) {
+  const group = new THREE.Group()
+  group.name = 'TerrainBoundaryDebug'
+
+  const samplesPerEdge = 28
+  const points: THREE.Vector3[] = []
+  const pushEdge = (
+    fromX: number,
+    fromZ: number,
+    toX: number,
+    toZ: number,
+  ) => {
+    for (let index = 0; index < samplesPerEdge; index += 1) {
+      const t = index / samplesPerEdge
+      const x = THREE.MathUtils.lerp(fromX, toX, t)
+      const z = THREE.MathUtils.lerp(fromZ, toZ, t)
+      points.push(new THREE.Vector3(x, sampleTerrainHeight(region, x, z) + .32, z))
+    }
+  }
+
+  const { minX, maxX, minZ, maxZ } = region.bounds
+  pushEdge(minX, minZ, maxX, minZ)
+  pushEdge(maxX, minZ, maxX, maxZ)
+  pushEdge(maxX, maxZ, minX, maxZ)
+  pushEdge(minX, maxZ, minX, minZ)
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points)
+  const material = new THREE.LineBasicMaterial({
+    color: 0x69e7d0,
+    transparent: true,
+    opacity: .9,
+    depthTest: false,
+  })
+  const line = new THREE.LineLoop(geometry, material)
+  line.renderOrder = 50
+  group.add(line)
+  return group
 }
 
 function buildBoundaryBackdrop(region: GeneratedRegion) {
@@ -303,14 +355,11 @@ function buildTerrain(region: GeneratedRegion) {
 }
 
 function buildStream(region: GeneratedRegion) {
-  const points = region.terrain.stream
+  const profile = streamRenderProfile(region)
+  const points = profile.points
   if (points.length < 2) return undefined
-  const widths = region.terrain.streamWidths.length === points.length
-    ? region.terrain.streamWidths
-    : points.map(() => 2.3)
-  const heights = region.terrain.streamHeights.length === points.length
-    ? region.terrain.streamHeights
-    : points.map(() => region.terrain.waterLevel)
+  const widths = profile.widths
+  const heights = profile.heights
 
   const group = new THREE.Group()
   group.name = 'GeneratedStream'

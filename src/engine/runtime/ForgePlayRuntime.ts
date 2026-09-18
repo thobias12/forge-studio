@@ -7,7 +7,7 @@ import type {
   ForgePlayerDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
+import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderProfile, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
 import {
   bindCharacterAsset,
   disposeBoundObject,
@@ -1158,13 +1158,10 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
 }
 
 function makeGeneratedStream(region: GeneratedRegion) {
-  const points = region.terrain.stream
-  const widths = region.terrain.streamWidths.length === points.length
-    ? region.terrain.streamWidths
-    : points.map(() => 2.3)
-  const heights = region.terrain.streamHeights.length === points.length
-    ? region.terrain.streamHeights
-    : points.map(() => region.terrain.waterLevel)
+  const profile = streamRenderProfile(region)
+  const points = profile.points
+  const widths = profile.widths
+  const heights = profile.heights
 
   const group = new THREE.Group()
   const banks = new THREE.Mesh(
