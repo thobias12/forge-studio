@@ -2283,10 +2283,20 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       fire.position.y = .09
       group.add(fire)
       for (let i = 0; i < 4; i += 1) {
-        const angle = i / 4 * Math.PI * 2 + .45
+        const benchAngle =
+          i / 4 * Math.PI * 2 +
+          .45 +
+          (tentRandom() - .5) * .12
+        const benchRadius = 1.45 + (tentRandom() - .5) * .18
         const bench = new THREE.Mesh(new THREE.BoxGeometry(1.15, .22, .28), wood)
-        bench.position.set(Math.cos(angle) * 1.45, .22, Math.sin(angle) * 1.45)
-        bench.rotation.y = -angle
+        bench.position.set(
+          Math.cos(benchAngle) * benchRadius,
+          .22,
+          Math.sin(benchAngle) * benchRadius,
+        )
+        bench.rotation.y =
+          -benchAngle +
+          (tentRandom() - .5) * .08
         group.add(bench)
       }
       obstacles.push({ x: poi.x, z: poi.z, radius: (poi.type === 'settlement' ? 4.5 : 3.7) * poiVisualScale })
@@ -2540,6 +2550,45 @@ function addRuntimePoiEnvironment(
     group.add(patch)
   }
 
+  const addWornArc = (
+    innerRadius: number,
+    outerRadius: number,
+    startAngle: number,
+    length: number,
+    color: number,
+    opacity: number,
+    rotation = 0,
+  ) => {
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 1,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    })
+    const arc = new THREE.Mesh(
+      new THREE.RingGeometry(
+        innerRadius,
+        outerRadius,
+        16,
+        1,
+        startAngle,
+        length,
+      ),
+      material,
+    )
+    arc.rotation.x = -Math.PI / 2
+    arc.rotation.z = rotation
+    arc.position.y = .045
+    arc.receiveShadow = true
+    arc.userData.forgePoiGround = true
+    arc.renderOrder = 4
+    group.add(arc)
+  }
+
   // Keep the darkest wear under the actual landmark and bias it away from the
   // local +Z entrance so the generated access path remains visually readable.
   addGroundPatch(
@@ -2743,6 +2792,20 @@ function addRuntimePoiEnvironment(
   }
 
   if (poi.type === 'ruins') {
+    // Foundation fragments and gateway wear make the ruin feel embedded without
+    // expanding the soft blend back into a large POI disk.
+    addGroundPatch(-1.15, 2.15, 1.25, .92, profile.core, .19, -.08, 7.2, 4)
+    addGroundPatch(1.15, 2.12, 1.2, .88, profile.core, .17, .1, 8.1, 4)
+    runtimeBox(group, -1.35, .08, -.55, 1.55, .16, 1.05, darkStone)
+    const ruinFloorA = group.children[group.children.length - 1]
+    ruinFloorA.rotation.y = .16
+    runtimeBox(group, 1.05, .07, -1.25, 1.25, .14, .92, stone)
+    const ruinFloorB = group.children[group.children.length - 1]
+    ruinFloorB.rotation.y = -.23
+    runtimeBox(group, 2.05, .07, 1.45, 1.05, .14, .72, darkStone)
+    const ruinFloorC = group.children[group.children.length - 1]
+    ruinFloorC.rotation.y = .31
+
     // Collapse and rubble follow the surviving walls instead of forming a ring.
     addRockAt(-4.15, -2.5, 1.05)
     addRockAt(-3.6, -3.05, .82)
@@ -2761,6 +2824,14 @@ function addRuntimePoiEnvironment(
     addShrubAt(4.5, -2.8, 1.05)
     addMarkerPair(5.05, 1.75, darkStone, 1.65)
   } else if (poi.type === 'watchtower') {
+    // Tight base wear, low entry steps and guard-yard details visually anchor
+    // the tower while keeping its overall footprint restrained.
+    addGroundPatch(0, -.15, 2.2, 2.05, profile.core, .24, .04, 7.6, 4)
+    runtimeBox(group, 0, .09, 2.48, 1.35, .18, .62, stone)
+    runtimeBox(group, 0, .045, 2.9, 1.75, .09, .7, darkStone)
+    addRockAt(-2.05, -.85, .58)
+    addRockAt(2.15, -.65, .52)
+
     // A small guard yard, not a random debris halo.
     addFence(-4.15, .2, Math.PI / 2, 3)
     addFence(4.15, .25, Math.PI / 2, 3)
@@ -2773,6 +2844,11 @@ function addRuntimePoiEnvironment(
     addShrubAt(-4.1, -3.65, .9)
     addMarkerPair(4.8, 1.62, wood, 1.55)
   } else if (poi.type === 'graveyard') {
+    // A very light inner wear patch and stone threshold are enough here; the
+    // enclosure/rows already provide strong readability.
+    addGroundPatch(0, 1.65, 1.55, 1.05, profile.core, .12, -.04, 7.9, 4)
+    runtimeBox(group, 0, .06, 3.02, 1.75, .12, .52, stone)
+
     // Keep the grave rows readable; age the back corners and entrance instead.
     addShrubAt(-4.5, -2.85, 1.05)
     addShrubAt(4.45, -2.7, .92)
@@ -2786,6 +2862,21 @@ function addRuntimePoiEnvironment(
     addMarkerPair(4.65, 2.42, darkStone, 1.7)
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
     const settlement = poi.type === 'settlement'
+
+    // Concentrate the strongest wear at the fire rather than darkening the
+    // entire camp footprint.
+    addGroundPatch(
+      0,
+      0,
+      settlement ? 1.35 : 1.15,
+      settlement ? 1.2 : 1.02,
+      0x302b24,
+      settlement ? .4 : .45,
+      .08,
+      8.4,
+      4,
+    )
+
     addCrateStack(-3.25, -2.75, .18)
     if (settlement) addCrateStack(-4.65, -1.4, -.16)
     addTimberAt(3.35, -2.65, .12, 2.9, 1)
@@ -2801,6 +2892,23 @@ function addRuntimePoiEnvironment(
     addShrubAt(4.45, -3.25, .85)
     addMarkerPair(settlement ? 5.7 : 4.7, settlement ? 2.05 : 1.65, wood, 1.5)
   } else if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+    if (poi.type === 'standing-stones') {
+      // A broken, low-opacity ritual ring and a few chips create a readable
+      // sacred centre without reintroducing a hard circular ground decal.
+      addGroundPatch(0, -.05, 2.15, 1.95, profile.core, .12, .1, 8.8, 4)
+      addWornArc(1.62, 1.92, .2, 2.15, profile.core, .22, .05)
+      addWornArc(1.62, 1.92, 3.05, 1.75, profile.edge, .18, -.08)
+      for (let index = 0; index < 4; index += 1) {
+        const angle = .55 + index * 1.42
+        const radius = 1.25 + (index % 2) * .45
+        addRockAt(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius,
+          .32 + (index % 2) * .08,
+        )
+      }
+    }
+
     const ring = poi.type === 'standing-stones' ? 4.7 : 4.15
     for (let index = 0; index < 6; index += 1) {
       const angle = index / 6 * Math.PI * 2 + .2
