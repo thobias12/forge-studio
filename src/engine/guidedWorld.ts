@@ -742,7 +742,7 @@ function buildTerrain(
   seed: number,
 ): GeneratedWorldTerrain {
   const settings = worldSettings(region)
-  const resolution = settings.size === 'large' ? 53 : settings.size === 'small' ? 39 : 47
+  const resolution = settings.size === 'large' ? 69 : settings.size === 'small' ? 49 : 61
   const width = bounds.maxX - bounds.minX
   const depth = bounds.maxZ - bounds.minZ
   const heights: number[] = []
