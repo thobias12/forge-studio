@@ -348,11 +348,13 @@ export function generateGuidedRegion(
   shapeLandmarkApproaches(paths, nodes)
 
   const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
-  enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
   for (const crossing of crossings) {
     const path = paths.find((item) => item.id === crossing.pathId)
     if (path) shapePathAtCrossing(path, crossing)
   }
+  // Run river clearance last so no later crossing/approach shaping can reintroduce
+  // a segment that clips the occupancy corridor outside the crossing zone.
+  enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
 
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
