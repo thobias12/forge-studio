@@ -807,6 +807,10 @@ function buildTerrain(
       if (!nearest) continue
       const corridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
       if (nearest.distance >= corridor) continue
+      if (hydrology.points.length > 1) {
+        const river = nearestHydrologySample(x, z, hydrology.points, hydrology.widths, hydrology.heights)
+        if (river.distance < river.width * 1.9 + 1.6) continue
+      }
       const influence = 1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))
       const targetHeight = sampleGridHeight(bounds, resolution, preRoadHeights, nearest.x, nearest.z)
       const index = zIndex * resolution + xIndex
