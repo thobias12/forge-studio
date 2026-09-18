@@ -23,6 +23,8 @@ import {
 import {
   FORGE_WORLD_SCALE,
   forgeBridgeDimensions,
+  forgePoiClearsDressing,
+  forgePoiPresentationRotation,
   forgePoiVisualScale,
   forgeTreePresentationScale,
 } from '../engine/worldScale'
@@ -822,23 +824,26 @@ function normalizeRibbon2(x: number, z: number) {
 }
 
 function addDressing(region: GeneratedRegion, group: THREE.Group) {
-  const trees = region.dressing.filter((item) => item.type === 'tree')
-  const deadTrees = region.dressing.filter((item) => item.type === 'dead-tree')
-  const rocks = region.dressing.filter((item) => item.type === 'rock')
-  const ferns = region.dressing.filter((item) => item.type === 'fern')
-  const logs = region.dressing.filter((item) => item.type === 'fallen-log')
-  const stumps = region.dressing.filter((item) => item.type === 'stump')
-  const grasses = region.dressing.filter((item) => item.type === 'grass')
-  const shrubs = region.dressing.filter((item) => item.type === 'shrub')
-  const reeds = region.dressing.filter((item) => item.type === 'reeds')
-  const bankPatches = region.dressing.filter((item) => item.type === 'bank-patch')
-  const leafPatches = region.dressing.filter((item) => item.type === 'leaf-patch')
-  const flowerPatches = region.dressing.filter((item) => item.type === 'flower-patch')
-  const mudPatches = region.dressing.filter((item) => item.type === 'mud-patch')
-  const corruptScars = region.dressing.filter((item) => item.type === 'corrupt-scar')
-  const rockOutcrops = region.dressing.filter((item) => item.type === 'rock-outcrop')
-  const hedges = region.dressing.filter((item) => item.type === 'hedge')
-  const rootClusters = region.dressing.filter((item) => item.type === 'root-cluster')
+  const visibleDressing = region.dressing.filter(
+    (item) => !forgePoiClearsDressing(region.pois, item.x, item.z),
+  )
+  const trees = visibleDressing.filter((item) => item.type === 'tree')
+  const deadTrees = visibleDressing.filter((item) => item.type === 'dead-tree')
+  const rocks = visibleDressing.filter((item) => item.type === 'rock')
+  const ferns = visibleDressing.filter((item) => item.type === 'fern')
+  const logs = visibleDressing.filter((item) => item.type === 'fallen-log')
+  const stumps = visibleDressing.filter((item) => item.type === 'stump')
+  const grasses = visibleDressing.filter((item) => item.type === 'grass')
+  const shrubs = visibleDressing.filter((item) => item.type === 'shrub')
+  const reeds = visibleDressing.filter((item) => item.type === 'reeds')
+  const bankPatches = visibleDressing.filter((item) => item.type === 'bank-patch')
+  const leafPatches = visibleDressing.filter((item) => item.type === 'leaf-patch')
+  const flowerPatches = visibleDressing.filter((item) => item.type === 'flower-patch')
+  const mudPatches = visibleDressing.filter((item) => item.type === 'mud-patch')
+  const corruptScars = visibleDressing.filter((item) => item.type === 'corrupt-scar')
+  const rockOutcrops = visibleDressing.filter((item) => item.type === 'rock-outcrop')
+  const hedges = visibleDressing.filter((item) => item.type === 'hedge')
+  const rootClusters = visibleDressing.filter((item) => item.type === 'root-cluster')
   const palette = editorMoodPalette(editorBiomePalette(region.biome), region.mood)
   const surfacePalette = editorMoodPalette(editorSurfacePalette(region.biome), region.mood)
   const treeVariantColors = editorTreeVariantColors(region.biome, palette.tree).map((color) => applyEditorMoodColor(color, region.mood))
@@ -1795,8 +1800,9 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   group.name = `POI_${poi.type}`
   const y = sampleTerrainHeight(region, poi.x, poi.z)
   const poiVisualScale = forgePoiVisualScale(poi.type)
+  const poiRotation = forgePoiPresentationRotation(region.nodes, poi)
   group.position.set(poi.x, y, poi.z)
-  group.rotation.y = poi.rotation
+  group.rotation.y = poiRotation
   group.scale.setScalar(poiVisualScale)
 
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
@@ -1878,17 +1884,17 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     addBox(group, [-2.25, .5, 3.15], [2.2, 1, .12], wood)
     addBox(group, [2.25, .5, 3.15], [2.2, 1, .12], wood)
   } else if (poi.type === 'watchtower') {
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 2.25, 7, 8), stone)
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.95, 7, 8), stone)
     tower.position.y = 3.35
     tower.castShadow = true
     group.add(tower)
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.05, .58, 8), darkStone)
-    upper.position.y = 6.65
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(1.88, 1.78, .5, 8), darkStone)
+    upper.position.y = 6.62
     group.add(upper)
     for (let i = 0; i < 8; i += 1) {
       if (i === 2 || i === 3) continue
       const angle = i / 8 * Math.PI * 2
-      addBox(group, [Math.cos(angle) * 1.78, 7.2, Math.sin(angle) * 1.78], [.7, .85, .7], darkStone, [0, -angle, 0])
+      addBox(group, [Math.cos(angle) * 1.58, 7.08, Math.sin(angle) * 1.58], [.5, .68, .5], darkStone, [0, -angle, 0])
     }
     const doorway = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.85), new THREE.MeshBasicMaterial({ color: 0x090b09, side: THREE.DoubleSide }))
     doorway.position.set(0, .98, 2.18)
@@ -1917,7 +1923,7 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   group.add(label)
   group.traverse((object) => {
     if (object instanceof THREE.Mesh) {
-      object.castShadow = true
+      object.castShadow = !object.userData.forgePoiGround
       object.receiveShadow = true
     }
   })
@@ -1956,52 +1962,107 @@ function addPoiEnvironment(
   green: THREE.MeshStandardMaterial,
 ) {
   const random = seededVisualRandom(poi.id)
-  const addRock = (radius: number, scale = 1) => {
-    const angle = random() * Math.PI * 2
+  const jitter = (amount = .24) => (random() - .5) * amount
+
+  const groundColors: Record<string, number> = {
+    ruins: 0x313128,
+    graveyard: 0x292b23,
+    camp: 0x3a2f20,
+    settlement: 0x3d3221,
+    shrine: 0x303229,
+    'standing-stones': 0x303329,
+    'beast-den': 0x29251f,
+    watchtower: 0x313027,
+    dungeon: 0x292b28,
+  }
+  const groundRadius: Record<string, [number, number]> = {
+    ruins: [6.2, 5.8],
+    graveyard: [6.2, 6.4],
+    camp: [5.2, 4.8],
+    settlement: [7.2, 6.3],
+    shrine: [5.1, 4.8],
+    'standing-stones': [5.5, 5.2],
+    'beast-den': [4.7, 4.3],
+    watchtower: [5.4, 5],
+    dungeon: [5.8, 5.1],
+  }
+
+  const groundSize = groundRadius[poi.type] ?? [5, 4.7]
+  const groundMaterial = new THREE.MeshStandardMaterial({
+    color: groundColors[poi.type] ?? 0x313027,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  })
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 18), groundMaterial)
+  ground.rotation.x = -Math.PI / 2
+  ground.position.y = .035
+  ground.scale.set(groundSize[0], groundSize[1], 1)
+  ground.receiveShadow = true
+  ground.userData.forgePoiGround = true
+  ground.renderOrder = 2
+  group.add(ground)
+
+  // A worn entrance apron always points toward local +Z, which is aligned with
+  // the existing POI access parent by forgePoiPresentationRotation().
+  const apron = new THREE.Mesh(
+    new THREE.PlaneGeometry(
+      poi.type === 'settlement' ? 3.4 : 2.7,
+      poi.type === 'settlement' ? 5.4 : 4.5,
+    ),
+    groundMaterial,
+  )
+  apron.rotation.x = -Math.PI / 2
+  apron.position.set(0, .041, groundSize[1] * .72)
+  apron.receiveShadow = true
+  apron.userData.forgePoiGround = true
+  apron.renderOrder = 3
+  group.add(apron)
+
+  const addRockAt = (x: number, z: number, scale = 1) => {
     const mesh = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(.28 + random() * .32, 0),
-      random() > .45 ? stone : darkStone,
+      new THREE.DodecahedronGeometry(.34 + random() * .18, 0),
+      random() > .42 ? stone : darkStone,
     )
-    mesh.position.set(
-      Math.cos(angle) * radius,
-      .16 + random() * .12,
-      Math.sin(angle) * radius,
-    )
-    mesh.scale.set(
-      scale * (1 + random() * .35),
-      scale * (.55 + random() * .3),
-      scale,
-    )
+    mesh.position.set(x + jitter(), .18, z + jitter())
+    mesh.scale.set(scale * (1 + random() * .2), scale * (.55 + random() * .22), scale)
     mesh.rotation.y = random() * Math.PI
     group.add(mesh)
   }
-  const addShrub = (radius: number) => {
-    const angle = random() * Math.PI * 2
+
+  const addShrubAt = (x: number, z: number, scale = 1) => {
     const mesh = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(.42 + random() * .2, 0),
+      new THREE.DodecahedronGeometry(.42 + random() * .13, 0),
       green,
     )
-    mesh.position.set(Math.cos(angle) * radius, .35, Math.sin(angle) * radius)
-    mesh.scale.y = .7
+    mesh.position.set(x + jitter(), .32, z + jitter())
+    mesh.scale.set(scale, scale * .68, scale)
     mesh.rotation.y = random() * Math.PI
     group.add(mesh)
   }
-  const addTimber = (radius: number) => {
-    const angle = random() * Math.PI * 2
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(.12, .16, 1.6 + random() * 1.4, 6),
-      wood,
-    )
-    mesh.rotation.z = Math.PI / 2
-    mesh.rotation.y = random() * Math.PI
-    mesh.position.set(Math.cos(angle) * radius, .16, Math.sin(angle) * radius)
-    group.add(mesh)
-  }
-  const addFenceSegment = (
+
+  const addTimberAt = (
     x: number,
     z: number,
     rotation: number,
-    length = 2.2,
+    length = 2.25,
+    scale = 1,
+  ) => {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(.12 * scale, .17 * scale, length, 6),
+      wood,
+    )
+    mesh.rotation.set(0, rotation, Math.PI / 2)
+    mesh.position.set(x + jitter(.16), .17 * scale, z + jitter(.16))
+    group.add(mesh)
+  }
+
+  const addFence = (
+    x: number,
+    z: number,
+    rotation: number,
+    length = 2.4,
   ) => {
     addBox(group, [x, .42, z], [length, .12, .12], wood, [0, rotation, 0])
     for (const side of [-1, 1]) {
@@ -2017,129 +2078,120 @@ function addPoiEnvironment(
       )
     }
   }
-  const addMarkerPair = (
-    distance: number,
-    gap: number,
-    material: THREE.MeshStandardMaterial,
-    height = 1.45,
-  ) => {
-    for (const side of [-1, 1]) {
+
+  const addCrateStack = (x: number, z: number, rotation = 0) => {
+    const positions = [
+      [0, .32, 0],
+      [.62, .32, .08],
+      [.28, .88, .02],
+    ] as const
+    positions.forEach(([dx, y, dz], index) => {
       addBox(
         group,
-        [side * gap, height * .5, distance],
-        [.28, height, .28],
-        material,
+        [x + dx, y, z + dz],
+        [.58, .58, .58],
+        wood,
+        [0, rotation + (index - 1) * .07, 0],
       )
-    }
-  }
-  const addOuterStone = (
-    x: number,
-    z: number,
-    height = .85,
-  ) => {
-    addBox(
-      group,
-      [x, height * .5, z],
-      [.48, height, .42],
-      darkStone,
-      [0, (random() - .5) * .28, 0],
-    )
+    })
   }
 
-  if (poi.type === 'ruins' || poi.type === 'watchtower') {
-    for (let i = 0; i < 16; i += 1) {
-      addRock(4.2 + random() * 4.4, .72 + random() * .58)
+  const addMarkerPair = (
+    z: number,
+    gap: number,
+    material: THREE.MeshStandardMaterial,
+    height = 1.5,
+  ) => {
+    for (const side of [-1, 1]) {
+      addBox(group, [side * gap, height * .5, z], [.27, height, .27], material)
     }
-    for (let i = 0; i < 7; i += 1) addShrub(5.2 + random() * 3.8)
-    for (let i = 0; i < 5; i += 1) addTimber(4.8 + random() * 3.3)
-    for (let i = 0; i < 5; i += 1) {
-      const angle = -.95 + i * .48
-      const radius = 7.1 + (i % 2) * .8
-      const x = Math.cos(angle) * radius
-      const z = Math.sin(angle) * radius
-      addFenceSegment(x, z, angle + Math.PI / 2, 1.7 + (i % 3) * .35)
-    }
-    addMarkerPair(6.2, 1.75, poi.type === 'ruins' ? darkStone : wood, 1.7)
+  }
+
+  if (poi.type === 'ruins') {
+    // Collapse and rubble follow the surviving walls instead of forming a ring.
+    addRockAt(-4.15, -2.5, 1.05)
+    addRockAt(-3.6, -3.05, .82)
+    addRockAt(3.65, -2.35, 1.15)
+    addRockAt(4.05, -1.55, .72)
+    addRockAt(-3.85, 2.1, .76)
+    addTimberAt(2.7, -3.45, .18, 3.1, 1.1)
+    addTimberAt(3.25, -3.05, -.1, 2.55, .9)
+    addBox(group, [-3.95, .38, -.15], [2.5, .76, .42], darkStone, [.06, .18, -.13])
+    addBox(group, [2.85, .28, 3.55], [2.1, .56, .4], stone, [0, -.12, 0])
+    addShrubAt(-4.6, -3.3, .9)
+    addShrubAt(4.5, -2.8, 1.05)
+    addMarkerPair(5.05, 1.75, darkStone, 1.65)
+  } else if (poi.type === 'watchtower') {
+    // A small guard yard, not a random debris halo.
+    addFence(-4.15, .2, Math.PI / 2, 3)
+    addFence(4.15, .25, Math.PI / 2, 3)
+    addFence(-3.05, -3.7, .12, 2.25)
+    addCrateStack(-3.45, -2.45, .12)
+    addTimberAt(3.35, -2.9, .08, 2.8, 1)
+    addTimberAt(3.55, -2.48, -.04, 2.35, .88)
+    addRockAt(-2.6, 3.7, .78)
+    addRockAt(2.75, 3.55, .9)
+    addShrubAt(-4.1, -3.65, .9)
+    addMarkerPair(4.8, 1.62, wood, 1.55)
   } else if (poi.type === 'graveyard') {
-    for (let i = -2; i <= 2; i += 1) {
-      addBox(group, [i * 1.25, .28, -2.6], [.09, .55, 1.05], wood, [0, .02 * i, 0])
-    }
-    for (let i = 0; i < 9; i += 1) addShrub(4.6 + random() * 3.7)
-    for (let row = 0; row < 2; row += 1) {
-      for (let col = -2; col <= 2; col += 1) {
-        addBox(
-          group,
-          [
-            col * 1.35 + (row ? .35 : -.2),
-            .5,
-            4.45 + row * 1.7 + (Math.abs(col) % 2) * .22,
-          ],
-          [.32, 1 + ((row + col + 5) % 2) * .18, .18],
-          stone,
-          [0, (col - row) * .045, 0],
-        )
-      }
-    }
-    addMarkerPair(7.2, 2.45, darkStone, 1.8)
-    addFenceSegment(-4.8, 5.7, .15, 2.6)
-    addFenceSegment(4.8, 5.7, -.15, 2.6)
+    // Keep the grave rows readable; age the back corners and entrance instead.
+    addShrubAt(-4.5, -2.85, 1.05)
+    addShrubAt(4.45, -2.7, .92)
+    addShrubAt(-4.55, 2.15, .82)
+    addRockAt(-4.1, -3.4, .74)
+    addRockAt(4.15, -3.25, .88)
+    addBox(group, [0, .78, -4.25], [.72, 1.56, .56], darkStone)
+    addBox(group, [0, 1.56, -4.25], [1.4, .22, .5], stone)
+    addFence(-4.2, 4.15, .08, 2.15)
+    addFence(4.2, 4.15, -.08, 2.15)
+    addMarkerPair(4.65, 2.42, darkStone, 1.7)
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
     const settlement = poi.type === 'settlement'
-    for (let i = 0; i < (settlement ? 10 : 7); i += 1) {
-      addTimber(4 + random() * (settlement ? 4.6 : 3.5))
+    addCrateStack(-3.25, -2.75, .18)
+    if (settlement) addCrateStack(-4.65, -1.4, -.16)
+    addTimberAt(3.35, -2.65, .12, 2.9, 1)
+    addTimberAt(3.62, -2.18, -.08, 2.55, .92)
+    addTimberAt(3.08, -1.78, .04, 2.25, .82)
+    addFence(-4.45, 1.25, Math.PI / 2 + .08, settlement ? 3 : 2.25)
+    addFence(4.45, 1.15, Math.PI / 2 - .08, settlement ? 3 : 2.25)
+    if (settlement) {
+      addFence(-3.15, -4.45, .08, 2.6)
+      addFence(3.15, -4.45, -.08, 2.6)
     }
-    for (let i = 0; i < (settlement ? 8 : 5); i += 1) {
-      const angle = random() * Math.PI * 2
-      const radius = 3.8 + random() * (settlement ? 4.3 : 3.1)
-      addBox(
-        group,
-        [Math.cos(angle) * radius, .32, Math.sin(angle) * radius],
-        [.6, .6, .6],
-        wood,
-        [0, random() * Math.PI, 0],
-      )
-    }
-    for (let i = 0; i < (settlement ? 6 : 3); i += 1) {
-      const angle = .35 + i * (Math.PI * 1.3 / Math.max(1, (settlement ? 5 : 2)))
-      const radius = settlement ? 8.3 : 6.7
-      addFenceSegment(
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius,
-        angle + Math.PI / 2,
-        settlement ? 2.5 : 1.9,
-      )
-    }
-    addMarkerPair(settlement ? 7.5 : 6.2, settlement ? 2.2 : 1.7, wood, 1.6)
+    addShrubAt(-4.35, -3.5, .8)
+    addShrubAt(4.45, -3.25, .85)
+    addMarkerPair(settlement ? 5.7 : 4.7, settlement ? 2.05 : 1.65, wood, 1.5)
   } else if (poi.type === 'shrine' || poi.type === 'standing-stones') {
-    for (let i = 0; i < 13; i += 1) addRock(3.8 + random() * 3.6, .62 + random() * .4)
-    for (let i = 0; i < 7; i += 1) addShrub(4.8 + random() * 3)
-    for (let i = 0; i < 4; i += 1) {
-      const angle = i / 4 * Math.PI * 2 + .25
-      const radius = 6.6
-      addOuterStone(Math.cos(angle) * radius, Math.sin(angle) * radius, 1 + (i % 2) * .25)
+    const ring = poi.type === 'standing-stones' ? 4.7 : 4.15
+    for (let index = 0; index < 6; index += 1) {
+      const angle = index / 6 * Math.PI * 2 + .2
+      addRockAt(Math.cos(angle) * ring, Math.sin(angle) * ring, .58 + (index % 2) * .13)
     }
-    addMarkerPair(6.1, 1.55, stone, 1.35)
+    addBox(group, [-1.25, .18, 3.55], [.65, .36, .65], stone)
+    addBox(group, [1.25, .18, 3.55], [.65, .36, .65], stone)
+    addShrubAt(-4.25, -2.6, .72)
+    addShrubAt(4.15, -2.45, .72)
+    addMarkerPair(4.35, 1.5, stone, 1.25)
   } else if (poi.type === 'beast-den') {
-    for (let i = 0; i < 10; i += 1) {
-      addRock(2.8 + random() * 3.6, .72 + random() * .48)
-    }
-    for (let i = 0; i < 5; i += 1) addTimber(3.4 + random() * 3)
-    for (let i = 0; i < 4; i += 1) addShrub(4.4 + random() * 2.4)
+    addRockAt(-3.25, .85, 1.2)
+    addRockAt(-2.85, -.35, .82)
+    addRockAt(3.15, .75, 1.1)
+    addRockAt(2.7, -.65, .78)
+    addTimberAt(-3.45, -2.2, -.3, 2.8, 1)
+    addTimberAt(3.25, -2.3, .22, 2.45, .9)
+    addShrubAt(-3.8, -2.9, .85)
+    addShrubAt(3.65, -2.75, .78)
   } else if (poi.type === 'dungeon') {
-    for (let i = 0; i < 11; i += 1) {
-      addRock(3.8 + random() * 4, .68 + random() * .5)
+    // Broken approach stones deliberately frame the portal.
+    for (const side of [-1, 1]) {
+      addBox(group, [side * 3.2, .75, 3.45], [.5, 1.5, .5], darkStone, [0, 0, side * .08])
+      addBox(group, [side * 4.05, .48, 1.75], [.58, .96, .52], stone, [0, 0, -side * .11])
+      addRockAt(side * 3.9, -2.15, .9)
+      addShrubAt(side * 4.25, -2.75, .7)
     }
-    for (let i = 0; i < 5; i += 1) addShrub(4.8 + random() * 3)
-    for (let i = 0; i < 4; i += 1) {
-      const angle = -.7 + i * .48
-      const radius = 7.2 + (i % 2) * .65
-      addOuterStone(
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius,
-        1.05 + (i % 2) * .35,
-      )
-    }
-    addMarkerPair(6.7, 2.05, darkStone, 1.9)
+    addRockAt(-2.85, -3.2, .72)
+    addRockAt(2.7, -3.35, .78)
+    addMarkerPair(4.85, 1.95, darkStone, 1.65)
   }
 }
 

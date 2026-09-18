@@ -62,6 +62,45 @@ export function forgePoiVisualScale(type: string) {
   return base
 }
 
+export function forgePoiPresentationRotation(
+  nodes: readonly { id: string; x: number; z: number; parentId?: string }[],
+  poi: { nodeId: string; x: number; z: number; rotation: number },
+) {
+  const node = nodes.find((candidate) => candidate.id === poi.nodeId)
+  const parent = node?.parentId
+    ? nodes.find((candidate) => candidate.id === node.parentId)
+    : undefined
+  if (!parent) return poi.rotation
+
+  const dx = parent.x - poi.x
+  const dz = parent.z - poi.z
+  if (Math.hypot(dx, dz) < .001) return poi.rotation
+
+  // Local +Z is the authored entrance side for Forge POIs.
+  return Math.atan2(dx, dz)
+}
+
+export function forgePoiDressingClearanceRadius(type: string, radius: number) {
+  const factor =
+    type === 'settlement' ? 1 :
+      type === 'graveyard' || type === 'ruins' ? .92 :
+        type === 'watchtower' || type === 'dungeon' ? .88 :
+          type === 'camp' ? .86 :
+            .82
+  return Math.max(4.6, radius * factor)
+}
+
+export function forgePoiClearsDressing(
+  pois: readonly { type: string; x: number; z: number; radius: number }[],
+  x: number,
+  z: number,
+) {
+  return pois.some((poi) =>
+    Math.hypot(x - poi.x, z - poi.z) <
+    forgePoiDressingClearanceRadius(poi.type, poi.radius)
+  )
+}
+
 export function forgeBridgeDimensions(crossingWidth: number) {
   return {
     width: crossingWidth * FORGE_WORLD_SCALE.bridgeDeckWidthScale,
