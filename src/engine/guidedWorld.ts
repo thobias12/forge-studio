@@ -2070,6 +2070,7 @@ function buildTerrainFromFrozenHydrology(
     hydrology.points,
     paths,
     clearings,
+    pois,
     seed,
     settings,
   )
@@ -2361,16 +2362,69 @@ function buildMicroBiomes(
   stream: GeneratedWorldPoint[],
   paths: GeneratedWorldPath[],
   clearings: GeneratedWorldTerrain['clearings'],
+  pois: GeneratedWorldPoi[],
   seed: number,
   settings: ReturnType<typeof worldSettings>,
 ) {
   const random = seededRandom(hashSeed(`${seed}:micro-biomes`))
-  const count = Math.round((settings.size === 'large' ? 28 : settings.size === 'small' ? 16 : 22) * (.92 + settings.openSpace * .34))
+  const count = Math.round(
+    (settings.size === 'large' ? 28 : settings.size === 'small' ? 16 : 22) *
+      (.92 + settings.openSpace * .34),
+  )
   const biomes: GeneratedMicroBiome[] = []
+  const poiAnchors = shuffle(pois, random).slice(
+    0,
+    Math.min(pois.length, Math.max(2, Math.round(count * .32))),
+  )
+  const clearingAnchors = shuffle(clearings, random).slice(
+    0,
+    Math.min(clearings.length, Math.max(2, Math.round(count * .24))),
+  )
+
+  const poiType = (poi: GeneratedWorldPoi): WorldMicroBiomeType => {
+    const roll = random()
+    if (poi.type === 'camp' || poi.type === 'settlement') {
+      return roll < .78 ? 'meadow' : 'forest-floor'
+    }
+    if (poi.type === 'graveyard' || poi.type === 'ruins' || poi.type === 'watchtower' || poi.type === 'dungeon') {
+      return roll < .58 ? 'rocky' : 'forest-floor'
+    }
+    if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+      return roll < .56 ? 'moss' : 'rocky'
+    }
+    if (poi.type === 'beast-den') {
+      return roll < .62 ? 'scrub' : 'rocky'
+    }
+    return 'forest-floor'
+  }
 
   for (let index = 0; index < count; index += 1) {
-    const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
-    const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+    let x: number
+    let z: number
+    let anchoredType: WorldMicroBiomeType | undefined
+    let radiusScale = 1
+
+    if (index < poiAnchors.length) {
+      const poi = poiAnchors[index]
+      const angle = random() * Math.PI * 2
+      const offset = poi.radius * (.55 + random() * .78)
+      x = clamp(poi.x + Math.cos(angle) * offset, bounds.minX + 2, bounds.maxX - 2)
+      z = clamp(poi.z + Math.sin(angle) * offset, bounds.minZ + 2, bounds.maxZ - 2)
+      anchoredType = poiType(poi)
+      radiusScale = .72 + random() * .25
+    } else if (index < poiAnchors.length + clearingAnchors.length) {
+      const clearing = clearingAnchors[index - poiAnchors.length]
+      const angle = random() * Math.PI * 2
+      const offset = clearing.radius * random() * .58
+      x = clamp(clearing.x + Math.cos(angle) * offset, bounds.minX + 2, bounds.maxX - 2)
+      z = clamp(clearing.z + Math.sin(angle) * offset, bounds.minZ + 2, bounds.maxZ - 2)
+      anchoredType = random() < .76 ? 'meadow' : random() < .6 ? 'forest-floor' : 'scrub'
+      radiusScale = .7 + random() * .24
+    } else {
+      x = bounds.minX + random() * (bounds.maxX - bounds.minX)
+      z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+    }
+
     const height = sampleGridHeight(bounds, resolution, heights, x, z)
     const streamDistance = stream.length > 1 ? distanceToPolyline(x, z, stream) : Infinity
     const pathDistance = distanceToPaths(x, z, paths)
@@ -2378,7 +2432,8 @@ function buildMicroBiomes(
     const noise = valueNoise2D(x * .037 + 5.2, z * .037 - 11.4, seed ^ 0xD3A2646C)
 
     let type: WorldMicroBiomeType
-    if (streamDistance < 8) type = 'moss'
+    if (streamDistance < 7) type = 'moss'
+    else if (anchoredType) type = anchoredType
     else if (height > .95 + settings.elevation * .8 || noise > .82) type = 'rocky'
     else if (clearing || (noise > .63 && pathDistance < 12)) type = 'meadow'
     else if (noise < .34) type = 'forest-floor'
@@ -2389,10 +2444,11 @@ function buildMicroBiomes(
       type,
       x: round(x, 2),
       z: round(z, 2),
-      radius: round(10 + random() * 15, 2),
-      strength: round(.58 + random() * .3, 3),
+      radius: round((10 + random() * 15) * radiusScale, 2),
+      strength: round(.6 + random() * .3, 3),
     })
   }
+
   return biomes
 }
 
