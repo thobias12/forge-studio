@@ -213,13 +213,13 @@ export function generateGuidedRegion(
       sideNormal.x + frame.tangent.x * ((routeRandom() - .5) * .28),
       sideNormal.z + frame.tangent.z * ((routeRandom() - .5) * .28),
     )
-    const length = intRange(routeRandom, 1, settings.exploration > .78 ? 3 : 2)
+    const length = intRange(routeRandom, 1, 2)
     let previousId = anchor
     let previousNode = anchorNode
 
     for (let step = 1; step <= length; step += 1) {
       const id = `branch-${branchIndex}-${step}`
-      const segmentLength = spacing * (.58 + routeRandom() * .14)
+      const segmentLength = spacing * (.44 + routeRandom() * .12)
       const turn = (routeRandom() - .5) * .34
       heading = normalized2(
         heading.x + frame.tangent.x * turn + sideNormal.x * .1,
@@ -246,30 +246,9 @@ export function generateGuidedRegion(
       previousNode = branchNode
     }
 
-    // Loops are deliberately local. A side trail may reconnect to one of the
-    // neighboring main-road nodes, but never throw a long diagonal shortcut
-    // across several route chunks.
-    if (settings.loops > .45 && routeRandom() < settings.loops * .55) {
-      const anchorIndex = mainIds.indexOf(anchor)
-      const reconnectIds = shuffle(
-        [mainIds[anchorIndex - 1], mainIds[anchorIndex + 1]]
-          .filter((id): id is string => Boolean(id && id !== 'entry' && id !== 'exit')),
-        routeRandom,
-      )
-      const reconnect = reconnectIds
-        .map((id) => nodes.find((item) => item.id === id))
-        .filter((item): item is GeneratedRegionNode => Boolean(item))
-        .sort((a, b) => distance2D(a, previousNode) - distance2D(b, previousNode))[0]
-
-      if (reconnect && distance2D(reconnect, previousNode) < 28 * sizeScale) {
-        connections.push({
-          id: `loop-${branchIndex}`,
-          from: previousId,
-          to: reconnect.id,
-          kind: 'branch',
-        })
-      }
-    }
+    // Side-trail loops are intentionally disabled here. They were the last
+    // source of large triangles/parallel shortcuts around rivers. Local spurs
+    // are more predictable and keep the generated road network readable.
   }
 
   const landmarkCount = Math.max(3, Math.round(intRange(poiRandom, region.landmarkRange[0], region.landmarkRange[1]) * (.75 + settings.poiDensity * .6)))
@@ -419,52 +398,28 @@ export function generateGuidedRegion(
   pruneBadLoopConnections(nodes, connections)
   pruneOrphanBranchTopology(nodes, connections)
 
-  // Find the likely bridge neighborhoods once using the cleaned graph, then move
-  // ordinary branch/POI junctions away from those areas before building the final
-  // road network. Provisional paths are discarded after this topology pass.
-  const provisionalPaths = buildWorldPaths(nodes, connections, layerSeeds.routes)
-  smoothWorldJunctions(provisionalPaths, nodes)
-  shapeLandmarkApproaches(provisionalPaths, nodes)
-  const provisionalCrossings = buildCrossings(
-    provisionalPaths,
-    frozenHydrology.points,
-    layerSeeds.routes,
-    settings,
-  )
-
-  if (reanchorBranchesAwayFromCrossings(nodes, connections, provisionalCrossings)) {
-    pruneBadLoopConnections(nodes, connections)
-    pruneOrphanBranchTopology(nodes, connections)
-    resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
-  }
-
   let paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
   smoothWorldJunctions(paths, nodes)
   shapeLandmarkApproaches(paths, nodes)
 
-  let crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  // Final stabilization rule: side trails never own a river crossing. Any
+  // branch/POI spur that would enter the river corridor is omitted, together
+  // with downstream disconnected trail pieces, instead of being stretched to a
+  // bridge or pushed into a long bank-hugging detour.
+  paths = filterBankLocalSideTrails(paths, riverMask)
 
-  // Re-check against the actual selected crossings. If selection moved after the
-  // provisional topology pass, move ordinary branch joins once more and rebuild
-  // so the final graph—not only the preview graph—respects bridge neighborhoods.
-  if (reanchorBranchesAwayFromCrossings(nodes, connections, crossings)) {
-    pruneBadLoopConnections(nodes, connections)
-    pruneOrphanBranchTopology(nodes, connections)
-    resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
-    paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
-    smoothWorldJunctions(paths, nodes)
-    shapeLandmarkApproaches(paths, nodes)
-    crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
-  }
-
+  const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
   for (const crossing of crossings) {
     const path = paths.find((item) => item.id === crossing.pathId)
     if (path) shapePathAtCrossing(path, crossing)
   }
-  // Run river clearance last so no later crossing/approach shaping can reintroduce
-  // a segment that clips the occupancy corridor outside the crossing zone.
-  enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
-  repairResidualRiverPathIncursions(paths, riverMask, crossings, bounds)
+
+  // Only the main road is allowed to be corrected through/around the river.
+  // Branch paths are already guaranteed clear by filterBankLocalSideTrails and
+  // are deliberately left untouched so the safety solver cannot deform them.
+  const mainPaths = paths.filter((path) => path.kind === 'main')
+  enforcePathsOutsideRiverMask(mainPaths, riverMask, crossings, bounds)
+  repairResidualRiverPathIncursions(mainPaths, riverMask, crossings, bounds)
 
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
@@ -1687,6 +1642,55 @@ function reanchorBranchesAwayFromCrossings(
   return changed
 }
 
+function filterBankLocalSideTrails(
+  paths: GeneratedWorldPath[],
+  mask: RiverOccupancyMask,
+) {
+  if (mask.points.length < 2) return paths
+
+  const mainPaths = paths.filter((path) => path.kind === 'main')
+  const reachable = new Set<string>()
+  for (const path of mainPaths) {
+    reachable.add(path.fromNodeId)
+    reachable.add(path.toNodeId)
+  }
+
+  const safeBranches = paths.filter((path) => {
+    if (path.kind !== 'branch') return false
+
+    // Generated side trails and POI approaches must remain comfortably outside
+    // the rendered river/bank footprint. There is no crossing exception here.
+    for (const point of pathClearanceSamples(path, .48)) {
+      const river = riverOccupancySample(mask, point.x, point.z)
+      const required = pathFootprintHalfWidth(point.width) + .72
+      if (river.signedDistance < required) return false
+    }
+
+    return true
+  })
+
+  const kept = new Set<string>()
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const path of safeBranches) {
+      if (kept.has(path.id)) continue
+      const fromReachable = reachable.has(path.fromNodeId)
+      const toReachable = reachable.has(path.toNodeId)
+      if (!fromReachable && !toReachable) continue
+
+      kept.add(path.id)
+      reachable.add(path.fromNodeId)
+      reachable.add(path.toNodeId)
+      changed = true
+    }
+  }
+
+  return paths.filter((path) =>
+    path.kind === 'main' || kept.has(path.id)
+  )
+}
+
 function pathFootprintHalfWidth(width: number) {
   // The rendered road ribbon permits a miter up to 1.16x its nominal half-width.
   // Use that same upper bound for generation/validation so the full visible road
@@ -2296,6 +2300,7 @@ function buildCrossings(
 
   const candidates: CrossingCandidate[] = []
   for (const path of paths) {
+    if (path.kind !== 'main') continue
     for (let pathIndex = 1; pathIndex < path.points.length; pathIndex += 1) {
       const a = path.points[pathIndex - 1]
       const b = path.points[pathIndex]
@@ -2322,7 +2327,7 @@ function buildCrossings(
           hit,
           rotation: Math.atan2(b.z - a.z, b.x - a.x),
           score:
-            (path.kind === 'main' ? 8 : 2.5) +
+            8 +
             path.width * .55 +
             perpendicular * 2.8 +
             centerQuality * .65,
@@ -2372,10 +2377,7 @@ function buildCrossings(
 
   const selected: Array<{ crossing: GeneratedWorldCrossing; candidate: CrossingCandidate }> =
     selectedCandidates.map((candidate, index) => {
-      const kind: GeneratedWorldCrossing['kind'] =
-        index === 0 || candidate.path.kind === 'main'
-          ? 'bridge'
-          : 'ford'
+      const kind: GeneratedWorldCrossing['kind'] = 'bridge'
       return {
         candidate,
         crossing: {
@@ -2390,8 +2392,8 @@ function buildCrossings(
       }
     })
 
-  // Every road that touches the river is routed toward one of the planned crossings.
-  // This makes the river a meaningful navigation barrier instead of a row of bridges.
+  // Only main-road chunks are candidates here. Side trails are kept on their
+  // local bank and never redirected toward a bridge.
   const byPath = new Map<string, CrossingCandidate[]>()
   for (const candidate of candidates) {
     const list = byPath.get(candidate.path.id) ?? []
