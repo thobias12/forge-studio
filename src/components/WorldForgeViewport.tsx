@@ -4,7 +4,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
   sampleStreamHeight,
   sampleTerrainHeight,
+  streamRenderContinuityIssues,
   streamRenderProfile,
+  visibleStreamRenderHeight,
   sampleTerrainSurface,
   type GeneratedRegion,
   type GeneratedWorldPath,
@@ -364,6 +366,11 @@ function buildStream(region: GeneratedRegion) {
   const group = new THREE.Group()
   group.name = 'GeneratedStream'
 
+  if (import.meta.env.DEV) {
+    const issues = streamRenderContinuityIssues(region)
+    if (issues.length) console.warn('[World Forge] River continuity', issues)
+  }
+
   const bankWidths = widths.map((width) => width * 1.72 + .55)
   const bank = new THREE.Mesh(
     makeRibbonGeometry(
@@ -384,7 +391,12 @@ function buildStream(region: GeneratedRegion) {
   group.add(bank)
 
   const water = new THREE.Mesh(
-    makeProfileRibbonGeometry(points, widths, heights, .055),
+    makeProfileRibbonGeometry(
+      points,
+      widths,
+      heights,
+      (nominalHeight, x, z) => visibleStreamRenderHeight(region, nominalHeight, x, z),
+    ),
     new THREE.MeshStandardMaterial({
       color: 0x355f61,
       roughness: .28,
@@ -458,17 +470,21 @@ function makeProfileRibbonGeometry(
   points: Array<{ x: number; z: number }>,
   widths: number[],
   heights: number[],
-  heightOffset: number,
+  heightAt: (nominalHeight: number, x: number, z: number) => number,
 ) {
   const sections = buildRibbonSections(points, widths)
   const positions: number[] = []
   const indices: number[] = []
 
   sections.forEach((section, index) => {
-    const y = (heights[section.sourceIndex] ?? heights[0] ?? 0) + heightOffset
+    const nominalHeight = heights[section.sourceIndex] ?? heights[0] ?? 0
+    const leftX = section.x + section.offsetX
+    const leftZ = section.z + section.offsetZ
+    const rightX = section.x - section.offsetX
+    const rightZ = section.z - section.offsetZ
     positions.push(
-      section.x + section.offsetX, y, section.z + section.offsetZ,
-      section.x - section.offsetX, y, section.z - section.offsetZ,
+      leftX, heightAt(nominalHeight, leftX, leftZ), leftZ,
+      rightX, heightAt(nominalHeight, rightX, rightZ), rightZ,
     )
 
     if (index < sections.length - 1) {
