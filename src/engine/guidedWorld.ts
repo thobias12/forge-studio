@@ -3817,7 +3817,6 @@ function buildDressing(
     const riverClearance = riverMask.points.length
       ? riverOccupancySample(riverMask, x, z).signedDistance
       : Infinity
-    const clearing = nearestClearing(x, z, terrain.clearings)
     const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
     const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
