@@ -791,7 +791,38 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const grasses = region.dressing.filter((item) => item.type === 'grass')
   const shrubs = region.dressing.filter((item) => item.type === 'shrub')
   const reeds = region.dressing.filter((item) => item.type === 'reeds')
+  const bankPatches = region.dressing.filter((item) => item.type === 'bank-patch')
   const palette = editorBiomePalette(region.biome)
+  const surfacePalette = editorSurfacePalette(region.biome)
+
+  if (bankPatches.length) {
+    const geometry = new THREE.CircleGeometry(1, 10)
+    geometry.rotateX(-Math.PI / 2)
+    const bankColor = new THREE.Color(surfacePalette.soil)
+      .lerp(new THREE.Color(palette.low), .34)
+      .multiplyScalar(.82)
+    const material = new THREE.MeshStandardMaterial({
+      color: bankColor,
+      roughness: 1,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    })
+    const mesh = new THREE.InstancedMesh(geometry, material, bankPatches.length)
+    setInstances(mesh, bankPatches, (item) => ({
+      position: new THREE.Vector3(item.x, item.y + .028, item.z),
+      rotation: new THREE.Euler(0, item.rotation, 0),
+      scale: new THREE.Vector3(
+        item.scale * (1.38 + item.variant * .11),
+        1,
+        item.scale * (.42 + (item.variant % 2) * .08),
+      ),
+    }))
+    mesh.receiveShadow = true
+    mesh.renderOrder = 2
+    group.add(mesh)
+  }
 
   if (trees.length) {
     const trunkGeometry = new THREE.CylinderGeometry(.22, .34, 3, 6)
