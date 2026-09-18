@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
@@ -28,6 +28,19 @@ import {
   forgePoiVisualScale,
   forgeTreePresentationScale,
 } from '../engine/worldScale'
+import {
+  DEFAULT_WORLD_ENVIRONMENT,
+  advanceWorldHour,
+  applyWorldEnvironmentToScene,
+  createWorldWeatherVisuals,
+  formatWorldHour,
+  markWorldWindMaterial,
+  resetWorldEnvironmentSceneCache,
+  sampleWorldEnvironment,
+  updateWorldWeatherVisuals,
+  type WorldWeather,
+  type WorldWeatherVisuals,
+} from '../engine/worldEnvironment'
 
 type Props = {
   region: GeneratedRegion
@@ -52,6 +65,8 @@ type ViewState = {
   boundary?: THREE.Group
   riverDebug?: THREE.Group
   ambient?: WorldAmbientVisuals
+  weather?: WorldWeatherVisuals
+  region?: GeneratedRegion
   observer?: ResizeObserver
   raf?: number
 }
@@ -59,6 +74,38 @@ type ViewState = {
 export default function WorldForgeViewport({ region, showRoute, showBranches, showLandmarks, showBiome, showBoundary, showRiverDebug }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ViewState>({})
+  const environmentRef = useRef({
+    ...DEFAULT_WORLD_ENVIRONMENT,
+  })
+  const [environmentHour, setEnvironmentHour] = useState(
+    DEFAULT_WORLD_ENVIRONMENT.hour,
+  )
+  const [environmentWeather, setEnvironmentWeather] = useState<WorldWeather>(
+    DEFAULT_WORLD_ENVIRONMENT.weather,
+  )
+  const [environmentPaused, setEnvironmentPaused] = useState(
+    DEFAULT_WORLD_ENVIRONMENT.paused,
+  )
+  const [environmentSpeed, setEnvironmentSpeed] = useState(
+    DEFAULT_WORLD_ENVIRONMENT.speed,
+  )
+
+  const setHour = (hour: number) => {
+    environmentRef.current.hour = hour
+    setEnvironmentHour(hour)
+  }
+  const setWeather = (weather: WorldWeather) => {
+    environmentRef.current.weather = weather
+    setEnvironmentWeather(weather)
+  }
+  const setPaused = (paused: boolean) => {
+    environmentRef.current.paused = paused
+    setEnvironmentPaused(paused)
+  }
+  const setSpeed = (speed: number) => {
+    environmentRef.current.speed = speed
+    setEnvironmentSpeed(speed)
+  }
 
   useEffect(() => {
     const host = hostRef.current
@@ -122,14 +169,66 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     stateRef.current.observer = observer
     resize()
 
+    let lastFrame = performance.now()
+    let environmentElapsed = 0
+    let uiSyncElapsed = 0
     const frame = () => {
+      const now = performance.now()
+      const delta = Math.min(
+        .05,
+        Math.max(0, (now - lastFrame) / 1000),
+      )
+      lastFrame = now
+      environmentElapsed += delta
       controls.update()
-      if (stateRef.current.ambient) {
-        updateWorldAmbientVisuals(
-          stateRef.current.ambient,
-          performance.now() / 1000,
+
+      const activeRegion = stateRef.current.region
+      if (activeRegion) {
+        const config = environmentRef.current
+        if (!config.paused) {
+          config.hour = advanceWorldHour(
+            config.hour,
+            delta,
+            config.speed,
+          )
+          uiSyncElapsed += delta
+          if (uiSyncElapsed >= .5) {
+            setEnvironmentHour(config.hour)
+            uiSyncElapsed = 0
+          }
+        }
+
+        const environment = sampleWorldEnvironment(
+          activeRegion.mood,
+          config.hour,
+          config.weather,
+          environmentElapsed,
+          activeRegion.seed,
         )
+        applyWorldEnvironmentToScene(
+          scene,
+          renderer,
+          environment,
+          environmentElapsed,
+        )
+        if (stateRef.current.weather) {
+          updateWorldWeatherVisuals(
+            stateRef.current.weather,
+            camera,
+            environment,
+            environmentElapsed,
+            delta,
+          )
+        }
+        if (stateRef.current.ambient) {
+          updateWorldAmbientVisuals(
+            stateRef.current.ambient,
+            now / 1000,
+            environment,
+          )
+        }
       }
+
       renderer.render(scene, camera)
       stateRef.current.raf = requestAnimationFrame(frame)
     }
@@ -166,7 +265,10 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     state.boundary = built.boundary
     state.riverDebug = built.riverDebug
     state.ambient = built.ambient
+    state.weather = built.weather
+    state.region = region
     state.scene.add(built.root)
+    resetWorldEnvironmentSceneCache(state.scene)
 
     const width = region.bounds.maxX - region.bounds.minX
     const depth = region.bounds.maxZ - region.bounds.minZ
@@ -213,6 +315,51 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
   }, [showRiverDebug])
 
   return <div className="world-forge-map world-forge-map-3d" ref={hostRef}>
+    <div className="world-forge-environment-controls">
+      <header>
+        <span>DYNAMIC WORLD</span>
+        <strong>{formatWorldHour(environmentHour)}</strong>
+      </header>
+      <label>
+        <span>Time</span>
+        <input
+          type="range"
+          min={0}
+          max={23.75}
+          step={.25}
+          value={environmentHour}
+          onChange={(event) => setHour(Number(event.target.value))}
+        />
+      </label>
+      <div className="world-forge-environment-row">
+        <select
+          value={environmentWeather}
+          onChange={(event) => setWeather(event.target.value as WorldWeather)}
+        >
+          <option value="clear">Clear</option>
+          <option value="cloudy">Cloudy</option>
+          <option value="mist">Mist</option>
+          <option value="rain">Rain</option>
+          <option value="storm">Storm</option>
+        </select>
+        <select
+          value={environmentSpeed}
+          onChange={(event) => setSpeed(Number(event.target.value))}
+        >
+          <option value={.5}>0.5×</option>
+          <option value={1}>1×</option>
+          <option value={2}>2×</option>
+          <option value={4}>4×</option>
+          <option value={8}>8×</option>
+        </select>
+        <button
+          className={environmentPaused ? 'paused' : ''}
+          onClick={() => setPaused(!environmentPaused)}
+        >
+          {environmentPaused ? 'Resume' : 'Pause'}
+        </button>
+      </div>
+    </div>
     <div className="world-forge-map-legend">
       <span><i className="main"/>Main road</span>
       <span><i className="branch"/>Side trails</span>
@@ -276,6 +423,9 @@ function buildRegionScene(region: GeneratedRegion) {
   biome.add(ambient.group)
   root.add(biome)
 
+  const weather = createWorldWeatherVisuals(region)
+  root.add(weather.group)
+
   const landmarks = new THREE.Group()
   landmarks.name = 'Landmarks'
   for (const poi of region.pois) landmarks.add(makePoi(region, poi))
@@ -291,6 +441,7 @@ function buildRegionScene(region: GeneratedRegion) {
     boundary,
     riverDebug,
     ambient,
+    weather,
   }
 }
 
@@ -603,6 +754,7 @@ function buildStream(region: GeneratedRegion) {
       side: THREE.DoubleSide,
     }),
   )
+  water.name = 'GeneratedWaterSurface'
   water.castShadow = false
   water.receiveShadow = false
   water.renderOrder = 20
@@ -1220,7 +1372,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (trees.length) {
     const trunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
-    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 })
+    const trunkMaterial = markWorldWindMaterial(
+      new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
+      .16,
+    )
     const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
     const matrix = new THREE.Matrix4()
     const quaternion = new THREE.Quaternion()
@@ -1283,18 +1438,27 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       const variantColor = new THREE.Color(
         treeVariantColors[variant] ?? palette.tree,
       )
-      const lowerMaterial = new THREE.MeshStandardMaterial({
-        color: variantColor.clone().multiplyScalar(.9),
-        roughness: 1,
-      })
-      const middleMaterial = new THREE.MeshStandardMaterial({
-        color: variantColor,
-        roughness: 1,
-      })
-      const upperMaterial = new THREE.MeshStandardMaterial({
-        color: variantColor.clone().multiplyScalar(1.1),
-        roughness: 1,
-      })
+      const lowerMaterial = markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({
+          color: variantColor.clone().multiplyScalar(.9),
+          roughness: 1,
+        }),
+        .48,
+      )
+      const middleMaterial = markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({
+          color: variantColor,
+          roughness: 1,
+        }),
+        .68,
+      )
+      const upperMaterial = markWorldWindMaterial(
+        new THREE.MeshStandardMaterial({
+          color: variantColor.clone().multiplyScalar(1.1),
+          roughness: 1,
+        }),
+        .9,
+      )
       const lower = new THREE.InstancedMesh(
         lowerGeometries[variant],
         lowerMaterial,
@@ -1467,10 +1631,13 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
     const lowerTrunkGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
     const upperTrunkGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
     const branchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
-    const deadWood = new THREE.MeshStandardMaterial({
-      color: 0x493b31,
-      roughness: 1,
-    })
+    const deadWood = markWorldWindMaterial(
+      new THREE.MeshStandardMaterial({
+        color: 0x493b31,
+        roughness: 1,
+      }),
+      .24,
+    )
     const lowerTrunks = new THREE.InstancedMesh(
       lowerTrunkGeometry,
       deadWood,
@@ -1596,7 +1763,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (ferns.length) {
     const geometry = new THREE.ConeGeometry(.38, .72, 5)
-    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 })
+    const material = markWorldWindMaterial(
+      new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 }),
+      .72,
+    )
     const mesh = new THREE.InstancedMesh(geometry, material, ferns.length)
     setInstances(mesh, ferns, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .31 * item.scale, item.z),
@@ -1635,7 +1805,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (grasses.length) {
     const geometry = new THREE.ConeGeometry(.22, .62, 5)
-    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 })
+    const material = markWorldWindMaterial(
+      new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 }),
+      .9,
+    )
     const mesh = new THREE.InstancedMesh(geometry, material, grasses.length)
     setInstances(mesh, grasses, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .23 * item.scale, item.z),
@@ -1660,7 +1833,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (reeds.length) {
     const geometry = new THREE.CylinderGeometry(.035, .06, 1.05, 5)
-    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.reeds, roughness: 1 })
+    const material = markWorldWindMaterial(
+      new THREE.MeshStandardMaterial({ color: groundCoverColors.reeds, roughness: 1 }),
+      1,
+    )
     const bladesPerCluster = 6
     const mesh = new THREE.InstancedMesh(
       geometry,
@@ -1926,6 +2102,7 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     }
 
     const fireGlow = new THREE.PointLight(0xff8738, .9, 6)
+    fireGlow.userData.forgeEnvironmentLightBase = .9
     fireGlow.position.set(0, .7, 0)
     group.add(fireGlow)
   } else if (poi.type === 'shrine') {
@@ -1966,6 +2143,7 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     }
 
     const glow = new THREE.PointLight(0xd6b36d, 1.15, 7)
+    glow.userData.forgeEnvironmentLightBase = 1.15
     glow.position.set(0, 1.5, .1)
     group.add(glow)
   } else if (poi.type === 'standing-stones') {
@@ -2761,8 +2939,16 @@ function disposeGroup(root?: THREE.Object3D) {
   if (!root) return
   const materials = new Set<THREE.Material>()
   root.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Sprite)) return
-    if (object instanceof THREE.Mesh) object.geometry?.dispose()
+    if (
+      !(object instanceof THREE.Mesh) &&
+      !(object instanceof THREE.Sprite) &&
+      !(object instanceof THREE.Points)
+    ) {
+      return
+    }
+    if (object instanceof THREE.Mesh || object instanceof THREE.Points) {
+      object.geometry?.dispose()
+    }
     const list = Array.isArray(object.material) ? object.material : [object.material]
     list.forEach((material) => {
       if (!material) return
