@@ -7,7 +7,7 @@ import type {
   ForgePlayerDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderProfile, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
+import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderContinuityIssues, streamRenderProfile, visibleStreamRenderHeight, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
 import {
   bindCharacterAsset,
   disposeBoundObject,
@@ -1164,6 +1164,10 @@ function makeGeneratedStream(region: GeneratedRegion) {
   const heights = profile.heights
 
   const group = new THREE.Group()
+  if (import.meta.env.DEV) {
+    const issues = streamRenderContinuityIssues(region)
+    if (issues.length) console.warn('[Play Region] River continuity', issues)
+  }
   const banks = new THREE.Mesh(
     makeRuntimeRibbon(
       points,
@@ -1182,7 +1186,12 @@ function makeGeneratedStream(region: GeneratedRegion) {
   group.add(banks)
 
   const water = new THREE.Mesh(
-    makeRuntimeProfileRibbon(points, widths, heights, .055),
+    makeRuntimeProfileRibbon(
+      points,
+      widths,
+      heights,
+      (nominalHeight, x, z) => visibleStreamRenderHeight(region, nominalHeight, x, z),
+    ),
     new THREE.MeshStandardMaterial({ color: 0x355f61, roughness: .28, transparent: true, opacity: .86, side: THREE.DoubleSide }),
   )
   water.receiveShadow = true
@@ -1239,17 +1248,21 @@ function makeRuntimeProfileRibbon(
   points: Array<{ x: number; z: number }>,
   widths: number[],
   heights: number[],
-  heightOffset: number,
+  heightAt: (nominalHeight: number, x: number, z: number) => number,
 ) {
   const sections = buildRuntimeRibbonSections(points, widths)
   const positions: number[] = []
   const indices: number[] = []
 
   sections.forEach((section, index) => {
-    const y = (heights[section.sourceIndex] ?? heights[0] ?? 0) + heightOffset
+    const nominalHeight = heights[section.sourceIndex] ?? heights[0] ?? 0
+    const leftX = section.x + section.offsetX
+    const leftZ = section.z + section.offsetZ
+    const rightX = section.x - section.offsetX
+    const rightZ = section.z - section.offsetZ
     positions.push(
-      section.x + section.offsetX, y, section.z + section.offsetZ,
-      section.x - section.offsetX, y, section.z - section.offsetZ,
+      leftX, heightAt(nominalHeight, leftX, leftZ), leftZ,
+      rightX, heightAt(nominalHeight, rightX, rightZ), rightZ,
     )
 
     if (index < sections.length - 1) {
