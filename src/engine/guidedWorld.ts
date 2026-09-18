@@ -1526,7 +1526,7 @@ function repairResidualRiverPathIncursions(
       const segmentLength = Math.hypot(b.x - a.x, b.z - a.z)
       const steps = Math.max(2, Math.ceil(segmentLength / .42))
 
-      for (let step = 0; step < steps; step += 1) {
+      for (let step = 0; step <= steps; step += 1) {
         if (segmentIndex > 1 && step === 0) continue
         const t = step / steps
         const width = lerp(aWidth, bWidth, t)
@@ -1537,8 +1537,12 @@ function repairResidualRiverPathIncursions(
         const river = riverOccupancySample(mask, point.x, point.z)
         const footprintHalfWidth = pathFootprintHalfWidth(width)
         const required = footprintHalfWidth + .62
+        const isFixedEndpoint =
+          (segmentIndex === 1 && step === 0) ||
+          (segmentIndex === path.points.length - 1 && step === steps)
 
         if (
+          !isFixedEndpoint &&
           river.signedDistance < required &&
           !crossingAllowsRiverOccupancy(
             point.x,
@@ -1571,9 +1575,6 @@ function repairResidualRiverPathIncursions(
       }
     }
 
-    const lastIndex = path.points.length - 1
-    nextPoints.push({ ...path.points[lastIndex] })
-    nextWidths.push(path.widths[lastIndex] ?? path.width)
     path.points = nextPoints
     path.widths = nextWidths
   }
