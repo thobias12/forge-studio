@@ -2937,18 +2937,40 @@ function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z:
   return best
 }
 
-function pathEdgeWear(paths: GeneratedWorldPath[], x: number, z: number) {
-  let best = 0
-  for (const path of paths) {
-    const distance = distanceToPolyline(x, z, path.points)
-    const halfWidth = path.width * .5
-    const fade = path.kind === 'main' ? path.width * .9 + .9 : path.width * 1.05 + .65
-    if (distance > halfWidth + fade) continue
-    const edgeDistance = Math.max(0, distance - halfWidth)
-    const influence = 1 - smoothstep(clamp(edgeDistance / Math.max(.001, fade), 0, 1))
-    best = Math.max(best, influence)
-  }
-  return best
+function pathEdgeWear(
+  paths: GeneratedWorldPath[],
+  x: number,
+  z: number,
+  seed = 0,
+) {
+  const nearest = nearestPathSample(paths, x, z)
+  if (!nearest) return 0
+
+  const shoulderWarp = (
+    valueNoise2D(x * .16 + 9.4, z * .16 - 5.8, seed ^ 0x9E3779B9) - .5
+  ) * (nearest.kind === 'main' ? .9 : .55)
+  const halfWidth = nearest.width * .5
+  const fadeBase = nearest.kind === 'main'
+    ? nearest.width * .9 + .9
+    : nearest.width * 1.05 + .65
+  const fadeNoise = valueNoise2D(
+    x * .085 - 12.6,
+    z * .085 + 3.2,
+    seed ^ 0x7FEB352D,
+  )
+  const fade = fadeBase * (.78 + fadeNoise * .44)
+  const effectiveDistance = Math.max(0, nearest.distance + shoulderWarp)
+  if (effectiveDistance > halfWidth + fade) return 0
+
+  const edgeDistance = Math.max(0, effectiveDistance - halfWidth)
+  const influence =
+    1 - smoothstep(clamp(edgeDistance / Math.max(.001, fade), 0, 1))
+  const breakup = .8 + valueNoise2D(
+    x * .23 + 2.7,
+    z * .23 - 8.1,
+    seed ^ 0x846CA68B,
+  ) * .2
+  return clamp(influence * breakup, 0, 1)
 }
 
 function distanceToPaths(x: number, z: number, paths: GeneratedWorldPath[]) {
@@ -2992,6 +3014,53 @@ function distanceToSegment(x: number, z: number, a: GeneratedWorldPoint, b: Gene
   if (lengthSq <= .00001) return Math.hypot(x - a.x, z - a.z)
   const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
   return Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t))
+}
+
+function clearingSurfaceInfluence(
+  clearings: GeneratedWorldTerrain['clearings'],
+  x: number,
+  z: number,
+  seed: number,
+) {
+  let best = 0
+
+  for (const clearing of clearings) {
+    const dx = x - clearing.x
+    const dz = z - clearing.z
+    const distance = Math.hypot(dx, dz)
+    if (distance > clearing.radius * 1.28) continue
+
+    const localSeed = hashSeed(
+      `${seed}:clearing:${Math.round(clearing.x * 10)}:${Math.round(clearing.z * 10)}`,
+    )
+    const angle = (localSeed % 6283) / 1000
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const rx = dx * cos - dz * sin
+    const rz = dx * sin + dz * cos
+    const stretch = .76 + ((localSeed >>> 9) % 1000) / 1000 * .48
+    const edgeNoise = valueNoise2D(
+      x * .095 + 4.4,
+      z * .095 - 6.9,
+      localSeed ^ 0x68E31DA4,
+    )
+    const localRadius = clearing.radius * (.82 + edgeNoise * .3)
+    const warpedDistance = Math.hypot(rx / stretch, rz * stretch)
+    const normalized = warpedDistance / Math.max(.001, localRadius)
+    if (normalized >= 1.08) continue
+
+    const interior = valueNoise2D(
+      x * .17 - 7.1,
+      z * .17 + 2.8,
+      localSeed ^ 0xB5297A4D,
+    )
+    const influence =
+      (1 - smoothstep(clamp((normalized - .18) / .88, 0, 1))) *
+      (.78 + interior * .22)
+    best = Math.max(best, influence)
+  }
+
+  return clamp(best, 0, 1)
 }
 
 function nearestClearing(x: number, z: number, clearings: GeneratedWorldTerrain['clearings']) {
