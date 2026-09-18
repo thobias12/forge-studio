@@ -1439,6 +1439,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
   const palette = runtimeBiomePalette(region.biome)
   const surfacePalette = runtimeSurfacePalette(region.biome)
   const treeVariantColors = runtimeTreeVariantColors(region.biome, palette.tree)
+  const groundCoverColors = runtimeGroundCoverColors(region.biome, palette.fern)
   const bankPatchGeometry = new THREE.CircleGeometry(1, 10)
   bankPatchGeometry.rotateX(-Math.PI / 2)
   const bankPatchColor = new THREE.Color(surfacePalette.soil)
@@ -1497,6 +1498,12 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     new THREE.DodecahedronGeometry(.82, 0),
     new THREE.ConeGeometry(.7, 2.2, 7),
   ]
+  const treeAccentGeometries: THREE.BufferGeometry[] = [
+    new THREE.ConeGeometry(.78, .88, 6),
+    new THREE.ConeGeometry(.92, .72, 7),
+    new THREE.DodecahedronGeometry(.66, 0),
+    new THREE.ConeGeometry(.7, .96, 6),
+  ]
   const deadTreeLowerGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
   const deadTreeUpperGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
   const deadTreeBranchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
@@ -1541,7 +1548,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
   })
   const outcropGeometry = new THREE.DodecahedronGeometry(.72, 0)
   const outcropMaterial = new THREE.MeshStandardMaterial({
-    color: palette.rock,
+    color: new THREE.Color(palette.rock).multiplyScalar(.9),
     roughness: 1,
   })
   const hedgeGeometry = new THREE.DodecahedronGeometry(.55, 0)
@@ -1654,23 +1661,44 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
         scene.add(head)
       }
     } else if (item.type === 'rock-outcrop') {
-      for (let piece = 0; piece < 3; piece += 1) {
-        const angle = item.rotation + piece * 2.12 + item.variant * .17
-        const radius = piece === 0 ? 0 : (.52 + piece * .12) * item.scale
-        const size = item.scale * (piece === 0 ? 1.22 : .72 + piece * .08)
+      const pieceCount = 5 + item.variant
+      for (let piece = 0; piece < pieceCount; piece += 1) {
+        const ring = piece === 0 ? 0 : 1 + Math.floor((piece - 1) / 3)
+        const angle =
+          item.rotation +
+          piece * 2.18 +
+          item.variant * .19 +
+          ring * .27
+        const radius =
+          piece === 0
+            ? 0
+            : (.46 + ring * .34 + (piece % 3) * .08) * item.scale
+        const size =
+          item.scale *
+          (piece === 0
+            ? 1.18
+            : .5 + ((piece + item.variant) % 4) * .11)
         const rock = new THREE.Mesh(outcropGeometry, outcropMaterial)
         rock.position.set(
           item.x + Math.cos(angle) * radius,
-          item.y + .32 * size,
+          item.y + .28 * size,
           item.z + Math.sin(angle) * radius,
         )
-        rock.rotation.set(angle * .08, angle, (piece - 1) * .16)
-        rock.scale.set(size * 1.12, size * (.62 + piece * .11), size)
+        rock.rotation.set(
+          (piece % 3 - 1) * .1,
+          angle,
+          ((piece + item.variant) % 4 - 1.5) * .11,
+        )
+        rock.scale.set(
+          size * (1.02 + (piece % 2) * .14),
+          size * (.52 + ((piece + 1) % 3) * .12),
+          size * (.9 + (piece % 3) * .08),
+        )
         rock.castShadow = true
         rock.receiveShadow = true
         scene.add(rock)
       }
-      obstacles.push({ x: item.x, z: item.z, radius: 1.15 * item.scale })
+      obstacles.push({ x: item.x, z: item.z, radius: 1.55 * item.scale })
     } else if (item.type === 'hedge') {
       const hedge = new THREE.Group()
       hedge.position.set(item.x, item.y, item.z)
@@ -1804,6 +1832,29 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       upper.castShadow = true
       tree.add(upper)
 
+      const accent = new THREE.Mesh(
+        treeAccentGeometries[variant],
+        treeMiddleMaterials[variant],
+      )
+      accent.position.set(
+        broadleaf ? .42 : (variant % 2 ? -.42 : .38),
+        broadleaf ? 4.12 : 3.92 + variant * .06,
+        broadleaf ? .18 : (variant < 2 ? .28 : -.24),
+      )
+      accent.rotation.set(
+        broadleaf ? .08 : (variant % 2 ? -.08 : .06),
+        .32 + variant * .11,
+        broadleaf ? -.06 : (variant % 2 ? .12 : -.1),
+      )
+      const accentScale = broadleaf ? .72 : .66 + variant * .035
+      accent.scale.set(
+        accentScale * (broadleaf ? 1.05 : 1.18),
+        accentScale * (broadleaf ? .92 : .78),
+        accentScale,
+      )
+      accent.castShadow = true
+      tree.add(accent)
+
       scene.add(tree)
       obstacles.push({ x: item.x, z: item.z, radius: .44 * item.scale })
     } else if (item.type === 'dead-tree') {
@@ -1898,7 +1949,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     } else if (item.type === 'fern') {
       const fern = new THREE.Mesh(
         new THREE.ConeGeometry(.28 * item.scale, .6 * item.scale, 5),
-        new THREE.MeshStandardMaterial({ color: palette.fern, roughness: 1 }),
+        new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 }),
       )
       fern.position.set(item.x, item.y + .27 * item.scale, item.z)
       fern.rotation.y = item.rotation
@@ -1906,7 +1957,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     } else if (item.type === 'grass') {
       const grass = new THREE.Mesh(
         new THREE.ConeGeometry(.18 * item.scale, .58 * item.scale, 5),
-        new THREE.MeshStandardMaterial({ color: 0x58704a, roughness: 1 }),
+        new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 }),
       )
       grass.position.set(item.x, item.y + .22 * item.scale, item.z)
       grass.rotation.y = item.rotation
@@ -1914,7 +1965,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     } else if (item.type === 'shrub') {
       const shrub = new THREE.Mesh(
         new THREE.DodecahedronGeometry(.45 * item.scale, 0),
-        new THREE.MeshStandardMaterial({ color: 0x2f4c33, roughness: 1 }),
+        new THREE.MeshStandardMaterial({ color: groundCoverColors.shrub, roughness: 1 }),
       )
       shrub.position.set(item.x, item.y + .34 * item.scale, item.z)
       shrub.scale.y = .72
@@ -1922,7 +1973,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       shrub.castShadow = true
       scene.add(shrub)
     } else if (item.type === 'reeds') {
-      const material = new THREE.MeshStandardMaterial({ color: 0x607453, roughness: 1 })
+      const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.reeds, roughness: 1 })
       for (let blade = 0; blade < 3; blade += 1) {
         const angle = item.rotation + blade * 2.1
         const reed = new THREE.Mesh(new THREE.CylinderGeometry(.03, .05, .95 * item.scale, 5), material)
@@ -2180,6 +2231,32 @@ function runtimeBiomePalette(biome: string) {
   if (value.includes('corrupt')) return { ground: 0x413444, low: 0x302b3d, high: 0x6a526e, tree: 0x342d3b, fern: 0x5b3c63, rock: 0x75657a }
   if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) return { ground: 0x6a633f, low: 0x506040, high: 0x8b8258, tree: 0x425838, fern: 0x637043, rock: 0x777468 }
   return { ground: 0x28412c, low: 0x203929, high: 0x526049, tree: 0x183824, fern: 0x2e6039, rock: 0x596159 }
+}
+
+function runtimeGroundCoverColors(biome: string, fallbackFern: number) {
+  const value = biome.toLowerCase()
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) {
+    return {
+      fern: 0x2b4b38,
+      grass: 0x4b5a42,
+      shrub: 0x294237,
+      reeds: 0x67734e,
+    }
+  }
+  if (value.includes('corrupt')) {
+    return {
+      fern: 0x514557,
+      grass: 0x625e4b,
+      shrub: 0x403b45,
+      reeds: 0x665d4d,
+    }
+  }
+  return {
+    fern: fallbackFern,
+    grass: 0x58704a,
+    shrub: 0x2f4c33,
+    reeds: 0x607453,
+  }
 }
 
 function runtimeTreeVariantColors(biome: string, fallback: number) {

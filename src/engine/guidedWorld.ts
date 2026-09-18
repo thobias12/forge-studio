@@ -3962,17 +3962,50 @@ function buildDressing(
     // Corrupt ground cover should read as damaged growth rather than normal,
     // healthy green underbrush.
     if (
-      biome.includes('corrupt') &&
-      (type === 'shrub' || type === 'fern') &&
-      random() < .42
+      biome.includes('highland') &&
+      type === 'rock' &&
+      random() < .58
     ) {
-      type = random() < .58 ? 'stump' : 'dead-tree'
+      type = random() < .55 ? 'grass' : 'shrub'
+    }
+
+    if (
+      biome.includes('marsh') || biome.includes('swamp') || biome.includes('drowned')
+    ) {
+      if (
+        (type === 'grass' || type === 'shrub' || type === 'fern') &&
+        micro.moss < .12 &&
+        riverClearance > 8 &&
+        random() < .72
+      ) {
+        type = random() < .62 ? 'stump' : 'dead-tree'
+      } else if (
+        (type === 'grass' || type === 'shrub') &&
+        (micro.moss > .16 || riverClearance < 8) &&
+        random() < .7
+      ) {
+        type = 'reeds'
+      }
+    }
+
+    if (
+      biome.includes('corrupt') &&
+      (type === 'shrub' || type === 'fern' || type === 'grass') &&
+      random() < .56
+    ) {
+      const damagedRoll = random()
+      type =
+        damagedRoll < .5
+          ? 'stump'
+          : damagedRoll < .82
+            ? 'dead-tree'
+            : 'rock'
     }
 
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
     const baseScale = type === 'tree' || type === 'dead-tree'
-      ? (.7 + random() * .9) * profile.treeScale
+      ? (.62 + random() * 1.08) * profile.treeScale
       : type === 'rock'
         ? (.55 + random() * .82) * profile.rockScale
         : type === 'grass' || type === 'reeds'
@@ -4116,12 +4149,12 @@ function appendBiomeSignatureDressing(
   }
 
   if (biome.includes('highland')) {
-    pushSignature('rock-outcrop', 30, {
-      minPath: 4,
-      minRiver: 1.8,
-      minPoi: 3.4,
-      scaleMin: 1.05,
-      scaleMax: 1.9,
+    pushSignature('rock-outcrop', 22, {
+      minPath: 4.2,
+      minRiver: 1.9,
+      minPoi: 3.6,
+      scaleMin: 1.18,
+      scaleMax: 2.15,
       accept: (x, z, micro) =>
         micro.rocky > .16 ||
         sampleTerrainHeight({ terrain, bounds }, x, z) > 1.3 ||
@@ -4135,7 +4168,7 @@ function appendBiomeSignatureDressing(
     biome.includes('swamp') ||
     biome.includes('drowned')
   ) {
-    pushSignature('mud-patch', 40, {
+    pushSignature('mud-patch', 34, {
       minPath: 2.7,
       minRiver: .72,
       minPoi: 2.4,
@@ -4143,29 +4176,26 @@ function appendBiomeSignatureDressing(
       scaleMax: 2.25,
       accept: (_x, _z, micro, _pathDistance, riverClearance) =>
         micro.moss > .12 ||
-        riverClearance < 8 ||
-        random() < .24,
+        riverClearance < 8.5,
     })
-    pushSignature('root-cluster', 14, {
+    pushSignature('root-cluster', 12, {
       minPath: 3.3,
       minRiver: 1,
       scaleMin: .75,
       scaleMax: 1.25,
       accept: (_x, _z, micro, _pathDistance, riverClearance) =>
         micro.moss > .14 ||
-        riverClearance < 7 ||
-        random() < .22,
+        riverClearance < 7.5,
     })
-    pushSignature('reeds', 38, {
+    pushSignature('reeds', 48, {
       minPath: 2.8,
       minRiver: .58,
       minPoi: 2.6,
       scaleMin: .78,
       scaleMax: 1.35,
       accept: (_x, _z, micro, _pathDistance, riverClearance) =>
-        riverClearance < 9 ||
-        micro.moss > .14 ||
-        random() < .18,
+        riverClearance < 10 ||
+        micro.moss > .13,
     })
     return
   }
@@ -4525,13 +4555,13 @@ function biomeIdentityProfile(biome: string) {
       clusterScale: .68,
       clusterRadiusScale: .82,
       clearingStrength: .82,
-      dressingScale: .8,
+      dressingScale: .72,
       microScale: 1.12,
       microRadiusScale: 1.16,
       treeBias: .48,
       treeScale: .92,
-      rockBias: 1.5,
-      rockScale: 1.06,
+      rockBias: .72,
+      rockScale: .96,
       meadowBias: .72,
       mossBias: .42,
       scrubBias: 1.15,
@@ -4554,19 +4584,19 @@ function biomeIdentityProfile(biome: string) {
       clusterScale: .9,
       clusterRadiusScale: 1.22,
       clearingStrength: 1.14,
-      dressingScale: 1.16,
+      dressingScale: .9,
       microScale: 1.22,
       microRadiusScale: 1.22,
-      treeBias: .48,
+      treeBias: .44,
       treeScale: .88,
-      rockBias: .42,
-      rockScale: .88,
-      meadowBias: .58,
-      mossBias: 2.1,
-      scrubBias: 1.3,
-      forestFloorBias: 1.08,
-      reedBias: 1.9,
-      deadTreeBias: .26,
+      rockBias: .38,
+      rockScale: .86,
+      meadowBias: .48,
+      mossBias: 2.2,
+      scrubBias: .9,
+      forestFloorBias: .92,
+      reedBias: 2.15,
+      deadTreeBias: .3,
       signatureTypes: [
         'moss', 'moss', 'moss', 'scrub',
         'forest-floor', 'moss', 'meadow',
@@ -4586,16 +4616,16 @@ function biomeIdentityProfile(biome: string) {
       dressingScale: .94,
       microScale: 1.1,
       microRadiusScale: 1.12,
-      treeBias: .45,
+      treeBias: .4,
       treeScale: .9,
-      rockBias: 1.28,
-      rockScale: 1.08,
-      meadowBias: .3,
-      mossBias: .42,
-      scrubBias: 1.35,
-      forestFloorBias: .58,
-      reedBias: .48,
-      deadTreeBias: .38,
+      rockBias: 1.18,
+      rockScale: 1.04,
+      meadowBias: .24,
+      mossBias: .34,
+      scrubBias: 1.08,
+      forestFloorBias: .52,
+      reedBias: .42,
+      deadTreeBias: .44,
       signatureTypes: [
         'scrub', 'rocky', 'scrub', 'forest-floor',
         'rocky', 'scrub', 'moss',

@@ -803,6 +803,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const palette = editorBiomePalette(region.biome)
   const surfacePalette = editorSurfacePalette(region.biome)
   const treeVariantColors = editorTreeVariantColors(region.biome, palette.tree)
+  const groundCoverColors = editorGroundCoverColors(region.biome, palette.fern)
 
   if (bankPatches.length) {
     const geometry = new THREE.CircleGeometry(1, 10)
@@ -1012,35 +1013,56 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   if (rockOutcrops.length) {
     const geometry = new THREE.DodecahedronGeometry(.72, 0)
     const material = new THREE.MeshStandardMaterial({
-      color: palette.rock,
+      color: new THREE.Color(palette.rock).multiplyScalar(.9),
       roughness: 1,
     })
+    const totalPieces = rockOutcrops.reduce(
+      (sum, item) => sum + 5 + item.variant,
+      0,
+    )
     const pieces = new THREE.InstancedMesh(
       geometry,
       material,
-      rockOutcrops.length * 3,
+      totalPieces,
     )
     const matrix = new THREE.Matrix4()
     const quaternion = new THREE.Quaternion()
     const scale = new THREE.Vector3()
     let cursor = 0
     rockOutcrops.forEach((item) => {
-      for (let piece = 0; piece < 3; piece += 1) {
-        const angle = item.rotation + piece * 2.12 + item.variant * .17
-        const radius = piece === 0 ? 0 : (.52 + piece * .12) * item.scale
-        const size = item.scale * (piece === 0 ? 1.22 : .72 + piece * .08)
+      const pieceCount = 5 + item.variant
+      for (let piece = 0; piece < pieceCount; piece += 1) {
+        const ring = piece === 0 ? 0 : 1 + Math.floor((piece - 1) / 3)
+        const angle =
+          item.rotation +
+          piece * 2.18 +
+          item.variant * .19 +
+          ring * .27
+        const radius =
+          piece === 0
+            ? 0
+            : (.46 + ring * .34 + (piece % 3) * .08) * item.scale
+        const size =
+          item.scale *
+          (piece === 0
+            ? 1.18
+            : .5 + ((piece + item.variant) % 4) * .11)
         quaternion.setFromEuler(
           new THREE.Euler(
-            angle * .08,
+            (piece % 3 - 1) * .1,
             angle,
-            (piece - 1) * .16,
+            ((piece + item.variant) % 4 - 1.5) * .11,
           ),
         )
-        scale.set(size * 1.12, size * (.62 + piece * .11), size)
+        scale.set(
+          size * (1.02 + (piece % 2) * .14),
+          size * (.52 + ((piece + 1) % 3) * .12),
+          size * (.9 + (piece % 3) * .08),
+        )
         matrix.compose(
           new THREE.Vector3(
             item.x + Math.cos(angle) * radius,
-            item.y + .32 * size,
+            item.y + .28 * size,
             item.z + Math.sin(angle) * radius,
           ),
           quaternion,
@@ -1198,6 +1220,12 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       new THREE.DodecahedronGeometry(.82, 0),
       new THREE.ConeGeometry(.7, 2.2, 7),
     ]
+    const accentGeometries: THREE.BufferGeometry[] = [
+      new THREE.ConeGeometry(.78, .88, 6),
+      new THREE.ConeGeometry(.92, .72, 7),
+      new THREE.DodecahedronGeometry(.66, 0),
+      new THREE.ConeGeometry(.7, .96, 6),
+    ]
     buckets.forEach((items, variant) => {
       if (!items.length) return
       const variantColor = new THREE.Color(
@@ -1228,6 +1256,11 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       const upper = new THREE.InstancedMesh(
         upperGeometries[variant],
         upperMaterial,
+        items.length,
+      )
+      const accent = new THREE.InstancedMesh(
+        accentGeometries[variant],
+        middleMaterial,
         items.length,
       )
 
@@ -1328,12 +1361,43 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
           scale,
         )
         upper.setMatrixAt(index, matrix)
+
+        const accentOffset = broadleaf
+          ? worldOffset(.42 * item.scale, .18 * item.scale)
+          : worldOffset(
+              (variant % 2 ? -.42 : .38) * item.scale,
+              (variant < 2 ? .28 : -.24) * item.scale,
+            )
+        quaternion.setFromEuler(
+          new THREE.Euler(
+            broadleaf ? .08 : (variant % 2 ? -.08 : .06),
+            item.rotation + .32 + variant * .11,
+            broadleaf ? -.06 : (variant % 2 ? .12 : -.1),
+          ),
+        )
+        const accentScale = broadleaf ? .72 : .66 + variant * .035
+        scale.set(
+          item.scale * accentScale * (broadleaf ? 1.05 : 1.18),
+          item.scale * accentScale * (broadleaf ? .92 : .78),
+          item.scale * accentScale,
+        )
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + accentOffset.x,
+            item.y + (broadleaf ? 4.12 : 3.92 + variant * .06) * item.scale,
+            item.z + accentOffset.z,
+          ),
+          quaternion,
+          scale,
+        )
+        accent.setMatrixAt(index, matrix)
       })
 
       lower.castShadow = true
       middle.castShadow = true
       upper.castShadow = true
-      group.add(lower, middle, upper)
+      accent.castShadow = true
+      group.add(lower, middle, upper, accent)
     })
   }
 
@@ -1470,7 +1534,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (ferns.length) {
     const geometry = new THREE.ConeGeometry(.38, .72, 5)
-    const material = new THREE.MeshStandardMaterial({ color: palette.fern, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, ferns.length)
     setInstances(mesh, ferns, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .31 * item.scale, item.z),
@@ -1509,7 +1573,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (grasses.length) {
     const geometry = new THREE.ConeGeometry(.22, .62, 5)
-    const material = new THREE.MeshStandardMaterial({ color: 0x58704a, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, grasses.length)
     setInstances(mesh, grasses, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .23 * item.scale, item.z),
@@ -1521,7 +1585,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (shrubs.length) {
     const geometry = new THREE.DodecahedronGeometry(.48, 0)
-    const material = new THREE.MeshStandardMaterial({ color: 0x2f4c33, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.shrub, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, shrubs.length)
     setInstances(mesh, shrubs, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .35 * item.scale, item.z),
@@ -1534,7 +1598,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (reeds.length) {
     const geometry = new THREE.CylinderGeometry(.035, .06, 1.05, 5)
-    const material = new THREE.MeshStandardMaterial({ color: 0x607453, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: groundCoverColors.reeds, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, reeds.length * 3)
     const matrix = new THREE.Matrix4()
     const quaternion = new THREE.Quaternion()
@@ -1921,6 +1985,32 @@ function editorBiomePalette(biome: string) {
   if (value.includes('corrupt')) return { ground: 0x413444, low: 0x302b3d, mid: 0x554258, high: 0x6a526e, tree: 0x342d3b, fern: 0x5b3c63, rock: 0x75657a }
   if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) return { ground: 0x6a633f, low: 0x506040, mid: 0x77704a, high: 0x8b8258, tree: 0x425838, fern: 0x637043, rock: 0x777468 }
   return { ground: 0x28412c, low: 0x203929, mid: 0x354b33, high: 0x526049, tree: 0x183824, fern: 0x2e6039, rock: 0x596159 }
+}
+
+function editorGroundCoverColors(biome: string, fallbackFern: number) {
+  const value = biome.toLowerCase()
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) {
+    return {
+      fern: 0x2b4b38,
+      grass: 0x4b5a42,
+      shrub: 0x294237,
+      reeds: 0x67734e,
+    }
+  }
+  if (value.includes('corrupt')) {
+    return {
+      fern: 0x514557,
+      grass: 0x625e4b,
+      shrub: 0x403b45,
+      reeds: 0x665d4d,
+    }
+  }
+  return {
+    fern: fallbackFern,
+    grass: 0x58704a,
+    shrub: 0x2f4c33,
+    reeds: 0x607453,
+  }
 }
 
 function editorTreeVariantColors(biome: string, fallback: number) {
