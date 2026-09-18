@@ -2370,7 +2370,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
 
     group.traverse((object) => {
       if (object instanceof THREE.Mesh) {
-        object.castShadow = true
+        object.castShadow = !object.userData.forgePoiGround
         object.receiveShadow = true
       }
     })
@@ -2425,6 +2425,7 @@ function addRuntimePoiEnvironment(
   ground.position.y = .035
   ground.scale.set(groundSize[0], groundSize[1], 1)
   ground.receiveShadow = true
+  ground.userData.forgePoiGround = true
   ground.renderOrder = 2
   group.add(ground)
 
@@ -2440,6 +2441,7 @@ function addRuntimePoiEnvironment(
   apron.rotation.x = -Math.PI / 2
   apron.position.set(0, .041, groundSize[1] * .72)
   apron.receiveShadow = true
+  apron.userData.forgePoiGround = true
   apron.renderOrder = 3
   group.add(apron)
 
