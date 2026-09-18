@@ -1171,16 +1171,87 @@ function resolveNodesOutsideRiverMask(
   }
 }
 
+function pathFootprintHalfWidth(width: number) {
+  // The rendered road ribbon permits a miter up to 1.16x its nominal half-width.
+  // Use that same upper bound for generation/validation so the full visible road
+  // footprint, not just its centerline, stays outside the river corridor.
+  return Math.max(.04, width * .5) * 1.16
+}
+
+function pathClearanceSamples(path: GeneratedWorldPath, maxSpacing = .72) {
+  const samples: Array<{
+    x: number
+    z: number
+    width: number
+    segmentIndex?: number
+    t?: number
+  }> = []
+
+  for (let index = 0; index < path.points.length; index += 1) {
+    const point = path.points[index]
+    samples.push({
+      x: point.x,
+      z: point.z,
+      width: path.widths[Math.min(index, path.widths.length - 1)] ?? path.width,
+    })
+
+    if (index === 0) continue
+    const previous = path.points[index - 1]
+    const previousWidth = path.widths[Math.min(index - 1, path.widths.length - 1)] ?? path.width
+    const currentWidth = path.widths[Math.min(index, path.widths.length - 1)] ?? path.width
+    const length = Math.hypot(point.x - previous.x, point.z - previous.z)
+    const steps = Math.max(2, Math.ceil(length / Math.max(.2, maxSpacing)))
+
+    for (let step = 1; step < steps; step += 1) {
+      const t = step / steps
+      samples.push({
+        x: lerp(previous.x, point.x, t),
+        z: lerp(previous.z, point.z, t),
+        width: lerp(previousWidth, currentWidth, t),
+        segmentIndex: index,
+        t,
+      })
+    }
+  }
+
+  return samples
+}
+
 function crossingAllowsRiverOccupancy(
   x: number,
   z: number,
   crossings: GeneratedWorldCrossing[],
   sampleRadius: number,
-  extra = 0,
+  pathHalfWidth = 0,
 ) {
-  return crossings.some((crossing) =>
-    Math.hypot(x - crossing.x, z - crossing.z) <= sampleRadius + 5.2 + extra
-  )
+  return crossings.some((crossing) => {
+    const dx = x - crossing.x
+    const dz = z - crossing.z
+    const directionX = Math.cos(crossing.rotation)
+    const directionZ = Math.sin(crossing.rotation)
+    const along = Math.abs(dx * directionX + dz * directionZ)
+    const across = Math.abs(-dx * directionZ + dz * directionX)
+
+    // Treat a crossing as an oriented bridge/ford plus approach envelope rather
+    // than a large circle. This allows the aligned approach geometry to enter the
+    // river corridor while preventing nearby parallel roads from being exempted.
+    const approachHalfLength =
+      sampleRadius +
+      Math.max(6.4, crossing.width * 1.85) +
+      pathHalfWidth * .3
+    const approachHalfWidth = Math.max(
+      crossing.width * .72,
+      pathHalfWidth + .7,
+    )
+
+    if (along <= approachHalfLength && across <= approachHalfWidth) return true
+
+    // Small rounded corners avoid a hard rectangular cutoff where a shaped
+    // approach transitions back into the ordinary path.
+    const beyondAlong = Math.max(0, along - approachHalfLength)
+    const beyondAcross = Math.max(0, across - approachHalfWidth)
+    return Math.hypot(beyondAlong, beyondAcross) <= 1.15
+  })
 }
 
 function enforcePathsOutsideRiverMask(
