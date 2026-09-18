@@ -1452,6 +1452,38 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     polygonOffsetUnits: -1,
   })
 
+  const treeTrunkGeometry = new THREE.CylinderGeometry(.2, .35, 3.25, 7)
+  const treeTrunkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x382c22,
+    roughness: 1,
+  })
+  const treeCrownMaterial = new THREE.MeshStandardMaterial({
+    color: palette.tree,
+    roughness: 1,
+  })
+  const treeUpperMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette.tree).multiplyScalar(1.08),
+    roughness: 1,
+  })
+  const treeLowerGeometries: THREE.BufferGeometry[] = [
+    new THREE.ConeGeometry(1.5, 3.25, 7),
+    new THREE.ConeGeometry(1.7, 2.75, 8),
+    new THREE.DodecahedronGeometry(1.34, 0),
+    new THREE.ConeGeometry(1.3, 3.6, 7),
+  ]
+  const treeUpperGeometries: THREE.BufferGeometry[] = [
+    new THREE.ConeGeometry(1.02, 2.65, 7),
+    new THREE.ConeGeometry(1.14, 2.35, 8),
+    new THREE.DodecahedronGeometry(.96, 0),
+    new THREE.ConeGeometry(.86, 2.8, 7),
+  ]
+  const deadTreeTrunkGeometry = new THREE.CylinderGeometry(.14, .32, 4.5, 6)
+  const deadTreeBranchGeometry = new THREE.CylinderGeometry(.055, .12, 1.45, 5)
+  const deadTreeMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4a4037,
+    roughness: 1,
+  })
+
   for (const item of region.dressing) {
     if (item.type === 'bank-patch') {
       const patch = new THREE.Mesh(bankPatchGeometry, bankPatchMaterial)
@@ -1466,30 +1498,78 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       patch.renderOrder = 2
       scene.add(patch)
     } else if (item.type === 'tree') {
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(.2 * item.scale, .32 * item.scale, 2.7 * item.scale, 6),
-        new THREE.MeshStandardMaterial({ color: 0x3a2b21, roughness: 1 }),
+      const tree = new THREE.Group()
+      tree.position.set(item.x, item.y, item.z)
+      tree.rotation.y = item.rotation
+      tree.scale.setScalar(item.scale)
+
+      const trunk = new THREE.Mesh(treeTrunkGeometry, treeTrunkMaterial)
+      trunk.position.y = 1.56
+      trunk.scale.set(
+        .92 + item.variant * .02,
+        1 + item.variant * .025,
+        .92 + item.variant * .02,
       )
-      trunk.position.set(item.x, item.y + 1.3 * item.scale, item.z)
-      trunk.rotation.y = item.rotation
       trunk.castShadow = true
-      const crownGeometry = item.variant === 0
-        ? new THREE.ConeGeometry(1.22 * item.scale, 4.05 * item.scale, 7)
-        : item.variant === 1
-          ? new THREE.ConeGeometry(1.45 * item.scale, 3.35 * item.scale, 8)
-          : item.variant === 2
-            ? new THREE.DodecahedronGeometry(1.3 * item.scale, 0)
-            : new THREE.ConeGeometry(1.05 * item.scale, 4.35 * item.scale, 6)
-      const crown = new THREE.Mesh(
-        crownGeometry,
-        new THREE.MeshStandardMaterial({ color: palette.tree, roughness: 1 }),
+      trunk.receiveShadow = true
+      tree.add(trunk)
+
+      const broadleaf = item.variant === 2
+      const lower = new THREE.Mesh(
+        treeLowerGeometries[item.variant],
+        treeCrownMaterial,
       )
-      if (item.variant === 2) crown.scale.y = 1.35
-      crown.position.set(item.x, item.y + (item.variant === 2 ? 3.55 : 3.75) * item.scale, item.z)
-      crown.rotation.y = item.rotation
-      crown.castShadow = true
-      scene.add(trunk, crown)
-      obstacles.push({ x: item.x, z: item.z, radius: .38 * item.scale })
+      lower.position.y = broadleaf ? 3.75 : 3.55
+      if (broadleaf) lower.scale.y = 1.22
+      lower.castShadow = true
+      tree.add(lower)
+
+      const upper = new THREE.Mesh(
+        treeUpperGeometries[item.variant],
+        treeUpperMaterial,
+      )
+      upper.position.y = broadleaf ? 4.55 : 4.75
+      const upperScale = broadleaf ? .8 : .92
+      upper.scale.set(
+        upperScale,
+        upperScale * (broadleaf ? 1.12 : 1),
+        upperScale,
+      )
+      upper.castShadow = true
+      tree.add(upper)
+
+      scene.add(tree)
+      obstacles.push({ x: item.x, z: item.z, radius: .42 * item.scale })
+    } else if (item.type === 'dead-tree') {
+      const tree = new THREE.Group()
+      tree.position.set(item.x, item.y, item.z)
+      tree.rotation.y = item.rotation
+      tree.scale.setScalar(item.scale)
+
+      const trunk = new THREE.Mesh(deadTreeTrunkGeometry, deadTreeMaterial)
+      trunk.position.y = 2.05
+      trunk.rotation.z = (item.variant - 1.5) * .035
+      trunk.scale.y = .9 + item.variant * .045
+      trunk.castShadow = true
+      trunk.receiveShadow = true
+      tree.add(trunk)
+
+      const branchA = new THREE.Mesh(deadTreeBranchGeometry, deadTreeMaterial)
+      const aYaw = .28 + item.variant * .22
+      branchA.position.set(Math.cos(aYaw) * .34, 3.05, Math.sin(aYaw) * .34)
+      branchA.rotation.set(0, aYaw, 1.02)
+      branchA.castShadow = true
+      tree.add(branchA)
+
+      const branchB = new THREE.Mesh(deadTreeBranchGeometry, deadTreeMaterial)
+      const bYaw = Math.PI + .18 - item.variant * .12
+      branchB.position.set(Math.cos(bYaw) * .3, 3.55, Math.sin(bYaw) * .3)
+      branchB.rotation.set(0, bYaw, .92)
+      branchB.castShadow = true
+      tree.add(branchB)
+
+      scene.add(tree)
+      obstacles.push({ x: item.x, z: item.z, radius: .34 * item.scale })
     } else if (item.type === 'rock') {
       const rock = new THREE.Mesh(
         new THREE.DodecahedronGeometry(.62 * item.scale, 0),
