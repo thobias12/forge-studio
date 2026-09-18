@@ -348,11 +348,13 @@ export function generateGuidedRegion(
   shapeLandmarkApproaches(paths, nodes)
 
   const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
-  enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
   for (const crossing of crossings) {
     const path = paths.find((item) => item.id === crossing.pathId)
     if (path) shapePathAtCrossing(path, crossing)
   }
+  // Run river clearance last so no later crossing/approach shaping can reintroduce
+  // a segment that clips the occupancy corridor outside the crossing zone.
+  enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
 
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
@@ -987,26 +989,35 @@ export function validateGeneratedRegion(
     for (const path of paths) {
       let illegal = false
       for (let index = 0; index < path.points.length; index += 1) {
-        const samples = [path.points[index]]
+        const currentWidth = path.widths[Math.min(index, path.widths.length - 1)] ?? path.width
+        const samples: Array<{ x: number; z: number; width: number }> = [{
+          x: path.points[index].x,
+          z: path.points[index].z,
+          width: currentWidth,
+        }]
+
         if (index > 0) {
           const previous = path.points[index - 1]
-          samples.push({
-            x: (previous.x + path.points[index].x) * .5,
-            z: (previous.z + path.points[index].z) * .5,
-          })
+          const previousWidth = path.widths[Math.min(index - 1, path.widths.length - 1)] ?? path.width
+          for (const t of [.25, .5, .75]) {
+            samples.push({
+              x: lerp(previous.x, path.points[index].x, t),
+              z: lerp(previous.z, path.points[index].z, t),
+              width: lerp(previousWidth, currentWidth, t),
+            })
+          }
         }
 
         for (const point of samples) {
           const river = riverOccupancySample(riverMask, point.x, point.z)
-          const pathWidth = path.widths[Math.min(index, path.widths.length - 1)] ?? path.width
-          const required = pathWidth * .5 + .2
+          const required = point.width * .5 + .2
           if (river.signedDistance >= required) continue
           if (crossingAllowsRiverOccupancy(
             point.x,
             point.z,
             crossings,
             river.radius,
-            pathWidth * .5,
+            point.width * .5,
           )) continue
           illegal = true
           break
@@ -1180,44 +1191,114 @@ function enforcePathsOutsideRiverMask(
 ) {
   if (mask.points.length < 2) return
 
-  for (let pass = 0; pass < 3; pass += 1) {
+  const clampPathPoint = (point: GeneratedWorldPoint) => {
+    point.x = clamp(point.x, bounds.minX + .5, bounds.maxX - .5)
+    point.z = clamp(point.z, bounds.minZ + .5, bounds.maxZ - .5)
+  }
+
+  const pushPointOutside = (
+    path: GeneratedWorldPath,
+    point: GeneratedWorldPoint,
+    pathWidth: number,
+    key: string,
+  ) => {
+    const sample = riverOccupancySample(mask, point.x, point.z)
+    const requiredClearance = pathWidth * .5 + .5
+
+    if (sample.signedDistance >= requiredClearance) return false
+    if (crossingAllowsRiverOccupancy(
+      point.x,
+      point.z,
+      crossings,
+      sample.radius,
+      pathWidth * .5,
+    )) return false
+
+    let dx = point.x - sample.x
+    let dz = point.z - sample.z
+    let length = Math.hypot(dx, dz)
+    if (length < .001) {
+      const sign = hashSeed(`river-path-side:${path.id}:${key}`) % 2 === 0 ? 1 : -1
+      dx = -sample.tangentZ * sign
+      dz = sample.tangentX * sign
+      length = 1
+    }
+
+    const targetDistance = sample.radius + requiredClearance + .08
+    point.x = sample.x + dx / length * targetDistance
+    point.z = sample.z + dz / length * targetDistance
+    clampPathPoint(point)
+    return true
+  }
+
+  // Vertex-only avoidance can still leave the straight segment between two legal
+  // vertices cutting through the river. Correct both vertices and segment interiors
+  // so the generated road geometry and validation use the same occupancy contract.
+  for (let pass = 0; pass < 5; pass += 1) {
     for (const path of paths) {
       for (let index = 1; index < path.points.length - 1; index += 1) {
-        const point = path.points[index]
-        const sample = riverOccupancySample(mask, point.x, point.z)
-        const pathWidth = path.widths[index] ?? path.width
-        const requiredClearance = pathWidth * .5 + .5
+        pushPointOutside(
+          path,
+          path.points[index],
+          path.widths[index] ?? path.width,
+          `vertex:${index}`,
+        )
+      }
 
-        if (sample.signedDistance >= requiredClearance) continue
-        if (crossingAllowsRiverOccupancy(
-          point.x,
-          point.z,
-          crossings,
-          sample.radius,
-          pathWidth * .5,
-        )) continue
+      for (let index = 1; index < path.points.length; index += 1) {
+        const previous = path.points[index - 1]
+        const current = path.points[index]
+        const previousWidth = path.widths[index - 1] ?? path.width
+        const currentWidth = path.widths[index] ?? path.width
 
-        let dx = point.x - sample.x
-        let dz = point.z - sample.z
-        let length = Math.hypot(dx, dz)
-        if (length < .001) {
-          const sign = hashSeed(`river-path-side:${path.id}:${index}`) % 2 === 0 ? 1 : -1
-          dx = -sample.tangentZ * sign
-          dz = sample.tangentX * sign
-          length = 1
+        for (const t of [.25, .5, .75]) {
+          const probe = {
+            x: lerp(previous.x, current.x, t),
+            z: lerp(previous.z, current.z, t),
+          }
+          const width = lerp(previousWidth, currentWidth, t)
+          const sample = riverOccupancySample(mask, probe.x, probe.z)
+          const requiredClearance = width * .5 + .5
+
+          if (sample.signedDistance >= requiredClearance) continue
+          if (crossingAllowsRiverOccupancy(
+            probe.x,
+            probe.z,
+            crossings,
+            sample.radius,
+            width * .5,
+          )) continue
+
+          let dx = probe.x - sample.x
+          let dz = probe.z - sample.z
+          let length = Math.hypot(dx, dz)
+          if (length < .001) {
+            const sign = hashSeed(`river-path-segment:${path.id}:${index}:${t}`) % 2 === 0 ? 1 : -1
+            dx = -sample.tangentZ * sign
+            dz = sample.tangentX * sign
+            length = 1
+          }
+
+          const deficit = sample.radius + requiredClearance + .1 - sample.distance
+          const nx = dx / length
+          const nz = dz / length
+          const previousMovable = index - 1 > 0
+          const currentMovable = index < path.points.length - 1
+          const movableCount = Number(previousMovable) + Number(currentMovable)
+          if (!movableCount) continue
+          const shift = deficit * (movableCount === 1 ? 2.08 : 1.08)
+
+          if (previousMovable) {
+            previous.x += nx * shift
+            previous.z += nz * shift
+            clampPathPoint(previous)
+          }
+          if (currentMovable) {
+            current.x += nx * shift
+            current.z += nz * shift
+            clampPathPoint(current)
+          }
         }
-
-        const targetDistance = sample.radius + requiredClearance
-        point.x = clamp(
-          sample.x + dx / length * targetDistance,
-          bounds.minX + .5,
-          bounds.maxX - .5,
-        )
-        point.z = clamp(
-          sample.z + dz / length * targetDistance,
-          bounds.minZ + .5,
-          bounds.maxZ - .5,
-        )
       }
     }
   }
