@@ -3028,22 +3028,30 @@ function applyEnvironmentRelief(
   riverMask: RiverOccupancyMask,
   seed: number,
   settings: ReturnType<typeof worldSettings>,
+  profile: ReturnType<typeof biomeIdentityProfile>,
 ) {
   const random = seededRandom(hashSeed(`${seed}:environment-relief`))
   const width = bounds.maxX - bounds.minX
   const depth = bounds.maxZ - bounds.minZ
-  const featureCount =
+  const baseFeatureCount =
     settings.size === 'large' ? 7 :
       settings.size === 'small' ? 4 :
         5
+  const featureCount = Math.max(
+    3,
+    Math.round(baseFeatureCount * profile.reliefFeatureScale),
+  )
 
   const features = Array.from({ length: featureCount }, (_, index) => {
     const positive = index % 3 !== 2
-    const radius = 13 + random() * (settings.size === 'large' ? 17 : 13)
-    const amplitudeBase =
+    const radius =
+      (13 + random() * (settings.size === 'large' ? 17 : 13)) *
+      (.92 + profile.reliefFeatureScale * .08)
+    const amplitudeBase = (
       .28 +
       settings.elevation * .38 +
       settings.verticality * .48
+    ) * profile.reliefScale
     return {
       x: bounds.minX + width * (.1 + random() * .8),
       z: bounds.minZ + depth * (.1 + random() * .8),
@@ -3132,6 +3140,7 @@ function buildTerrainFromFrozenHydrology(
   riverMask: RiverOccupancyMask,
 ): GeneratedWorldTerrain {
   const settings = worldSettings(region)
+  const biomeProfile = biomeIdentityProfile(region.biome)
   const { resolution, width, depth } = foundation
   const heights = [...foundation.heights]
 
@@ -3172,6 +3181,7 @@ function buildTerrainFromFrozenHydrology(
     riverMask,
     seed,
     settings,
+    biomeProfile,
   )
 
   // Roads react to the frozen river, never the other way around.
@@ -3315,6 +3325,7 @@ function buildTerrainFromFrozenHydrology(
     pois,
     seed,
     settings,
+    biomeProfile,
   )
   const waterLevel = hydrology.heights.length
     ? hydrology.heights.reduce((sum, height) => sum + height, 0) / hydrology.heights.length
@@ -3607,11 +3618,13 @@ function buildMicroBiomes(
   pois: GeneratedWorldPoi[],
   seed: number,
   settings: ReturnType<typeof worldSettings>,
+  profile: ReturnType<typeof biomeIdentityProfile>,
 ) {
   const random = seededRandom(hashSeed(`${seed}:micro-biomes`))
   const count = Math.round(
     (settings.size === 'large' ? 36 : settings.size === 'small' ? 20 : 29) *
-      (.94 + settings.openSpace * .32),
+      (.94 + settings.openSpace * .32) *
+      profile.microScale,
   )
   const biomes: GeneratedMicroBiome[] = []
   const poiAnchors = shuffle(pois, random).slice(
@@ -3622,15 +3635,7 @@ function buildMicroBiomes(
     0,
     Math.min(clearings.length, Math.max(2, Math.round(count * .24))),
   )
-  const signatureTypes: WorldMicroBiomeType[] = [
-    'meadow',
-    'rocky',
-    'forest-floor',
-    'scrub',
-    'moss',
-    'meadow',
-    'rocky',
-  ]
+  const signatureTypes = profile.signatureTypes
 
   const poiType = (poi: GeneratedWorldPoi): WorldMicroBiomeType => {
     const roll = random()
@@ -3709,19 +3714,50 @@ function buildMicroBiomes(
     const noise = valueNoise2D(x * .037 + 5.2, z * .037 - 11.4, seed ^ 0xD3A2646C)
 
     let type: WorldMicroBiomeType
-    if (streamDistance < 7) type = 'moss'
+    if (streamDistance < 7 && profile.mossBias >= .65) type = 'moss'
     else if (anchoredType) type = anchoredType
-    else if (height > .95 + settings.elevation * .8 || noise > .82) type = 'rocky'
-    else if (clearing || (noise > .63 && pathDistance < 12)) type = 'meadow'
-    else if (noise < .34) type = 'forest-floor'
-    else type = 'scrub'
+    else {
+      const rockyScore =
+        profile.rockBias *
+        ((height > .95 + settings.elevation * .8 ? .92 : .18) +
+          Math.max(0, noise - .62) * 1.4)
+      const meadowScore =
+        profile.meadowBias *
+        ((clearing ? .86 : .16) +
+          (pathDistance < 12 ? .12 : 0) +
+          Math.max(0, noise - .48) * .45)
+      const forestFloorScore =
+        profile.forestFloorBias *
+        (.2 + Math.max(0, .58 - noise) * 1.1)
+      const scrubScore =
+        profile.scrubBias *
+        (.28 + Math.abs(noise - .5) * .55)
+      const mossScore =
+        profile.mossBias *
+        (.14 + (streamDistance < 11 ? .72 : 0))
+
+      const scores: Array<[WorldMicroBiomeType, number]> = [
+        ['rocky', rockyScore],
+        ['meadow', meadowScore],
+        ['forest-floor', forestFloorScore],
+        ['scrub', scrubScore],
+        ['moss', mossScore],
+      ]
+      scores.sort((a, b) => b[1] - a[1])
+      type = scores[0][0]
+    }
 
     biomes.push({
       id: `micro-${index}`,
       type,
       x: round(x, 2),
       z: round(z, 2),
-      radius: round((12 + random() * 18) * radiusScale, 2),
+      radius: round(
+        (12 + random() * 18) *
+        radiusScale *
+        profile.microRadiusScale,
+        2,
+      ),
       strength: round(.7 + random() * .28, 3),
     })
   }
@@ -3799,14 +3835,31 @@ function buildDressing(
 ) {
   const random = seededRandom(seed)
   const settings = worldSettings(region)
+  const profile = biomeIdentityProfile(region.biome)
   const sizeFactor = settings.size === 'large' ? 1.35 : settings.size === 'small' ? .72 : 1
-  const target = Math.round((250 + settings.forestDensity * 560) * sizeFactor)
+  const effectiveForestDensity = clamp(
+    settings.forestDensity * profile.forestScale,
+    .08,
+    1,
+  )
+  const target = Math.round(
+    (250 + effectiveForestDensity * 560) *
+    sizeFactor *
+    profile.dressingScale,
+  )
   const dressing: GeneratedWorldDressing[] = []
-  const clusterCount = Math.max(6, Math.round((7 + settings.forestDensity * 10) * sizeFactor))
+  const clusterCount = Math.max(
+    3,
+    Math.round(
+      (7 + effectiveForestDensity * 10) *
+      sizeFactor *
+      profile.clusterScale,
+    ),
+  )
   const clusters = Array.from({ length: clusterCount }, () => ({
     x: bounds.minX + random() * (bounds.maxX - bounds.minX),
     z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
-    radius: 13 + random() * 20,
+    radius: (13 + random() * 20) * profile.clusterRadiusScale,
     strength: .48 + random() * .52,
   }))
   let attempts = 0
@@ -3829,7 +3882,16 @@ function buildDressing(
       z,
       terrainSeed,
     )
-    if (random() < openPenalty * (.8 + settings.openSpace * .16)) continue
+    if (
+      random() <
+      clamp(
+        openPenalty *
+          (.8 + settings.openSpace * .16) *
+          profile.clearingStrength,
+        0,
+        .98,
+      )
+    ) continue
 
     const edgeDistance = Math.min(
       x - bounds.minX,
@@ -3837,7 +3899,10 @@ function buildDressing(
       z - bounds.minZ,
       bounds.maxZ - z,
     )
-    const edgeBoost = clamp(1 - edgeDistance / 16, 0, 1) * .82
+    const edgeBoost =
+      clamp(1 - edgeDistance / 16, 0, 1) *
+      .82 *
+      profile.edgeScale
     let clusterDensity = 0
     for (const cluster of clusters) {
       const distance = Math.hypot(x - cluster.x, z - cluster.z)
@@ -3850,7 +3915,7 @@ function buildDressing(
     const groveNoise = valueNoise2D(x * .014 - 21.7, z * .014 + 6.3, seed ^ 0x7FEB352D)
     const gapNoise = valueNoise2D(x * .022 + 2.8, z * .022 - 14.1, seed ^ 0x846CA68B)
     let density = clamp(
-      settings.forestDensity * (
+      effectiveForestDensity * (
         .08 +
         clusterDensity * 1.16 +
         broadNoise * .28 +
@@ -3860,25 +3925,33 @@ function buildDressing(
       1,
     )
     if (gapNoise < .28) density *= .36 + gapNoise
-    density *= 1 - micro.meadow * .86
-    density *= 1 - micro.rocky * .34
-    density *= 1 - micro.moss * .16
-    density += micro['forest-floor'] * .2 + micro.scrub * .06
+    density *= 1 - micro.meadow * clamp(.42 * profile.meadowBias, .24, .94)
+    density *= 1 - micro.rocky * clamp(.18 * profile.rockBias, .08, .62)
+    density *= 1 - micro.moss * clamp(.12 * profile.mossBias, .06, .4)
+    density +=
+      micro['forest-floor'] * .2 * profile.forestFloorBias +
+      micro.scrub * .06 * profile.scrubBias
 
     const nearRiver = riverClearance < 3.8
     if (!nearRiver && random() > clamp(density, .05, 1)) continue
 
     const roll = random()
     let type: WorldDressingType
-    const treeThreshold = clamp(.3 + density * .54, .3, .9)
+    const treeThreshold = clamp(
+      .24 +
+      density * .56 +
+      (profile.treeBias - 1) * .24,
+      .12,
+      .93,
+    )
 
-    if (nearRiver && random() < .58) type = 'reeds'
-    else if (micro.rocky > .38 && roll < .72) type = 'rock'
-    else if (micro.meadow > .36 && roll < .8) type = roll < .56 ? 'grass' : 'shrub'
-    else if (micro.moss > .42 && roll < .64) type = roll < .3 ? 'rock' : 'fern'
-    else if (micro.scrub > .38 && roll < .74) type = roll < .5 ? 'shrub' : 'fern'
+    if (nearRiver && random() < clamp(.58 * profile.reedBias, .22, .92)) type = 'reeds'
+    else if (micro.rocky * profile.rockBias > .38 && roll < clamp(.5 + profile.rockBias * .16, .58, .9)) type = 'rock'
+    else if (micro.meadow * profile.meadowBias > .36 && roll < clamp(.54 + profile.meadowBias * .16, .64, .94)) type = roll < .62 ? 'grass' : 'shrub'
+    else if (micro.moss * profile.mossBias > .42 && roll < clamp(.45 + profile.mossBias * .13, .54, .88)) type = roll < .22 ? 'rock' : 'fern'
+    else if (micro.scrub * profile.scrubBias > .38 && roll < clamp(.5 + profile.scrubBias * .14, .6, .9)) type = roll < .5 ? 'shrub' : 'fern'
     else if (roll < treeThreshold) type = 'tree'
-    else if (roll < treeThreshold + .1) type = 'rock'
+    else if (roll < treeThreshold + .08 * profile.rockBias) type = 'rock'
     else if (roll < treeThreshold + .19) type = 'fern'
     else if (roll < treeThreshold + .25) type = 'fallen-log'
     else if (roll < treeThreshold + .3) type = 'stump'
@@ -3887,12 +3960,14 @@ function buildDressing(
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
     const baseScale = type === 'tree'
-      ? .7 + random() * .9
-      : type === 'grass' || type === 'reeds'
-        ? .45 + random() * .55
-        : type === 'shrub'
-          ? .55 + random() * .65
-          : .55 + random() * .82
+      ? (.7 + random() * .9) * profile.treeScale
+      : type === 'rock'
+        ? (.55 + random() * .82) * profile.rockScale
+        : type === 'grass' || type === 'reeds'
+          ? .45 + random() * .55
+          : type === 'shrub'
+            ? .55 + random() * .65
+            : .55 + random() * .82
 
     dressing.push({
       id: `dress-${dressing.length}`,
@@ -4157,6 +4232,179 @@ function poiLabel(type: WorldPoiType) {
     settlement: 'Wayfarer Camp',
     dungeon: 'Dungeon Entrance',
   } satisfies Record<WorldPoiType, string>)[type]
+}
+
+function biomeIdentityProfile(biome: string) {
+  const value = biome.toLowerCase()
+
+  if (value.includes('autumn')) {
+    return {
+      reliefScale: .92,
+      reliefFeatureScale: .92,
+      forestScale: .82,
+      edgeScale: .78,
+      clusterScale: .9,
+      clusterRadiusScale: 1.05,
+      clearingStrength: 1.08,
+      dressingScale: .96,
+      microScale: 1.04,
+      microRadiusScale: 1.08,
+      treeBias: .88,
+      treeScale: 1.02,
+      rockBias: .82,
+      rockScale: .98,
+      meadowBias: 1.35,
+      mossBias: .72,
+      scrubBias: 1.02,
+      forestFloorBias: .92,
+      reedBias: .72,
+      signatureTypes: [
+        'meadow', 'meadow', 'forest-floor', 'scrub',
+        'rocky', 'meadow', 'forest-floor',
+      ] as WorldMicroBiomeType[],
+    }
+  }
+
+  if (value.includes('highland')) {
+    return {
+      reliefScale: 1.65,
+      reliefFeatureScale: 1.22,
+      forestScale: .5,
+      edgeScale: .32,
+      clusterScale: .68,
+      clusterRadiusScale: .82,
+      clearingStrength: .82,
+      dressingScale: .86,
+      microScale: 1.12,
+      microRadiusScale: 1.16,
+      treeBias: .48,
+      treeScale: .92,
+      rockBias: 1.9,
+      rockScale: 1.22,
+      meadowBias: .72,
+      mossBias: .42,
+      scrubBias: 1.15,
+      forestFloorBias: .58,
+      reedBias: .45,
+      signatureTypes: [
+        'rocky', 'rocky', 'rocky', 'scrub',
+        'meadow', 'rocky', 'forest-floor',
+      ] as WorldMicroBiomeType[],
+    }
+  }
+
+  if (value.includes('marsh') || value.includes('swamp') || value.includes('drowned')) {
+    return {
+      reliefScale: .5,
+      reliefFeatureScale: .72,
+      forestScale: .7,
+      edgeScale: .52,
+      clusterScale: .92,
+      clusterRadiusScale: 1.12,
+      clearingStrength: 1.1,
+      dressingScale: 1.08,
+      microScale: 1.18,
+      microRadiusScale: 1.18,
+      treeBias: .72,
+      treeScale: .9,
+      rockBias: .5,
+      rockScale: .9,
+      meadowBias: .68,
+      mossBias: 1.95,
+      scrubBias: 1.25,
+      forestFloorBias: 1.18,
+      reedBias: 1.55,
+      signatureTypes: [
+        'moss', 'moss', 'moss', 'scrub',
+        'forest-floor', 'moss', 'meadow',
+      ] as WorldMicroBiomeType[],
+    }
+  }
+
+  if (value.includes('corrupt')) {
+    return {
+      reliefScale: 1.18,
+      reliefFeatureScale: 1.08,
+      forestScale: .55,
+      edgeScale: .38,
+      clusterScale: .72,
+      clusterRadiusScale: .9,
+      clearingStrength: .9,
+      dressingScale: .86,
+      microScale: 1.1,
+      microRadiusScale: 1.12,
+      treeBias: .58,
+      treeScale: .92,
+      rockBias: 1.28,
+      rockScale: 1.08,
+      meadowBias: .36,
+      mossBias: .55,
+      scrubBias: 1.6,
+      forestFloorBias: .72,
+      reedBias: .52,
+      signatureTypes: [
+        'scrub', 'rocky', 'scrub', 'forest-floor',
+        'rocky', 'scrub', 'moss',
+      ] as WorldMicroBiomeType[],
+    }
+  }
+
+  if (value.includes('farmland') || value.includes('meadow') || value.includes('grassland')) {
+    return {
+      reliefScale: .62,
+      reliefFeatureScale: .72,
+      forestScale: .3,
+      edgeScale: .12,
+      clusterScale: .42,
+      clusterRadiusScale: .72,
+      clearingStrength: 1.48,
+      dressingScale: .7,
+      microScale: 1.08,
+      microRadiusScale: 1.28,
+      treeBias: .28,
+      treeScale: .9,
+      rockBias: .48,
+      rockScale: .92,
+      meadowBias: 2.0,
+      mossBias: .4,
+      scrubBias: .62,
+      forestFloorBias: .38,
+      reedBias: .5,
+      signatureTypes: [
+        'meadow', 'meadow', 'meadow', 'scrub',
+        'meadow', 'forest-floor', 'meadow',
+      ] as WorldMicroBiomeType[],
+    }
+  }
+
+  // Ancient Forest / default woodland: dense interior groves, a strong but
+  // irregular woodland edge, darker forest-floor pockets and relatively little
+  // exposed meadow or stone.
+  return {
+    reliefScale: 1,
+    reliefFeatureScale: .96,
+    forestScale: 1.16,
+    edgeScale: 1.12,
+    clusterScale: 1.2,
+    clusterRadiusScale: 1.18,
+    clearingStrength: .76,
+    dressingScale: 1.12,
+    microScale: 1.05,
+    microRadiusScale: 1.08,
+    treeBias: 1.2,
+    treeScale: 1.06,
+    rockBias: .7,
+    rockScale: .94,
+    meadowBias: .52,
+    mossBias: 1.12,
+    scrubBias: .78,
+    forestFloorBias: 1.55,
+    reedBias: .78,
+    signatureTypes: [
+      'forest-floor', 'forest-floor', 'moss', 'scrub',
+      'forest-floor', 'meadow', 'moss',
+    ] as WorldMicroBiomeType[],
+  }
 }
 
 function worldSettings(region: ForgeRegionDefinition) {
