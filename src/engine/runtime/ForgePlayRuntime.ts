@@ -146,7 +146,7 @@ export class ForgePlayRuntime {
   private inventory: string[] = []
   private equippedWeaponId: string | undefined
   private focusEnemyId: string | undefined
-  private cameraDistance = FORGE_WORLD_SCALE.playCameraDistance
+  private cameraDistance: number = FORGE_WORLD_SCALE.playCameraDistance
   private playerHealth = 100
   private dodgeRemaining = 0
   private dodgeCooldown = 0
