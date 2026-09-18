@@ -407,6 +407,43 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   return a + (b - a) * tz
 }
 
+export function sampleRenderedTerrainHeight(
+  region: Pick<GeneratedRegion, 'terrain' | 'bounds'>,
+  x: number,
+  z: number,
+) {
+  const { terrain, bounds } = region
+  const resolution = terrain.resolution
+  if (resolution < 2 || terrain.heights.length !== resolution * resolution) return 0
+
+  const u = clamp((x - bounds.minX) / Math.max(.001, bounds.maxX - bounds.minX), 0, 1)
+  const v = clamp((z - bounds.minZ) / Math.max(.001, bounds.maxZ - bounds.minZ), 0, 1)
+  const gx = u * (resolution - 1)
+  const gz = v * (resolution - 1)
+  const x0 = Math.floor(gx)
+  const z0 = Math.floor(gz)
+  const x1 = Math.min(resolution - 1, x0 + 1)
+  const z1 = Math.min(resolution - 1, z0 + 1)
+  const tx = gx - x0
+  const tz = gz - z0
+
+  const h00 = terrain.heights[z0 * resolution + x0] ?? 0
+  const h10 = terrain.heights[z0 * resolution + x1] ?? h00
+  const h01 = terrain.heights[z1 * resolution + x0] ?? h00
+  const h11 = terrain.heights[z1 * resolution + x1] ?? h00
+
+  // Match the actual terrain mesh triangles exactly:
+  // first triangle  a,d,b  when tx + tz <= 1
+  // second triangle b,d,c  when tx + tz > 1
+  if (tx + tz <= 1) {
+    return h00 + tx * (h10 - h00) + tz * (h01 - h00)
+  }
+
+  return h11
+    + (1 - tx) * (h01 - h11)
+    + (1 - tz) * (h10 - h11)
+}
+
 export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
   const points = region.terrain.stream
   if (points.length < 2) {
@@ -604,7 +641,7 @@ export function visibleStreamRenderHeight(
   // triangle can never bridge across the carved channel and hide the river.
   return Math.max(
     nominalHeight + offset,
-    sampleTerrainHeight(region, x, z) + .055,
+    sampleRenderedTerrainHeight(region, x, z) + .055,
   )
 }
 
@@ -702,7 +739,7 @@ export function streamRenderContinuityIssues(region: GeneratedRegion) {
         point.z >= region.bounds.minZ &&
         point.z <= region.bounds.maxZ
       if (!inside) continue
-      const terrainHeight = sampleTerrainHeight(region, point.x, point.z)
+      const terrainHeight = sampleRenderedTerrainHeight(region, point.x, point.z)
       if (row.y < terrainHeight + .06) {
         issues.push(`Terrain protrudes through stream row ${rowIndex}, lane ${laneIndex}.`)
         break
