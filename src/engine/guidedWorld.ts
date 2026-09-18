@@ -988,46 +988,28 @@ export function validateGeneratedRegion(
 
     for (const path of paths) {
       let illegal = false
-      for (let index = 0; index < path.points.length; index += 1) {
-        const currentWidth = path.widths[Math.min(index, path.widths.length - 1)] ?? path.width
-        const samples: Array<{ x: number; z: number; width: number }> = [{
-          x: path.points[index].x,
-          z: path.points[index].z,
-          width: currentWidth,
-        }]
+      for (const point of pathClearanceSamples(path)) {
+        const river = riverOccupancySample(riverMask, point.x, point.z)
+        const footprintHalfWidth = pathFootprintHalfWidth(point.width)
+        const required = footprintHalfWidth + .2
 
-        if (index > 0) {
-          const previous = path.points[index - 1]
-          const previousWidth = path.widths[Math.min(index - 1, path.widths.length - 1)] ?? path.width
-          for (const t of [.25, .5, .75]) {
-            samples.push({
-              x: lerp(previous.x, path.points[index].x, t),
-              z: lerp(previous.z, path.points[index].z, t),
-              width: lerp(previousWidth, currentWidth, t),
-            })
-          }
-        }
+        if (river.signedDistance >= required) continue
+        if (crossingAllowsRiverOccupancy(
+          point.x,
+          point.z,
+          crossings,
+          river.radius,
+          footprintHalfWidth,
+        )) continue
 
-        for (const point of samples) {
-          const river = riverOccupancySample(riverMask, point.x, point.z)
-          const required = point.width * .5 + .2
-          if (river.signedDistance >= required) continue
-          if (crossingAllowsRiverOccupancy(
-            point.x,
-            point.z,
-            crossings,
-            river.radius,
-            point.width * .5,
-          )) continue
-          illegal = true
-          break
-        }
-        if (illegal) break
+        illegal = true
+        break
       }
 
       if (illegal) {
         issues.push(`Path ${path.id} enters the river occupancy corridor outside an explicit crossing.`)
       }
+    }
     }
   }
 
