@@ -355,6 +355,7 @@ export function generateGuidedRegion(
   // Run river clearance last so no later crossing/approach shaping can reintroduce
   // a segment that clips the occupancy corridor outside the crossing zone.
   enforcePathsOutsideRiverMask(paths, riverMask, crossings, bounds)
+  repairResidualRiverPathIncursions(paths, riverMask, crossings, bounds)
 
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
@@ -857,26 +858,44 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   let poiSoil = 0
   for (const poi of region.pois) {
     const distance = Math.hypot(x - poi.x, z - poi.z)
-    const radius = poi.radius * (poi.type === 'settlement' ? 1.22 : 1.08)
-    if (distance > radius * 1.4) continue
+    const surfaceScale =
+      poi.type === 'settlement' ? 1 :
+        poi.type === 'camp' ? .88 :
+          poi.type === 'graveyard' || poi.type === 'ruins' ? .78 :
+            poi.type === 'watchtower' || poi.type === 'dungeon' ? .7 :
+              poi.type === 'shrine' || poi.type === 'standing-stones' ? .66 :
+                .74
+    const radius = poi.radius * surfaceScale
+    if (distance > radius * 1.35) continue
 
     const localNoise = valueNoise2D(
       (x - poi.x) * .16 + hashSeed(poi.id) % 17,
       (z - poi.z) * .16 - hashSeed(poi.id) % 13,
       seed ^ hashSeed(poi.id),
     )
-    const irregularRadius = radius * (.82 + localNoise * .34)
+    const irregularRadius = radius * (.78 + localNoise * .4)
     const normalized = distance / Math.max(.001, irregularRadius)
-    const influence = 1 - smoothstep(clamp((normalized - .45) / .7, 0, 1))
-    const strength = poi.type === 'settlement' || poi.type === 'camp'
-      ? 1
-      : poi.type === 'graveyard' || poi.type === 'ruins'
-        ? .76
-        : poi.type === 'watchtower' || poi.type === 'dungeon'
-          ? .68
-          : .52
+    const influence =
+      (1 - smoothstep(clamp((normalized - .18) / .9, 0, 1))) *
+      (.82 + localNoise * .18)
+    const strength = poi.type === 'settlement'
+      ? .9
+      : poi.type === 'camp'
+        ? .82
+        : poi.type === 'graveyard' || poi.type === 'ruins'
+          ? .58
+          : poi.type === 'watchtower' || poi.type === 'dungeon'
+            ? .48
+            : .4
     poiWear = Math.max(poiWear, influence * strength)
-    poiSoil = Math.max(poiSoil, influence * (poi.type === 'camp' || poi.type === 'settlement' ? .94 : .62))
+    poiSoil = Math.max(
+      poiSoil,
+      influence * (
+        poi.type === 'camp' || poi.type === 'settlement'
+          ? .76
+          : .42
+      ),
+    )
   }
 
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
@@ -907,7 +926,7 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
       poiSoil +
       micro.rocky * .2 +
       roadWear * .76 +
-      crossingWear * .38 +
+      crossingWear * .2 +
       clearing * .12,
     0,
     1,
@@ -1192,6 +1211,7 @@ function pathClearanceSamples(path: GeneratedWorldPath, maxSpacing = .72) {
     x: number
     z: number
     width: number
+    pointIndex?: number
     segmentIndex?: number
     t?: number
   }> = []
@@ -1202,6 +1222,7 @@ function pathClearanceSamples(path: GeneratedWorldPath, maxSpacing = .72) {
       x: point.x,
       z: point.z,
       width: path.widths[Math.min(index, path.widths.length - 1)] ?? path.width,
+      pointIndex: index,
     })
 
     if (index === 0) continue
@@ -1402,6 +1423,185 @@ function enforcePathsOutsideRiverMask(
   }
 }
 
+function findResidualRiverPathViolation(
+  path: GeneratedWorldPath,
+  mask: RiverOccupancyMask,
+  crossings: GeneratedWorldCrossing[],
+) {
+  for (const point of pathClearanceSamples(path, .42)) {
+    const river = riverOccupancySample(mask, point.x, point.z)
+    const footprintHalfWidth = pathFootprintHalfWidth(point.width)
+    const required = footprintHalfWidth + .34
+    if (river.signedDistance >= required) continue
+    if (crossingAllowsRiverOccupancy(
+      point.x,
+      point.z,
+      crossings,
+      river.radius,
+      footprintHalfWidth,
+    )) continue
+
+    return {
+      point,
+      river,
+      footprintHalfWidth,
+    }
+  }
+
+  return undefined
+}
+
+function repairResidualRiverPathIncursions(
+  paths: GeneratedWorldPath[],
+  mask: RiverOccupancyMask,
+  crossings: GeneratedWorldCrossing[],
+  bounds: GeneratedRegion['bounds'],
+) {
+  if (mask.points.length < 2) return
+
+  const clampDetour = (point: GeneratedWorldPoint) => ({
+    x: clamp(point.x, bounds.minX + .6, bounds.maxX - .6),
+    z: clamp(point.z, bounds.minZ + .6, bounds.maxZ - .6),
+  })
+
+  // The iterative solver handles almost every case. Remaining failures are
+  // usually tangential branch segments whose endpoints are both legal but whose
+  // straight chord still cuts the curved river corridor. Insert a local detour
+  // control point on the same bank, then let the normal solver relax it.
+  for (let repairPass = 0; repairPass < 12; repairPass += 1) {
+    let inserted = false
+
+    for (const path of paths) {
+      const violation = findResidualRiverPathViolation(path, mask, crossings)
+      if (!violation) continue
+
+      const segmentIndex = violation.point.segmentIndex
+      const pointIndex = violation.point.pointIndex
+      const width = violation.point.width
+      const river = violation.river
+      let dx = violation.point.x - river.x
+      let dz = violation.point.z - river.z
+      let length = Math.hypot(dx, dz)
+
+      if (length < .001) {
+        const sign = hashSeed(
+          `river-detour:${path.id}:${segmentIndex ?? pointIndex ?? 0}:${repairPass}`,
+        ) % 2 === 0 ? 1 : -1
+        dx = -river.tangentZ * sign
+        dz = river.tangentX * sign
+        length = 1
+      }
+
+      const targetDistance =
+        river.radius +
+        pathFootprintHalfWidth(width) +
+        .92
+      const detour = clampDetour({
+        x: river.x + dx / length * targetDistance,
+        z: river.z + dz / length * targetDistance,
+      })
+
+      if (
+        pointIndex !== undefined &&
+        pointIndex > 0 &&
+        pointIndex < path.points.length - 1
+      ) {
+        path.points[pointIndex] = detour
+        inserted = true
+        continue
+      }
+
+      if (segmentIndex === undefined || segmentIndex <= 0) continue
+
+      path.points.splice(segmentIndex, 0, detour)
+      path.widths.splice(
+        segmentIndex,
+        0,
+        round(Math.min(width, path.width * 1.02), 3),
+      )
+      inserted = true
+    }
+
+    if (!inserted) break
+    enforcePathsOutsideRiverMask(paths, mask, crossings, bounds)
+  }
+
+  // Rare fallback: if a long/tangential path still has an incursion after
+  // local detours, densify that path and project every non-crossing sample onto
+  // the safe bank. This runs before terrain/validation, so an invalid path is
+  // repaired in generation rather than merely reported by the viewport.
+  for (const path of paths) {
+    if (!findResidualRiverPathViolation(path, mask, crossings)) continue
+
+    const nextPoints: GeneratedWorldPoint[] = []
+    const nextWidths: number[] = []
+
+    for (let segmentIndex = 1; segmentIndex < path.points.length; segmentIndex += 1) {
+      const a = path.points[segmentIndex - 1]
+      const b = path.points[segmentIndex]
+      const aWidth = path.widths[segmentIndex - 1] ?? path.width
+      const bWidth = path.widths[segmentIndex] ?? path.width
+      const segmentLength = Math.hypot(b.x - a.x, b.z - a.z)
+      const steps = Math.max(2, Math.ceil(segmentLength / .42))
+
+      for (let step = 0; step <= steps; step += 1) {
+        if (segmentIndex > 1 && step === 0) continue
+        const t = step / steps
+        const width = lerp(aWidth, bWidth, t)
+        let point = {
+          x: lerp(a.x, b.x, t),
+          z: lerp(a.z, b.z, t),
+        }
+        const river = riverOccupancySample(mask, point.x, point.z)
+        const footprintHalfWidth = pathFootprintHalfWidth(width)
+        const required = footprintHalfWidth + .62
+        const isFixedEndpoint =
+          (segmentIndex === 1 && step === 0) ||
+          (segmentIndex === path.points.length - 1 && step === steps)
+
+        if (
+          !isFixedEndpoint &&
+          river.signedDistance < required &&
+          !crossingAllowsRiverOccupancy(
+            point.x,
+            point.z,
+            crossings,
+            river.radius,
+            footprintHalfWidth,
+          )
+        ) {
+          let dx = point.x - river.x
+          let dz = point.z - river.z
+          let length = Math.hypot(dx, dz)
+          if (length < .001) {
+            const sign = hashSeed(
+              `river-dense-side:${path.id}:${segmentIndex}:${step}`,
+            ) % 2 === 0 ? 1 : -1
+            dx = -river.tangentZ * sign
+            dz = river.tangentX * sign
+            length = 1
+          }
+          const targetDistance = river.radius + required + .22
+          point = clampDetour({
+            x: river.x + dx / length * targetDistance,
+            z: river.z + dz / length * targetDistance,
+          })
+        }
+
+        nextPoints.push(point)
+        nextWidths.push(round(width, 3))
+      }
+    }
+
+    path.points = nextPoints
+    path.widths = nextWidths
+  }
+
+  // Finish with the ordinary footprint solver so any newly inserted/densified
+  // points and their neighboring chords satisfy the same contract as validation.
+  enforcePathsOutsideRiverMask(paths, mask, crossings, bounds)
+}
+
 function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[], seed: number) {
   return connections.flatMap((link) => {
     const from = nodes.find((node) => node.id === link.from)
@@ -1415,7 +1615,7 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
     const nz = dx / length
     const bend = (random() - .5) * Math.min(link.kind === 'main' ? 7.5 : 5.5, length * .22)
     const secondBend = (random() - .5) * Math.min(link.kind === 'main' ? 3.2 : 2.3, length * .11)
-    const baseWidth = link.kind === 'main' ? 3.15 : 1.32
+    const baseWidth = link.kind === 'main' ? 3.05 : 1.04
     const points: GeneratedWorldPoint[] = []
     const widths: number[] = []
     const segments = Math.max(10, Math.round(length / 2.35))
@@ -1830,7 +2030,14 @@ function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldC
   }
 
   path.points[pivot] = { x: crossing.x, z: crossing.z }
-  for (const [offset, distance] of [[-2, 4.6], [-1, 2.35], [1, 2.35], [2, 4.6]] as const) {
+  for (const [offset, distance] of [
+    [-3, 7.15],
+    [-2, 4.85],
+    [-1, 2.45],
+    [1, 2.45],
+    [2, 4.85],
+    [3, 7.15],
+  ] as const) {
     const index = pivot + offset
     if (index <= 0 || index >= path.points.length - 1) continue
     const sign = offset < 0 ? -1 : 1
@@ -1839,10 +2046,15 @@ function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldC
       z: crossing.z + direction.z * distance * sign,
     }
     if (path.widths[index] !== undefined) {
-      path.widths[index] = round(path.width * (Math.abs(offset) === 1 ? .96 : .9), 3)
+      const distanceFromBridge = Math.abs(offset)
+      const widthScale =
+        distanceFromBridge === 1 ? .94 :
+          distanceFromBridge === 2 ? .9 :
+            .94
+      path.widths[index] = round(path.width * widthScale, 3)
     }
   }
-  if (path.widths[pivot] !== undefined) path.widths[pivot] = round(path.width * .98, 3)
+  if (path.widths[pivot] !== undefined) path.widths[pivot] = round(path.width * .95, 3)
 }
 
 
@@ -1960,8 +2172,11 @@ function buildTerrainFromFrozenHydrology(
         z * .12 - 4.6,
         seed ^ 0x68E31DA4,
       )
-      const baseCorridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
-      const corridor = baseCorridor * (.88 + shoulderNoise * .24)
+      const baseCorridor =
+        nearest.kind === 'main'
+          ? nearest.width * .56 + 1.82
+          : nearest.width * .42 + .78
+      const corridor = baseCorridor * (.9 + shoulderNoise * .2)
       if (nearest.distance >= corridor) continue
 
       if (riverMask.points.length > 1) {
@@ -1988,7 +2203,7 @@ function buildTerrainFromFrozenHydrology(
         lerp(
           heights[index],
           targetHeight,
-          influence * (nearest.kind === 'main' ? .72 : .56),
+          influence * (nearest.kind === 'main' ? .6 : .34),
         ),
         4,
       )
@@ -2006,7 +2221,14 @@ function buildTerrainFromFrozenHydrology(
       for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
         const x = bounds.minX + xIndex / (resolution - 1) * width
         const distance = Math.hypot(x - poi.x, z - poi.z)
-        const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
+        const terraceScale =
+          poi.type === 'settlement' ? .9 :
+            poi.type === 'camp' ? .72 :
+              poi.type === 'graveyard' || poi.type === 'ruins' ? .6 :
+                poi.type === 'watchtower' || poi.type === 'dungeon' ? .56 :
+                  poi.type === 'shrine' || poi.type === 'standing-stones' ? .52 :
+                    .6
+        const terraceRadius = poi.radius * terraceScale
         const edgeNoise = valueNoise2D(
           (x - poi.x) * .14 + 6.1,
           (z - poi.z) * .14 - 3.7,
@@ -2024,7 +2246,7 @@ function buildTerrainFromFrozenHydrology(
           (.82 + edgeNoise * .18)
         const index = zIndex * resolution + xIndex
         heights[index] = round(
-          lerp(heights[index], centerHeight, influence * .48),
+          lerp(heights[index], centerHeight, influence * .32),
           4,
         )
       }
@@ -2736,7 +2958,7 @@ function appendRiverbankDressing(
     return true
   }
 
-  for (let index = 2; index < terrain.stream.length - 2; index += 3) {
+  for (let index = 2; index < terrain.stream.length - 2; index += 5) {
     const point = terrain.stream[index]
     const prev = terrain.stream[index - 1]
     const next = terrain.stream[index + 1]
@@ -2748,9 +2970,9 @@ function appendRiverbankDressing(
     for (const side of [-1, 1]) {
       // A low, irregular earth patch breaks up the mathematically clean grass/water
       // seam without introducing another river mesh or touching water depth logic.
-      if (random() < .82) {
+      if (random() < .5) {
         const patchOffset = halfWaterWidth + .32 + random() * .72
-        const patchAlong = (random() - .5) * 3.2
+        const patchAlong = (random() - .5) * 5.2
         const patchX = point.x + normal.x * patchOffset * side + tangent.x * patchAlong
         const patchZ = point.z + normal.z * patchOffset * side + tangent.z * patchAlong
         const hydro = nearestHydrologySample(
@@ -2772,7 +2994,7 @@ function appendRiverbankDressing(
             x: round(patchX, 2),
             y: round(sampleTerrainHeight({ terrain, bounds }, patchX, patchZ), 2),
             z: round(patchZ, 2),
-            scale: round(.85 + random() * 1.15, 2),
+            scale: round(1.05 + random() * 1.65, 2),
             rotation: round(Math.atan2(-tangent.z, tangent.x) + (random() - .5) * .28, 3),
             variant: Math.floor(random() * 4),
           })
@@ -3028,8 +3250,8 @@ function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z:
     const sin = Math.sin(-crossing.rotation)
     const along = dx * cos - dz * sin
     const across = dx * sin + dz * cos
-    const alongRadius = crossing.kind === 'bridge' ? 7.2 : 5.6
-    const acrossRadius = Math.max(2.4, crossing.width * 1.15)
+    const alongRadius = crossing.kind === 'bridge' ? 5.8 : 4.5
+    const acrossRadius = Math.max(1.7, crossing.width * .84)
     const normalized = Math.hypot(along / alongRadius, across / acrossRadius)
     if (normalized >= 1) continue
     best = Math.max(best, 1 - smoothstep(clamp(normalized, 0, 1)))
@@ -3048,11 +3270,11 @@ function pathEdgeWear(
 
   const shoulderWarp = (
     valueNoise2D(x * .16 + 9.4, z * .16 - 5.8, seed ^ 0x9E3779B9) - .5
-  ) * (nearest.kind === 'main' ? .9 : .55)
+  ) * (nearest.kind === 'main' ? .68 : .32)
   const halfWidth = nearest.width * .5
   const fadeBase = nearest.kind === 'main'
-    ? nearest.width * .9 + .9
-    : nearest.width * 1.05 + .65
+    ? nearest.width * .62 + .58
+    : nearest.width * .48 + .3
   const fadeNoise = valueNoise2D(
     x * .085 - 12.6,
     z * .085 + 3.2,

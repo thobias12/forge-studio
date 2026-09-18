@@ -1195,7 +1195,7 @@ function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
   const road = new THREE.Mesh(
     makeRuntimeRibbon(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + (path.kind === 'main' ? .054 : .049)),
     new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x594f3e : 0x41463a,
+      color: path.kind === 'main' ? 0x5b4d38 : 0x4b4938,
       roughness: 1,
       polygonOffset: true,
       polygonOffsetFactor: -1,
