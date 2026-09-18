@@ -341,7 +341,7 @@ export function generateGuidedRegion(
     frozenHydrology.widths,
   )
 
-  resolveNodesOutsideRiverMask(nodes, riverMask, bounds)
+  resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
 
   const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
   smoothWorldJunctions(paths, nodes)
@@ -1157,20 +1157,37 @@ export function riverOccupancySample(mask: RiverOccupancyMask, x: number, z: num
 
 function resolveNodesOutsideRiverMask(
   nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
   mask: RiverOccupancyMask,
   bounds: GeneratedRegion['bounds'],
 ) {
   if (mask.points.length < 2) return
 
+  const incidentKinds = new Map<string, Set<GeneratedRegionConnection['kind']>>()
+  for (const connection of connections) {
+    for (const nodeId of [connection.from, connection.to]) {
+      const kinds = incidentKinds.get(nodeId) ?? new Set<GeneratedRegionConnection['kind']>()
+      kinds.add(connection.kind)
+      incidentKinds.set(nodeId, kinds)
+    }
+  }
+
   for (let pass = 0; pass < 3; pass += 1) {
     for (const node of nodes) {
       const sample = riverOccupancySample(mask, node.x, node.z)
+      const kinds = incidentKinds.get(node.id)
+      const isMainBranchJunction =
+        node.kind === 'route' &&
+        kinds?.has('main') === true &&
+        kinds?.has('branch') === true
       const clearance =
         node.kind === 'landmark'
           ? node.radius + 1.5
           : node.kind === 'encounter'
             ? node.radius + .85
-            : 2.8
+            : isMainBranchJunction
+              ? 9.2
+              : 2.8
 
       if (sample.signedDistance >= clearance) continue
 
