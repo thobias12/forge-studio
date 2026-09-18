@@ -407,7 +407,7 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   return a + (b - a) * tz
 }
 
-export function streamRenderProfile(region: GeneratedRegion, extension = 26) {
+export function streamRenderProfile(region: GeneratedRegion, extension = 62) {
   const points = region.terrain.stream
   if (points.length < 2) {
     return {
@@ -426,10 +426,19 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 26) {
 
   const startLookahead = points[Math.min(points.length - 1, 3)]
   const endLookback = points[Math.max(0, points.length - 4)]
-  const startDir = normalized2(points[0].x - startLookahead.x, points[0].z - startLookahead.z)
-  const endDir = normalized2(
+  const startTangent = normalized2(
+    points[0].x - startLookahead.x,
+    points[0].z - startLookahead.z,
+  )
+  const endTangent = normalized2(
     points[points.length - 1].x - endLookback.x,
     points[points.length - 1].z - endLookback.z,
+  )
+  const startDir = outwardStreamDirection(points[0], region.bounds, startTangent)
+  const endDir = outwardStreamDirection(
+    points[points.length - 1],
+    region.bounds,
+    endTangent,
   )
   const startSlope = heights.length > 1 ? heights[0] - heights[1] : 0
   const endSlope = heights.length > 1 ? heights[heights.length - 1] - heights[heights.length - 2] : 0
@@ -437,7 +446,7 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 26) {
   const extendedPoints: GeneratedWorldPoint[] = []
   const extendedWidths: number[] = []
   const extendedHeights: number[] = []
-  const steps = 3
+  const steps = 5
 
   for (let step = steps; step >= 1; step -= 1) {
     const t = step / steps
@@ -472,6 +481,41 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 26) {
     widths: extendedWidths,
     heights: extendedHeights,
   }
+}
+
+function outwardStreamDirection(
+  point: GeneratedWorldPoint,
+  bounds: GeneratedRegion['bounds'],
+  tangent: GeneratedWorldPoint,
+) {
+  const candidates = [
+    { distance: Math.abs(point.x - bounds.minX), normal: { x: -1, z: 0 } },
+    { distance: Math.abs(point.x - bounds.maxX), normal: { x: 1, z: 0 } },
+    { distance: Math.abs(point.z - bounds.minZ), normal: { x: 0, z: -1 } },
+    { distance: Math.abs(point.z - bounds.maxZ), normal: { x: 0, z: 1 } },
+  ].sort((a, b) => a.distance - b.distance)
+
+  const normal = candidates[0].normal
+  let direction = normalized2(tangent.x, tangent.z)
+  let alignment = direction.x * normal.x + direction.z * normal.z
+
+  // If the tangent happens to point back into the playable terrain, flip it.
+  if (alignment < 0) {
+    direction = { x: -direction.x, z: -direction.z }
+    alignment = -alignment
+  }
+
+  // Near-tangential exits can still skim along the backdrop and leave the
+  // artificial cap visible. Bias them outward while keeping the river's shape.
+  if (alignment < .42) {
+    const outwardBias = .42 - alignment + .28
+    direction = normalized2(
+      direction.x + normal.x * outwardBias,
+      direction.z + normal.z * outwardBias,
+    )
+  }
+
+  return direction
 }
 
 export function sampleStreamHeight(region: GeneratedRegion, x: number, z: number) {
