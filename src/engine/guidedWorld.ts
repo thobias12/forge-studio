@@ -3836,6 +3836,7 @@ function buildDressing(
   const random = seededRandom(seed)
   const settings = worldSettings(region)
   const profile = biomeIdentityProfile(region.biome)
+  const biome = region.biome.toLowerCase()
   const sizeFactor = settings.size === 'large' ? 1.35 : settings.size === 'small' ? .72 : 1
   const effectiveForestDensity = clamp(
     settings.forestDensity * profile.forestScale,
@@ -3957,6 +3958,16 @@ function buildDressing(
     else if (roll < treeThreshold + .25) type = 'fallen-log'
     else if (roll < treeThreshold + .3) type = 'stump'
     else type = random() > .5 ? 'shrub' : 'grass'
+
+    // Corrupt ground cover should read as damaged growth rather than normal,
+    // healthy green underbrush.
+    if (
+      biome.includes('corrupt') &&
+      (type === 'shrub' || type === 'fern') &&
+      random() < .42
+    ) {
+      type = random() < .58 ? 'stump' : 'dead-tree'
+    }
 
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
@@ -4082,7 +4093,7 @@ function appendBiomeSignatureDressing(
   }
 
   if (biome.includes('autumn')) {
-    pushSignature('leaf-patch', 34, {
+    pushSignature('leaf-patch', 46, {
       minPath: 2.6,
       minRiver: 1,
       minPoi: 2.2,
@@ -4093,7 +4104,7 @@ function appendBiomeSignatureDressing(
         micro.meadow > .1 ||
         random() < .42,
     })
-    pushSignature('root-cluster', 6, {
+    pushSignature('root-cluster', 8, {
       minPath: 3.6,
       minRiver: 1.4,
       scaleMin: .7,
@@ -4105,12 +4116,12 @@ function appendBiomeSignatureDressing(
   }
 
   if (biome.includes('highland')) {
-    pushSignature('rock-outcrop', 22, {
+    pushSignature('rock-outcrop', 30, {
       minPath: 4,
       minRiver: 1.8,
       minPoi: 3.4,
-      scaleMin: .9,
-      scaleMax: 1.55,
+      scaleMin: 1.05,
+      scaleMax: 1.9,
       accept: (x, z, micro) =>
         micro.rocky > .16 ||
         sampleTerrainHeight({ terrain, bounds }, x, z) > 1.3 ||
@@ -4124,7 +4135,7 @@ function appendBiomeSignatureDressing(
     biome.includes('swamp') ||
     biome.includes('drowned')
   ) {
-    pushSignature('mud-patch', 30, {
+    pushSignature('mud-patch', 40, {
       minPath: 2.7,
       minRiver: .72,
       minPoi: 2.4,
@@ -4135,7 +4146,7 @@ function appendBiomeSignatureDressing(
         riverClearance < 8 ||
         random() < .24,
     })
-    pushSignature('root-cluster', 10, {
+    pushSignature('root-cluster', 14, {
       minPath: 3.3,
       minRiver: 1,
       scaleMin: .75,
@@ -4145,11 +4156,22 @@ function appendBiomeSignatureDressing(
         riverClearance < 7 ||
         random() < .22,
     })
+    pushSignature('reeds', 38, {
+      minPath: 2.8,
+      minRiver: .58,
+      minPoi: 2.6,
+      scaleMin: .78,
+      scaleMax: 1.35,
+      accept: (_x, _z, micro, _pathDistance, riverClearance) =>
+        riverClearance < 9 ||
+        micro.moss > .14 ||
+        random() < .18,
+    })
     return
   }
 
   if (biome.includes('corrupt')) {
-    pushSignature('corrupt-scar', 26, {
+    pushSignature('corrupt-scar', 32, {
       minPath: 2.8,
       minRiver: .9,
       minPoi: 2.4,
@@ -4160,7 +4182,7 @@ function appendBiomeSignatureDressing(
         micro.rocky > .1 ||
         random() < .3,
     })
-    pushSignature('root-cluster', 16, {
+    pushSignature('root-cluster', 20, {
       minPath: 3.4,
       minRiver: 1,
       scaleMin: .8,
@@ -4503,13 +4525,13 @@ function biomeIdentityProfile(biome: string) {
       clusterScale: .68,
       clusterRadiusScale: .82,
       clearingStrength: .82,
-      dressingScale: .94,
+      dressingScale: .8,
       microScale: 1.12,
       microRadiusScale: 1.16,
       treeBias: .48,
       treeScale: .92,
-      rockBias: 2.05,
-      rockScale: 1.22,
+      rockBias: 1.5,
+      rockScale: 1.06,
       meadowBias: .72,
       mossBias: .42,
       scrubBias: 1.15,
@@ -4527,24 +4549,24 @@ function biomeIdentityProfile(biome: string) {
     return {
       reliefScale: .5,
       reliefFeatureScale: .72,
-      forestScale: .7,
-      edgeScale: .52,
-      clusterScale: 1.05,
-      clusterRadiusScale: 1.28,
-      clearingStrength: 1.1,
-      dressingScale: 1.12,
-      microScale: 1.18,
-      microRadiusScale: 1.18,
-      treeBias: .72,
-      treeScale: .9,
-      rockBias: .5,
-      rockScale: .9,
-      meadowBias: .68,
-      mossBias: 1.95,
-      scrubBias: 1.25,
-      forestFloorBias: 1.18,
-      reedBias: 1.55,
-      deadTreeBias: .14,
+      forestScale: .5,
+      edgeScale: .38,
+      clusterScale: .9,
+      clusterRadiusScale: 1.22,
+      clearingStrength: 1.14,
+      dressingScale: 1.16,
+      microScale: 1.22,
+      microRadiusScale: 1.22,
+      treeBias: .48,
+      treeScale: .88,
+      rockBias: .42,
+      rockScale: .88,
+      meadowBias: .58,
+      mossBias: 2.1,
+      scrubBias: 1.3,
+      forestFloorBias: 1.08,
+      reedBias: 1.9,
+      deadTreeBias: .26,
       signatureTypes: [
         'moss', 'moss', 'moss', 'scrub',
         'forest-floor', 'moss', 'meadow',
@@ -4564,16 +4586,16 @@ function biomeIdentityProfile(biome: string) {
       dressingScale: .94,
       microScale: 1.1,
       microRadiusScale: 1.12,
-      treeBias: .58,
-      treeScale: .92,
+      treeBias: .45,
+      treeScale: .9,
       rockBias: 1.28,
       rockScale: 1.08,
-      meadowBias: .36,
-      mossBias: .55,
-      scrubBias: 1.6,
-      forestFloorBias: .72,
-      reedBias: .52,
-      deadTreeBias: .3,
+      meadowBias: .3,
+      mossBias: .42,
+      scrubBias: 1.35,
+      forestFloorBias: .58,
+      reedBias: .48,
+      deadTreeBias: .38,
       signatureTypes: [
         'scrub', 'rocky', 'scrub', 'forest-floor',
         'rocky', 'scrub', 'moss',
