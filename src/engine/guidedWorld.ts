@@ -6,6 +6,12 @@ export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
 export type WorldMood = 'normal' | 'dark' | 'deadwood' | 'bleak'
 
+const WORLD_SPATIAL_SCALE = 1.45
+const WORLD_CLEARING_SCALE = 1.24
+const WORLD_TREE_SCALE = 1.3
+const WORLD_DRESSING_DENSITY_SCALE = 1.28
+const WORLD_CLUSTER_RADIUS_SCALE = 1.18
+
 export type GeneratedMicroBiome = {
   id: string
   type: WorldMicroBiomeType
@@ -166,17 +172,24 @@ export function generateGuidedRegion(
   const mood = resolveWorldMood(region.biome, region.worldGen?.mood ?? 'auto', layerSeeds.dressing)
   const sizeScale = settings.size === 'small' ? .82 : settings.size === 'large' ? 1.22 : 1
   const chunkCount = Math.max(4, Math.round(intRange(routeRandom, region.chunkRange[0], region.chunkRange[1]) * sizeScale))
-  const spacing = 17.5 * sizeScale
+  const spacing = 17.5 * sizeScale * WORLD_SPATIAL_SCALE
   const wanderBase = region.mainPath === 'direct' ? 4 : region.mainPath === 'winding' ? 9 : 14
-  const wander = wanderBase * (0.7 + settings.exploration * .7)
+  const wander =
+    wanderBase *
+    (0.7 + settings.exploration * .7) *
+    1.28
   const nodes: GeneratedRegionNode[] = []
   const connections: GeneratedRegionConnection[] = []
   const mainIds: string[] = []
 
-  let z = (routeRandom() - .5) * 10
+  let z = (routeRandom() - .5) * 12.5
   for (let index = 0; index <= chunkCount; index += 1) {
     if (index > 0 && index < chunkCount) z += (routeRandom() - .5) * wander
-    z = clamp(z, -30 * sizeScale, 30 * sizeScale)
+    z = clamp(
+      z,
+      -30 * sizeScale * 1.32,
+      30 * sizeScale * 1.32,
+    )
     const id = index === 0 ? 'entry' : index === chunkCount ? 'exit' : `route-${index}`
     const kind: GeneratedRegionNodeKind = index === 0 ? 'entry' : index === chunkCount ? 'exit' : 'route'
     nodes.push({
@@ -184,7 +197,9 @@ export function generateGuidedRegion(
       kind,
       x: index * spacing,
       z,
-      radius: kind === 'route' ? 9 + settings.openSpace * 4 : 11,
+      radius:
+        (kind === 'route' ? 9 + settings.openSpace * 4 : 11) *
+        WORLD_CLEARING_SCALE,
       label: kind === 'entry' ? 'Forest Edge' : kind === 'exit' ? 'Old Road' : `Clearing ${index}`,
     })
     mainIds.push(id)
@@ -234,7 +249,8 @@ export function generateGuidedRegion(
         kind: 'branch',
         x: previousNode.x + heading.x * segmentLength,
         z: previousNode.z + heading.z * segmentLength,
-        radius: 7 + settings.openSpace * 2.5,
+        radius:
+          (7 + settings.openSpace * 2.5) * WORLD_CLEARING_SCALE,
         label: `Side Trail ${branchIndex + 1}`,
         parentId: previousId,
       }
@@ -317,13 +333,14 @@ export function generateGuidedRegion(
         frame.normal.x * side + frame.tangent.x * ((poiRandom() - .5) * .22),
         frame.normal.z * side + frame.tangent.z * ((poiRandom() - .5) * .22),
       )
-      const settlementDistance = 13.5 + poiRandom() * 2.5
+      const settlementDistance =
+        (13.5 + poiRandom() * 2.5) * 1.28
       nodes.push({
         id: 'settlement-1',
         kind: 'landmark',
         x: target.x + direction.x * settlementDistance,
         z: target.z + direction.z * settlementDistance,
-        radius: 10,
+        radius: poiRadius('settlement'),
         label: 'Wayfarer Camp',
         parentId: target.id,
         poiType: 'settlement',
@@ -343,9 +360,9 @@ export function generateGuidedRegion(
       const dungeonNode: GeneratedRegionNode = {
         id,
         kind: 'landmark',
-        x: anchor.x + 7 + poiRandom() * 4,
-        z: anchor.z + direction * (8 + poiRandom() * 5),
-        radius: 7,
+        x: anchor.x + (7 + poiRandom() * 4) * 1.24,
+        z: anchor.z + direction * (8 + poiRandom() * 5) * 1.24,
+        radius: poiRadius('dungeon'),
         label: titleCase(region.linkedDungeonId),
         parentId: anchor.id,
         poiType: 'dungeon',
@@ -365,9 +382,9 @@ export function generateGuidedRegion(
     nodes.push({
       id: `encounter-${index + 1}`,
       kind: 'encounter',
-      x: target.x + 2 + poiRandom() * 2,
-      z: target.z + (poiRandom() - .5) * 4,
-      radius: 5.5,
+      x: target.x + (2 + poiRandom() * 2) * 1.2,
+      z: target.z + (poiRandom() - .5) * 5.2,
+      radius: 6.4,
       label: `${titleCase(region.enemyDensity)} encounter`,
       parentId: target.id,
     })
@@ -2972,7 +2989,10 @@ function buildTerrainFoundation(
   seed: number,
 ): TerrainFoundation {
   const settings = worldSettings(region)
-  const resolution = settings.size === 'large' ? 73 : settings.size === 'small' ? 53 : 65
+  const resolution =
+    settings.size === 'large' ? 91 :
+      settings.size === 'small' ? 65 :
+        81
   const width = bounds.maxX - bounds.minX
   const depth = bounds.maxZ - bounds.minZ
   const heights: number[] = []
@@ -3853,7 +3873,9 @@ function buildDressing(
   const target = Math.round(
     (250 + effectiveForestDensity * 560) *
     sizeFactor *
-    profile.dressingScale * moodProfile.dressingScale,
+    profile.dressingScale *
+    moodProfile.dressingScale *
+    WORLD_DRESSING_DENSITY_SCALE,
   )
   const dressing: GeneratedWorldDressing[] = []
   const clusterCount = Math.max(
@@ -3867,7 +3889,10 @@ function buildDressing(
   const clusters = Array.from({ length: clusterCount }, () => ({
     x: bounds.minX + random() * (bounds.maxX - bounds.minX),
     z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
-    radius: (13 + random() * 20) * profile.clusterRadiusScale,
+    radius:
+      (13 + random() * 20) *
+      profile.clusterRadiusScale *
+      WORLD_CLUSTER_RADIUS_SCALE,
     strength: .48 + random() * .52,
   }))
   let attempts = 0
@@ -4026,7 +4051,7 @@ function buildDressing(
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
     const baseScale = type === 'tree' || type === 'dead-tree'
-      ? (.62 + random() * 1.08) * profile.treeScale
+      ? (.62 + random() * 1.08) * profile.treeScale * WORLD_TREE_SCALE
       : type === 'rock'
         ? (.55 + random() * .82) * profile.rockScale
         : type === 'grass' || type === 'reeds'
@@ -4551,7 +4576,11 @@ function appendMoodSignatureDressing(
         x: round(x, 2),
         y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
         z: round(z, 2),
-        scale: round(scaleMin + random() * (scaleMax - scaleMin), 2),
+        scale: round(
+          (scaleMin + random() * (scaleMax - scaleMin)) *
+          (type === 'tree' || type === 'dead-tree' ? WORLD_TREE_SCALE : 1),
+          2,
+        ),
         rotation: round(random() * Math.PI * 2, 3),
         variant: Math.floor(random() * 4),
       })
@@ -4590,22 +4619,26 @@ function poiPool(region: ForgeRegionDefinition): WorldPoiType[] {
 }
 
 function poiApproachDistance(type: WorldPoiType) {
-  if (type === 'watchtower' || type === 'ruins') return 10.5
-  if (type === 'graveyard' || type === 'standing-stones') return 9
-  if (type === 'beast-den') return 11.5
-  if (type === 'camp') return 8
-  if (type === 'shrine') return 7
-  return 9
+  const base =
+    type === 'watchtower' || type === 'ruins' ? 10.5 :
+      type === 'graveyard' || type === 'standing-stones' ? 9 :
+        type === 'beast-den' ? 11.5 :
+          type === 'camp' ? 8 :
+            type === 'shrine' ? 7 :
+              9
+  return base * 1.28
 }
 
 function poiRadius(type: WorldPoiType) {
-  if (type === 'settlement') return 11
-  if (type === 'camp') return 7.2
-  if (type === 'watchtower' || type === 'dungeon') return 7.8
-  if (type === 'graveyard' || type === 'ruins') return 7.4
-  if (type === 'standing-stones' || type === 'beast-den') return 6.8
-  if (type === 'shrine') return 6.2
-  return 5.8
+  const base =
+    type === 'settlement' ? 11 :
+      type === 'camp' ? 7.2 :
+        type === 'watchtower' || type === 'dungeon' ? 7.8 :
+          type === 'graveyard' || type === 'ruins' ? 7.4 :
+            type === 'standing-stones' || type === 'beast-den' ? 6.8 :
+              type === 'shrine' ? 6.2 :
+                5.8
+  return base * 1.18
 }
 
 function poiLabel(type: WorldPoiType) {
@@ -4913,7 +4946,7 @@ function worldSettings(region: ForgeRegionDefinition) {
 function calculateBounds(nodes: GeneratedRegionNode[], sizeScale: number) {
   const xs = nodes.map((node) => node.x)
   const zs = nodes.map((node) => node.z)
-  const margin = 19 * sizeScale
+  const margin = 19 * sizeScale * 1.34
   return {
     minX: Math.min(...xs) - margin,
     maxX: Math.max(...xs) + margin,
