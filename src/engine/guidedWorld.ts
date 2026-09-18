@@ -880,11 +880,38 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   }
 
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
+  const clearing = clearingSurfaceInfluence(region.terrain.clearings, x, z, seed)
   const crossingWear = crossingApproachWear(region.crossings, x, z)
-  const roadWear = Math.max(pathEdgeWear(region.paths, x, z), crossingWear * .7)
-  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92, 0, 1)
-  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02, 0, 1)
-  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .2 + roadWear * .76 + crossingWear * .38, 0, 1)
+  const roadWear = Math.max(pathEdgeWear(region.paths, x, z, seed), crossingWear * .7)
+  const forestFloor = clamp(
+    ((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92) *
+      (1 - clearing * .5),
+    0,
+    1,
+  )
+  const moss = clamp(
+    ((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02) *
+      (1 - clearing * .26),
+    0,
+    1,
+  )
+  const meadow = clamp(
+    micro.meadow + clearing * (.3 + medium * .18),
+    0,
+    1,
+  )
+  const scrub = clamp(micro.scrub * (1 - clearing * .34), 0, 1)
+  const soil = clamp(
+    (medium - .48) * .7 +
+      (1 - broad) * .18 +
+      poiSoil +
+      micro.rocky * .2 +
+      roadWear * .76 +
+      crossingWear * .38 +
+      clearing * .12,
+    0,
+    1,
+  )
 
   return {
     broad,
@@ -893,12 +920,13 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     forestFloor,
     moss,
     soil,
-    meadow: micro.meadow,
-    scrub: micro.scrub,
+    meadow,
+    scrub,
     rocky: micro.rocky,
     roadWear,
     crossingWear,
     poiWear: clamp(poiWear, 0, 1),
+    clearing,
   }
 }
 
