@@ -473,7 +473,6 @@ function buildTerrain(region: GeneratedRegion) {
   const color = new THREE.Color()
   const palette = editorBiomePalette(region.biome)
   const surfacePalette = editorSurfacePalette(region.biome)
-  const treeVariantColors = editorTreeVariantColors(region.biome, palette.tree)
   const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
   const mossColor = new THREE.Color(surfacePalette.moss)
   const soilColor = new THREE.Color(surfacePalette.soil)
@@ -803,6 +802,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const rootClusters = region.dressing.filter((item) => item.type === 'root-cluster')
   const palette = editorBiomePalette(region.biome)
   const surfacePalette = editorSurfacePalette(region.biome)
+  const treeVariantColors = editorTreeVariantColors(region.biome, palette.tree)
 
   if (bankPatches.length) {
     const geometry = new THREE.CircleGeometry(1, 10)
