@@ -87,7 +87,7 @@ export type WorldGenerationLayerSeeds = {
 
 export type GeneratedRegion = {
   format: 'forge-generated-region'
-  version: 2
+  version: 3
   seed: number
   masterSeed: number
   layerSeeds: WorldGenerationLayerSeeds
@@ -314,7 +314,7 @@ export function generateGuidedRegion(
 
   return {
     format: 'forge-generated-region',
-    version: 2,
+    version: 3,
     seed,
     masterSeed: worldSeed,
     layerSeeds,
