@@ -7,7 +7,7 @@ import type {
   ForgePlayerDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderContinuityIssues, streamRenderProfile, streamWaterSurfaceRows, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
+import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderContinuityIssues, streamWaterSurfaceRows, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
 import {
   bindCharacterAsset,
   disposeBoundObject,
@@ -1158,29 +1158,23 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
 }
 
 function makeGeneratedStream(region: GeneratedRegion) {
-  const profile = streamRenderProfile(region)
-  const points = profile.points
-  const widths = profile.widths
-
   const group = new THREE.Group()
   {
     const issues = streamRenderContinuityIssues(region)
     if (issues.length) console.warn('[Play Region] River continuity', issues)
   }
   const banks = new THREE.Mesh(
-    makeRuntimeRibbon(
-      points,
-      widths.map((width) => width * 1.72 + .55),
-      (x, z) => sampleTerrainHeight(region, x, z) + .018,
-    ),
+    makeRuntimeOpenRiverBankGeometry(region),
     new THREE.MeshStandardMaterial({
       color: 0x354238,
       roughness: 1,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
+      side: THREE.DoubleSide,
     }),
   )
+  banks.name = 'GeneratedRiverBanks'
   banks.receiveShadow = true
   group.add(banks)
 
@@ -1250,6 +1244,73 @@ function makeRuntimeRibbon(
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function makeRuntimeOpenRiverBankGeometry(region: GeneratedRegion) {
+  const surface = streamWaterSurfaceRows(region, 5, .065)
+  const rows = surface.rows
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+
+  rows.forEach((row, rowIndex) => {
+    const previous = rows[Math.max(0, rowIndex - 1)]
+    const next = rows[Math.min(rows.length - 1, rowIndex + 1)]
+    let tangentX = next.x - previous.x
+    let tangentZ = next.z - previous.z
+    const tangentLength = Math.hypot(tangentX, tangentZ)
+    if (tangentLength < .00001) {
+      tangentX = 1
+      tangentZ = 0
+    } else {
+      tangentX /= tangentLength
+      tangentZ /= tangentLength
+    }
+
+    const normalX = -tangentZ
+    const normalZ = tangentX
+    const innerHalf = row.width * .5 + .045
+    const outerHalf = (row.width * 1.72 + .55) * .5
+    const innerY = row.y + .005
+
+    const outerLeftX = row.x + normalX * outerHalf
+    const outerLeftZ = row.z + normalZ * outerHalf
+    const innerLeftX = row.x + normalX * innerHalf
+    const innerLeftZ = row.z + normalZ * innerHalf
+    const innerRightX = row.x - normalX * innerHalf
+    const innerRightZ = row.z - normalZ * innerHalf
+    const outerRightX = row.x - normalX * outerHalf
+    const outerRightZ = row.z - normalZ * outerHalf
+
+    positions.push(
+      outerLeftX, sampleTerrainHeight(region, outerLeftX, outerLeftZ) + .018, outerLeftZ,
+      innerLeftX, innerY, innerLeftZ,
+      innerRightX, innerY, innerRightZ,
+      outerRightX, sampleTerrainHeight(region, outerRightX, outerRightZ) + .018, outerRightZ,
+    )
+
+    const v = rowIndex / Math.max(1, rows.length - 1)
+    uvs.push(0, v, .42, v, .58, v, 1, v)
+  })
+
+  for (let rowIndex = 0; rowIndex < rows.length - 1; rowIndex += 1) {
+    const a = rowIndex * 4
+    const n = (rowIndex + 1) * 4
+
+    indices.push(
+      a, n, a + 1,
+      a + 1, n, n + 1,
+      a + 2, n + 2, a + 3,
+      a + 3, n + 2, n + 3,
+    )
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
