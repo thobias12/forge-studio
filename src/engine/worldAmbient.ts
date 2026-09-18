@@ -29,6 +29,22 @@ type AmbientAnchor = {
   variant: number
 }
 
+const ambientRiverMasks = new WeakMap<
+  GeneratedRegion,
+  ReturnType<typeof buildRiverOccupancyMask>
+>()
+
+function ambientRiverMask(region: GeneratedRegion) {
+  const cached = ambientRiverMasks.get(region)
+  if (cached) return cached
+  const mask = buildRiverOccupancyMask(
+    region.terrain.stream,
+    region.terrain.streamWidths,
+  )
+  ambientRiverMasks.set(region, mask)
+  return mask
+}
+
 export function buildWorldAmbientVisuals(
   region: GeneratedRegion,
 ): WorldAmbientVisuals {
@@ -185,7 +201,7 @@ function buildAmbientAnchors(region: GeneratedRegion) {
       const surface = sampleTerrainSurface(region, x, z)
       return (
         surface.meadow > .045 ||
-        surface['forest-floor'] > .065 ||
+        surface.forestFloor > .065 ||
         surface.scrub > .08 ||
         random() < .3
       )
@@ -203,8 +219,8 @@ function buildAmbientAnchors(region: GeneratedRegion) {
       const surface = sampleTerrainSurface(region, x, z)
       return (
         surface.meadow > .085 ||
-        (isForest && surface['forest-floor'] > .08) ||
-        (isAutumn && surface['forest-floor'] > .06) ||
+        (isForest && surface.forestFloor > .08) ||
+        (isAutumn && surface.forestFloor > .06) ||
         random() < .16
       )
     },
@@ -405,10 +421,7 @@ function ambientGroundAllowed(
   if (distanceToPaths(region, x, z) < minPath) return false
 
   if (region.terrain.stream.length > 1) {
-    const mask = buildRiverOccupancyMask(
-      region.terrain.stream,
-      region.terrain.streamWidths,
-    )
+    const mask = ambientRiverMask(region)
     if (
       mask.points.length &&
       riverOccupancySample(mask, x, z).signedDistance < minRiver
