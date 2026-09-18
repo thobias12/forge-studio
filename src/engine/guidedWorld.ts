@@ -858,26 +858,44 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   let poiSoil = 0
   for (const poi of region.pois) {
     const distance = Math.hypot(x - poi.x, z - poi.z)
-    const radius = poi.radius * (poi.type === 'settlement' ? 1.22 : 1.08)
-    if (distance > radius * 1.4) continue
+    const surfaceScale =
+      poi.type === 'settlement' ? 1 :
+        poi.type === 'camp' ? .88 :
+          poi.type === 'graveyard' || poi.type === 'ruins' ? .78 :
+            poi.type === 'watchtower' || poi.type === 'dungeon' ? .7 :
+              poi.type === 'shrine' || poi.type === 'standing-stones' ? .66 :
+                .74
+    const radius = poi.radius * surfaceScale
+    if (distance > radius * 1.35) continue
 
     const localNoise = valueNoise2D(
       (x - poi.x) * .16 + hashSeed(poi.id) % 17,
       (z - poi.z) * .16 - hashSeed(poi.id) % 13,
       seed ^ hashSeed(poi.id),
     )
-    const irregularRadius = radius * (.82 + localNoise * .34)
+    const irregularRadius = radius * (.78 + localNoise * .4)
     const normalized = distance / Math.max(.001, irregularRadius)
-    const influence = 1 - smoothstep(clamp((normalized - .45) / .7, 0, 1))
-    const strength = poi.type === 'settlement' || poi.type === 'camp'
-      ? 1
-      : poi.type === 'graveyard' || poi.type === 'ruins'
-        ? .76
-        : poi.type === 'watchtower' || poi.type === 'dungeon'
-          ? .68
-          : .52
+    const influence =
+      (1 - smoothstep(clamp((normalized - .18) / .9, 0, 1))) *
+      (.82 + localNoise * .18)
+    const strength = poi.type === 'settlement'
+      ? .9
+      : poi.type === 'camp'
+        ? .82
+        : poi.type === 'graveyard' || poi.type === 'ruins'
+          ? .58
+          : poi.type === 'watchtower' || poi.type === 'dungeon'
+            ? .48
+            : .4
     poiWear = Math.max(poiWear, influence * strength)
-    poiSoil = Math.max(poiSoil, influence * (poi.type === 'camp' || poi.type === 'settlement' ? .94 : .62))
+    poiSoil = Math.max(
+      poiSoil,
+      influence * (
+        poi.type === 'camp' || poi.type === 'settlement'
+          ? .76
+          : .42
+      ),
+    )
   }
 
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
