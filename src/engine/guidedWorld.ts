@@ -880,11 +880,38 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   }
 
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
+  const clearing = clearingSurfaceInfluence(region.terrain.clearings, x, z, seed)
   const crossingWear = crossingApproachWear(region.crossings, x, z)
-  const roadWear = Math.max(pathEdgeWear(region.paths, x, z), crossingWear * .7)
-  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92, 0, 1)
-  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02, 0, 1)
-  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .2 + roadWear * .76 + crossingWear * .38, 0, 1)
+  const roadWear = Math.max(pathEdgeWear(region.paths, x, z, seed), crossingWear * .7)
+  const forestFloor = clamp(
+    ((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92) *
+      (1 - clearing * .5),
+    0,
+    1,
+  )
+  const moss = clamp(
+    ((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02) *
+      (1 - clearing * .26),
+    0,
+    1,
+  )
+  const meadow = clamp(
+    micro.meadow + clearing * (.3 + medium * .18),
+    0,
+    1,
+  )
+  const scrub = clamp(micro.scrub * (1 - clearing * .34), 0, 1)
+  const soil = clamp(
+    (medium - .48) * .7 +
+      (1 - broad) * .18 +
+      poiSoil +
+      micro.rocky * .2 +
+      roadWear * .76 +
+      crossingWear * .38 +
+      clearing * .12,
+    0,
+    1,
+  )
 
   return {
     broad,
@@ -893,12 +920,13 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     forestFloor,
     moss,
     soil,
-    meadow: micro.meadow,
-    scrub: micro.scrub,
+    meadow,
+    scrub,
     rocky: micro.rocky,
     roadWear,
     crossingWear,
     poiWear: clamp(poiWear, 0, 1),
+    clearing,
   }
 }
 
@@ -1927,7 +1955,13 @@ function buildTerrainFromFrozenHydrology(
       const x = bounds.minX + xIndex / (resolution - 1) * width
       const nearest = nearestPathSample(paths, x, z)
       if (!nearest) continue
-      const corridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
+      const shoulderNoise = valueNoise2D(
+        x * .12 + 7.3,
+        z * .12 - 4.6,
+        seed ^ 0x68E31DA4,
+      )
+      const baseCorridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
+      const corridor = baseCorridor * (.88 + shoulderNoise * .24)
       if (nearest.distance >= corridor) continue
 
       if (riverMask.points.length > 1) {
@@ -1935,7 +1969,13 @@ function buildTerrainFromFrozenHydrology(
         if (river.signedDistance < 1.05) continue
       }
 
-      const influence = 1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))
+      const edgeBreakup = .82 + valueNoise2D(
+        x * .21 - 2.1,
+        z * .21 + 8.4,
+        seed ^ 0xB5297A4D,
+      ) * .28
+      const influence =
+        (1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))) * edgeBreakup
       const targetHeight = sampleGridHeight(
         bounds,
         resolution,
@@ -1956,20 +1996,32 @@ function buildTerrainFromFrozenHydrology(
   }
 
   // POIs terrace locally but may not overwrite the frozen river corridor.
+  // Warp each terrace edge so landmarks sit in naturally shaped pockets rather
+  // than identical circular pads.
   for (const poi of pois) {
     const centerHeight = sampleGridHeight(bounds, resolution, heights, poi.x, poi.z)
+    const poiSeed = seed ^ hashSeed(`terrain-poi:${poi.id}`)
     for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
       const z = bounds.minZ + zIndex / (resolution - 1) * depth
       for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
         const x = bounds.minX + xIndex / (resolution - 1) * width
         const distance = Math.hypot(x - poi.x, z - poi.z)
         const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
-        if (distance >= terraceRadius) continue
+        const edgeNoise = valueNoise2D(
+          (x - poi.x) * .14 + 6.1,
+          (z - poi.z) * .14 - 3.7,
+          poiSeed,
+        )
+        const irregularRadius = terraceRadius * (.84 + edgeNoise * .28)
+        if (distance >= irregularRadius) continue
         const riverClearance = riverMask.points.length > 1
           ? riverOccupancySample(riverMask, x, z).signedDistance
           : Infinity
         if (riverClearance < 1.5) continue
-        const influence = 1 - smoothstep(clamp(distance / terraceRadius, 0, 1))
+        const normalized = distance / Math.max(.001, irregularRadius)
+        const influence =
+          (1 - smoothstep(clamp(normalized, 0, 1))) *
+          (.82 + edgeNoise * .18)
         const index = zIndex * resolution + xIndex
         heights[index] = round(
           lerp(heights[index], centerHeight, influence * .48),
@@ -2018,6 +2070,7 @@ function buildTerrainFromFrozenHydrology(
     hydrology.points,
     paths,
     clearings,
+    pois,
     seed,
     settings,
   )
@@ -2309,16 +2362,69 @@ function buildMicroBiomes(
   stream: GeneratedWorldPoint[],
   paths: GeneratedWorldPath[],
   clearings: GeneratedWorldTerrain['clearings'],
+  pois: GeneratedWorldPoi[],
   seed: number,
   settings: ReturnType<typeof worldSettings>,
 ) {
   const random = seededRandom(hashSeed(`${seed}:micro-biomes`))
-  const count = Math.round((settings.size === 'large' ? 28 : settings.size === 'small' ? 16 : 22) * (.92 + settings.openSpace * .34))
+  const count = Math.round(
+    (settings.size === 'large' ? 28 : settings.size === 'small' ? 16 : 22) *
+      (.92 + settings.openSpace * .34),
+  )
   const biomes: GeneratedMicroBiome[] = []
+  const poiAnchors = shuffle(pois, random).slice(
+    0,
+    Math.min(pois.length, Math.max(2, Math.round(count * .32))),
+  )
+  const clearingAnchors = shuffle(clearings, random).slice(
+    0,
+    Math.min(clearings.length, Math.max(2, Math.round(count * .24))),
+  )
+
+  const poiType = (poi: GeneratedWorldPoi): WorldMicroBiomeType => {
+    const roll = random()
+    if (poi.type === 'camp' || poi.type === 'settlement') {
+      return roll < .78 ? 'meadow' : 'forest-floor'
+    }
+    if (poi.type === 'graveyard' || poi.type === 'ruins' || poi.type === 'watchtower' || poi.type === 'dungeon') {
+      return roll < .58 ? 'rocky' : 'forest-floor'
+    }
+    if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+      return roll < .56 ? 'moss' : 'rocky'
+    }
+    if (poi.type === 'beast-den') {
+      return roll < .62 ? 'scrub' : 'rocky'
+    }
+    return 'forest-floor'
+  }
 
   for (let index = 0; index < count; index += 1) {
-    const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
-    const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+    let x: number
+    let z: number
+    let anchoredType: WorldMicroBiomeType | undefined
+    let radiusScale = 1
+
+    if (index < poiAnchors.length) {
+      const poi = poiAnchors[index]
+      const angle = random() * Math.PI * 2
+      const offset = poi.radius * (.55 + random() * .78)
+      x = clamp(poi.x + Math.cos(angle) * offset, bounds.minX + 2, bounds.maxX - 2)
+      z = clamp(poi.z + Math.sin(angle) * offset, bounds.minZ + 2, bounds.maxZ - 2)
+      anchoredType = poiType(poi)
+      radiusScale = .72 + random() * .25
+    } else if (index < poiAnchors.length + clearingAnchors.length) {
+      const clearing = clearingAnchors[index - poiAnchors.length]
+      const angle = random() * Math.PI * 2
+      const offset = clearing.radius * random() * .58
+      x = clamp(clearing.x + Math.cos(angle) * offset, bounds.minX + 2, bounds.maxX - 2)
+      z = clamp(clearing.z + Math.sin(angle) * offset, bounds.minZ + 2, bounds.maxZ - 2)
+      anchoredType = random() < .76 ? 'meadow' : random() < .6 ? 'forest-floor' : 'scrub'
+      radiusScale = .7 + random() * .24
+    } else {
+      x = bounds.minX + random() * (bounds.maxX - bounds.minX)
+      z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+    }
+
     const height = sampleGridHeight(bounds, resolution, heights, x, z)
     const streamDistance = stream.length > 1 ? distanceToPolyline(x, z, stream) : Infinity
     const pathDistance = distanceToPaths(x, z, paths)
@@ -2326,7 +2432,8 @@ function buildMicroBiomes(
     const noise = valueNoise2D(x * .037 + 5.2, z * .037 - 11.4, seed ^ 0xD3A2646C)
 
     let type: WorldMicroBiomeType
-    if (streamDistance < 8) type = 'moss'
+    if (streamDistance < 7) type = 'moss'
+    else if (anchoredType) type = anchoredType
     else if (height > .95 + settings.elevation * .8 || noise > .82) type = 'rocky'
     else if (clearing || (noise > .63 && pathDistance < 12)) type = 'meadow'
     else if (noise < .34) type = 'forest-floor'
@@ -2337,10 +2444,11 @@ function buildMicroBiomes(
       type,
       x: round(x, 2),
       z: round(z, 2),
-      radius: round(10 + random() * 15, 2),
-      strength: round(.58 + random() * .3, 3),
+      radius: round((10 + random() * 15) * radiusScale, 2),
+      strength: round(.6 + random() * .3, 3),
     })
   }
+
   return biomes
 }
 
@@ -2437,7 +2545,7 @@ function buildDressing(
     const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
     const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
-    if (pathDistance < 2.35 || poiDistance < 3.6 || riverClearance < .55) continue
+    if (pathDistance < 2.35 || poiDistance < 2.25 || riverClearance < .55) continue
     const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
     if (random() < openPenalty * (.76 + settings.openSpace * .18)) continue
 
@@ -2506,8 +2614,108 @@ function buildDressing(
     })
   }
 
+  appendPoiTransitionDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   appendRiverbankDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   return dressing
+}
+
+function appendPoiTransitionDressing(
+  dressing: GeneratedWorldDressing[],
+  terrain: GeneratedWorldTerrain,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
+  random: () => number,
+) {
+  const pickType = (poi: GeneratedWorldPoi): WorldDressingType => {
+    const roll = random()
+    if (poi.type === 'camp' || poi.type === 'settlement') {
+      if (roll < .34) return 'grass'
+      if (roll < .6) return 'shrub'
+      if (roll < .82) return 'fallen-log'
+      return 'stump'
+    }
+    if (poi.type === 'ruins' || poi.type === 'watchtower' || poi.type === 'dungeon' || poi.type === 'graveyard') {
+      if (roll < .46) return 'rock'
+      if (roll < .68) return 'fern'
+      if (roll < .86) return 'shrub'
+      return 'fallen-log'
+    }
+    if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+      if (roll < .44) return 'rock'
+      if (roll < .7) return 'grass'
+      if (roll < .88) return 'fern'
+      return 'shrub'
+    }
+    if (roll < .38) return 'rock'
+    if (roll < .66) return 'shrub'
+    if (roll < .84) return 'fallen-log'
+    return 'fern'
+  }
+
+  for (let poiIndex = 0; poiIndex < pois.length; poiIndex += 1) {
+    const poi = pois[poiIndex]
+    const count =
+      poi.type === 'settlement'
+        ? 11
+        : poi.type === 'camp'
+          ? 9
+          : poi.type === 'ruins' || poi.type === 'graveyard'
+            ? 8
+            : 6
+    const startAngle = random() * Math.PI * 2
+
+    for (let itemIndex = 0; itemIndex < count; itemIndex += 1) {
+      const angle =
+        startAngle +
+        itemIndex / count * Math.PI * 2 +
+        (random() - .5) * .62
+      const radius = poi.radius + 1.25 + random() * 3.35
+      const x = poi.x + Math.cos(angle) * radius
+      const z = poi.z + Math.sin(angle) * radius
+
+      if (
+        x <= bounds.minX + .8 ||
+        x >= bounds.maxX - .8 ||
+        z <= bounds.minZ + .8 ||
+        z >= bounds.maxZ - .8
+      ) continue
+      if (distanceToPaths(x, z, paths) < 1.75) continue
+
+      const riverClearance = riverMask.points.length > 1
+        ? riverOccupancySample(riverMask, x, z).signedDistance
+        : Infinity
+      if (riverClearance < .8) continue
+
+      const overlapsOtherPoi = pois.some((other) =>
+        other.id !== poi.id &&
+        Math.hypot(x - other.x, z - other.z) < other.radius + 1.5
+      )
+      if (overlapsOtherPoi) continue
+
+      const type = pickType(poi)
+      const baseScale =
+        type === 'rock'
+          ? .42 + random() * .5
+          : type === 'grass' || type === 'fern'
+            ? .4 + random() * .4
+            : type === 'fallen-log'
+              ? .58 + random() * .48
+              : .48 + random() * .46
+
+      dressing.push({
+        id: `poi-transition-${poiIndex}-${itemIndex}`,
+        type,
+        x: round(x, 2),
+        y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
+        z: round(z, 2),
+        scale: round(baseScale, 2),
+        rotation: round(random() * Math.PI * 2, 3),
+        variant: Math.floor(random() * 4),
+      })
+    }
+  }
 }
 
 function appendRiverbankDressing(
@@ -2829,18 +3037,40 @@ function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z:
   return best
 }
 
-function pathEdgeWear(paths: GeneratedWorldPath[], x: number, z: number) {
-  let best = 0
-  for (const path of paths) {
-    const distance = distanceToPolyline(x, z, path.points)
-    const halfWidth = path.width * .5
-    const fade = path.kind === 'main' ? path.width * .9 + .9 : path.width * 1.05 + .65
-    if (distance > halfWidth + fade) continue
-    const edgeDistance = Math.max(0, distance - halfWidth)
-    const influence = 1 - smoothstep(clamp(edgeDistance / Math.max(.001, fade), 0, 1))
-    best = Math.max(best, influence)
-  }
-  return best
+function pathEdgeWear(
+  paths: GeneratedWorldPath[],
+  x: number,
+  z: number,
+  seed = 0,
+) {
+  const nearest = nearestPathSample(paths, x, z)
+  if (!nearest) return 0
+
+  const shoulderWarp = (
+    valueNoise2D(x * .16 + 9.4, z * .16 - 5.8, seed ^ 0x9E3779B9) - .5
+  ) * (nearest.kind === 'main' ? .9 : .55)
+  const halfWidth = nearest.width * .5
+  const fadeBase = nearest.kind === 'main'
+    ? nearest.width * .9 + .9
+    : nearest.width * 1.05 + .65
+  const fadeNoise = valueNoise2D(
+    x * .085 - 12.6,
+    z * .085 + 3.2,
+    seed ^ 0x7FEB352D,
+  )
+  const fade = fadeBase * (.78 + fadeNoise * .44)
+  const effectiveDistance = Math.max(0, nearest.distance + shoulderWarp)
+  if (effectiveDistance > halfWidth + fade) return 0
+
+  const edgeDistance = Math.max(0, effectiveDistance - halfWidth)
+  const influence =
+    1 - smoothstep(clamp(edgeDistance / Math.max(.001, fade), 0, 1))
+  const breakup = .8 + valueNoise2D(
+    x * .23 + 2.7,
+    z * .23 - 8.1,
+    seed ^ 0x846CA68B,
+  ) * .2
+  return clamp(influence * breakup, 0, 1)
 }
 
 function distanceToPaths(x: number, z: number, paths: GeneratedWorldPath[]) {
@@ -2884,6 +3114,53 @@ function distanceToSegment(x: number, z: number, a: GeneratedWorldPoint, b: Gene
   if (lengthSq <= .00001) return Math.hypot(x - a.x, z - a.z)
   const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
   return Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t))
+}
+
+function clearingSurfaceInfluence(
+  clearings: GeneratedWorldTerrain['clearings'],
+  x: number,
+  z: number,
+  seed: number,
+) {
+  let best = 0
+
+  for (const clearing of clearings) {
+    const dx = x - clearing.x
+    const dz = z - clearing.z
+    const distance = Math.hypot(dx, dz)
+    if (distance > clearing.radius * 1.28) continue
+
+    const localSeed = hashSeed(
+      `${seed}:clearing:${Math.round(clearing.x * 10)}:${Math.round(clearing.z * 10)}`,
+    )
+    const angle = (localSeed % 6283) / 1000
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const rx = dx * cos - dz * sin
+    const rz = dx * sin + dz * cos
+    const stretch = .76 + ((localSeed >>> 9) % 1000) / 1000 * .48
+    const edgeNoise = valueNoise2D(
+      x * .095 + 4.4,
+      z * .095 - 6.9,
+      localSeed ^ 0x68E31DA4,
+    )
+    const localRadius = clearing.radius * (.82 + edgeNoise * .3)
+    const warpedDistance = Math.hypot(rx / stretch, rz * stretch)
+    const normalized = warpedDistance / Math.max(.001, localRadius)
+    if (normalized >= 1.08) continue
+
+    const interior = valueNoise2D(
+      x * .17 - 7.1,
+      z * .17 + 2.8,
+      localSeed ^ 0xB5297A4D,
+    )
+    const influence =
+      (1 - smoothstep(clamp((normalized - .18) / .88, 0, 1))) *
+      (.78 + interior * .22)
+    best = Math.max(best, influence)
+  }
+
+  return clamp(best, 0, 1)
 }
 
 function nearestClearing(x: number, z: number, clearings: GeneratedWorldTerrain['clearings']) {
