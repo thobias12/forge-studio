@@ -459,7 +459,7 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
       x: points[0].x + startDir.x * distance + perpendicular.x * curve,
       z: points[0].z + startDir.z * distance + perpendicular.z * curve,
     })
-    const taper = .05 + Math.pow(1 - t, 1.18) * .95
+    const taper = offMapStreamWidthScale(t, extension)
     extendedWidths.push(widths[0] * taper)
     extendedHeights.push(heights[0] + startSlope * step)
   }
@@ -479,7 +479,7 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
       x: points[points.length - 1].x + endDir.x * distance + perpendicular.x * curve,
       z: points[points.length - 1].z + endDir.z * distance + perpendicular.z * curve,
     })
-    const taper = .05 + Math.pow(1 - t, 1.18) * .95
+    const taper = offMapStreamWidthScale(t, extension)
     extendedWidths.push(widths[widths.length - 1] * taper)
     extendedHeights.push(heights[heights.length - 1] + endSlope * step)
   }
@@ -537,6 +537,16 @@ function densifyStreamRenderProfile(
     widths: denseWidths,
     heights: denseHeights,
   }
+}
+
+function offMapStreamWidthScale(t: number, extension: number) {
+  // The editor/runtime backdrop extends ~45 world units beyond the terrain.
+  // Hold normal width until the continuation is outside that visible backdrop,
+  // then taper rapidly where the artificial cap cannot be seen.
+  const taperStart = clamp(47 / Math.max(1, extension), .58, .92)
+  if (t <= taperStart) return 1
+  const taperT = clamp((t - taperStart) / Math.max(.001, 1 - taperStart), 0, 1)
+  return lerp(1, .04, smoothstep(taperT))
 }
 
 function outwardStreamDirection(
@@ -598,6 +608,66 @@ export function visibleStreamRenderHeight(
   )
 }
 
+export function streamWaterSurfaceRows(
+  region: GeneratedRegion,
+  laneCount = 5,
+  clearance = .065,
+) {
+  const profile = streamRenderProfile(region)
+  const lanes = Math.max(3, laneCount % 2 === 0 ? laneCount + 1 : laneCount)
+  const rows: Array<{
+    x: number
+    z: number
+    y: number
+    width: number
+    nominalHeight: number
+    points: Array<{ x: number; z: number }>
+  }> = []
+
+  for (let index = 0; index < profile.points.length; index += 1) {
+    const center = profile.points[index]
+    const previous = profile.points[Math.max(0, index - 1)]
+    const next = profile.points[Math.min(profile.points.length - 1, index + 1)]
+    let tangent = normalized2(next.x - previous.x, next.z - previous.z)
+
+    if (
+      Math.abs(next.x - previous.x) < .00001 &&
+      Math.abs(next.z - previous.z) < .00001
+    ) {
+      tangent = { x: 1, z: 0 }
+    }
+
+    const normal = { x: -tangent.z, z: tangent.x }
+    const width = Math.max(.04, profile.widths[index] ?? profile.widths[0] ?? 1)
+    const halfWidth = width * .5
+    const nominalHeight = profile.heights[index] ?? profile.heights[0] ?? region.terrain.waterLevel
+    const lanePoints: Array<{ x: number; z: number }> = []
+    let safeHeight = nominalHeight + clearance
+
+    for (let lane = 0; lane < lanes; lane += 1) {
+      const across = lanes === 1 ? 0 : lane / (lanes - 1) * 2 - 1
+      const x = center.x + normal.x * halfWidth * across
+      const z = center.z + normal.z * halfWidth * across
+      lanePoints.push({ x, z })
+      safeHeight = Math.max(
+        safeHeight,
+        visibleStreamRenderHeight(region, nominalHeight, x, z, clearance),
+      )
+    }
+
+    rows.push({
+      x: center.x,
+      z: center.z,
+      y: safeHeight,
+      width,
+      nominalHeight,
+      points: lanePoints,
+    })
+  }
+
+  return { rows, laneCount: lanes }
+}
+
 export function streamRenderContinuityIssues(region: GeneratedRegion) {
   const profile = streamRenderProfile(region)
   const issues: string[] = []
@@ -618,6 +688,25 @@ export function streamRenderContinuityIssues(region: GeneratedRegion) {
     const allowed = Math.max(1.65, localWidth * 1.15)
     if (distance > allowed) {
       issues.push(`Stream render segment ${index - 1}->${index} is too long (${round(distance, 2)}).`)
+    }
+  }
+
+  const surface = streamWaterSurfaceRows(region, 5, .065)
+  for (let rowIndex = 0; rowIndex < surface.rows.length; rowIndex += 1) {
+    const row = surface.rows[rowIndex]
+    for (let laneIndex = 0; laneIndex < row.points.length; laneIndex += 1) {
+      const point = row.points[laneIndex]
+      const inside =
+        point.x >= region.bounds.minX &&
+        point.x <= region.bounds.maxX &&
+        point.z >= region.bounds.minZ &&
+        point.z <= region.bounds.maxZ
+      if (!inside) continue
+      const terrainHeight = sampleTerrainHeight(region, point.x, point.z)
+      if (row.y < terrainHeight + .06) {
+        issues.push(`Terrain protrudes through stream row ${rowIndex}, lane ${laneIndex}.`)
+        break
+      }
     }
   }
 
