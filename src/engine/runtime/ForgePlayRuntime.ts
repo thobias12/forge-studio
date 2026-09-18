@@ -1232,9 +1232,11 @@ function makeRuntimeJunction(
 ) {
   const group = new THREE.Group()
   const hasMain = paths.some((path) => path.kind === 'main')
+  const mixedKinds = paths.some((path) => path.kind !== paths[0].kind)
+  const isBranching = paths.length >= 3 || mixedKinds
   const maxWidth = Math.max(...paths.map((path) => path.width))
-  const coreRadius = Math.max(1.45, maxWidth * (hasMain ? .92 : .82))
-  const shoulderRadius = coreRadius * 1.48
+  const coreRadius = Math.max(isBranching ? 1.5 : 1.05, maxWidth * (isBranching ? .78 : .56))
+  const shoulderRadius = coreRadius * (isBranching ? 1.46 : 1.34)
 
   const shoulder = new THREE.Mesh(
     makeRuntimeTerrainPatch(region, x, z, shoulderRadius, seedKey + ':shoulder', .04),
