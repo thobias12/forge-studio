@@ -983,23 +983,23 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     crossingWear * .62,
   )
   const forestFloor = clamp(
-    ((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92) *
+    ((.58 - broad) * .82 + (medium - .5) * .24 + micro['forest-floor'] * 1.08) *
       (1 - clearing * .5),
     0,
     1,
   )
   const moss = clamp(
-    ((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02) *
+    ((broad - .42) * .72 + (fine - .5) * .18 + micro.moss * 1.16) *
       (1 - clearing * .26),
     0,
     1,
   )
   const meadow = clamp(
-    micro.meadow + clearing * (.3 + medium * .18),
+    micro.meadow * 1.08 + clearing * (.34 + medium * .2),
     0,
     1,
   )
-  const scrub = clamp(micro.scrub * (1 - clearing * .34), 0, 1)
+  const scrub = clamp(micro.scrub * 1.08 * (1 - clearing * .34), 0, 1)
   const soil = clamp(
     (medium - .48) * .7 +
       (1 - broad) * .18 +
@@ -3018,6 +3018,107 @@ function buildFrozenHydrology(
   )
 }
 
+function applyEnvironmentRelief(
+  bounds: GeneratedRegion['bounds'],
+  resolution: number,
+  heights: number[],
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
+  seed: number,
+  settings: ReturnType<typeof worldSettings>,
+) {
+  const random = seededRandom(hashSeed(`${seed}:environment-relief`))
+  const width = bounds.maxX - bounds.minX
+  const depth = bounds.maxZ - bounds.minZ
+  const featureCount =
+    settings.size === 'large' ? 7 :
+      settings.size === 'small' ? 4 :
+        5
+
+  const features = Array.from({ length: featureCount }, (_, index) => {
+    const positive = index % 3 !== 2
+    const radius = 13 + random() * (settings.size === 'large' ? 17 : 13)
+    const amplitudeBase =
+      .28 +
+      settings.elevation * .38 +
+      settings.verticality * .48
+    return {
+      x: bounds.minX + width * (.1 + random() * .8),
+      z: bounds.minZ + depth * (.1 + random() * .8),
+      radius,
+      amplitude:
+        amplitudeBase *
+        (.62 + random() * .62) *
+        (positive ? 1 : -.58),
+      stretch: .68 + random() * .68,
+      angle: random() * Math.PI * 2,
+      seed: seed ^ hashSeed(`relief:${index}`),
+    }
+  })
+
+  for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+    const z = bounds.minZ + zIndex / (resolution - 1) * depth
+    for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+      const x = bounds.minX + xIndex / (resolution - 1) * width
+      const pathDistance = distanceToPaths(x, z, paths)
+      if (pathDistance < 5.5) continue
+
+      const poiDistance = pois.reduce(
+        (best, poi) =>
+          Math.min(
+            best,
+            Math.hypot(x - poi.x, z - poi.z) - poi.radius,
+          ),
+        Infinity,
+      )
+      if (poiDistance < 4.5) continue
+
+      const riverClearance = riverMask.points.length > 1
+        ? riverOccupancySample(riverMask, x, z).signedDistance
+        : Infinity
+      if (riverClearance < 5.8) continue
+
+      let offset = 0
+      for (const feature of features) {
+        const dx = x - feature.x
+        const dz = z - feature.z
+        const cos = Math.cos(feature.angle)
+        const sin = Math.sin(feature.angle)
+        const rx = dx * cos - dz * sin
+        const rz = dx * sin + dz * cos
+        const edgeNoise = valueNoise2D(
+          x * .045 + 3.7,
+          z * .045 - 8.2,
+          feature.seed,
+        )
+        const localRadius = feature.radius * (.82 + edgeNoise * .28)
+        const distance = Math.hypot(
+          rx / feature.stretch,
+          rz * feature.stretch,
+        )
+        if (distance >= localRadius) continue
+
+        const normalized = clamp(distance / Math.max(.001, localRadius), 0, 1)
+        const dome = 1 - smoothstep(normalized)
+        const interior = valueNoise2D(
+          x * .085 - 5.1,
+          z * .085 + 6.4,
+          feature.seed ^ 0x9E3779B9,
+        )
+        offset +=
+          feature.amplitude *
+          dome *
+          (.76 + interior * .24)
+      }
+
+      if (Math.abs(offset) < .005) continue
+      const index = zIndex * resolution + xIndex
+      heights[index] = round(heights[index] + offset, 4)
+    }
+  }
+}
+
 function buildTerrainFromFrozenHydrology(
   region: ForgeRegionDefinition,
   bounds: GeneratedRegion['bounds'],
@@ -3060,6 +3161,17 @@ function buildTerrainFromFrozenHydrology(
       }
     }
   }
+
+  applyEnvironmentRelief(
+    bounds,
+    resolution,
+    heights,
+    paths,
+    pois,
+    riverMask,
+    seed,
+    settings,
+  )
 
   // Roads react to the frozen river, never the other way around.
   const preRoadHeights = [...heights]
@@ -3497,8 +3609,8 @@ function buildMicroBiomes(
 ) {
   const random = seededRandom(hashSeed(`${seed}:micro-biomes`))
   const count = Math.round(
-    (settings.size === 'large' ? 28 : settings.size === 'small' ? 16 : 22) *
-      (.92 + settings.openSpace * .34),
+    (settings.size === 'large' ? 36 : settings.size === 'small' ? 20 : 29) *
+      (.94 + settings.openSpace * .32),
   )
   const biomes: GeneratedMicroBiome[] = []
   const poiAnchors = shuffle(pois, random).slice(
@@ -3509,6 +3621,15 @@ function buildMicroBiomes(
     0,
     Math.min(clearings.length, Math.max(2, Math.round(count * .24))),
   )
+  const signatureTypes: WorldMicroBiomeType[] = [
+    'meadow',
+    'rocky',
+    'forest-floor',
+    'scrub',
+    'moss',
+    'meadow',
+    'rocky',
+  ]
 
   const poiType = (poi: GeneratedWorldPoi): WorldMicroBiomeType => {
     const roll = random()
@@ -3532,6 +3653,12 @@ function buildMicroBiomes(
     let z: number
     let anchoredType: WorldMicroBiomeType | undefined
     let radiusScale = 1
+    const signatureIndex =
+      index - poiAnchors.length - clearingAnchors.length
+    const signatureType =
+      signatureIndex >= 0 && signatureIndex < signatureTypes.length
+        ? signatureTypes[signatureIndex]
+        : undefined
 
     if (index < poiAnchors.length) {
       const poi = poiAnchors[index]
@@ -3549,9 +3676,29 @@ function buildMicroBiomes(
       z = clamp(clearing.z + Math.sin(angle) * offset, bounds.minZ + 2, bounds.maxZ - 2)
       anchoredType = random() < .76 ? 'meadow' : random() < .6 ? 'forest-floor' : 'scrub'
       radiusScale = .7 + random() * .24
+    } else if (signatureType === 'moss' && stream.length > 2) {
+      const streamIndex = Math.min(
+        stream.length - 2,
+        Math.max(1, Math.floor(random() * (stream.length - 1))),
+      )
+      const point = stream[streamIndex]
+      const prev = stream[streamIndex - 1]
+      const next = stream[streamIndex + 1]
+      const tangent = normalized2(next.x - prev.x, next.z - prev.z)
+      const normal = { x: -tangent.z, z: tangent.x }
+      const side = random() > .5 ? 1 : -1
+      const offset = 5.5 + random() * 5.5
+      x = clamp(point.x + normal.x * side * offset, bounds.minX + 2, bounds.maxX - 2)
+      z = clamp(point.z + normal.z * side * offset, bounds.minZ + 2, bounds.maxZ - 2)
+      anchoredType = 'moss'
+      radiusScale = 1.08 + random() * .24
     } else {
       x = bounds.minX + random() * (bounds.maxX - bounds.minX)
       z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+      if (signatureType) {
+        anchoredType = signatureType
+        radiusScale = 1.08 + random() * .3
+      }
     }
 
     const height = sampleGridHeight(bounds, resolution, heights, x, z)
@@ -3573,8 +3720,8 @@ function buildMicroBiomes(
       type,
       x: round(x, 2),
       z: round(z, 2),
-      radius: round((10 + random() * 15) * radiusScale, 2),
-      strength: round(.6 + random() * .3, 3),
+      radius: round((12 + random() * 18) * radiusScale, 2),
+      strength: round(.7 + random() * .28, 3),
     })
   }
 
@@ -3618,8 +3765,8 @@ function microBiomeInfluence(microBiomes: GeneratedMicroBiome[], x: number, z: n
       const stretch = .72 + ((lobeSeed >>> 11) % 1000) / 1000 * .58
       const lobeRadius = biome.radius * (
         lobe === 0
-          ? .64
-          : .42 + ((lobeSeed >>> 17) % 1000) / 1000 * .22
+          ? .72
+          : .48 + ((lobeSeed >>> 17) % 1000) / 1000 * .24
       )
       const edgeNoise = (valueNoise2D(x * .11, z * .11, lobeSeed ^ 0xD3A2646C) - .5) * lobeRadius * .18
       const warpedDistance = Math.hypot(rx / stretch, rz * stretch) + edgeNoise
@@ -3675,8 +3822,13 @@ function buildDressing(
     const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
     if (pathDistance < 2.35 || poiDistance < 2.25 || riverClearance < .55) continue
-    const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
-    if (random() < openPenalty * (.76 + settings.openSpace * .18)) continue
+    const openPenalty = clearingSurfaceInfluence(
+      terrain.clearings,
+      x,
+      z,
+      seed ^ 0x51ED270B,
+    )
+    if (random() < openPenalty * (.8 + settings.openSpace * .16)) continue
 
     const edgeDistance = Math.min(
       x - bounds.minX,
@@ -3694,26 +3846,36 @@ function buildDressing(
     }
 
     const broadNoise = valueNoise2D(x * .031 + 12.3, z * .031 - 17.7, seed ^ 0xA24BAED4)
+    const groveNoise = valueNoise2D(x * .014 - 21.7, z * .014 + 6.3, seed ^ 0x7FEB352D)
+    const gapNoise = valueNoise2D(x * .022 + 2.8, z * .022 - 14.1, seed ^ 0x846CA68B)
     let density = clamp(
-      settings.forestDensity * (.18 + clusterDensity * 1.08 + broadNoise * .42) + edgeBoost,
+      settings.forestDensity * (
+        .08 +
+        clusterDensity * 1.16 +
+        broadNoise * .28 +
+        Math.max(0, groveNoise - .42) * .86
+      ) + edgeBoost,
       0,
       1,
     )
-    density *= 1 - micro.meadow * .72
-    density *= 1 - micro.rocky * .18
-    density += micro['forest-floor'] * .12 + micro.scrub * .08
+    if (gapNoise < .28) density *= .36 + gapNoise
+    density *= 1 - micro.meadow * .86
+    density *= 1 - micro.rocky * .34
+    density *= 1 - micro.moss * .16
+    density += micro['forest-floor'] * .2 + micro.scrub * .06
 
     const nearRiver = riverClearance < 3.8
     if (!nearRiver && random() > clamp(density, .05, 1)) continue
 
     const roll = random()
     let type: WorldDressingType
-    const treeThreshold = clamp(.4 + density * .44, .42, .88)
+    const treeThreshold = clamp(.3 + density * .54, .3, .9)
 
     if (nearRiver && random() < .58) type = 'reeds'
-    else if (micro.rocky > .45 && roll < .58) type = 'rock'
-    else if (micro.meadow > .42 && roll < .66) type = roll < .38 ? 'grass' : 'shrub'
-    else if (micro.scrub > .42 && roll < .68) type = roll < .42 ? 'shrub' : 'fern'
+    else if (micro.rocky > .38 && roll < .72) type = 'rock'
+    else if (micro.meadow > .36 && roll < .8) type = roll < .56 ? 'grass' : 'shrub'
+    else if (micro.moss > .42 && roll < .64) type = roll < .3 ? 'rock' : 'fern'
+    else if (micro.scrub > .38 && roll < .74) type = roll < .5 ? 'shrub' : 'fern'
     else if (roll < treeThreshold) type = 'tree'
     else if (roll < treeThreshold + .1) type = 'rock'
     else if (roll < treeThreshold + .19) type = 'fern'
