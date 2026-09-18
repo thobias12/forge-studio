@@ -34,7 +34,12 @@ import {
   updateWorldAmbientVisuals,
   type WorldAmbientVisuals,
 } from '../worldAmbient'
-import { FORGE_WORLD_SCALE, forgeBridgeDimensions } from '../worldScale'
+import {
+  FORGE_WORLD_SCALE,
+  forgeBridgeDimensions,
+  forgePoiVisualScale,
+  forgeTreePresentationScale,
+} from '../worldScale'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -578,7 +583,12 @@ export class ForgePlayRuntime {
   }
 
   private onWheel = (event: WheelEvent) => {
-    this.cameraDistance = THREE.MathUtils.clamp(this.cameraDistance + Math.sign(event.deltaY) * 2, FORGE_WORLD_SCALE.playCameraMinDistance, FORGE_WORLD_SCALE.playCameraMaxDistance)
+    this.cameraDistance = THREE.MathUtils.clamp(
+      this.cameraDistance +
+        Math.sign(event.deltaY) * FORGE_WORLD_SCALE.playCameraWheelStep,
+      FORGE_WORLD_SCALE.playCameraMinDistance,
+      FORGE_WORLD_SCALE.playCameraMaxDistance,
+    )
     event.preventDefault()
   }
 
@@ -1007,15 +1017,29 @@ export class ForgePlayRuntime {
       desired.z += Math.cos(performance.now() * 0.073) * strength
     }
     this.camera.position.lerp(desired, 1 - Math.pow(0.0008, delta))
-    this.camera.lookAt(this.player.position.x, 0.8, this.player.position.z)
+    this.camera.lookAt(
+      this.player.position.x,
+      this.player.position.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
+      this.player.position.z,
+    )
   }
 
   private snapCamera() {
     this.camera.position.copy(this.player.position).add(this.cameraOffset())
-    this.camera.lookAt(this.player.position.x, 0.8, this.player.position.z)
+    this.camera.lookAt(
+      this.player.position.x,
+      this.player.position.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
+      this.player.position.z,
+    )
   }
 
-  private cameraOffset() { return new THREE.Vector3(this.cameraDistance * 0.58, this.cameraDistance * 0.74, this.cameraDistance * 0.58) }
+  private cameraOffset() {
+    return new THREE.Vector3(
+      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
+      this.cameraDistance * FORGE_WORLD_SCALE.playCameraVerticalScale,
+      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
+    )
+  }
 
   private moveActor(actor: THREE.Object3D, delta: THREE.Vector3, radius: number) {
     const next = actor.position.clone().add(delta)
@@ -1936,6 +1960,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
         scene.add(rootMesh)
       }
     } else if (item.type === 'tree') {
+      const displayScale = forgeTreePresentationScale(item.scale)
       const tree = new THREE.Group()
       tree.position.set(item.x, item.y, item.z)
       tree.rotation.set(
@@ -1943,7 +1968,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
         item.rotation,
         corruptTrees ? (item.variant % 2 ? -.045 : .045) : 0,
       )
-      tree.scale.setScalar(item.scale)
+      tree.scale.setScalar(displayScale)
 
       const trunk = new THREE.Mesh(treeTrunkGeometry, treeTrunkMaterial)
       trunk.position.y = 1.66
@@ -2059,7 +2084,7 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       tree.add(accent)
 
       scene.add(tree)
-      obstacles.push({ x: item.x, z: item.z, radius: .44 * item.scale })
+      obstacles.push({ x: item.x, z: item.z, radius: .44 * displayScale })
     } else if (item.type === 'dead-tree') {
       const tree = new THREE.Group()
       tree.position.set(item.x, item.y, item.z)
@@ -2212,9 +2237,10 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
 
   for (const poi of region.pois) {
     const group = new THREE.Group()
+    const poiVisualScale = forgePoiVisualScale(poi.type)
     group.position.set(poi.x, sampleTerrainHeight(region, poi.x, poi.z), poi.z)
     group.rotation.y = poi.rotation
-    group.scale.setScalar(FORGE_WORLD_SCALE.poiVisualScale)
+    group.scale.setScalar(poiVisualScale)
 
     if (poi.type === 'ruins') {
       runtimeBox(group, -3.15, .9, .4, .6, 1.8, 4.8, stoneMaterial)
@@ -2224,7 +2250,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       runtimeBox(group, -.95, 1.45, 2.8, .62, 2.9, .65, stoneMaterial)
       runtimeBox(group, 1.05, 1.15, 2.8, .62, 2.3, .65, stoneMaterial)
       runtimeBox(group, .05, 2.55, 2.8, 2.65, .5, .7, darkStone)
-      obstacles.push({ x: poi.x, z: poi.z, radius: 3 * FORGE_WORLD_SCALE.poiVisualScale })
+      obstacles.push({ x: poi.x, z: poi.z, radius: 3 * poiVisualScale })
     } else if (poi.type === 'camp' || poi.type === 'settlement') {
       const count = poi.type === 'settlement' ? 5 : 3
       for (let i = 0; i < count; i += 1) {
@@ -2249,7 +2275,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
         bench.rotation.y = -angle
         group.add(bench)
       }
-      obstacles.push({ x: poi.x, z: poi.z, radius: (poi.type === 'settlement' ? 4.5 : 3.7) * FORGE_WORLD_SCALE.poiVisualScale })
+      obstacles.push({ x: poi.x, z: poi.z, radius: (poi.type === 'settlement' ? 4.5 : 3.7) * poiVisualScale })
     } else if (poi.type === 'watchtower') {
       const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 2.25, 7, 8), stoneMaterial)
       tower.position.y = 3.35
@@ -2273,7 +2299,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       doorway.position.set(0, .98, 2.18)
       group.add(doorway)
       runtimeBox(group, -2.8, .7, -1.6, .55, 1.4, 3.4, darkStone)
-      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 * FORGE_WORLD_SCALE.poiVisualScale })
+      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 * poiVisualScale })
     } else if (poi.type === 'dungeon') {
       runtimeBox(group, -1.7, 1.5, 0, .82, 3, .9, stoneMaterial)
       runtimeBox(group, 1.7, 1.5, 0, .82, 3, .9, stoneMaterial)
@@ -2286,14 +2312,14 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       darkness.position.set(0, 1.28, .49)
       group.add(darkness)
       obstacles.push({
-        x: poi.x - 1.7 * FORGE_WORLD_SCALE.poiVisualScale,
+        x: poi.x - 1.7 * poiVisualScale,
         z: poi.z,
-        radius: .8 * FORGE_WORLD_SCALE.poiVisualScale,
+        radius: .8 * poiVisualScale,
       })
       obstacles.push({
-        x: poi.x + 1.7 * FORGE_WORLD_SCALE.poiVisualScale,
+        x: poi.x + 1.7 * poiVisualScale,
         z: poi.z,
-        radius: .8 * FORGE_WORLD_SCALE.poiVisualScale,
+        radius: .8 * poiVisualScale,
       })
     } else if (poi.type === 'shrine') {
       runtimeBox(group, 0, .18, .4, 3.4, .36, 3, darkStone)
