@@ -344,6 +344,7 @@ export function generateGuidedRegion(
   resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
   separatePostRiverLandmarks(nodes, riverMask, bounds)
   resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
+  separatePostRiverLandmarks(nodes, riverMask, bounds)
 
   pruneBadLoopConnections(nodes, connections)
   pruneOrphanBranchTopology(nodes, connections)
@@ -368,11 +369,25 @@ export function generateGuidedRegion(
     resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
   }
 
-  const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+  let paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
   smoothWorldJunctions(paths, nodes)
   shapeLandmarkApproaches(paths, nodes)
 
-  const crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  let crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+
+  // Re-check against the actual selected crossings. If selection moved after the
+  // provisional topology pass, move ordinary branch joins once more and rebuild
+  // so the final graph—not only the preview graph—respects bridge neighborhoods.
+  if (reanchorBranchesAwayFromCrossings(nodes, connections, crossings)) {
+    pruneBadLoopConnections(nodes, connections)
+    pruneOrphanBranchTopology(nodes, connections)
+    resolveNodesOutsideRiverMask(nodes, connections, riverMask, bounds)
+    paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+    smoothWorldJunctions(paths, nodes)
+    shapeLandmarkApproaches(paths, nodes)
+    crossings = buildCrossings(paths, frozenHydrology.points, layerSeeds.routes, settings)
+  }
+
   for (const crossing of crossings) {
     const path = paths.find((item) => item.id === crossing.pathId)
     if (path) shapePathAtCrossing(path, crossing)
@@ -2120,7 +2135,12 @@ function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegio
     if (!node) continue
 
     const main = connected.filter((path) => path.kind === 'main')
-    const mainAxis = main.length >= 2 ? junctionMainAxis(node, main) : undefined
+    const mainAxis =
+      main.length >= 2
+        ? junctionMainAxis(node, main)
+        : connected.length >= 3
+          ? junctionMainAxis(node, connected)
+          : undefined
     const sharedMainWidth = main.length ? Math.max(...main.map((path) => path.width)) : 0
 
     for (const path of connected) {
