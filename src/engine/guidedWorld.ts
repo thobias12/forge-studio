@@ -1961,12 +1961,72 @@ function solveHydrology(
     return round(1.15 + water * 1.05 + t * (.75 + water * .75) + pulse, 3)
   })
 
-  const streamHeights: number[] = []
+  // Build a visually stable river grade from the local landscape instead of
+  // carrying the lowest sample forward forever. The old cumulative minimum
+  // could make one depression drag the whole downstream river far below the
+  // later terrain, leaving the water hidden behind its own trench walls.
+  const terrainProfile = points.map((point) =>
+    sampleGridHeight(bounds, resolution, heights, point.x, point.z),
+  )
+  const smoothedTerrain = terrainProfile.map((_, index) => {
+    let weighted = 0
+    let totalWeight = 0
+    for (let offset = -2; offset <= 2; offset += 1) {
+      const sampleIndex = clamp(index + offset, 0, terrainProfile.length - 1)
+      const weight = 3 - Math.abs(offset)
+      weighted += terrainProfile[sampleIndex] * weight
+      totalWeight += weight
+    }
+    return weighted / Math.max(.001, totalWeight)
+  })
+
+  let streamHeights: number[] = []
   for (let index = 0; index < points.length; index += 1) {
-    const point = points[index]
-    const raw = sampleGridHeight(bounds, resolution, heights, point.x, point.z) - .18
-    if (index === 0) streamHeights.push(raw)
-    else streamHeights.push(Math.min(raw, streamHeights[index - 1] - .006))
+    const localTerrain = terrainProfile[index]
+    const target = smoothedTerrain[index] - .16
+    const visibleFloor = localTerrain - .46
+    const bankCeiling = localTerrain - .08
+
+    if (index === 0) {
+      streamHeights.push(clamp(target, visibleFloor, bankCeiling))
+      continue
+    }
+
+    const previous = streamHeights[index - 1]
+    const segmentLength = Math.max(
+      .001,
+      Math.hypot(
+        points[index].x - points[index - 1].x,
+        points[index].z - points[index - 1].z,
+      ),
+    )
+    const maxDrop = .035 + segmentLength * .035
+    const maxRise = .03 + segmentLength * .028
+    const graded = clamp(target, previous - maxDrop, previous + maxRise)
+
+    // Local visibility wins over strict monotonic flow. If generated terrain
+    // rises after a depression, let the stylised river recover gradually
+    // instead of burying every downstream section.
+    streamHeights.push(clamp(graded, visibleFloor, bankCeiling))
+  }
+
+  // Two light relaxation passes remove small kinks introduced by the local
+  // visibility bounds while preserving the guaranteed incision range.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const source = [...streamHeights]
+    const next = [...streamHeights]
+    for (let index = 1; index < source.length - 1; index += 1) {
+      const localTerrain = terrainProfile[index]
+      const visibleFloor = localTerrain - .46
+      const bankCeiling = localTerrain - .08
+      const neighborAverage = (source[index - 1] + source[index] * 2 + source[index + 1]) / 4
+      next[index] = clamp(
+        lerp(source[index], neighborAverage, .42),
+        visibleFloor,
+        bankCeiling,
+      )
+    }
+    streamHeights = next
   }
 
   return {
