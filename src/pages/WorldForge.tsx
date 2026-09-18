@@ -279,7 +279,7 @@ export default function WorldForge() {
 
       <footer className="world-forge-status">
         <span>{status}</span>
-        <strong>{playMode ? 'Play mode consumes the generated region composition.' : 'Terrain → routes → POIs → biome dressing.'}</strong>
+        <strong>{playMode ? 'Play mode consumes the generated region composition.' : 'Terrain → hydrology → routes → micro-biomes → POIs → dressing.'}</strong>
       </footer>
     </main>
 
