@@ -9,6 +9,7 @@ import {
   streamRenderContinuityIssues,
   streamRenderProfile,
   streamWaterSurfaceRows,
+  worldBoundaryBackdropHeight,
   sampleTerrainSurface,
   type GeneratedRegion,
   type GeneratedWorldPath,
@@ -457,7 +458,7 @@ function buildBoundaryBackdrop(region: GeneratedRegion) {
     new THREE.MeshStandardMaterial({ color: palette.low, roughness: 1, metalness: 0 }),
   )
   backdrop.rotation.x = -Math.PI / 2
-  backdrop.position.set(centerX, -1.45, centerZ)
+  backdrop.position.set(centerX, worldBoundaryBackdropHeight(region), centerZ)
   backdrop.receiveShadow = true
   backdrop.name = 'WorldBoundaryBackdrop'
   return backdrop
