@@ -223,7 +223,10 @@ export function generateGuidedRegion(
     if (!poiCycle.length) poiCycle = shuffle([...new Set(poiTypes)], poiRandom)
     const type = poiCycle.shift() ?? 'ruins'
     const offsetAngle = poiRandom() * Math.PI * 2
-    const offsetDistance = target.kind === 'branch' ? 1.5 + poiRandom() * 2 : 3 + poiRandom() * 5
+    const baseOffset = poiApproachDistance(type)
+    const offsetDistance = target.kind === 'branch'
+      ? baseOffset * (.64 + poiRandom() * .24)
+      : baseOffset * (.9 + poiRandom() * .32)
     const node: GeneratedRegionNode = {
       id: `landmark-${index}`,
       kind: 'landmark',
@@ -757,7 +760,8 @@ function buildTerrain(
       const n1 = valueNoise2D(x * .026, z * .026, seed)
       const n2 = valueNoise2D(x * .061 + 17.2, z * .061 - 9.4, seed ^ 0x9E3779B9)
       const n3 = valueNoise2D(x * .13 - 31.8, z * .13 + 11.7, seed ^ 0x85EBCA6B)
-      let height = ((n0 - .5) * .58 + (n1 - .5) * 1.45 + (n2 - .5) * .58 + (n3 - .5) * .18) * amplitude
+      const valley = valueNoise2D(x * .0075 + 23.1, z * .0075 - 17.4, seed ^ 0xB5297A4D)
+      let height = ((n0 - .5) * .86 + (n1 - .5) * 1.5 + (n2 - .5) * .58 + (n3 - .5) * .18 + (valley - .5) * .52) * amplitude
 
       if (settings.cliffs > .08) {
         const ridge = Math.abs(valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5) * 2
@@ -792,7 +796,29 @@ function buildTerrain(
     }
   }
 
-  // Pass 4: POIs gently terrace the existing landscape instead of placing a flat disc.
+  // Pass 4: preserve readable hills while relaxing the terrain immediately under roads.
+  // This keeps the broad landscape stronger without turning traversal routes into rollercoasters.
+  const preRoadHeights = [...heights]
+  for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+    const z = bounds.minZ + zIndex / (resolution - 1) * depth
+    for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+      const x = bounds.minX + xIndex / (resolution - 1) * width
+      const nearest = nearestPathSample(paths, x, z)
+      if (!nearest) continue
+      const corridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
+      if (nearest.distance >= corridor) continue
+      if (hydrology.points.length > 1) {
+        const river = nearestHydrologySample(x, z, hydrology.points, hydrology.widths, hydrology.heights)
+        if (river.distance < river.width * 1.9 + 1.6) continue
+      }
+      const influence = 1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))
+      const targetHeight = sampleGridHeight(bounds, resolution, preRoadHeights, nearest.x, nearest.z)
+      const index = zIndex * resolution + xIndex
+      heights[index] = round(lerp(heights[index], targetHeight, influence * (nearest.kind === 'main' ? .72 : .56)), 4)
+    }
+  }
+
+  // Pass 5: POIs gently terrace the existing landscape instead of placing a flat disc.
   for (const poi of pois) {
     const centerHeight = sampleGridHeight(bounds, resolution, heights, poi.x, poi.z)
     for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
@@ -929,6 +955,8 @@ function solveHydrology(
     z: bounds.minZ + row / (resolution - 1) * depth,
   }))
   points = smoothPolyline(points, 2)
+  points = meanderHydrologyPath(points, bounds, resolution, heights, seed, water)
+  points = smoothPolyline(points, 1)
 
   const random = seededRandom(hashSeed(`${seed}:hydrology-width`))
   const widths = points.map((_, index) => {
@@ -1053,10 +1081,26 @@ function microBiomeInfluence(microBiomes: GeneratedMicroBiome[], x: number, z: n
     scrub: 0,
     rocky: 0,
   }
+
   for (const biome of microBiomes) {
-    const distance = Math.hypot(x - biome.x, z - biome.z)
-    if (distance >= biome.radius) continue
-    const influence = (1 - smoothstep(clamp(distance / biome.radius, 0, 1))) * biome.strength
+    const biomeSeed = hashSeed(biome.id)
+    const warpScale = biome.radius * .22
+    const warpX = (valueNoise2D(x * .043 + 11.7, z * .043 - 9.2, biomeSeed ^ 0xA24BAED4) - .5) * warpScale
+    const warpZ = (valueNoise2D(x * .043 - 7.4, z * .043 + 13.6, biomeSeed ^ 0x9FB21C65) - .5) * warpScale
+    const dx = x + warpX - biome.x
+    const dz = z + warpZ - biome.z
+    const angle = (biomeSeed % 6283) / 1000
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const rx = dx * cos - dz * sin
+    const rz = dx * sin + dz * cos
+    const stretch = .68 + ((biomeSeed >>> 9) % 1000) / 1000 * .72
+    const edgeNoise = (valueNoise2D(x * .085, z * .085, biomeSeed ^ 0xD3A2646C) - .5) * biome.radius * .2
+    const warpedDistance = Math.hypot(rx / stretch, rz * stretch) + edgeNoise
+    if (warpedDistance >= biome.radius * 1.08) continue
+
+    const normalized = clamp(warpedDistance / Math.max(.001, biome.radius), 0, 1)
+    const influence = (1 - smoothstep(normalized)) * biome.strength
     result[biome.type] = Math.max(result[biome.type], influence)
   }
   return result
@@ -1163,7 +1207,53 @@ function buildDressing(
     })
   }
 
+  appendRiverbankDressing(dressing, terrain, bounds, paths, pois, random)
   return dressing
+}
+
+function appendRiverbankDressing(
+  dressing: GeneratedWorldDressing[],
+  terrain: GeneratedWorldTerrain,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  random: () => number,
+) {
+  if (terrain.stream.length < 4) return
+  for (let index = 2; index < terrain.stream.length - 2; index += 3) {
+    const point = terrain.stream[index]
+    const prev = terrain.stream[index - 1]
+    const next = terrain.stream[index + 1]
+    const tangent = normalized2(next.x - prev.x, next.z - prev.z)
+    const normal = { x: -tangent.z, z: tangent.x }
+    const width = terrain.streamWidths[index] ?? 2
+
+    for (const side of [-1, 1]) {
+      const clusterSize = 1 + Math.floor(random() * 3)
+      for (let itemIndex = 0; itemIndex < clusterSize; itemIndex += 1) {
+        const bankOffset = width * .7 + 1 + random() * 2.4
+        const along = (random() - .5) * 4.2
+        const x = point.x + normal.x * bankOffset * side + tangent.x * along
+        const z = point.z + normal.z * bankOffset * side + tangent.z * along
+        if (x <= bounds.minX || x >= bounds.maxX || z <= bounds.minZ || z >= bounds.maxZ) continue
+        if (distanceToPaths(x, z, paths) < 2) continue
+        if (pois.some((poi) => Math.hypot(x - poi.x, z - poi.z) < poi.radius + 2)) continue
+
+        const roll = random()
+        const type: WorldDressingType = roll < .5 ? 'reeds' : roll < .78 ? 'rock' : 'shrub'
+        dressing.push({
+          id: `riverbank-${index}-${side}-${itemIndex}`,
+          type,
+          x: round(x, 2),
+          y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
+          z: round(z, 2),
+          scale: round(type === 'rock' ? .55 + random() * .65 : .5 + random() * .55, 2),
+          rotation: round(random() * Math.PI * 2, 3),
+          variant: Math.floor(random() * 4),
+        })
+      }
+    }
+  }
 }
 
 function poiPool(region: ForgeRegionDefinition): WorldPoiType[] {
@@ -1172,6 +1262,15 @@ function poiPool(region: ForgeRegionDefinition): WorldPoiType[] {
   if (features.has('grave clusters') || features.has('graveyards')) pool.push('graveyard')
   if (features.has('ruins')) pool.push('ruins', 'watchtower')
   return pool
+}
+
+function poiApproachDistance(type: WorldPoiType) {
+  if (type === 'watchtower' || type === 'ruins') return 10.5
+  if (type === 'graveyard' || type === 'standing-stones') return 9
+  if (type === 'beast-den') return 11.5
+  if (type === 'camp') return 8
+  if (type === 'shrine') return 7
+  return 9
 }
 
 function poiRadius(type: WorldPoiType) {
@@ -1224,6 +1323,72 @@ function calculateBounds(nodes: GeneratedRegionNode[], sizeScale: number) {
     minZ: Math.min(...zs) - margin,
     maxZ: Math.max(...zs) + margin,
   }
+}
+
+function nearestPathSample(paths: GeneratedWorldPath[], x: number, z: number) {
+  let best: { distance: number; x: number; z: number; width: number; kind: GeneratedWorldPath['kind'] } | undefined
+  for (const path of paths) {
+    for (let index = 1; index < path.points.length; index += 1) {
+      const a = path.points[index - 1]
+      const b = path.points[index]
+      const dx = b.x - a.x
+      const dz = b.z - a.z
+      const lengthSq = dx * dx + dz * dz
+      const t = lengthSq > .00001
+        ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
+        : 0
+      const px = a.x + dx * t
+      const pz = a.z + dz * t
+      const distance = Math.hypot(x - px, z - pz)
+      if (best && distance >= best.distance) continue
+      const width = lerp(path.widths[index - 1] ?? path.width, path.widths[index] ?? path.width, t)
+      best = { distance, x: px, z: pz, width, kind: path.kind }
+    }
+  }
+  return best
+}
+
+function meanderHydrologyPath(
+  points: GeneratedWorldPoint[],
+  bounds: GeneratedRegion['bounds'],
+  resolution: number,
+  heights: number[],
+  seed: number,
+  water: number,
+) {
+  if (points.length < 5) return points
+  const result = points.map((point) => ({ ...point }))
+  const amplitude = 1.8 + water * 3.2
+  const phase = (hashSeed(`${seed}:meander-phase`) % 6283) / 1000
+
+  for (let index = 2; index < points.length - 2; index += 1) {
+    const point = points[index]
+    const prev = points[index - 2]
+    const next = points[index + 2]
+    const tangent = normalized2(next.x - prev.x, next.z - prev.z)
+    const normal = { x: -tangent.z, z: tangent.x }
+    const t = index / Math.max(1, points.length - 1)
+    const noise = valueNoise2D(point.x * .035, point.z * .035, seed ^ 0x68E31DA4) - .5
+    const desired = Math.sin(t * Math.PI * 5.2 + phase) * amplitude * .72 + noise * amplitude
+
+    let best = point
+    let bestScore = Infinity
+    for (let sampleIndex = -4; sampleIndex <= 4; sampleIndex += 1) {
+      const offset = desired + sampleIndex * amplitude * .18
+      const x = clamp(point.x + normal.x * offset, bounds.minX + 4, bounds.maxX - 4)
+      const z = clamp(point.z + normal.z * offset, bounds.minZ + 4, bounds.maxZ - 4)
+      const height = sampleGridHeight(bounds, resolution, heights, x, z)
+      const deviationPenalty = Math.abs(offset - desired) * .12
+      const score = height * .5 + deviationPenalty
+      if (score < bestScore) {
+        bestScore = score
+        best = { x, z }
+      }
+    }
+    result[index] = best
+  }
+
+  return result
 }
 
 function pathEdgeWear(paths: GeneratedWorldPath[], x: number, z: number) {
