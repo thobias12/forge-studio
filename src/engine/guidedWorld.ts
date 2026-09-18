@@ -1955,7 +1955,13 @@ function buildTerrainFromFrozenHydrology(
       const x = bounds.minX + xIndex / (resolution - 1) * width
       const nearest = nearestPathSample(paths, x, z)
       if (!nearest) continue
-      const corridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
+      const shoulderNoise = valueNoise2D(
+        x * .12 + 7.3,
+        z * .12 - 4.6,
+        seed ^ 0x68E31DA4,
+      )
+      const baseCorridor = nearest.width * .7 + (nearest.kind === 'main' ? 2.7 : 1.8)
+      const corridor = baseCorridor * (.88 + shoulderNoise * .24)
       if (nearest.distance >= corridor) continue
 
       if (riverMask.points.length > 1) {
@@ -1963,7 +1969,13 @@ function buildTerrainFromFrozenHydrology(
         if (river.signedDistance < 1.05) continue
       }
 
-      const influence = 1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))
+      const edgeBreakup = .82 + valueNoise2D(
+        x * .21 - 2.1,
+        z * .21 + 8.4,
+        seed ^ 0xB5297A4D,
+      ) * .28
+      const influence =
+        (1 - smoothstep(clamp(nearest.distance / corridor, 0, 1))) * edgeBreakup
       const targetHeight = sampleGridHeight(
         bounds,
         resolution,
@@ -1984,20 +1996,32 @@ function buildTerrainFromFrozenHydrology(
   }
 
   // POIs terrace locally but may not overwrite the frozen river corridor.
+  // Warp each terrace edge so landmarks sit in naturally shaped pockets rather
+  // than identical circular pads.
   for (const poi of pois) {
     const centerHeight = sampleGridHeight(bounds, resolution, heights, poi.x, poi.z)
+    const poiSeed = seed ^ hashSeed(`terrain-poi:${poi.id}`)
     for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
       const z = bounds.minZ + zIndex / (resolution - 1) * depth
       for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
         const x = bounds.minX + xIndex / (resolution - 1) * width
         const distance = Math.hypot(x - poi.x, z - poi.z)
         const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
-        if (distance >= terraceRadius) continue
+        const edgeNoise = valueNoise2D(
+          (x - poi.x) * .14 + 6.1,
+          (z - poi.z) * .14 - 3.7,
+          poiSeed,
+        )
+        const irregularRadius = terraceRadius * (.84 + edgeNoise * .28)
+        if (distance >= irregularRadius) continue
         const riverClearance = riverMask.points.length > 1
           ? riverOccupancySample(riverMask, x, z).signedDistance
           : Infinity
         if (riverClearance < 1.5) continue
-        const influence = 1 - smoothstep(clamp(distance / terraceRadius, 0, 1))
+        const normalized = distance / Math.max(.001, irregularRadius)
+        const influence =
+          (1 - smoothstep(clamp(normalized, 0, 1))) *
+          (.82 + edgeNoise * .18)
         const index = zIndex * resolution + xIndex
         heights[index] = round(
           lerp(heights[index], centerHeight, influence * .48),
