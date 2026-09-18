@@ -7,7 +7,7 @@ import type {
   ForgePlayerDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import { sampleTerrainHeight, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
+import { sampleTerrainHeight, sampleTerrainSurface, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
 import {
   bindCharacterAsset,
   disposeBoundObject,
@@ -364,11 +364,6 @@ export class ForgePlayRuntime {
       this.scene.add(ground)
       if (this.region.terrain.stream.length > 1) this.scene.add(makeGeneratedStream(this.region))
       for (const path of this.region.paths) this.scene.add(makeGeneratedPath(this.region, path))
-      for (const node of this.region.nodes) {
-        const incident = runtimeIncidentPaths(this.region, node.x, node.z)
-        if (incident.length < 2) continue
-        this.scene.add(makeRuntimeJunction(this.region, node.x, node.z, incident, node.id))
-      }
       for (const crossing of this.region.crossings) this.scene.add(makeRuntimeCrossing(this.region, crossing))
       addGeneratedDressing(this.scene, this.region, this.obstacles)
       addGeneratedPois(this.scene, this.region, this.obstacles)
@@ -1114,6 +1109,10 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
   const colors: number[] = []
   const indices: number[] = []
   const palette = runtimeBiomePalette(region.biome)
+  const surfacePalette = runtimeSurfacePalette(region.biome)
+  const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
+  const mossColor = new THREE.Color(surfacePalette.moss)
+  const soilColor = new THREE.Color(surfacePalette.soil)
   const color = new THREE.Color()
 
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
@@ -1123,7 +1122,11 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
       const height = terrain.heights[zIndex * resolution + xIndex] ?? 0
       positions.push(x, height, z)
       color.set(height > 2.4 ? palette.high : height < terrain.waterLevel + .45 ? palette.low : palette.ground)
-      const variation = .9 + hashUnit(`terrain:${xIndex}:${zIndex}:${region.seed}`) * .14
+      const surface = sampleTerrainSurface(region, x, z)
+      color.lerp(forestFloorColor, surface.forestFloor * .28)
+      color.lerp(mossColor, surface.moss * .22)
+      color.lerp(soilColor, Math.max(surface.soil * .18, surface.poiWear * .68))
+      const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
       colors.push(color.r * variation, color.g * variation, color.b * variation)
     }
   }
@@ -1213,86 +1216,6 @@ function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
   road.receiveShadow = true
   group.add(road)
   return group
-}
-
-function runtimeIncidentPaths(region: GeneratedRegion, x: number, z: number) {
-  return region.paths.filter((path) => {
-    const first = path.points[0]
-    const last = path.points[path.points.length - 1]
-    return Math.hypot(first.x - x, first.z - z) < .35 || Math.hypot(last.x - x, last.z - z) < .35
-  })
-}
-
-function makeRuntimeJunction(
-  region: GeneratedRegion,
-  x: number,
-  z: number,
-  paths: GeneratedWorldPath[],
-  seedKey: string,
-) {
-  const group = new THREE.Group()
-  const hasMain = paths.some((path) => path.kind === 'main')
-  const mixedKinds = paths.some((path) => path.kind !== paths[0].kind)
-  const isBranching = paths.length >= 3 || mixedKinds
-  const maxWidth = Math.max(...paths.map((path) => path.width))
-  const coreRadius = Math.max(isBranching ? 1.5 : 1.05, maxWidth * (isBranching ? .78 : .56))
-  const shoulderRadius = coreRadius * (isBranching ? 1.46 : 1.34)
-
-  const shoulder = new THREE.Mesh(
-    makeRuntimeTerrainPatch(region, x, z, shoulderRadius, seedKey + ':shoulder', .04),
-    new THREE.MeshStandardMaterial({
-      color: hasMain ? 0x49503d : 0x41483a,
-      roughness: 1,
-      polygonOffset: true,
-      polygonOffsetFactor: 0,
-      polygonOffsetUnits: 0,
-    }),
-  )
-  shoulder.receiveShadow = true
-  group.add(shoulder)
-
-  const core = new THREE.Mesh(
-    makeRuntimeTerrainPatch(region, x, z, coreRadius, seedKey + ':core', .062),
-    new THREE.MeshStandardMaterial({
-      color: hasMain ? 0x5b513f : 0x4a493d,
-      roughness: 1,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
-  )
-  core.receiveShadow = true
-  group.add(core)
-  return group
-}
-
-function makeRuntimeTerrainPatch(
-  region: GeneratedRegion,
-  x: number,
-  z: number,
-  radius: number,
-  seedKey: string,
-  heightOffset: number,
-) {
-  const segments = 14
-  const positions: number[] = [x, sampleTerrainHeight(region, x, z) + heightOffset, z]
-  const indices: number[] = []
-  for (let index = 0; index < segments; index += 1) {
-    const angle = index / segments * Math.PI * 2
-    const wobble = .82 + hashUnit(`${seedKey}:${index}`) * .28
-    const px = x + Math.cos(angle) * radius * wobble
-    const pz = z + Math.sin(angle) * radius * wobble
-    positions.push(px, sampleTerrainHeight(region, px, pz) + heightOffset, pz)
-  }
-  for (let index = 0; index < segments; index += 1) {
-    const next = index === segments - 1 ? 1 : index + 2
-    indices.push(0, next, index + 1)
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  return geometry
 }
 
 function makeRuntimeRibbon(
@@ -1449,21 +1372,6 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
     group.position.set(poi.x, sampleTerrainHeight(region, poi.x, poi.z), poi.z)
     group.rotation.y = poi.rotation
 
-    const clearing = new THREE.Mesh(
-      makeRuntimeIrregularPatch(poi.radius * 1.08, poi.id),
-      new THREE.MeshStandardMaterial({
-        color: poi.type === 'camp' || poi.type === 'settlement' ? 0x4a4632 : 0x384538,
-        roughness: 1,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      }),
-    )
-    clearing.rotation.x = -Math.PI / 2
-    clearing.position.y = .035
-    clearing.receiveShadow = true
-    group.add(clearing)
-
     if (poi.type === 'ruins') {
       runtimeBox(group, -2, .8, 0, .65, 1.6, 4.6, stoneMaterial)
       runtimeBox(group, 1.65, .55, .9, .65, 1.1, 2.6, darkStone)
@@ -1525,26 +1433,6 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
   }
 }
 
-function makeRuntimeIrregularPatch(radius: number, seedKey: string) {
-  const segments = 18
-  const positions: number[] = [0, 0, 0]
-  const indices: number[] = []
-  for (let index = 0; index < segments; index += 1) {
-    const angle = index / segments * Math.PI * 2
-    const wobble = .76 + hashUnit(`${seedKey}:clearing:${index}`) * .32
-    positions.push(Math.cos(angle) * radius * wobble, 0, Math.sin(angle) * radius * wobble)
-  }
-  for (let index = 0; index < segments; index += 1) {
-    const next = index === segments - 1 ? 1 : index + 2
-    indices.push(0, next, index + 1)
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  return geometry
-}
-
 function runtimeBox(
   group: THREE.Group,
   x: number,
@@ -1569,6 +1457,16 @@ function runtimeBiomePalette(biome: string) {
   if (value.includes('corrupt')) return { ground: 0x3a303b, low: 0x30293a, high: 0x544457, tree: 0x342d3b, fern: 0x47364d, rock: 0x625665 }
   if (value.includes('farmland')) return { ground: 0x5b5539, low: 0x48543b, high: 0x6c684d, tree: 0x405134, fern: 0x53603a, rock: 0x6c6b5e }
   return { ground: 0x2d4631, low: 0x263c2e, high: 0x53604a, tree: 0x203b28, fern: 0x31583a, rock: 0x596159 }
+}
+
+function runtimeSurfacePalette(biome: string) {
+  const value = biome.toLowerCase()
+  if (value.includes('autumn')) return { forestFloor: 0x473d2c, moss: 0x62613a, soil: 0x6a5538 }
+  if (value.includes('highland')) return { forestFloor: 0x3f4939, moss: 0x59654a, soil: 0x625a47 }
+  if (value.includes('marsh')) return { forestFloor: 0x26372e, moss: 0x3f5a43, soil: 0x4a4938 }
+  if (value.includes('corrupt')) return { forestFloor: 0x322b37, moss: 0x4b3b50, soil: 0x57464f }
+  if (value.includes('farmland')) return { forestFloor: 0x4b4c34, moss: 0x5a653e, soil: 0x6c5a3c }
+  return { forestFloor: 0x253a29, moss: 0x3c5738, soil: 0x5d523d }
 }
 
 function makePath(from: GeneratedRegionNode, to: GeneratedRegionNode, width: number) {
