@@ -2253,7 +2253,26 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       runtimeBox(group, 2.25, .38, 2.45, 2.7, .76, .6, darkStone)
       runtimeBox(group, -.95, 1.45, 2.8, .62, 2.9, .65, stoneMaterial)
       runtimeBox(group, 1.05, 1.15, 2.8, .62, 2.3, .65, stoneMaterial)
-      runtimeBox(group, .05, 2.55, 2.8, 2.65, .5, .7, darkStone)
+      // Broken lintel: the missing centre makes the gateway read as collapsed.
+      runtimeBox(group, -.83, 2.55, 2.8, 1.05, .5, .7, darkStone)
+      runtimeBox(group, .94, 2.46, 2.8, .7, .42, .68, darkStone)
+
+      const standingColumn = new THREE.Mesh(
+        new THREE.CylinderGeometry(.32, .45, 2.35, 6),
+        stoneMaterial,
+      )
+      standingColumn.position.set(-2.25, 1.16, -1.2)
+      standingColumn.rotation.z = -.05
+      group.add(standingColumn)
+
+      const fallenColumn = new THREE.Mesh(
+        new THREE.CylinderGeometry(.3, .42, 2.75, 6),
+        darkStone,
+      )
+      fallenColumn.position.set(1.45, .34, -2.05)
+      fallenColumn.rotation.set(.08, .42, Math.PI / 2)
+      group.add(fallenColumn)
+
       obstacles.push({ x: poi.x, z: poi.z, radius: 3 * poiVisualScale })
     } else if (poi.type === 'camp' || poi.type === 'settlement') {
       const count = poi.type === 'settlement' ? 5 : 3
@@ -2299,23 +2318,114 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
           (tentRandom() - .5) * .08
         group.add(bench)
       }
+
+      const pot = new THREE.Mesh(
+        new THREE.CylinderGeometry(.24, .31, .3, 8),
+        darkStone,
+      )
+      pot.position.set(.18, .34, -.12)
+      group.add(pot)
+
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(.34, .38, .72, 8),
+        wood,
+      )
+      barrel.position.set(-2.25, .36, 1.35)
+      barrel.rotation.z = .04
+      group.add(barrel)
+
+      const bedrollCount = poi.type === 'settlement' ? 3 : 2
+      for (let i = 0; i < bedrollCount; i += 1) {
+        const angle = 1.9 + i * 1.6 + (tentRandom() - .5) * .2
+        const radius = (poi.type === 'settlement' ? 3.15 : 2.75) + i * .18
+        const bedroll = new THREE.Mesh(
+          new THREE.BoxGeometry(1.05, .14, .5),
+          cloth,
+        )
+        bedroll.position.set(
+          Math.cos(angle) * radius,
+          .09,
+          Math.sin(angle) * radius,
+        )
+        bedroll.rotation.y = -angle + .25
+        group.add(bedroll)
+      }
+
+      const sackMaterial = new THREE.MeshStandardMaterial({
+        color: 0x6b6045,
+        roughness: 1,
+      })
+      for (let i = 0; i < 2; i += 1) {
+        const sack = new THREE.Mesh(
+          new THREE.SphereGeometry(.27 + i * .05, 7, 5),
+          sackMaterial,
+        )
+        sack.scale.y = 1.2
+        sack.position.set(-1.75 + i * .48, .28, -2.05 + i * .2)
+        group.add(sack)
+      }
+
+      const fireGlow = new THREE.PointLight(0xff8738, .9, 6)
+      fireGlow.position.set(0, .7, 0)
+      group.add(fireGlow)
+
       obstacles.push({ x: poi.x, z: poi.z, radius: (poi.type === 'settlement' ? 4.5 : 3.7) * poiVisualScale })
     } else if (poi.type === 'watchtower') {
-      const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.95, 7, 8), stoneMaterial)
-      tower.position.y = 3.35
+      const tower = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.5, 1.95, 5.6, 8),
+        stoneMaterial,
+      )
+      tower.position.y = 2.68
       tower.castShadow = true
       group.add(tower)
-      const upper = new THREE.Mesh(new THREE.CylinderGeometry(1.88, 1.78, .5, 8), darkStone)
-      upper.position.y = 6.62
-      group.add(upper)
-      for (let i = 0; i < 8; i += 1) {
-        if (i === 2 || i === 3) continue
-        const angle = i / 8 * Math.PI * 2
-        const battlement = new THREE.Mesh(new THREE.BoxGeometry(.5, .68, .5), darkStone)
-        battlement.position.set(Math.cos(angle) * 1.58, 7.08, Math.sin(angle) * 1.58)
-        battlement.rotation.y = -angle
+
+      // Only part of the upper wall survives. The missing rear quarter and
+      // uneven battlements make "Ruined Watchtower" readable at gameplay scale.
+      const upperWall = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          1.58,
+          1.64,
+          1.55,
+          8,
+          1,
+          true,
+          -Math.PI * .75,
+          Math.PI * 1.5,
+        ),
+        darkStone,
+      )
+      upperWall.position.y = 5.92
+      upperWall.castShadow = true
+      group.add(upperWall)
+
+      const survivingAngles = [-.62, -.32, 0, .31, .58].map(
+        (value) => value * Math.PI,
+      )
+      survivingAngles.forEach((angle, index) => {
+        const battlement = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            index === 2 ? .56 : .46,
+            .55 + (index % 2) * .16,
+            .5,
+          ),
+          darkStone,
+        )
+        battlement.position.set(
+          Math.sin(angle) * 1.56,
+          6.82 + (index % 2) * .06,
+          Math.cos(angle) * 1.56,
+        )
+        battlement.rotation.y = angle
         group.add(battlement)
-      }
+      })
+
+      const collapsedCap = new THREE.Mesh(
+        new THREE.BoxGeometry(.72, .45, .58),
+        darkStone,
+      )
+      collapsedCap.position.set(1.95, .34, -1.6)
+      collapsedCap.rotation.set(.22, .42, .28)
+      group.add(collapsedCap)
       const doorwayRecess = new THREE.Mesh(
         new THREE.BoxGeometry(1.02, 1.72, .18),
         new THREE.MeshStandardMaterial({
@@ -2349,23 +2459,71 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
         })
       }
     } else if (poi.type === 'shrine') {
-      runtimeBox(group, 0, .18, .4, 3.4, .36, 3, darkStone)
-      runtimeBox(group, 0, .5, .25, 2.5, .34, 2.2, stoneMaterial)
-      runtimeBox(group, 0, 1.9, -.2, .72, 2.8, .62, stoneMaterial)
-      runtimeBox(group, -1.3, 1.15, -.25, .45, 2.3, .45, darkStone)
-      runtimeBox(group, 1.3, 1.15, -.25, .45, 2.3, .45, darkStone)
-      runtimeBox(group, 0, 2.25, -.25, 3, .42, .48, darkStone)
+      // Stepped altar + rear stone frame gives the shrine a recognizable
+      // silhouette instead of reading as a stack of blocks.
+      runtimeBox(group, 0, .12, .45, 3.5, .24, 3.1, darkStone)
+      runtimeBox(group, 0, .33, .5, 2.85, .22, 2.45, stoneMaterial)
+      runtimeBox(group, 0, .68, .1, 1.55, .48, .9, darkStone)
+      runtimeBox(group, 0, 1.08, -.55, .92, 1.35, .55, stoneMaterial)
+      runtimeBox(group, -1.15, 1.5, -.78, .38, 2.45, .42, darkStone)
+      runtimeBox(group, 1.15, 1.5, -.78, .38, 2.45, .42, darkStone)
+      runtimeBox(group, 0, 2.72, -.78, 2.72, .34, .5, darkStone)
+
+      const offeringMaterial = new THREE.MeshStandardMaterial({
+        color: 0xb8a06b,
+        emissive: 0x6a4b1e,
+        emissiveIntensity: .45,
+        roughness: .7,
+      })
+      for (const x of [-.42, .42]) {
+        const candle = new THREE.Mesh(
+          new THREE.CylinderGeometry(.07, .08, .3, 7),
+          offeringMaterial,
+        )
+        candle.position.set(x, 1.02, .16)
+        group.add(candle)
+
+        const flame = new THREE.Mesh(
+          new THREE.SphereGeometry(.075, 7, 5),
+          new THREE.MeshStandardMaterial({
+            color: 0xffd27a,
+            emissive: 0xff9b39,
+            emissiveIntensity: 1.2,
+            roughness: .4,
+          }),
+        )
+        flame.scale.y = 1.5
+        flame.position.set(x, 1.25, .16)
+        group.add(flame)
+      }
+
+      const shrineGlow = new THREE.PointLight(0xd6b36d, 1.15, 7)
+      shrineGlow.position.set(0, 1.5, .1)
+      group.add(shrineGlow)
     } else if (poi.type === 'standing-stones') {
       for (let i = 0; i < 7; i += 1) {
         const angle = i / 7 * Math.PI * 2
         const radius = i === 0 ? 0 : 3
         const height = i === 0 ? 3.8 : 2.4 + (i % 3) * .35
         const stone = new THREE.Mesh(
-          new THREE.BoxGeometry(i === 0 ? .9 : .7, height, .65),
+          new THREE.CylinderGeometry(
+            i === 0 ? .4 : .29,
+            i === 0 ? .56 : .43,
+            height,
+            5,
+          ),
           i % 2 ? stoneMaterial : darkStone,
         )
-        stone.position.set(Math.cos(angle) * radius, height * .5, Math.sin(angle) * radius)
-        stone.rotation.set(0, angle * .23, (i % 3 - 1) * .055)
+        stone.position.set(
+          Math.cos(angle) * radius,
+          height * .5,
+          Math.sin(angle) * radius,
+        )
+        stone.rotation.set(
+          (i % 2 ? .04 : -.03),
+          angle * .23,
+          (i % 3 - 1) * .07,
+        )
         group.add(stone)
       }
     } else if (poi.type === 'graveyard') {
@@ -2378,18 +2536,67 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       runtimeBox(group, -2.25, .5, 3.15, 2.2, 1, .12, wood)
       runtimeBox(group, 2.25, .5, 3.15, 2.2, 1, .12, wood)
     } else if (poi.type === 'beast-den') {
-      const den = new THREE.Mesh(new THREE.TorusGeometry(2.35, .72, 8, 14, Math.PI), darkStone)
-      den.rotation.x = Math.PI / 2
-      den.position.y = 1.35
-      den.castShadow = true
-      group.add(den)
-      runtimeBox(group, 0, .24, .75, 4.8, .48, 3.5, darkStone)
+      // Organic boulder mound instead of a manufactured torus/slab cave.
+      const denRock = (
+        x: number,
+        y: number,
+        z: number,
+        sx: number,
+        sy: number,
+        sz: number,
+        material: THREE.Material,
+        rotation = 0,
+      ) => {
+        const rock = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(1, 0),
+          material,
+        )
+        rock.position.set(x, y, z)
+        rock.scale.set(sx, sy, sz)
+        rock.rotation.set(.08 * Math.sin(rotation), rotation, .06 * Math.cos(rotation))
+        rock.castShadow = true
+        group.add(rock)
+      }
+
+      denRock(-1.48, .92, .36, .9, 1.2, .85, darkStone, -.24)
+      denRock(1.43, .9, .34, .92, 1.15, .86, stoneMaterial, .3)
+      denRock(-.72, 1.72, .2, .86, 1.02, .78, stoneMaterial, -.1)
+      denRock(.36, 1.95, .15, .94, 1.08, .82, darkStone, .2)
+      denRock(1.12, 1.62, .2, .82, .96, .76, stoneMaterial, .46)
+      denRock(-1.72, .48, -.72, 1.08, .72, 1.0, stoneMaterial, -.35)
+      denRock(-.35, .5, -1.05, 1.35, .74, 1.2, darkStone, .12)
+      denRock(1.25, .46, -.88, 1.18, .68, 1.05, stoneMaterial, .42)
+
       const mouth = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.3, 2.35),
-        new THREE.MeshBasicMaterial({ color: 0x070907, side: THREE.DoubleSide }),
+        new THREE.PlaneGeometry(2.45, 1.95),
+        new THREE.MeshBasicMaterial({
+          color: 0x050705,
+          side: THREE.DoubleSide,
+        }),
       )
-      mouth.position.set(0, 1.05, .62)
+      mouth.position.set(0, .92, .56)
       group.add(mouth)
+
+      const boneMaterial = new THREE.MeshStandardMaterial({
+        color: 0xb8b29a,
+        roughness: .92,
+      })
+      for (let i = 0; i < 2; i += 1) {
+        const bone = new THREE.Mesh(
+          new THREE.CylinderGeometry(.045, .055, .82, 6),
+          boneMaterial,
+        )
+        bone.position.set(-.62 + i * .34, .09, 1.85 + i * .16)
+        bone.rotation.set(.05, .35 + i * .75, Math.PI / 2)
+        group.add(bone)
+      }
+      const skull = new THREE.Mesh(
+        new THREE.SphereGeometry(.19, 7, 5),
+        boneMaterial,
+      )
+      skull.scale.set(1, .8, .85)
+      skull.position.set(-.2, .19, 1.72)
+      group.add(skull)
     }
 
     addRuntimePoiEnvironment(group, poi, stoneMaterial, darkStone, wood, green)
