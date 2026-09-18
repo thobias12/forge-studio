@@ -494,11 +494,11 @@ function buildTerrain(region: GeneratedRegion) {
       else color.set(palette.ground)
 
       const surface = sampleTerrainSurface(region, x, z)
-      color.lerp(forestFloorColor, surface.forestFloor * .27)
-      color.lerp(mossColor, surface.moss * .22)
-      color.lerp(meadowColor, surface.meadow * .31)
-      color.lerp(scrubColor, surface.scrub * .2)
-      color.lerp(rockyColor, surface.rocky * .29)
+      color.lerp(forestFloorColor, surface.forestFloor * .34)
+      color.lerp(mossColor, surface.moss * .31)
+      color.lerp(meadowColor, surface.meadow * .42)
+      color.lerp(scrubColor, surface.scrub * .27)
+      color.lerp(rockyColor, surface.rocky * .38)
       color.lerp(soilColor, Math.max(surface.soil * .24, surface.poiWear * .68, surface.roadWear * .42))
       const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
       colors.push(color.r * variation, color.g * variation, color.b * variation)
