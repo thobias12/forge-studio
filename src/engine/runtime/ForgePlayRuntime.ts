@@ -1166,10 +1166,11 @@ function makeGeneratedStream(region: GeneratedRegion) {
   const water = new THREE.Mesh(
     makeRuntimeTerrainSafeWaterGeometry(region),
     new THREE.MeshStandardMaterial({
-      color: 0x4ea6a3,
-      emissive: 0x1c6b67,
-      emissiveIntensity: .18,
-      roughness: .58,
+      color: 0xffffff,
+      vertexColors: true,
+      emissive: 0x123f40,
+      emissiveIntensity: .12,
+      roughness: .46,
       metalness: 0,
       transparent: false,
       opacity: 1,
@@ -1240,15 +1241,26 @@ function makeRuntimeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const lanes = surface.laneCount
   const positions: number[] = []
   const uvs: number[] = []
+  const colors: number[] = []
   const indices: number[] = []
+  const deepWater = new THREE.Color(0x377c7d)
+  const bankWater = new THREE.Color(0x668f83)
+  const sheenWater = new THREE.Color(0x78aaa2)
+  const waterColor = new THREE.Color()
 
   rows.forEach((row, rowIndex) => {
     row.points.forEach((point, laneIndex) => {
+      const u = laneIndex / Math.max(1, lanes - 1)
+      const v = rowIndex / Math.max(1, rows.length - 1)
+      const edge = Math.pow(Math.abs(u * 2 - 1), 1.55)
+      const flowWave = Math.sin(rowIndex * .31 + laneIndex * .46)
+        + Math.sin(rowIndex * .12 - laneIndex * .24 + 1.35)
+      const sheen = Math.max(0, flowWave * .5) * (.07 - edge * .025)
+
       positions.push(point.x, point.y, point.z)
-      uvs.push(
-        laneIndex / Math.max(1, lanes - 1),
-        rowIndex / Math.max(1, rows.length - 1),
-      )
+      uvs.push(u, v)
+      waterColor.copy(deepWater).lerp(bankWater, edge * .78).lerp(sheenWater, sheen)
+      colors.push(waterColor.r, waterColor.g, waterColor.b)
     })
   })
 
@@ -1265,6 +1277,7 @@ function makeRuntimeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
