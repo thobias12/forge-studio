@@ -1,16 +1,11 @@
 import type { ForgeRegionDefinition } from './forgeProject'
+import { FORGE_WORLD_SCALE } from './worldScale'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
 export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch' | 'leaf-patch' | 'flower-patch' | 'mud-patch' | 'corrupt-scar' | 'rock-outcrop' | 'hedge' | 'root-cluster'
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
 export type WorldMood = 'normal' | 'dark' | 'deadwood' | 'bleak'
-
-const WORLD_SPATIAL_SCALE = 1.45
-const WORLD_CLEARING_SCALE = 1.24
-const WORLD_TREE_SCALE = 1.3
-const WORLD_DRESSING_DENSITY_SCALE = 1.28
-const WORLD_CLUSTER_RADIUS_SCALE = 1.18
 
 export type GeneratedMicroBiome = {
   id: string
@@ -172,23 +167,23 @@ export function generateGuidedRegion(
   const mood = resolveWorldMood(region.biome, region.worldGen?.mood ?? 'auto', layerSeeds.dressing)
   const sizeScale = settings.size === 'small' ? .82 : settings.size === 'large' ? 1.22 : 1
   const chunkCount = Math.max(4, Math.round(intRange(routeRandom, region.chunkRange[0], region.chunkRange[1]) * sizeScale))
-  const spacing = 17.5 * sizeScale * WORLD_SPATIAL_SCALE
+  const spacing = FORGE_WORLD_SCALE.routeNodeSpacing * sizeScale
   const wanderBase = region.mainPath === 'direct' ? 4 : region.mainPath === 'winding' ? 9 : 14
   const wander =
     wanderBase *
     (0.7 + settings.exploration * .7) *
-    1.28
+    FORGE_WORLD_SCALE.routeWanderScale
   const nodes: GeneratedRegionNode[] = []
   const connections: GeneratedRegionConnection[] = []
   const mainIds: string[] = []
 
-  let z = (routeRandom() - .5) * 12.5
+  let z = (routeRandom() - .5) * FORGE_WORLD_SCALE.routeInitialLateralJitter
   for (let index = 0; index <= chunkCount; index += 1) {
     if (index > 0 && index < chunkCount) z += (routeRandom() - .5) * wander
     z = clamp(
       z,
-      -30 * sizeScale * 1.32,
-      30 * sizeScale * 1.32,
+      -30 * sizeScale * FORGE_WORLD_SCALE.routeLateralExtentScale,
+      30 * sizeScale * FORGE_WORLD_SCALE.routeLateralExtentScale,
     )
     const id = index === 0 ? 'entry' : index === chunkCount ? 'exit' : `route-${index}`
     const kind: GeneratedRegionNodeKind = index === 0 ? 'entry' : index === chunkCount ? 'exit' : 'route'
@@ -199,7 +194,7 @@ export function generateGuidedRegion(
       z,
       radius:
         (kind === 'route' ? 9 + settings.openSpace * 4 : 11) *
-        WORLD_CLEARING_SCALE,
+        FORGE_WORLD_SCALE.clearingRadiusScale,
       label: kind === 'entry' ? 'Forest Edge' : kind === 'exit' ? 'Old Road' : `Clearing ${index}`,
     })
     mainIds.push(id)
@@ -250,7 +245,7 @@ export function generateGuidedRegion(
         x: previousNode.x + heading.x * segmentLength,
         z: previousNode.z + heading.z * segmentLength,
         radius:
-          (7 + settings.openSpace * 2.5) * WORLD_CLEARING_SCALE,
+          (7 + settings.openSpace * 2.5) * FORGE_WORLD_SCALE.clearingRadiusScale,
         label: `Side Trail ${branchIndex + 1}`,
         parentId: previousId,
       }
@@ -334,7 +329,7 @@ export function generateGuidedRegion(
         frame.normal.z * side + frame.tangent.z * ((poiRandom() - .5) * .22),
       )
       const settlementDistance =
-        (13.5 + poiRandom() * 2.5) * 1.28
+        (13.5 + poiRandom() * 2.5) * FORGE_WORLD_SCALE.poiApproachScale
       nodes.push({
         id: 'settlement-1',
         kind: 'landmark',
@@ -360,8 +355,8 @@ export function generateGuidedRegion(
       const dungeonNode: GeneratedRegionNode = {
         id,
         kind: 'landmark',
-        x: anchor.x + (7 + poiRandom() * 4) * 1.24,
-        z: anchor.z + direction * (8 + poiRandom() * 5) * 1.24,
+        x: anchor.x + (7 + poiRandom() * 4) * FORGE_WORLD_SCALE.poiApproachScale,
+        z: anchor.z + direction * (8 + poiRandom() * 5) * FORGE_WORLD_SCALE.poiApproachScale,
         radius: poiRadius('dungeon'),
         label: titleCase(region.linkedDungeonId),
         parentId: anchor.id,
@@ -3875,7 +3870,7 @@ function buildDressing(
     sizeFactor *
     profile.dressingScale *
     moodProfile.dressingScale *
-    WORLD_DRESSING_DENSITY_SCALE,
+    FORGE_WORLD_SCALE.dressingDensityScale,
   )
   const dressing: GeneratedWorldDressing[] = []
   const clusterCount = Math.max(
@@ -3892,7 +3887,7 @@ function buildDressing(
     radius:
       (13 + random() * 20) *
       profile.clusterRadiusScale *
-      WORLD_CLUSTER_RADIUS_SCALE,
+      FORGE_WORLD_SCALE.dressingClusterRadiusScale,
     strength: .48 + random() * .52,
   }))
   let attempts = 0
@@ -4051,7 +4046,7 @@ function buildDressing(
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
     const baseScale = type === 'tree' || type === 'dead-tree'
-      ? (.62 + random() * 1.08) * profile.treeScale * WORLD_TREE_SCALE
+      ? (.62 + random() * 1.08) * profile.treeScale * FORGE_WORLD_SCALE.treeScale
       : type === 'rock'
         ? (.55 + random() * .82) * profile.rockScale
         : type === 'grass' || type === 'reeds'
@@ -4578,7 +4573,7 @@ function appendMoodSignatureDressing(
         z: round(z, 2),
         scale: round(
           (scaleMin + random() * (scaleMax - scaleMin)) *
-          (type === 'tree' || type === 'dead-tree' ? WORLD_TREE_SCALE : 1),
+          (type === 'tree' || type === 'dead-tree' ? FORGE_WORLD_SCALE.treeScale : 1),
           2,
         ),
         rotation: round(random() * Math.PI * 2, 3),
@@ -4626,7 +4621,7 @@ function poiApproachDistance(type: WorldPoiType) {
           type === 'camp' ? 8 :
             type === 'shrine' ? 7 :
               9
-  return base * 1.28
+  return base * FORGE_WORLD_SCALE.poiApproachScale
 }
 
 function poiRadius(type: WorldPoiType) {
@@ -4638,7 +4633,7 @@ function poiRadius(type: WorldPoiType) {
             type === 'standing-stones' || type === 'beast-den' ? 6.8 :
               type === 'shrine' ? 6.2 :
                 5.8
-  return base * 1.18
+  return base * FORGE_WORLD_SCALE.poiRadiusScale
 }
 
 function poiLabel(type: WorldPoiType) {
@@ -4946,7 +4941,7 @@ function worldSettings(region: ForgeRegionDefinition) {
 function calculateBounds(nodes: GeneratedRegionNode[], sizeScale: number) {
   const xs = nodes.map((node) => node.x)
   const zs = nodes.map((node) => node.z)
-  const margin = 19 * sizeScale * 1.34
+  const margin = FORGE_WORLD_SCALE.regionEdgeMargin * sizeScale
   return {
     minX: Math.min(...xs) - margin,
     maxX: Math.max(...xs) + margin,
