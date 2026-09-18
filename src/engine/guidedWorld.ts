@@ -201,32 +201,73 @@ export function generateGuidedRegion(
       guard += 1
     }
     usedAnchors.add(anchor)
+
     const anchorNode = nodes.find((item) => item.id === anchor)!
-    const direction = routeRandom() > .5 ? 1 : -1
+    const frame = routeFrameAt(nodes, mainIds, anchor)
+    const side = routeRandom() > .5 ? 1 : -1
+    const sideNormal = {
+      x: frame.normal.x * side,
+      z: frame.normal.z * side,
+    }
+    let heading = normalized2(
+      sideNormal.x + frame.tangent.x * ((routeRandom() - .5) * .28),
+      sideNormal.z + frame.tangent.z * ((routeRandom() - .5) * .28),
+    )
     const length = intRange(routeRandom, 1, settings.exploration > .78 ? 3 : 2)
     let previousId = anchor
+    let previousNode = anchorNode
 
     for (let step = 1; step <= length; step += 1) {
       const id = `branch-${branchIndex}-${step}`
+      const segmentLength = spacing * (.58 + routeRandom() * .14)
+      const turn = (routeRandom() - .5) * .34
+      heading = normalized2(
+        heading.x + frame.tangent.x * turn + sideNormal.x * .1,
+        heading.z + frame.tangent.z * turn + sideNormal.z * .1,
+      )
+
       const branchNode: GeneratedRegionNode = {
         id,
         kind: 'branch',
-        x: anchorNode.x + step * spacing * (.28 + routeRandom() * .32),
-        z: anchorNode.z + direction * step * spacing * (.68 + routeRandom() * .22),
+        x: previousNode.x + heading.x * segmentLength,
+        z: previousNode.z + heading.z * segmentLength,
         radius: 7 + settings.openSpace * 2.5,
         label: `Side Trail ${branchIndex + 1}`,
-        parentId: anchor,
+        parentId: previousId,
       }
       nodes.push(branchNode)
-      connections.push({ id: `branch-link-${branchIndex}-${step}`, from: previousId, to: id, kind: 'branch' })
+      connections.push({
+        id: `branch-link-${branchIndex}-${step}`,
+        from: previousId,
+        to: id,
+        kind: 'branch',
+      })
       previousId = id
+      previousNode = branchNode
     }
 
-    if (settings.loops > .45 && routeRandom() < settings.loops * .55 && usableMain.length > 2) {
-      const candidates = nodes.filter((item) => item.kind === 'route' && item.id !== anchor && Math.abs(item.x - anchorNode.x) > spacing * 1.3)
-      const reconnect = candidates.sort((a, b) => distance2D(a, nodes.find((item) => item.id === previousId)!) - distance2D(b, nodes.find((item) => item.id === previousId)!))[0]
-      if (reconnect && distance2D(reconnect, nodes.find((item) => item.id === previousId)!) < 38 * sizeScale) {
-        connections.push({ id: `loop-${branchIndex}`, from: previousId, to: reconnect.id, kind: 'branch' })
+    // Loops are deliberately local. A side trail may reconnect to one of the
+    // neighboring main-road nodes, but never throw a long diagonal shortcut
+    // across several route chunks.
+    if (settings.loops > .45 && routeRandom() < settings.loops * .55) {
+      const anchorIndex = mainIds.indexOf(anchor)
+      const reconnectIds = shuffle(
+        [mainIds[anchorIndex - 1], mainIds[anchorIndex + 1]]
+          .filter((id): id is string => Boolean(id && id !== 'entry' && id !== 'exit')),
+        routeRandom,
+      )
+      const reconnect = reconnectIds
+        .map((id) => nodes.find((item) => item.id === id))
+        .filter((item): item is GeneratedRegionNode => Boolean(item))
+        .sort((a, b) => distance2D(a, previousNode) - distance2D(b, previousNode))[0]
+
+      if (reconnect && distance2D(reconnect, previousNode) < 28 * sizeScale) {
+        connections.push({
+          id: `loop-${branchIndex}`,
+          from: previousId,
+          to: reconnect.id,
+          kind: 'branch',
+        })
       }
     }
   }
@@ -241,16 +282,38 @@ export function generateGuidedRegion(
     const target = landmarkTargets.splice(Math.floor(poiRandom() * landmarkTargets.length), 1)[0]
     if (!poiCycle.length) poiCycle = shuffle([...new Set(poiTypes)], poiRandom)
     const type = poiCycle.shift() ?? 'ruins'
-    const offsetAngle = poiRandom() * Math.PI * 2
     const baseOffset = poiApproachDistance(type)
+    let approachDirection: GeneratedWorldPoint
+
+    if (target.kind === 'branch' && target.parentId) {
+      const parent = nodes.find((item) => item.id === target.parentId)
+      const outward = parent
+        ? normalized2(target.x - parent.x, target.z - parent.z)
+        : { x: 0, z: 1 }
+      const lateral = { x: -outward.z, z: outward.x }
+      const jitter = (poiRandom() - .5) * .42
+      approachDirection = normalized2(
+        outward.x + lateral.x * jitter,
+        outward.z + lateral.z * jitter,
+      )
+    } else {
+      const frame = routeFrameAt(nodes, mainIds, target.id)
+      const side = poiRandom() > .5 ? 1 : -1
+      const jitter = (poiRandom() - .5) * .28
+      approachDirection = normalized2(
+        frame.normal.x * side + frame.tangent.x * jitter,
+        frame.normal.z * side + frame.tangent.z * jitter,
+      )
+    }
+
     const offsetDistance = target.kind === 'branch'
-      ? baseOffset * (.64 + poiRandom() * .24)
-      : baseOffset * (.9 + poiRandom() * .32)
+      ? baseOffset * (.78 + poiRandom() * .18)
+      : baseOffset * (.96 + poiRandom() * .18)
     const node: GeneratedRegionNode = {
       id: `landmark-${index}`,
       kind: 'landmark',
-      x: target.x + Math.cos(offsetAngle) * offsetDistance,
-      z: target.z + Math.sin(offsetAngle) * offsetDistance,
+      x: target.x + approachDirection.x * offsetDistance,
+      z: target.z + approachDirection.z * offsetDistance,
       radius: poiRadius(type),
       label: poiLabel(type),
       parentId: target.id,
@@ -266,11 +329,18 @@ export function generateGuidedRegion(
   if (poiRandom() < region.settlementChance) {
     const target = nodes.filter((node) => node.kind === 'route')[Math.max(0, Math.floor(chunkCount * .55) - 1)]
     if (target) {
+      const frame = routeFrameAt(nodes, mainIds, target.id)
+      const side = poiRandom() > .5 ? 1 : -1
+      const direction = normalized2(
+        frame.normal.x * side + frame.tangent.x * ((poiRandom() - .5) * .22),
+        frame.normal.z * side + frame.tangent.z * ((poiRandom() - .5) * .22),
+      )
+      const settlementDistance = 13.5 + poiRandom() * 2.5
       nodes.push({
         id: 'settlement-1',
         kind: 'landmark',
-        x: target.x + 4,
-        z: target.z + 5,
+        x: target.x + direction.x * settlementDistance,
+        z: target.z + direction.z * settlementDistance,
         radius: 10,
         label: 'Wayfarer Camp',
         parentId: target.id,
@@ -348,7 +418,6 @@ export function generateGuidedRegion(
 
   pruneBadLoopConnections(nodes, connections)
   pruneOrphanBranchTopology(nodes, connections)
-  rebalancePoiAnchors(nodes, connections, riverMask)
 
   // Find the likely bridge neighborhoods once using the cleaned graph, then move
   // ordinary branch/POI junctions away from those areas before building the final
@@ -1297,7 +1366,19 @@ function separatePostRiverLandmarks(
       ? Math.hypot(node.x - parent.x, node.z - parent.z)
       : node.radius + 7
     const baseDistance = Math.max(node.radius + 5.5, currentDistance)
-    const phase = (hashSeed(`poi-separation:${node.id}`) % 6283) / 1000
+    const preferredAngle = parent
+      ? Math.atan2(node.z - parent.z, node.x - parent.x)
+      : (hashSeed(`poi-separation:${node.id}`) % 6283) / 1000
+    const angleOffsets = [
+      0,
+      .18, -.18,
+      .36, -.36,
+      .58, -.58,
+      .82, -.82,
+      1.08, -1.08,
+      1.42, -1.42,
+      Math.PI,
+    ]
 
     let best:
       | { x: number; z: number; score: number; valid: boolean }
@@ -1305,8 +1386,8 @@ function separatePostRiverLandmarks(
 
     for (const ringScale of [1, 1.18, 1.38, 1.6]) {
       const radius = baseDistance * ringScale
-      for (let step = 0; step < 24; step += 1) {
-        const angle = phase + step / 24 * Math.PI * 2
+      for (const angleOffset of angleOffsets) {
+        const angle = preferredAngle + angleOffset
         const x = center.x + Math.cos(angle) * radius
         const z = center.z + Math.sin(angle) * radius
         if (
@@ -1496,59 +1577,6 @@ function pruneBadLoopConnections(
   }
 }
 
-function rebalancePoiAnchors(
-  nodes: GeneratedRegionNode[],
-  connections: GeneratedRegionConnection[],
-  mask: RiverOccupancyMask,
-) {
-  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
-  const poiConnections = connections.filter((connection) => {
-    const from = nodeMap.get(connection.from)
-    const to = nodeMap.get(connection.to)
-    return (
-      connection.kind === 'branch' &&
-      (from?.kind === 'landmark' || to?.kind === 'landmark')
-    )
-  })
-  const anchorUse = new Map<string, number>()
-
-  for (const connection of poiConnections) {
-    const from = nodeMap.get(connection.from)
-    const to = nodeMap.get(connection.to)
-    if (!from || !to) continue
-
-    const landmark = from.kind === 'landmark' ? from : to
-    const anchor = from.kind === 'landmark' ? to : from
-    const uses = anchorUse.get(anchor.id) ?? 0
-    anchorUse.set(anchor.id, uses + 1)
-    if (uses === 0) continue
-
-    const candidates = nodes
-      .filter((candidate) =>
-        (candidate.kind === 'route' || candidate.kind === 'branch') &&
-        candidate.id !== anchor.id &&
-        Math.hypot(candidate.x - landmark.x, candidate.z - landmark.z) <= 34 &&
-        riverOccupancySample(mask, candidate.x, candidate.z).signedDistance >= 4.5
-      )
-      .sort((a, b) => {
-        const aLoad = anchorUse.get(a.id) ?? 0
-        const bLoad = anchorUse.get(b.id) ?? 0
-        return (
-          Math.hypot(a.x - landmark.x, a.z - landmark.z) + aLoad * 9 -
-          (Math.hypot(b.x - landmark.x, b.z - landmark.z) + bLoad * 9)
-        )
-      })
-
-    const candidate = candidates[0]
-    if (!candidate) continue
-
-    if (connection.from === anchor.id) connection.from = candidate.id
-    else connection.to = candidate.id
-    if (landmark.parentId === anchor.id) landmark.parentId = candidate.id
-    anchorUse.set(candidate.id, (anchorUse.get(candidate.id) ?? 0) + 1)
-  }
-}
-
 function reanchorBranchesAwayFromCrossings(
   nodes: GeneratedRegionNode[],
   connections: GeneratedRegionConnection[],
@@ -1583,6 +1611,7 @@ function reanchorBranchesAwayFromCrossings(
   let changed = false
   for (const connection of connections) {
     if (connection.kind !== 'branch') continue
+    if (!/^branch-link-\\d+-1$/.test(connection.id)) continue
     if (crossings.some((crossing) => crossing.pathId === connection.id)) continue
 
     const from = nodeMap.get(connection.from)
@@ -1607,15 +1636,11 @@ function reanchorBranchesAwayFromCrossings(
     if (crossingDistance >= 12) continue
 
     const other = anchor === from ? to : from
-    const candidateIds = new Set<string>()
-    const firstHop = [...(mainNeighbors.get(anchor.id) ?? [])]
-    for (const id of firstHop) {
-      candidateIds.add(id)
-      for (const second of mainNeighbors.get(id) ?? []) {
-        if (second !== anchor.id) candidateIds.add(second)
-      }
-    }
+    if (other.kind !== 'branch') continue
 
+    // Bridge avoidance may only slide the root to an immediately neighboring
+    // main-road node. Never jump across two route chunks and never touch POI links.
+    const candidateIds = new Set<string>(mainNeighbors.get(anchor.id) ?? [])
     const currentLength = Math.hypot(other.x - anchor.x, other.z - anchor.z)
     const candidates = [...candidateIds]
       .map((id) => nodeMap.get(id))
@@ -1633,8 +1658,8 @@ function reanchorBranchesAwayFromCrossings(
         )
         const length = Math.hypot(other.x - candidate.x, other.z - candidate.z)
         return (
-          minCrossingDistance >= 14 &&
-          length <= Math.min(50, currentLength * 1.7 + 8)
+          minCrossingDistance >= 13 &&
+          length <= Math.min(22, currentLength * 1.22 + 5)
         )
       })
       .sort((a, b) => {
@@ -2076,9 +2101,9 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
     const length = Math.max(.001, Math.hypot(dx, dz))
     const nx = -dz / length
     const nz = dx / length
-    const bend = (random() - .5) * Math.min(link.kind === 'main' ? 7.5 : 5.5, length * .22)
-    const secondBend = (random() - .5) * Math.min(link.kind === 'main' ? 3.2 : 2.3, length * .11)
-    const baseWidth = link.kind === 'main' ? 3.05 : 1.04
+    const bend = (random() - .5) * Math.min(link.kind === 'main' ? 7.5 : 3.1, length * (link.kind === 'main' ? .22 : .15))
+    const secondBend = (random() - .5) * Math.min(link.kind === 'main' ? 3.2 : 1.25, length * (link.kind === 'main' ? .11 : .065))
+    const baseWidth = link.kind === 'main' ? 3.05 : .96
     const points: GeneratedWorldPoint[] = []
     const widths: number[] = []
     const segments = Math.max(10, Math.round(length / 2.35))
@@ -2086,14 +2111,14 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
 
     for (let index = 0; index <= segments; index += 1) {
       const t = index / segments
-      const eased = smoothstep(t)
+      const progress = link.kind === 'main' ? smoothstep(t) : t
       const lateral =
         Math.sin(t * Math.PI) * bend +
         Math.sin(t * Math.PI * 2) * secondBend +
-        Math.sin(t * Math.PI * 3 + widthPhase) * Math.min(.65, length * .018)
+        Math.sin(t * Math.PI * 3 + widthPhase) * Math.min(link.kind === 'main' ? .65 : .32, length * .018)
       points.push({
-        x: from.x + dx * eased + nx * lateral,
-        z: from.z + dz * eased + nz * lateral,
+        x: from.x + dx * progress + nx * lateral,
+        z: from.z + dz * progress + nz * lateral,
       })
       const junctionBlend = .9 + Math.pow(Math.abs(t - .5) * 2, 2) * .13
       const naturalVariation =
@@ -3972,6 +3997,33 @@ function shuffle<T>(values: T[], random: () => number) {
 
 function distance2D(a: GeneratedRegionNode, b: GeneratedRegionNode) {
   return Math.hypot(a.x - b.x, a.z - b.z)
+}
+
+function routeFrameAt(
+  nodes: GeneratedRegionNode[],
+  mainIds: string[],
+  nodeId: string,
+) {
+  const index = mainIds.indexOf(nodeId)
+  const node = nodes.find((item) => item.id === nodeId)
+  if (!node || index < 0) {
+    return {
+      tangent: { x: 1, z: 0 },
+      normal: { x: 0, z: 1 },
+    }
+  }
+
+  const previous = nodes.find((item) => item.id === mainIds[Math.max(0, index - 1)])
+  const next = nodes.find((item) => item.id === mainIds[Math.min(mainIds.length - 1, index + 1)])
+  const tangent = normalized2(
+    (next?.x ?? node.x + 1) - (previous?.x ?? node.x - 1),
+    (next?.z ?? node.z) - (previous?.z ?? node.z),
+  )
+
+  return {
+    tangent,
+    normal: { x: -tangent.z, z: tangent.x },
+  }
 }
 
 function smoothstep(value: number) {
