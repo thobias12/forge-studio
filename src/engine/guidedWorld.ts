@@ -569,6 +569,26 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
   )
 }
 
+export function worldBoundaryBackdropHeight(region: GeneratedRegion, margin = 1.25) {
+  const terrainFloor = region.terrain.heights.reduce(
+    (lowest, height) => Number.isFinite(height) ? Math.min(lowest, height) : lowest,
+    Infinity,
+  )
+  const renderProfile = streamRenderProfile(region)
+  const riverFloor = renderProfile.heights.reduce(
+    (lowest, height) => Number.isFinite(height) ? Math.min(lowest, height) : lowest,
+    Infinity,
+  )
+  const sceneFloor = Math.min(terrainFloor, riverFloor)
+
+  // The boundary backdrop spans underneath the whole playable terrain. Keep it
+  // below every terrain and rendered-river height so deep channels can never
+  // disappear behind this otherwise invisible support plane.
+  return Number.isFinite(sceneFloor)
+    ? sceneFloor - Math.max(.5, margin)
+    : -3
+}
+
 function densifyStreamRenderProfile(
   points: GeneratedWorldPoint[],
   widths: number[],
