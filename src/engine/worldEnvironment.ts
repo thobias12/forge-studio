@@ -560,7 +560,7 @@ export function applyWorldEnvironmentToScene(
       .08 + sample.night * .12 + sample.rain * .03
     installWaterMotion(refs.waterMaterial)
     const shader = refs.waterMaterial.userData.forgeWaterShader as
-      | THREE.WebGLProgramParametersWithUniforms
+      | any
       | undefined
     if (shader) {
       if (shader.uniforms.uForgeWaterTime) {
@@ -576,7 +576,7 @@ export function applyWorldEnvironmentToScene(
   for (const material of refs.windMaterials) {
     installWindMotion(material)
     const shader = material.userData.forgeWindShader as
-      | THREE.WebGLProgramParametersWithUniforms
+      | any
       | undefined
     if (!shader) continue
     shader.uniforms.uForgeWindTime.value = elapsedSeconds
