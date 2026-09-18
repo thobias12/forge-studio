@@ -3304,7 +3304,7 @@ function runtimeMoodStyle(mood: GeneratedRegion['mood']) {
     return {
       background: 0x101813,
       fog: 0x142019,
-      fogDensity: .0088,
+      fogDensity: .0094,
       exposure: .94,
       hemisphereSky: 0xb7c8bb,
       hemisphereGround: 0x18211b,
@@ -3325,7 +3325,7 @@ function runtimeMoodStyle(mood: GeneratedRegion['mood']) {
     return {
       background: 0x141713,
       fog: 0x1b2119,
-      fogDensity: .0084,
+      fogDensity: .0092,
       exposure: .98,
       hemisphereSky: 0xc4c7b8,
       hemisphereGround: 0x241f18,
@@ -3346,7 +3346,7 @@ function runtimeMoodStyle(mood: GeneratedRegion['mood']) {
     return {
       background: 0x1b211f,
       fog: 0x242b27,
-      fogDensity: .0078,
+      fogDensity: .0085,
       exposure: 1.01,
       hemisphereSky: 0xc5ceca,
       hemisphereGround: 0x262b28,
@@ -3366,7 +3366,7 @@ function runtimeMoodStyle(mood: GeneratedRegion['mood']) {
   return {
     background: 0x162119,
     fog: 0x18251c,
-    fogDensity: .009,
+    fogDensity: .0094,
     exposure: 1.18,
     hemisphereSky: 0xc6d8c8,
     hemisphereGround: 0x202b22,

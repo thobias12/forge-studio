@@ -2779,7 +2779,7 @@ function editorMoodStyle(mood: GeneratedRegion['mood']) {
     return {
       background: 0x101813,
       fog: 0x142019,
-      fogDensity: .0072,
+      fogDensity: .0078,
       exposure: .96,
       hemisphere: 1.62,
       sun: 2.15,
@@ -2796,7 +2796,7 @@ function editorMoodStyle(mood: GeneratedRegion['mood']) {
     return {
       background: 0x141713,
       fog: 0x1b2119,
-      fogDensity: .0069,
+      fogDensity: .0075,
       exposure: 1,
       hemisphere: 1.78,
       sun: 2.28,
@@ -2813,7 +2813,7 @@ function editorMoodStyle(mood: GeneratedRegion['mood']) {
     return {
       background: 0x1b211f,
       fog: 0x242b27,
-      fogDensity: .0066,
+      fogDensity: .0071,
       exposure: 1.03,
       hemisphere: 1.88,
       sun: 2.36,
@@ -2829,7 +2829,7 @@ function editorMoodStyle(mood: GeneratedRegion['mood']) {
   return {
     background: 0x17231a,
     fog: 0x1a281e,
-    fogDensity: .0064,
+    fogDensity: .0069,
     exposure: 1.22,
     hemisphere: 2.25,
     sun: 3.1,
