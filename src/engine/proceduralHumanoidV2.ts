@@ -76,7 +76,14 @@ export function createProceduralStarterHumanoidV2(config: ForgeCharacterConfig, 
 }
 
 export function createProceduralBaseHumanoidV2(config: ForgeCharacterConfig, starterClass: SkillboundStarterClass): ForgeCharacterBuild {
-  const styled = styledConfig(config, starterClass)
+  const styled: ForgeCharacterConfig = {
+    ...config,
+    species: 'bandit',
+    armor: 'none',
+    headwear: 'none',
+    weapon: 'none',
+    asymmetry: 0,
+  }
   const build = createProceduralCharacter(styled)
   stripOldVisuals(build.root)
   const palette = paletteFor(config, starterClass)
