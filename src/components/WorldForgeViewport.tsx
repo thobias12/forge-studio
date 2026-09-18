@@ -793,6 +793,13 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const shrubs = region.dressing.filter((item) => item.type === 'shrub')
   const reeds = region.dressing.filter((item) => item.type === 'reeds')
   const bankPatches = region.dressing.filter((item) => item.type === 'bank-patch')
+  const leafPatches = region.dressing.filter((item) => item.type === 'leaf-patch')
+  const flowerPatches = region.dressing.filter((item) => item.type === 'flower-patch')
+  const mudPatches = region.dressing.filter((item) => item.type === 'mud-patch')
+  const corruptScars = region.dressing.filter((item) => item.type === 'corrupt-scar')
+  const rockOutcrops = region.dressing.filter((item) => item.type === 'rock-outcrop')
+  const hedges = region.dressing.filter((item) => item.type === 'hedge')
+  const rootClusters = region.dressing.filter((item) => item.type === 'root-cluster')
   const palette = editorBiomePalette(region.biome)
   const surfacePalette = editorSurfacePalette(region.biome)
 
@@ -825,8 +832,241 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
     group.add(mesh)
   }
 
+  const addGroundPatches = (
+    items: typeof leafPatches,
+    color: number | THREE.Color,
+    widthScale: number,
+    depthScale: number,
+  ) => {
+    if (!items.length) return
+    const geometry = new THREE.CircleGeometry(1, 9)
+    geometry.rotateX(-Math.PI / 2)
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 1,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    })
+    const mesh = new THREE.InstancedMesh(geometry, material, items.length)
+    setInstances(mesh, items, (item) => ({
+      position: new THREE.Vector3(item.x, item.y + .031, item.z),
+      rotation: new THREE.Euler(0, item.rotation, 0),
+      scale: new THREE.Vector3(
+        item.scale * widthScale * (1 + item.variant * .07),
+        1,
+        item.scale * depthScale * (1 + (item.variant % 2) * .08),
+      ),
+    }))
+    mesh.receiveShadow = true
+    mesh.renderOrder = 2
+    group.add(mesh)
+  }
+
+  addGroundPatches(leafPatches, 0x75502f, 1.45, .68)
+  addGroundPatches(
+    mudPatches,
+    new THREE.Color(surfacePalette.soil)
+      .lerp(new THREE.Color(palette.low), .48)
+      .multiplyScalar(.72),
+    1.55,
+    .74,
+  )
+  addGroundPatches(corruptScars, 0x3a293d, 1.7, .48)
+
+  if (flowerPatches.length) {
+    const flowerGeometry = new THREE.DodecahedronGeometry(.085, 0)
+    const warmMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd2b85e,
+      roughness: 1,
+    })
+    const coolMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8d77b5,
+      roughness: 1,
+    })
+    const warm = new THREE.InstancedMesh(
+      flowerGeometry,
+      warmMaterial,
+      flowerPatches.length * 3,
+    )
+    const cool = new THREE.InstancedMesh(
+      flowerGeometry,
+      coolMaterial,
+      flowerPatches.length * 2,
+    )
+    const matrix = new THREE.Matrix4()
+    const quaternion = new THREE.Quaternion()
+    const scale = new THREE.Vector3()
+    let warmCursor = 0
+    let coolCursor = 0
+    flowerPatches.forEach((item) => {
+      for (let petal = 0; petal < 5; petal += 1) {
+        const angle = item.rotation + petal * 2.399
+        const radius = (.16 + (petal % 3) * .11) * item.scale
+        const size = item.scale * (.72 + (petal % 2) * .18)
+        quaternion.setFromEuler(new THREE.Euler(0, angle, 0))
+        scale.setScalar(size)
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + Math.cos(angle) * radius,
+            item.y + .08 + (petal % 2) * .025,
+            item.z + Math.sin(angle) * radius,
+          ),
+          quaternion,
+          scale,
+        )
+        if (petal < 3) warm.setMatrixAt(warmCursor++, matrix)
+        else cool.setMatrixAt(coolCursor++, matrix)
+      }
+    })
+    group.add(warm, cool)
+  }
+
+  if (rockOutcrops.length) {
+    const geometry = new THREE.DodecahedronGeometry(.72, 0)
+    const material = new THREE.MeshStandardMaterial({
+      color: palette.rock,
+      roughness: 1,
+    })
+    const pieces = new THREE.InstancedMesh(
+      geometry,
+      material,
+      rockOutcrops.length * 3,
+    )
+    const matrix = new THREE.Matrix4()
+    const quaternion = new THREE.Quaternion()
+    const scale = new THREE.Vector3()
+    let cursor = 0
+    rockOutcrops.forEach((item) => {
+      for (let piece = 0; piece < 3; piece += 1) {
+        const angle = item.rotation + piece * 2.12 + item.variant * .17
+        const radius = piece === 0 ? 0 : (.52 + piece * .12) * item.scale
+        const size = item.scale * (piece === 0 ? 1.22 : .72 + piece * .08)
+        quaternion.setFromEuler(
+          new THREE.Euler(
+            angle * .08,
+            angle,
+            (piece - 1) * .16,
+          ),
+        )
+        scale.set(size * 1.12, size * (.62 + piece * .11), size)
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + Math.cos(angle) * radius,
+            item.y + .32 * size,
+            item.z + Math.sin(angle) * radius,
+          ),
+          quaternion,
+          scale,
+        )
+        pieces.setMatrixAt(cursor++, matrix)
+      }
+    })
+    pieces.castShadow = true
+    pieces.receiveShadow = true
+    group.add(pieces)
+  }
+
+  if (hedges.length) {
+    const geometry = new THREE.DodecahedronGeometry(.55, 0)
+    const hedgeColor = new THREE.Color(palette.tree)
+      .lerp(new THREE.Color(palette.fern), .55)
+    const material = new THREE.MeshStandardMaterial({
+      color: hedgeColor,
+      roughness: 1,
+    })
+    const pieces = new THREE.InstancedMesh(
+      geometry,
+      material,
+      hedges.length * 4,
+    )
+    const matrix = new THREE.Matrix4()
+    const quaternion = new THREE.Quaternion()
+    const scale = new THREE.Vector3()
+    let cursor = 0
+    hedges.forEach((item) => {
+      const cos = Math.cos(item.rotation)
+      const sin = Math.sin(item.rotation)
+      for (let piece = 0; piece < 4; piece += 1) {
+        const along = (piece - 1.5) * .68 * item.scale
+        quaternion.setFromEuler(
+          new THREE.Euler(0, item.rotation + (piece % 2) * .16, 0),
+        )
+        scale.set(
+          item.scale * .82,
+          item.scale * (.58 + (piece % 2) * .08),
+          item.scale * .7,
+        )
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + cos * along,
+            item.y + .34 * item.scale,
+            item.z + sin * along,
+          ),
+          quaternion,
+          scale,
+        )
+        pieces.setMatrixAt(cursor++, matrix)
+      }
+    })
+    pieces.castShadow = true
+    group.add(pieces)
+  }
+
+  if (rootClusters.length) {
+    const geometry = new THREE.CylinderGeometry(.07, .13, 2.15, 5)
+    geometry.rotateZ(Math.PI / 2)
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x423027,
+      roughness: 1,
+    })
+    const roots = new THREE.InstancedMesh(
+      geometry,
+      material,
+      rootClusters.length * 3,
+    )
+    const matrix = new THREE.Matrix4()
+    const quaternion = new THREE.Quaternion()
+    const scale = new THREE.Vector3()
+    let cursor = 0
+    rootClusters.forEach((item) => {
+      for (let root = 0; root < 3; root += 1) {
+        const angle =
+          item.rotation +
+          root * (1.72 + item.variant * .04) +
+          (root === 2 ? .35 : 0)
+        const radius = root * .16 * item.scale
+        quaternion.setFromEuler(
+          new THREE.Euler(
+            (root - 1) * .08,
+            angle,
+            (root % 2 ? -.08 : .1),
+          ),
+        )
+        scale.set(
+          item.scale * (.72 + root * .12),
+          item.scale * (.72 + root * .08),
+          item.scale * (.72 + root * .12),
+        )
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + Math.cos(angle) * radius,
+            item.y + .1 + root * .025,
+            item.z + Math.sin(angle) * radius,
+          ),
+          quaternion,
+          scale,
+        )
+        roots.setMatrixAt(cursor++, matrix)
+      }
+    })
+    roots.castShadow = true
+    group.add(roots)
+  }
+
   if (trees.length) {
-    const trunkGeometry = new THREE.CylinderGeometry(.2, .35, 3.25, 7)
+    const trunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
     const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 })
     const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
     const matrix = new THREE.Matrix4()
@@ -836,12 +1076,12 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
     trees.forEach((item, index) => {
       quaternion.setFromEuler(new THREE.Euler(0, item.rotation, 0))
       scale.set(
-        item.scale * (.92 + item.variant * .02),
+        item.scale * (.9 + item.variant * .02),
         item.scale * (1 + item.variant * .025),
-        item.scale * (.92 + item.variant * .02),
+        item.scale * (.9 + item.variant * .02),
       )
       matrix.compose(
-        new THREE.Vector3(item.x, item.y + 1.56 * item.scale, item.z),
+        new THREE.Vector3(item.x, item.y + 1.66 * item.scale, item.z),
         quaternion,
         scale,
       )
@@ -855,22 +1095,32 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       trees.filter((item) => item.variant === variant)
     )
     const lowerGeometries: THREE.BufferGeometry[] = [
-      new THREE.ConeGeometry(1.5, 3.25, 7),
-      new THREE.ConeGeometry(1.7, 2.75, 8),
-      new THREE.DodecahedronGeometry(1.34, 0),
-      new THREE.ConeGeometry(1.3, 3.6, 7),
+      new THREE.ConeGeometry(1.52, 2.75, 7),
+      new THREE.ConeGeometry(1.72, 2.35, 8),
+      new THREE.DodecahedronGeometry(1.18, 0),
+      new THREE.ConeGeometry(1.34, 2.95, 7),
+    ]
+    const middleGeometries: THREE.BufferGeometry[] = [
+      new THREE.ConeGeometry(1.18, 2.45, 7),
+      new THREE.ConeGeometry(1.32, 2.15, 8),
+      new THREE.DodecahedronGeometry(1.04, 0),
+      new THREE.ConeGeometry(1.04, 2.55, 7),
     ]
     const upperGeometries: THREE.BufferGeometry[] = [
-      new THREE.ConeGeometry(1.02, 2.65, 7),
-      new THREE.ConeGeometry(1.14, 2.35, 8),
-      new THREE.DodecahedronGeometry(.96, 0),
-      new THREE.ConeGeometry(.86, 2.8, 7),
+      new THREE.ConeGeometry(.82, 2.15, 7),
+      new THREE.ConeGeometry(.9, 1.92, 8),
+      new THREE.DodecahedronGeometry(.82, 0),
+      new THREE.ConeGeometry(.7, 2.2, 7),
     ]
-    const crownMaterial = new THREE.MeshStandardMaterial({
+    const lowerMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(palette.tree).multiplyScalar(.94),
+      roughness: 1,
+    })
+    const middleMaterial = new THREE.MeshStandardMaterial({
       color: palette.tree,
       roughness: 1,
     })
-    const upperCrownMaterial = new THREE.MeshStandardMaterial({
+    const upperMaterial = new THREE.MeshStandardMaterial({
       color: new THREE.Color(palette.tree).multiplyScalar(1.08),
       roughness: 1,
     })
@@ -879,45 +1129,83 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       if (!items.length) return
       const lower = new THREE.InstancedMesh(
         lowerGeometries[variant],
-        crownMaterial,
+        lowerMaterial,
+        items.length,
+      )
+      const middle = new THREE.InstancedMesh(
+        middleGeometries[variant],
+        middleMaterial,
         items.length,
       )
       const upper = new THREE.InstancedMesh(
         upperGeometries[variant],
-        upperCrownMaterial,
+        upperMaterial,
         items.length,
       )
 
       items.forEach((item, index) => {
-        quaternion.setFromEuler(new THREE.Euler(0, item.rotation, 0))
         const broadleaf = variant === 2
+        const cos = Math.cos(item.rotation)
+        const sin = Math.sin(item.rotation)
+        const worldOffset = (localX: number, localZ: number) => ({
+          x: cos * localX - sin * localZ,
+          z: sin * localX + cos * localZ,
+        })
+        quaternion.setFromEuler(new THREE.Euler(0, item.rotation, 0))
+
+        const lowerOffset = broadleaf
+          ? worldOffset(-.22 * item.scale, .05 * item.scale)
+          : { x: 0, z: 0 }
         scale.set(
           item.scale,
-          item.scale * (broadleaf ? 1.22 : 1),
+          item.scale * (broadleaf ? 1.06 : 1),
           item.scale,
         )
         matrix.compose(
           new THREE.Vector3(
-            item.x,
-            item.y + (broadleaf ? 3.75 : 3.55) * item.scale,
-            item.z,
+            item.x + lowerOffset.x,
+            item.y + (broadleaf ? 3.7 : 3.4) * item.scale,
+            item.z + lowerOffset.z,
           ),
           quaternion,
           scale,
         )
         lower.setMatrixAt(index, matrix)
 
-        const upperScale = broadleaf ? .8 : .92
+        const middleOffset = broadleaf
+          ? worldOffset(.3 * item.scale, -.12 * item.scale)
+          : { x: 0, z: 0 }
+        const middleScale = broadleaf ? .94 : .82
+        scale.set(
+          item.scale * middleScale,
+          item.scale * middleScale * (broadleaf ? 1.08 : 1),
+          item.scale * middleScale,
+        )
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + middleOffset.x,
+            item.y + (broadleaf ? 4.25 : 4.3) * item.scale,
+            item.z + middleOffset.z,
+          ),
+          quaternion,
+          scale,
+        )
+        middle.setMatrixAt(index, matrix)
+
+        const upperOffset = broadleaf
+          ? worldOffset(.04 * item.scale, .26 * item.scale)
+          : { x: 0, z: 0 }
+        const upperScale = broadleaf ? .78 : .62
         scale.set(
           item.scale * upperScale,
-          item.scale * upperScale * (broadleaf ? 1.12 : 1),
+          item.scale * upperScale * (broadleaf ? 1.08 : 1),
           item.scale * upperScale,
         )
         matrix.compose(
           new THREE.Vector3(
-            item.x,
-            item.y + (broadleaf ? 4.55 : 4.75) * item.scale,
-            item.z,
+            item.x + upperOffset.x,
+            item.y + (broadleaf ? 4.75 : 5.08) * item.scale,
+            item.z + upperOffset.z,
           ),
           quaternion,
           scale,
@@ -926,20 +1214,27 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       })
 
       lower.castShadow = true
+      middle.castShadow = true
       upper.castShadow = true
-      group.add(lower, upper)
+      group.add(lower, middle, upper)
     })
   }
 
   if (deadTrees.length) {
-    const trunkGeometry = new THREE.CylinderGeometry(.14, .32, 4.5, 6)
-    const branchGeometry = new THREE.CylinderGeometry(.055, .12, 1.45, 5)
+    const lowerTrunkGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
+    const upperTrunkGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
+    const branchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
     const deadWood = new THREE.MeshStandardMaterial({
-      color: 0x4a4037,
+      color: 0x493b31,
       roughness: 1,
     })
-    const trunks = new THREE.InstancedMesh(
-      trunkGeometry,
+    const lowerTrunks = new THREE.InstancedMesh(
+      lowerTrunkGeometry,
+      deadWood,
+      deadTrees.length,
+    )
+    const upperTrunks = new THREE.InstancedMesh(
+      upperTrunkGeometry,
       deadWood,
       deadTrees.length,
     )
@@ -958,39 +1253,74 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
     const scale = new THREE.Vector3()
 
     deadTrees.forEach((item, index) => {
-      const heightScale = .9 + item.variant * .045
+      const leanYaw = item.rotation + .5 + item.variant * .43
+      const lowerLean = .035 + item.variant * .012
       quaternion.setFromEuler(
-        new THREE.Euler(0, item.rotation, (item.variant - 1.5) * .035),
+        new THREE.Euler(
+          Math.sin(leanYaw) * lowerLean,
+          item.rotation,
+          Math.cos(leanYaw) * lowerLean,
+        ),
       )
-      scale.set(item.scale, item.scale * heightScale, item.scale)
+      scale.set(item.scale, item.scale, item.scale)
       matrix.compose(
-        new THREE.Vector3(item.x, item.y + 2.05 * item.scale, item.z),
+        new THREE.Vector3(item.x, item.y + 1.18 * item.scale, item.z),
         quaternion,
         scale,
       )
-      trunks.setMatrixAt(index, matrix)
+      lowerTrunks.setMatrixAt(index, matrix)
 
-      const aYaw = item.rotation + .28 + item.variant * .22
-      quaternion.setFromEuler(new THREE.Euler(0, aYaw, 1.02))
-      scale.set(item.scale, item.scale, item.scale)
+      const bend = .16 + item.variant * .025
+      const upperX = Math.cos(leanYaw) * bend * item.scale
+      const upperZ = Math.sin(leanYaw) * bend * item.scale
+      quaternion.setFromEuler(
+        new THREE.Euler(
+          Math.sin(leanYaw) * (.1 + item.variant * .014),
+          item.rotation + .08 * (item.variant - 1.5),
+          Math.cos(leanYaw) * (.1 + item.variant * .014),
+        ),
+      )
       matrix.compose(
         new THREE.Vector3(
-          item.x + Math.cos(aYaw) * .34 * item.scale,
-          item.y + 3.05 * item.scale,
-          item.z + Math.sin(aYaw) * .34 * item.scale,
+          item.x + upperX,
+          item.y + 3.18 * item.scale,
+          item.z + upperZ,
+        ),
+        quaternion,
+        scale,
+      )
+      upperTrunks.setMatrixAt(index, matrix)
+
+      const aYaw = item.rotation + .42 + item.variant * .31
+      quaternion.setFromEuler(
+        new THREE.Euler(.08, aYaw, .72 + item.variant * .035),
+      )
+      scale.set(
+        item.scale * (.82 + item.variant * .04),
+        item.scale,
+        item.scale * (.82 + item.variant * .04),
+      )
+      matrix.compose(
+        new THREE.Vector3(
+          item.x + upperX + Math.cos(aYaw) * .24 * item.scale,
+          item.y + 2.68 * item.scale,
+          item.z + upperZ + Math.sin(aYaw) * .24 * item.scale,
         ),
         quaternion,
         scale,
       )
       branchA.setMatrixAt(index, matrix)
 
-      const bYaw = item.rotation + Math.PI + .18 - item.variant * .12
-      quaternion.setFromEuler(new THREE.Euler(0, bYaw, .92))
+      const bYaw = item.rotation + 2.08 - item.variant * .17
+      quaternion.setFromEuler(
+        new THREE.Euler(-.06, bYaw, -1.02 + item.variant * .045),
+      )
+      scale.set(item.scale * .72, item.scale * .88, item.scale * .72)
       matrix.compose(
         new THREE.Vector3(
-          item.x + Math.cos(bYaw) * .3 * item.scale,
-          item.y + 3.55 * item.scale,
-          item.z + Math.sin(bYaw) * .3 * item.scale,
+          item.x + upperX + Math.cos(bYaw) * .18 * item.scale,
+          item.y + 3.68 * item.scale,
+          item.z + upperZ + Math.sin(bYaw) * .18 * item.scale,
         ),
         quaternion,
         scale,
@@ -998,11 +1328,13 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       branchB.setMatrixAt(index, matrix)
     })
 
-    trunks.castShadow = true
-    trunks.receiveShadow = true
+    lowerTrunks.castShadow = true
+    lowerTrunks.receiveShadow = true
+    upperTrunks.castShadow = true
+    upperTrunks.receiveShadow = true
     branchA.castShadow = true
     branchB.castShadow = true
-    group.add(trunks, branchA, branchB)
+    group.add(lowerTrunks, upperTrunks, branchA, branchB)
   }
 
   if (rocks.length) {

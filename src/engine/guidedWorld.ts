@@ -2,7 +2,7 @@ import type { ForgeRegionDefinition } from './forgeProject'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
-export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch'
+export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch' | 'leaf-patch' | 'flower-patch' | 'mud-patch' | 'corrupt-scar' | 'rock-outcrop' | 'hedge' | 'root-cluster'
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
 
 export type GeneratedMicroBiome = {
@@ -3984,7 +3984,234 @@ function buildDressing(
 
   appendPoiTransitionDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   appendRiverbankDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
+  appendBiomeSignatureDressing(
+    region,
+    dressing,
+    terrain,
+    bounds,
+    paths,
+    pois,
+    riverMask,
+    random,
+  )
   return dressing
+}
+
+function appendBiomeSignatureDressing(
+  region: ForgeRegionDefinition,
+  dressing: GeneratedWorldDressing[],
+  terrain: GeneratedWorldTerrain,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
+  random: () => number,
+) {
+  const biome = region.biome.toLowerCase()
+  const settings = worldSettings(region)
+  const sizeFactor =
+    settings.size === 'large' ? 1.35 :
+      settings.size === 'small' ? .72 :
+        1
+
+  const pushSignature = (
+    type: WorldDressingType,
+    count: number,
+    options: {
+      minPath?: number
+      minRiver?: number
+      minPoi?: number
+      scaleMin: number
+      scaleMax: number
+      accept?: (
+        x: number,
+        z: number,
+        micro: ReturnType<typeof microBiomeInfluence>,
+        pathDistance: number,
+        riverClearance: number,
+      ) => boolean
+    },
+  ) => {
+    let placed = 0
+    let attempts = 0
+    const target = Math.max(1, Math.round(count * sizeFactor))
+
+    while (placed < target && attempts < target * 28) {
+      attempts += 1
+      const x = bounds.minX + 2.2 + random() * (bounds.maxX - bounds.minX - 4.4)
+      const z = bounds.minZ + 2.2 + random() * (bounds.maxZ - bounds.minZ - 4.4)
+      const pathDistance = distanceToPaths(x, z, paths)
+      if (pathDistance < (options.minPath ?? 3.2)) continue
+
+      const riverClearance = riverMask.points.length
+        ? riverOccupancySample(riverMask, x, z).signedDistance
+        : Infinity
+      if (riverClearance < (options.minRiver ?? 1.2)) continue
+
+      const poiDistance = pois.reduce(
+        (best, poi) =>
+          Math.min(
+            best,
+            Math.hypot(x - poi.x, z - poi.z) - poi.radius,
+          ),
+        Infinity,
+      )
+      if (poiDistance < (options.minPoi ?? 2.8)) continue
+
+      const micro = microBiomeInfluence(terrain.microBiomes, x, z)
+      if (options.accept && !options.accept(x, z, micro, pathDistance, riverClearance)) {
+        continue
+      }
+
+      dressing.push({
+        id: `biome-signature-${type}-${placed}`,
+        type,
+        x: round(x, 2),
+        y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
+        z: round(z, 2),
+        scale: round(
+          options.scaleMin +
+          random() * (options.scaleMax - options.scaleMin),
+          2,
+        ),
+        rotation: round(random() * Math.PI * 2, 3),
+        variant: Math.floor(random() * 4),
+      })
+      placed += 1
+    }
+  }
+
+  if (biome.includes('autumn')) {
+    pushSignature('leaf-patch', 34, {
+      minPath: 2.6,
+      minRiver: 1,
+      minPoi: 2.2,
+      scaleMin: .9,
+      scaleMax: 1.75,
+      accept: (_x, _z, micro) =>
+        micro['forest-floor'] > .1 ||
+        micro.meadow > .1 ||
+        random() < .42,
+    })
+    pushSignature('root-cluster', 6, {
+      minPath: 3.6,
+      minRiver: 1.4,
+      scaleMin: .7,
+      scaleMax: 1.15,
+      accept: (_x, _z, micro) =>
+        micro['forest-floor'] > .18 || random() < .3,
+    })
+    return
+  }
+
+  if (biome.includes('highland')) {
+    pushSignature('rock-outcrop', 22, {
+      minPath: 4,
+      minRiver: 1.8,
+      minPoi: 3.4,
+      scaleMin: .9,
+      scaleMax: 1.55,
+      accept: (x, z, micro) =>
+        micro.rocky > .16 ||
+        sampleTerrainHeight({ terrain, bounds }, x, z) > 1.3 ||
+        random() < .24,
+    })
+    return
+  }
+
+  if (
+    biome.includes('marsh') ||
+    biome.includes('swamp') ||
+    biome.includes('drowned')
+  ) {
+    pushSignature('mud-patch', 30, {
+      minPath: 2.7,
+      minRiver: .72,
+      minPoi: 2.4,
+      scaleMin: 1.1,
+      scaleMax: 2.25,
+      accept: (_x, _z, micro, _pathDistance, riverClearance) =>
+        micro.moss > .12 ||
+        riverClearance < 8 ||
+        random() < .24,
+    })
+    pushSignature('root-cluster', 10, {
+      minPath: 3.3,
+      minRiver: 1,
+      scaleMin: .75,
+      scaleMax: 1.25,
+      accept: (_x, _z, micro, _pathDistance, riverClearance) =>
+        micro.moss > .14 ||
+        riverClearance < 7 ||
+        random() < .22,
+    })
+    return
+  }
+
+  if (biome.includes('corrupt')) {
+    pushSignature('corrupt-scar', 26, {
+      minPath: 2.8,
+      minRiver: .9,
+      minPoi: 2.4,
+      scaleMin: 1,
+      scaleMax: 2.1,
+      accept: (_x, _z, micro) =>
+        micro.scrub > .1 ||
+        micro.rocky > .1 ||
+        random() < .3,
+    })
+    pushSignature('root-cluster', 16, {
+      minPath: 3.4,
+      minRiver: 1,
+      scaleMin: .8,
+      scaleMax: 1.35,
+      accept: (_x, _z, micro) =>
+        micro.scrub > .14 ||
+        micro['forest-floor'] > .14 ||
+        random() < .24,
+    })
+    return
+  }
+
+  if (
+    biome.includes('farmland') ||
+    biome.includes('meadow') ||
+    biome.includes('grassland')
+  ) {
+    pushSignature('flower-patch', 28, {
+      minPath: 2.9,
+      minRiver: 1.1,
+      minPoi: 2.5,
+      scaleMin: .8,
+      scaleMax: 1.45,
+      accept: (_x, _z, micro) =>
+        micro.meadow > .1 || random() < .34,
+    })
+    pushSignature('hedge', 12, {
+      minPath: 4.5,
+      minRiver: 1.7,
+      minPoi: 3.2,
+      scaleMin: .78,
+      scaleMax: 1.18,
+      accept: (_x, _z, micro, pathDistance) =>
+        (micro.meadow > .08 && pathDistance < 19) ||
+        random() < .16,
+    })
+    return
+  }
+
+  // Ancient Forest / default woodland gets a small amount of exposed roots
+  // rather than a new bright surface treatment.
+  pushSignature('root-cluster', 11, {
+    minPath: 3.7,
+    minRiver: 1.2,
+    scaleMin: .78,
+    scaleMax: 1.3,
+    accept: (_x, _z, micro) =>
+      micro['forest-floor'] > .12 ||
+      micro.moss > .12 ||
+      random() < .22,
+  })
 }
 
 function appendPoiTransitionDressing(

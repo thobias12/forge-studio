@@ -1452,12 +1452,16 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     polygonOffsetUnits: -1,
   })
 
-  const treeTrunkGeometry = new THREE.CylinderGeometry(.2, .35, 3.25, 7)
+  const treeTrunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
   const treeTrunkMaterial = new THREE.MeshStandardMaterial({
     color: 0x382c22,
     roughness: 1,
   })
-  const treeCrownMaterial = new THREE.MeshStandardMaterial({
+  const treeLowerMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette.tree).multiplyScalar(.94),
+    roughness: 1,
+  })
+  const treeMiddleMaterial = new THREE.MeshStandardMaterial({
     color: palette.tree,
     roughness: 1,
   })
@@ -1466,21 +1470,80 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
     roughness: 1,
   })
   const treeLowerGeometries: THREE.BufferGeometry[] = [
-    new THREE.ConeGeometry(1.5, 3.25, 7),
-    new THREE.ConeGeometry(1.7, 2.75, 8),
-    new THREE.DodecahedronGeometry(1.34, 0),
-    new THREE.ConeGeometry(1.3, 3.6, 7),
+    new THREE.ConeGeometry(1.52, 2.75, 7),
+    new THREE.ConeGeometry(1.72, 2.35, 8),
+    new THREE.DodecahedronGeometry(1.18, 0),
+    new THREE.ConeGeometry(1.34, 2.95, 7),
+  ]
+  const treeMiddleGeometries: THREE.BufferGeometry[] = [
+    new THREE.ConeGeometry(1.18, 2.45, 7),
+    new THREE.ConeGeometry(1.32, 2.15, 8),
+    new THREE.DodecahedronGeometry(1.04, 0),
+    new THREE.ConeGeometry(1.04, 2.55, 7),
   ]
   const treeUpperGeometries: THREE.BufferGeometry[] = [
-    new THREE.ConeGeometry(1.02, 2.65, 7),
-    new THREE.ConeGeometry(1.14, 2.35, 8),
-    new THREE.DodecahedronGeometry(.96, 0),
-    new THREE.ConeGeometry(.86, 2.8, 7),
+    new THREE.ConeGeometry(.82, 2.15, 7),
+    new THREE.ConeGeometry(.9, 1.92, 8),
+    new THREE.DodecahedronGeometry(.82, 0),
+    new THREE.ConeGeometry(.7, 2.2, 7),
   ]
-  const deadTreeTrunkGeometry = new THREE.CylinderGeometry(.14, .32, 4.5, 6)
-  const deadTreeBranchGeometry = new THREE.CylinderGeometry(.055, .12, 1.45, 5)
+  const deadTreeLowerGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
+  const deadTreeUpperGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
+  const deadTreeBranchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
   const deadTreeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x4a4037,
+    color: 0x493b31,
+    roughness: 1,
+  })
+
+  const signaturePatchGeometry = new THREE.CircleGeometry(1, 9)
+  signaturePatchGeometry.rotateX(-Math.PI / 2)
+  const leafPatchMaterial = new THREE.MeshStandardMaterial({
+    color: 0x75502f,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  })
+  const mudPatchMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(surfacePalette.soil)
+      .lerp(new THREE.Color(palette.low), .48)
+      .multiplyScalar(.72),
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  })
+  const corruptScarMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3a293d,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  })
+  const flowerGeometry = new THREE.DodecahedronGeometry(.085, 0)
+  const flowerWarmMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd2b85e,
+    roughness: 1,
+  })
+  const flowerCoolMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8d77b5,
+    roughness: 1,
+  })
+  const outcropGeometry = new THREE.DodecahedronGeometry(.72, 0)
+  const outcropMaterial = new THREE.MeshStandardMaterial({
+    color: palette.rock,
+    roughness: 1,
+  })
+  const hedgeGeometry = new THREE.DodecahedronGeometry(.55, 0)
+  const hedgeMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette.tree)
+      .lerp(new THREE.Color(palette.fern), .55),
+    roughness: 1,
+  })
+  const rootGeometry = new THREE.CylinderGeometry(.07, .13, 2.15, 5)
+  rootGeometry.rotateZ(Math.PI / 2)
+  const rootMaterial = new THREE.MeshStandardMaterial({
+    color: 0x423027,
     roughness: 1,
   })
 
@@ -1497,6 +1560,112 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       patch.receiveShadow = true
       patch.renderOrder = 2
       scene.add(patch)
+    } else if (item.type === 'leaf-patch' || item.type === 'mud-patch' || item.type === 'corrupt-scar') {
+      const material =
+        item.type === 'leaf-patch'
+          ? leafPatchMaterial
+          : item.type === 'mud-patch'
+            ? mudPatchMaterial
+            : corruptScarMaterial
+      const patch = new THREE.Mesh(signaturePatchGeometry, material)
+      patch.position.set(item.x, item.y + .031, item.z)
+      patch.rotation.y = item.rotation
+      const widthScale =
+        item.type === 'corrupt-scar' ? 1.7 :
+          item.type === 'mud-patch' ? 1.55 :
+            1.45
+      const depthScale =
+        item.type === 'corrupt-scar' ? .48 :
+          item.type === 'mud-patch' ? .74 :
+            .68
+      patch.scale.set(
+        item.scale * widthScale * (1 + item.variant * .07),
+        1,
+        item.scale * depthScale * (1 + (item.variant % 2) * .08),
+      )
+      patch.receiveShadow = true
+      patch.renderOrder = 2
+      scene.add(patch)
+    } else if (item.type === 'flower-patch') {
+      for (let petal = 0; petal < 5; petal += 1) {
+        const angle = item.rotation + petal * 2.399
+        const radius = (.16 + (petal % 3) * .11) * item.scale
+        const head = new THREE.Mesh(
+          flowerGeometry,
+          petal < 3 ? flowerWarmMaterial : flowerCoolMaterial,
+        )
+        const size = item.scale * (.72 + (petal % 2) * .18)
+        head.position.set(
+          item.x + Math.cos(angle) * radius,
+          item.y + .08 + (petal % 2) * .025,
+          item.z + Math.sin(angle) * radius,
+        )
+        head.scale.setScalar(size)
+        scene.add(head)
+      }
+    } else if (item.type === 'rock-outcrop') {
+      for (let piece = 0; piece < 3; piece += 1) {
+        const angle = item.rotation + piece * 2.12 + item.variant * .17
+        const radius = piece === 0 ? 0 : (.52 + piece * .12) * item.scale
+        const size = item.scale * (piece === 0 ? 1.22 : .72 + piece * .08)
+        const rock = new THREE.Mesh(outcropGeometry, outcropMaterial)
+        rock.position.set(
+          item.x + Math.cos(angle) * radius,
+          item.y + .32 * size,
+          item.z + Math.sin(angle) * radius,
+        )
+        rock.rotation.set(angle * .08, angle, (piece - 1) * .16)
+        rock.scale.set(size * 1.12, size * (.62 + piece * .11), size)
+        rock.castShadow = true
+        rock.receiveShadow = true
+        scene.add(rock)
+      }
+      obstacles.push({ x: item.x, z: item.z, radius: 1.15 * item.scale })
+    } else if (item.type === 'hedge') {
+      const hedge = new THREE.Group()
+      hedge.position.set(item.x, item.y, item.z)
+      hedge.rotation.y = item.rotation
+      for (let piece = 0; piece < 4; piece += 1) {
+        const part = new THREE.Mesh(hedgeGeometry, hedgeMaterial)
+        part.position.set((piece - 1.5) * .68 * item.scale, .34 * item.scale, 0)
+        part.rotation.y = (piece % 2) * .16
+        part.scale.set(
+          item.scale * .82,
+          item.scale * (.58 + (piece % 2) * .08),
+          item.scale * .7,
+        )
+        part.castShadow = true
+        hedge.add(part)
+      }
+      scene.add(hedge)
+      obstacles.push({ x: item.x, z: item.z, radius: 1.25 * item.scale })
+    } else if (item.type === 'root-cluster') {
+      for (let root = 0; root < 3; root += 1) {
+        const angle =
+          item.rotation +
+          root * (1.72 + item.variant * .04) +
+          (root === 2 ? .35 : 0)
+        const radius = root * .16 * item.scale
+        const rootMesh = new THREE.Mesh(rootGeometry, rootMaterial)
+        rootMesh.position.set(
+          item.x + Math.cos(angle) * radius,
+          item.y + .1 + root * .025,
+          item.z + Math.sin(angle) * radius,
+        )
+        rootMesh.rotation.set(
+          (root - 1) * .08,
+          angle,
+          root % 2 ? -.08 : .1,
+        )
+        const rootScale = item.scale * (.72 + root * .12)
+        rootMesh.scale.set(
+          rootScale,
+          item.scale * (.72 + root * .08),
+          rootScale,
+        )
+        rootMesh.castShadow = true
+        scene.add(rootMesh)
+      }
     } else if (item.type === 'tree') {
       const tree = new THREE.Group()
       tree.position.set(item.x, item.y, item.z)
@@ -1504,11 +1673,11 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       tree.scale.setScalar(item.scale)
 
       const trunk = new THREE.Mesh(treeTrunkGeometry, treeTrunkMaterial)
-      trunk.position.y = 1.56
+      trunk.position.y = 1.66
       trunk.scale.set(
-        .92 + item.variant * .02,
+        .9 + item.variant * .02,
         1 + item.variant * .025,
-        .92 + item.variant * .02,
+        .9 + item.variant * .02,
       )
       trunk.castShadow = true
       trunk.receiveShadow = true
@@ -1517,59 +1686,116 @@ function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obsta
       const broadleaf = item.variant === 2
       const lower = new THREE.Mesh(
         treeLowerGeometries[item.variant],
-        treeCrownMaterial,
+        treeLowerMaterial,
       )
-      lower.position.y = broadleaf ? 3.75 : 3.55
-      if (broadleaf) lower.scale.y = 1.22
+      lower.position.set(
+        broadleaf ? -.22 : 0,
+        broadleaf ? 3.7 : 3.4,
+        broadleaf ? .05 : 0,
+      )
+      if (broadleaf) lower.scale.y = 1.06
       lower.castShadow = true
       tree.add(lower)
+
+      const middle = new THREE.Mesh(
+        treeMiddleGeometries[item.variant],
+        treeMiddleMaterial,
+      )
+      middle.position.set(
+        broadleaf ? .3 : 0,
+        broadleaf ? 4.25 : 4.3,
+        broadleaf ? -.12 : 0,
+      )
+      const middleScale = broadleaf ? .94 : .82
+      middle.scale.set(
+        middleScale,
+        middleScale * (broadleaf ? 1.08 : 1),
+        middleScale,
+      )
+      middle.castShadow = true
+      tree.add(middle)
 
       const upper = new THREE.Mesh(
         treeUpperGeometries[item.variant],
         treeUpperMaterial,
       )
-      upper.position.y = broadleaf ? 4.55 : 4.75
-      const upperScale = broadleaf ? .8 : .92
+      upper.position.set(
+        broadleaf ? .04 : 0,
+        broadleaf ? 4.75 : 5.08,
+        broadleaf ? .26 : 0,
+      )
+      const upperScale = broadleaf ? .78 : .62
       upper.scale.set(
         upperScale,
-        upperScale * (broadleaf ? 1.12 : 1),
+        upperScale * (broadleaf ? 1.08 : 1),
         upperScale,
       )
       upper.castShadow = true
       tree.add(upper)
 
       scene.add(tree)
-      obstacles.push({ x: item.x, z: item.z, radius: .42 * item.scale })
+      obstacles.push({ x: item.x, z: item.z, radius: .44 * item.scale })
     } else if (item.type === 'dead-tree') {
       const tree = new THREE.Group()
       tree.position.set(item.x, item.y, item.z)
       tree.rotation.y = item.rotation
       tree.scale.setScalar(item.scale)
 
-      const trunk = new THREE.Mesh(deadTreeTrunkGeometry, deadTreeMaterial)
-      trunk.position.y = 2.05
-      trunk.rotation.z = (item.variant - 1.5) * .035
-      trunk.scale.y = .9 + item.variant * .045
-      trunk.castShadow = true
-      trunk.receiveShadow = true
-      tree.add(trunk)
+      const leanYaw = .5 + item.variant * .43
+      const lowerLean = .035 + item.variant * .012
+      const lower = new THREE.Mesh(deadTreeLowerGeometry, deadTreeMaterial)
+      lower.position.y = 1.18
+      lower.rotation.set(
+        Math.sin(leanYaw) * lowerLean,
+        0,
+        Math.cos(leanYaw) * lowerLean,
+      )
+      lower.castShadow = true
+      lower.receiveShadow = true
+      tree.add(lower)
 
+      const bend = .16 + item.variant * .025
+      const upper = new THREE.Mesh(deadTreeUpperGeometry, deadTreeMaterial)
+      upper.position.set(
+        Math.cos(leanYaw) * bend,
+        3.18,
+        Math.sin(leanYaw) * bend,
+      )
+      upper.rotation.set(
+        Math.sin(leanYaw) * (.1 + item.variant * .014),
+        .08 * (item.variant - 1.5),
+        Math.cos(leanYaw) * (.1 + item.variant * .014),
+      )
+      upper.castShadow = true
+      upper.receiveShadow = true
+      tree.add(upper)
+
+      const aYaw = .42 + item.variant * .31
       const branchA = new THREE.Mesh(deadTreeBranchGeometry, deadTreeMaterial)
-      const aYaw = .28 + item.variant * .22
-      branchA.position.set(Math.cos(aYaw) * .34, 3.05, Math.sin(aYaw) * .34)
-      branchA.rotation.set(0, aYaw, 1.02)
+      branchA.position.set(
+        Math.cos(leanYaw) * bend + Math.cos(aYaw) * .24,
+        2.68,
+        Math.sin(leanYaw) * bend + Math.sin(aYaw) * .24,
+      )
+      branchA.rotation.set(.08, aYaw, .72 + item.variant * .035)
+      branchA.scale.setScalar(.82 + item.variant * .04)
       branchA.castShadow = true
       tree.add(branchA)
 
+      const bYaw = 2.08 - item.variant * .17
       const branchB = new THREE.Mesh(deadTreeBranchGeometry, deadTreeMaterial)
-      const bYaw = Math.PI + .18 - item.variant * .12
-      branchB.position.set(Math.cos(bYaw) * .3, 3.55, Math.sin(bYaw) * .3)
-      branchB.rotation.set(0, bYaw, .92)
+      branchB.position.set(
+        Math.cos(leanYaw) * bend + Math.cos(bYaw) * .18,
+        3.68,
+        Math.sin(leanYaw) * bend + Math.sin(bYaw) * .18,
+      )
+      branchB.rotation.set(-.06, bYaw, -1.02 + item.variant * .045)
+      branchB.scale.set(.72, .88, .72)
       branchB.castShadow = true
       tree.add(branchB)
 
       scene.add(tree)
-      obstacles.push({ x: item.x, z: item.z, radius: .34 * item.scale })
+      obstacles.push({ x: item.x, z: item.z, radius: .36 * item.scale })
     } else if (item.type === 'rock') {
       const rock = new THREE.Mesh(
         new THREE.DodecahedronGeometry(.62 * item.scale, 0),
