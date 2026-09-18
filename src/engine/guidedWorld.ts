@@ -1053,6 +1053,20 @@ export function validateGeneratedRegion(
     }
   }
 
+  for (let index = 0; index < pois.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < pois.length; otherIndex += 1) {
+      const a = pois[index]
+      const b = pois[otherIndex]
+      const distance = Math.hypot(a.x - b.x, a.z - b.z)
+      const required = a.radius + b.radius + 1.2
+      if (distance < required) {
+        issues.push(
+          `${a.label} overlaps ${b.label} after final world-layout resolution.`,
+        )
+      }
+    }
+  }
+
   if (riverMask && riverMask.points.length > 1) {
     for (const poi of pois) {
       const sample = riverOccupancySample(riverMask, poi.x, poi.z)
@@ -1591,7 +1605,10 @@ function reanchorBranchesAwayFromCrossings(
     const candidates = [...candidateIds]
       .map((id) => nodeMap.get(id))
       .filter((candidate): candidate is GeneratedRegionNode =>
-        Boolean(candidate) && candidate!.kind === 'route'
+        Boolean(candidate) &&
+        (candidate!.kind === 'route' ||
+          candidate!.kind === 'entry' ||
+          candidate!.kind === 'exit')
       )
       .filter((candidate) => {
         const minCrossingDistance = Math.min(
@@ -1602,7 +1619,7 @@ function reanchorBranchesAwayFromCrossings(
         const length = Math.hypot(other.x - candidate.x, other.z - candidate.z)
         return (
           minCrossingDistance >= 14 &&
-          length <= currentLength * 1.7 + 8
+          length <= Math.min(50, currentLength * 1.7 + 8)
         )
       })
       .sort((a, b) => {
