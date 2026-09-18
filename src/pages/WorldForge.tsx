@@ -69,7 +69,7 @@ export default function WorldForge() {
     void loadSkillboundWorkspace()
       .then((next) => {
         setWorkspace(next)
-        setStatus('World Forge 2 loaded. Tune geography, exploration and content, then regenerate unlocked layers.')
+        setStatus('World Forge 2 · Landscape Generation loaded. Terrain now drives rivers, micro-biomes and POI composition.')
       })
       .catch((error) => setStatus(error instanceof Error ? error.message : 'Could not load Skillbound project.'))
   }, [])
@@ -183,7 +183,7 @@ export default function WorldForge() {
     if (!workspace) return
     const next = saveSkillboundWorkspace(workspace)
     setWorkspace(next)
-    setStatus(`Saved ${region?.name ?? 'region'} with World Forge 2 generation settings.`)
+    setStatus(`Saved ${region?.name ?? 'region'} with Landscape Generation settings.`)
   }
 
   const restore = async () => {
@@ -212,7 +212,7 @@ export default function WorldForge() {
             <button title="New seed" onClick={() => setMasterSeed(randomWorldSeed())}><Shuffle size={13}/></button>
           </div>
         </label>
-        <div className="world-forge-meta"><span>Generator</span><strong>Outdoor Region v2</strong></div>
+        <div className="world-forge-meta"><span>Generator</span><strong>Landscape Generation v3</strong></div>
         <button className="world-forge-preset" onClick={applyAncientForestPreset}>Apply Ancient Forest preset</button>
       </section>
 
@@ -339,6 +339,9 @@ export default function WorldForge() {
       <section className="world-forge-section validation-panel">
         <h3>Generated region</h3>
         <DebugRow label="Terrain grid" value={generated.terrain.resolution * generated.terrain.resolution}/>
+        <DebugRow label="Micro-biomes" value={generated.terrain.microBiomes.length}/>
+        <DebugRow label="River samples" value={generated.terrain.stream.length}/>
+        <DebugRow label="Crossings" value={generated.crossings.length}/>
         <DebugRow label="Road / trail paths" value={generated.paths.length}/>
         <DebugRow label="Points of interest" value={generated.pois.length}/>
         <DebugRow label="Biome dressing" value={generated.dressing.length}/>
