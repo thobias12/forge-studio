@@ -1244,7 +1244,7 @@ function makeRuntimeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const colors: number[] = []
   const indices: number[] = []
   const deepWater = new THREE.Color(0x377c7d)
-  const bankWater = new THREE.Color(0x668f83)
+  const bankWater = new THREE.Color(runtimeBiomePalette(region.biome).low).lerp(new THREE.Color(0x668f83), .58)
   const sheenWater = new THREE.Color(0x78aaa2)
   const waterColor = new THREE.Color()
 
