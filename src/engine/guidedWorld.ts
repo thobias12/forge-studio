@@ -565,7 +565,7 @@ export function streamRenderProfile(region: GeneratedRegion, extension = 52) {
     extendedPoints,
     extendedWidths,
     extendedHeights,
-    1.2,
+    .55,
   )
 }
 
@@ -681,7 +681,7 @@ export function visibleStreamRenderHeight(
   // triangle can never bridge across the carved channel and hide the river.
   return Math.max(
     nominalHeight + offset,
-    sampleRenderedTerrainHeight(region, x, z) + .055,
+    sampleRenderedTerrainHeight(region, x, z) + Math.max(.055, offset),
   )
 }
 
@@ -698,7 +698,7 @@ export function streamWaterSurfaceRows(
     y: number
     width: number
     nominalHeight: number
-    points: Array<{ x: number; z: number }>
+    points: Array<{ x: number; z: number; y: number }>
   }> = []
 
   for (let index = 0; index < profile.points.length; index += 1) {
@@ -718,14 +718,24 @@ export function streamWaterSurfaceRows(
     const width = Math.max(.04, profile.widths[index] ?? profile.widths[0] ?? 1)
     const halfWidth = width * .5
     const nominalHeight = profile.heights[index] ?? profile.heights[0] ?? region.terrain.waterLevel
-    const lanePoints: Array<{ x: number; z: number }> = []
-    const waterHeight = nominalHeight + clearance
+    const lanePoints: Array<{ x: number; z: number; y: number }> = []
+    const waterHeight = visibleStreamRenderHeight(
+      region,
+      nominalHeight,
+      center.x,
+      center.z,
+      clearance,
+    )
 
     for (let lane = 0; lane < lanes; lane += 1) {
       const across = lanes === 1 ? 0 : lane / (lanes - 1) * 2 - 1
       const x = center.x + normal.x * halfWidth * across
       const z = center.z + normal.z * halfWidth * across
-      lanePoints.push({ x, z })
+      lanePoints.push({
+        x,
+        z,
+        y: visibleStreamRenderHeight(region, nominalHeight, x, z, clearance),
+      })
     }
 
     rows.push({
@@ -764,13 +774,13 @@ export function streamRenderContinuityIssues(region: GeneratedRegion) {
     }
   }
 
-  const surface = streamWaterSurfaceRows(region, 5, .065)
+  const surface = streamWaterSurfaceRows(region, 9, .085)
   for (let rowIndex = 0; rowIndex < surface.rows.length; rowIndex += 1) {
     const row = surface.rows[rowIndex]
     const nextRow = surface.rows[Math.min(surface.rows.length - 1, rowIndex + 1)]
     for (let laneIndex = 0; laneIndex < row.points.length; laneIndex += 1) {
       const point = row.points[laneIndex]
-      const samples = [{ x: point.x, z: point.z, waterY: row.y }]
+      const samples = [{ x: point.x, z: point.z, waterY: point.y }]
 
       if (nextRow && nextRow !== row) {
         const nextPoint = nextRow.points[laneIndex]
@@ -778,7 +788,7 @@ export function streamRenderContinuityIssues(region: GeneratedRegion) {
           samples.push({
             x: (point.x + nextPoint.x) * .5,
             z: (point.z + nextPoint.z) * .5,
-            waterY: (row.y + nextRow.y) * .5,
+            waterY: (point.y + nextPoint.y) * .5,
           })
         }
       }
