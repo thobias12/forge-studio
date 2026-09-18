@@ -366,6 +366,19 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   return a + (b - a) * tz
 }
 
+export function sampleStreamHeight(region: GeneratedRegion, x: number, z: number) {
+  if (region.terrain.stream.length < 2 || region.terrain.streamHeights.length !== region.terrain.stream.length) {
+    return region.terrain.waterLevel
+  }
+  return nearestHydrologySample(
+    x,
+    z,
+    region.terrain.stream,
+    region.terrain.streamWidths,
+    region.terrain.streamHeights,
+  ).height
+}
+
 export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: number) {
   const seed = region.layerSeeds.terrain
   const broad = valueNoise2D(x * .021 + 8.7, z * .021 - 13.4, seed ^ 0x51ED270B)
