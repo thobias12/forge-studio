@@ -1164,7 +1164,7 @@ function makeGeneratedStream(region: GeneratedRegion) {
   const heights = profile.heights
 
   const group = new THREE.Group()
-  if (import.meta.env.DEV) {
+  {
     const issues = streamRenderContinuityIssues(region)
     if (issues.length) console.warn('[Play Region] River continuity', issues)
   }
