@@ -42,15 +42,15 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.06
+    renderer.toneMappingExposure = 1.22
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.domElement.className = 'world-forge-canvas'
     host.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x0b1510)
-    scene.fog = new THREE.FogExp2(0x101b15, .008)
+    scene.background = new THREE.Color(0x17231a)
+    scene.fog = new THREE.FogExp2(0x1a281e, .0064)
 
     const camera = new THREE.PerspectiveCamera(42, 1, .1, 1200)
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -62,8 +62,8 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     controls.maxPolarAngle = Math.PI * .47
     controls.minPolarAngle = Math.PI * .14
 
-    scene.add(new THREE.HemisphereLight(0xcad8c1, 0x182018, 1.85))
-    const sun = new THREE.DirectionalLight(0xffe0b3, 2.65)
+    scene.add(new THREE.HemisphereLight(0xd7e3d2, 0x253026, 2.25))
+    const sun = new THREE.DirectionalLight(0xffe4ba, 3.1)
     sun.position.set(-45, 70, 30)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
@@ -73,7 +73,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     sun.shadow.camera.bottom = -130
     scene.add(sun)
 
-    const fill = new THREE.DirectionalLight(0x70977d, .75)
+    const fill = new THREE.DirectionalLight(0x86a891, 1.05)
     fill.position.set(50, 30, -60)
     scene.add(fill)
 
@@ -176,6 +176,9 @@ function buildRegionScene(region: GeneratedRegion) {
   const root = new THREE.Group()
   root.name = 'WorldForge2Region'
 
+  const backdrop = buildBoundaryBackdrop(region)
+  root.add(backdrop)
+
   const terrain = buildTerrain(region)
   root.add(terrain)
 
@@ -189,6 +192,10 @@ function buildRegionScene(region: GeneratedRegion) {
   for (const path of region.paths) {
     const mesh = makePathRibbon(region, path)
     ;(path.kind === 'main' ? route : branches).add(mesh)
+  }
+  for (const crossing of region.crossings) {
+    const crossingMesh = makeCrossing(region, crossing)
+    route.add(crossingMesh)
   }
   root.add(route, branches)
 
@@ -204,6 +211,23 @@ function buildRegionScene(region: GeneratedRegion) {
   root.add(landmarks)
 
   return { root, route, branches, landmarks, biome }
+}
+
+function buildBoundaryBackdrop(region: GeneratedRegion) {
+  const width = region.bounds.maxX - region.bounds.minX
+  const depth = region.bounds.maxZ - region.bounds.minZ
+  const centerX = (region.bounds.minX + region.bounds.maxX) / 2
+  const centerZ = (region.bounds.minZ + region.bounds.maxZ) / 2
+  const palette = editorBiomePalette(region.biome)
+  const backdrop = new THREE.Mesh(
+    new THREE.PlaneGeometry(width + 90, depth + 90),
+    new THREE.MeshStandardMaterial({ color: palette.low, roughness: 1, metalness: 0 }),
+  )
+  backdrop.rotation.x = -Math.PI / 2
+  backdrop.position.set(centerX, -1.45, centerZ)
+  backdrop.receiveShadow = true
+  backdrop.name = 'WorldBoundaryBackdrop'
+  return backdrop
 }
 
 function buildTerrain(region: GeneratedRegion) {
@@ -262,8 +286,10 @@ function buildTerrain(region: GeneratedRegion) {
 function buildStream(region: GeneratedRegion) {
   const points = region.terrain.stream
   if (points.length < 2) return undefined
-  const width = 2.3 + Math.min(2.2, region.terrain.stream.length * .03)
-  const geometry = makeRibbonGeometry(points, width, () => region.terrain.waterLevel + .045)
+  const widths = region.terrain.streamWidths.length === points.length
+    ? region.terrain.streamWidths
+    : points.map(() => 2.3)
+  const geometry = makeRibbonGeometry(points, widths, () => region.terrain.waterLevel + .045)
   const material = new THREE.MeshStandardMaterial({
     color: 0x315f63,
     roughness: .28,
@@ -281,7 +307,7 @@ function buildStream(region: GeneratedRegion) {
 function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
   const geometry = makeRibbonGeometry(
     path.points,
-    path.width,
+    path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width),
     (x, z) => sampleTerrainHeight(region, x, z) + .055,
   )
   const material = new THREE.MeshStandardMaterial({
@@ -300,7 +326,7 @@ function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
 
 function makeRibbonGeometry(
   points: Array<{ x: number; z: number }>,
-  width: number,
+  widths: number[],
   heightAt: (x: number, z: number) => number,
 ) {
   const positions: number[] = []
@@ -315,7 +341,7 @@ function makeRibbonGeometry(
     const length = Math.max(.001, Math.hypot(dx, dz))
     const nx = -dz / length
     const nz = dx / length
-    const half = width / 2
+    const half = (widths[index] ?? widths[0] ?? 1) / 2
 
     const leftX = point.x + nx * half
     const leftZ = point.z + nz * half
@@ -454,6 +480,51 @@ function setInstances(
   mesh.instanceMatrix.needsUpdate = true
 }
 
+function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossings'][number]) {
+  const group = new THREE.Group()
+  group.name = `Crossing_${crossing.kind}`
+  const y = crossing.kind === 'bridge'
+    ? Math.max(region.terrain.waterLevel + .32, sampleTerrainHeight(region, crossing.x, crossing.z) + .1)
+    : region.terrain.waterLevel + .07
+  group.position.set(crossing.x, y, crossing.z)
+  group.rotation.y = -crossing.rotation
+
+  if (crossing.kind === 'bridge') {
+    const plankMaterial = new THREE.MeshStandardMaterial({ color: 0x67503a, roughness: .95 })
+    const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49382b, roughness: 1 })
+    const length = Math.max(5.4, crossing.width * 1.7)
+    const plankCount = Math.max(7, Math.round(length / .55))
+    for (let index = 0; index < plankCount; index += 1) {
+      const z = -length / 2 + (index + .5) * (length / plankCount)
+      const plank = new THREE.Mesh(
+        new THREE.BoxGeometry(crossing.width, .12, length / plankCount * .9),
+        plankMaterial,
+      )
+      plank.position.set(0, 0, z)
+      plank.castShadow = true
+      group.add(plank)
+    }
+    for (const side of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(.12, .16, length), railMaterial)
+      rail.position.set(side * crossing.width * .54, .34, 0)
+      rail.castShadow = true
+      group.add(rail)
+    }
+  } else {
+    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x77766b, roughness: 1 })
+    const count = 7
+    for (let index = 0; index < count; index += 1) {
+      const t = index / (count - 1) - .5
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(.42 + (index % 2) * .08, 0), stoneMaterial)
+      stone.position.set(t * crossing.width * 1.8, .06 + (index % 2) * .025, Math.sin(index * 1.7) * .24)
+      stone.scale.y = .5
+      stone.rotation.y = index * .7
+      group.add(stone)
+    }
+  }
+  return group
+}
+
 function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   const group = new THREE.Group()
   group.name = `POI_${poi.type}`
@@ -464,6 +535,20 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5842, roughness: 1 })
+  const clearing = new THREE.Mesh(
+    new THREE.CircleGeometry(poi.radius * 1.05, 20),
+    new THREE.MeshStandardMaterial({
+      color: poi.type === 'camp' || poi.type === 'settlement' ? 0x4d4933 : 0x384638,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    }),
+  )
+  clearing.rotation.x = -Math.PI / 2
+  clearing.position.y = .035
+  clearing.receiveShadow = true
+  group.add(clearing)
 
   if (poi.type === 'ruins') {
     addBox(group, [-2.3, .85, 0], [.65, 1.7, 5], stone, [0, .16, 0])
@@ -511,6 +596,14 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     const broken = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, .45, 7), darkStone)
     broken.position.y = 5.55
     group.add(broken)
+    for (let i = 0; i < 7; i += 1) {
+      const angle = i / 7 * Math.PI * 2 + .3
+      const rubble = new THREE.Mesh(new THREE.DodecahedronGeometry(.35 + (i % 3) * .11, 0), darkStone)
+      rubble.position.set(Math.cos(angle) * (2.5 + (i % 2) * .5), .18, Math.sin(angle) * (2.5 + (i % 2) * .5))
+      rubble.scale.y = .65
+      rubble.rotation.y = angle
+      group.add(rubble)
+    }
   } else if (poi.type === 'dungeon') {
     addBox(group, [-1.55, 1.35, 0], [.75, 2.7, .8], stone)
     addBox(group, [1.55, 1.35, 0], [.75, 2.7, .8], stone)
