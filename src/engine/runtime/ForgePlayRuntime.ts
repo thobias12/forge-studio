@@ -34,6 +34,7 @@ import {
   updateWorldAmbientVisuals,
   type WorldAmbientVisuals,
 } from '../worldAmbient'
+import { FORGE_WORLD_SCALE, forgeBridgeDimensions } from '../worldScale'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -112,7 +113,7 @@ export class ForgePlayRuntime {
   private readonly options: ForgePlayRuntimeOptions
   private readonly renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
   private readonly scene = new THREE.Scene()
-  private readonly camera = new THREE.PerspectiveCamera(48, 1, 0.1, 800)
+  private readonly camera = new THREE.PerspectiveCamera(FORGE_WORLD_SCALE.playCameraFov, 1, 0.1, 800)
   private readonly player = new THREE.Group()
   private readonly playerPlaceholder = new THREE.Group()
   private readonly equippedModelAnchor = new THREE.Group()
@@ -145,7 +146,7 @@ export class ForgePlayRuntime {
   private inventory: string[] = []
   private equippedWeaponId: string | undefined
   private focusEnemyId: string | undefined
-  private cameraDistance = 31
+  private cameraDistance = FORGE_WORLD_SCALE.playCameraDistance
   private playerHealth = 100
   private dodgeRemaining = 0
   private dodgeCooldown = 0
@@ -295,7 +296,7 @@ export class ForgePlayRuntime {
 
   private async bindPlayerVisual() {
     try {
-      const binding = await bindCharacterAsset(this.player, this.playerDefinition.characterAssetId, this.playerDefinition.animationAssetId, 1.95)
+      const binding = await bindCharacterAsset(this.player, this.playerDefinition.characterAssetId, this.playerDefinition.animationAssetId, FORGE_WORLD_SCALE.characterHeight)
       if (this.disposed) { binding?.dispose(); return }
       this.playerVisual = binding
       if (binding) await this.preloadAbilityAnimations(binding)
@@ -416,15 +417,15 @@ export class ForgePlayRuntime {
 
   private buildPlayer(savedPlayer?: { x: number; z: number; health: number }) {
     this.playerPlaceholder.name = '__forge_placeholder'
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.6, 1.35, 12), new THREE.MeshStandardMaterial({ color: 0xb8c5ba, roughness: 0.62 }))
-    body.position.y = 0.88
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.18, 12), new THREE.MeshStandardMaterial({ color: 0xb8c5ba, roughness: 0.62 }))
+    body.position.y = 0.62
     body.castShadow = true
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), new THREE.MeshStandardMaterial({ color: 0xd4b59a, roughness: 0.7 }))
-    head.position.y = 1.75
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshStandardMaterial({ color: 0xd4b59a, roughness: 0.7 }))
+    head.position.y = 1.51
     head.castShadow = true
-    const facing = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.62, 8), new THREE.MeshStandardMaterial({ color: 0x7ea58b, roughness: 0.55 }))
+    const facing = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.54, 8), new THREE.MeshStandardMaterial({ color: 0x7ea58b, roughness: 0.55 }))
     facing.rotation.x = Math.PI / 2
-    facing.position.set(0, 1.05, -0.7)
+    facing.position.set(0, 0.92, -0.62)
     this.playerPlaceholder.add(body, head, facing)
     this.player.add(this.playerPlaceholder)
     this.equippedModelAnchor.position.set(...fallbackSocketPosition('RightHand'))
@@ -514,7 +515,7 @@ export class ForgePlayRuntime {
 
   private async bindEnemyVisual(enemy: RuntimeEnemy) {
     try {
-      const binding = await bindCharacterAsset(enemy.group, enemy.definition.characterAssetId, enemy.definition.animationAssetId, 1.95)
+      const binding = await bindCharacterAsset(enemy.group, enemy.definition.characterAssetId, enemy.definition.animationAssetId, FORGE_WORLD_SCALE.characterHeight)
       if (this.disposed || !this.enemies.includes(enemy)) { binding?.dispose(); return }
       enemy.visual = binding
     } catch {
@@ -577,7 +578,7 @@ export class ForgePlayRuntime {
   }
 
   private onWheel = (event: WheelEvent) => {
-    this.cameraDistance = THREE.MathUtils.clamp(this.cameraDistance + Math.sign(event.deltaY) * 2, 23, 43)
+    this.cameraDistance = THREE.MathUtils.clamp(this.cameraDistance + Math.sign(event.deltaY) * 2, FORGE_WORLD_SCALE.playCameraMinDistance, FORGE_WORLD_SCALE.playCameraMaxDistance)
     event.preventDefault()
   }
 
@@ -1519,8 +1520,7 @@ function runtimeWalkSurfaceHeight(
     const sin = Math.sin(crossing.rotation)
     const localX = dx * cos - dz * sin
     const localZ = dx * sin + dz * cos
-    const length = Math.max(4.2, crossing.width * 1.35)
-    const deckWidth = crossing.width * .92
+    const { length, width: deckWidth } = forgeBridgeDimensions(crossing.width)
 
     if (
       Math.abs(localX) > length * .5 + .12 ||
@@ -1556,8 +1556,7 @@ function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion[
   if (crossing.kind === 'bridge') {
     const plankMaterial = new THREE.MeshStandardMaterial({ color: 0x67503a, roughness: .96 })
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49382b, roughness: 1 })
-    const bridgeWidth = crossing.width * .92
-    const length = Math.max(4.2, crossing.width * 1.35)
+    const { width: bridgeWidth, length } = forgeBridgeDimensions(crossing.width)
     const plankCount = Math.max(6, Math.round(length / .5))
     for (let index = 0; index < plankCount; index += 1) {
       const x = -length / 2 + (index + .5) * (length / plankCount)
@@ -1570,10 +1569,35 @@ function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion[
       group.add(plank)
     }
     for (const side of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(length, .15, .12), railMaterial)
-      rail.position.set(0, .3, side * bridgeWidth * .54)
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          length,
+          FORGE_WORLD_SCALE.bridgeRailThickness,
+          .12,
+        ),
+        railMaterial,
+      )
+      rail.position.set(
+        0,
+        FORGE_WORLD_SCALE.bridgeRailHeight,
+        side * bridgeWidth * .54,
+      )
       rail.castShadow = true
       group.add(rail)
+
+      for (const x of [-length * .42, 0, length * .42]) {
+        const post = new THREE.Mesh(
+          new THREE.BoxGeometry(.13, FORGE_WORLD_SCALE.bridgePostHeight, .13),
+          railMaterial,
+        )
+        post.position.set(
+          x,
+          FORGE_WORLD_SCALE.bridgePostHeight * .5,
+          side * bridgeWidth * .54,
+        )
+        post.castShadow = true
+        group.add(post)
+      }
     }
   } else {
     const material = new THREE.MeshStandardMaterial({ color: 0x74746a, roughness: 1 })
@@ -2190,6 +2214,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
     const group = new THREE.Group()
     group.position.set(poi.x, sampleTerrainHeight(region, poi.x, poi.z), poi.z)
     group.rotation.y = poi.rotation
+    group.scale.setScalar(FORGE_WORLD_SCALE.poiVisualScale)
 
     if (poi.type === 'ruins') {
       runtimeBox(group, -3.15, .9, .4, .6, 1.8, 4.8, stoneMaterial)
@@ -2199,7 +2224,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       runtimeBox(group, -.95, 1.45, 2.8, .62, 2.9, .65, stoneMaterial)
       runtimeBox(group, 1.05, 1.15, 2.8, .62, 2.3, .65, stoneMaterial)
       runtimeBox(group, .05, 2.55, 2.8, 2.65, .5, .7, darkStone)
-      obstacles.push({ x: poi.x, z: poi.z, radius: 3 })
+      obstacles.push({ x: poi.x, z: poi.z, radius: 3 * FORGE_WORLD_SCALE.poiVisualScale })
     } else if (poi.type === 'camp' || poi.type === 'settlement') {
       const count = poi.type === 'settlement' ? 5 : 3
       for (let i = 0; i < count; i += 1) {
@@ -2224,7 +2249,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
         bench.rotation.y = -angle
         group.add(bench)
       }
-      obstacles.push({ x: poi.x, z: poi.z, radius: poi.type === 'settlement' ? 4.5 : 3.7 })
+      obstacles.push({ x: poi.x, z: poi.z, radius: (poi.type === 'settlement' ? 4.5 : 3.7) * FORGE_WORLD_SCALE.poiVisualScale })
     } else if (poi.type === 'watchtower') {
       const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 2.25, 7, 8), stoneMaterial)
       tower.position.y = 3.35
@@ -2248,7 +2273,7 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       doorway.position.set(0, .98, 2.18)
       group.add(doorway)
       runtimeBox(group, -2.8, .7, -1.6, .55, 1.4, 3.4, darkStone)
-      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 })
+      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 * FORGE_WORLD_SCALE.poiVisualScale })
     } else if (poi.type === 'dungeon') {
       runtimeBox(group, -1.7, 1.5, 0, .82, 3, .9, stoneMaterial)
       runtimeBox(group, 1.7, 1.5, 0, .82, 3, .9, stoneMaterial)
@@ -2260,8 +2285,16 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       )
       darkness.position.set(0, 1.28, .49)
       group.add(darkness)
-      obstacles.push({ x: poi.x - 1.7, z: poi.z, radius: .8 })
-      obstacles.push({ x: poi.x + 1.7, z: poi.z, radius: .8 })
+      obstacles.push({
+        x: poi.x - 1.7 * FORGE_WORLD_SCALE.poiVisualScale,
+        z: poi.z,
+        radius: .8 * FORGE_WORLD_SCALE.poiVisualScale,
+      })
+      obstacles.push({
+        x: poi.x + 1.7 * FORGE_WORLD_SCALE.poiVisualScale,
+        z: poi.z,
+        radius: .8 * FORGE_WORLD_SCALE.poiVisualScale,
+      })
     } else if (poi.type === 'shrine') {
       runtimeBox(group, 0, .18, .4, 3.4, .36, 3, darkStone)
       runtimeBox(group, 0, .5, .25, 2.5, .34, 2.2, stoneMaterial)
