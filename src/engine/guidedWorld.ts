@@ -29,6 +29,8 @@ export type GeneratedWorldPoint = { x: number; z: number }
 export type GeneratedWorldPath = {
   id: string
   kind: 'main' | 'branch'
+  fromNodeId: string
+  toNodeId: string
   width: number
   points: GeneratedWorldPoint[]
   widths: number[]
@@ -87,7 +89,7 @@ export type WorldGenerationLayerSeeds = {
 
 export type GeneratedRegion = {
   format: 'forge-generated-region'
-  version: 3
+  version: 4
   seed: number
   masterSeed: number
   layerSeeds: WorldGenerationLayerSeeds
@@ -268,6 +270,7 @@ export function generateGuidedRegion(
   }
 
   const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
+  smoothWorldJunctions(paths, nodes)
 
   const combatCandidates = nodes.filter((item) => item.kind === 'route' || item.kind === 'branch')
   const encounterCount = region.enemyDensity === 'high' ? 3 : region.enemyDensity === 'low' ? 1 : 2
@@ -314,7 +317,7 @@ export function generateGuidedRegion(
 
   return {
     format: 'forge-generated-region',
-    version: 3,
+    version: 4,
     seed,
     masterSeed: worldSeed,
     layerSeeds,
@@ -352,6 +355,53 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   const a = h00 + (h10 - h00) * tx
   const b = h01 + (h11 - h01) * tx
   return a + (b - a) * tz
+}
+
+export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: number) {
+  const seed = region.layerSeeds.terrain
+  const broad = valueNoise2D(x * .021 + 8.7, z * .021 - 13.4, seed ^ 0x51ED270B)
+  const medium = valueNoise2D(x * .057 - 19.2, z * .057 + 27.5, seed ^ 0xC3A5C85C)
+  const fine = valueNoise2D(x * .135 + 4.1, z * .135 - 7.8, seed ^ 0x9E3779B9)
+
+  let poiWear = 0
+  let poiSoil = 0
+  for (const poi of region.pois) {
+    const distance = Math.hypot(x - poi.x, z - poi.z)
+    const radius = poi.radius * (poi.type === 'settlement' ? 1.22 : 1.08)
+    if (distance > radius * 1.4) continue
+
+    const localNoise = valueNoise2D(
+      (x - poi.x) * .16 + hashSeed(poi.id) % 17,
+      (z - poi.z) * .16 - hashSeed(poi.id) % 13,
+      seed ^ hashSeed(poi.id),
+    )
+    const irregularRadius = radius * (.82 + localNoise * .34)
+    const normalized = distance / Math.max(.001, irregularRadius)
+    const influence = 1 - smoothstep(clamp((normalized - .45) / .7, 0, 1))
+    const strength = poi.type === 'settlement' || poi.type === 'camp'
+      ? 1
+      : poi.type === 'graveyard' || poi.type === 'ruins'
+        ? .76
+        : poi.type === 'watchtower' || poi.type === 'dungeon'
+          ? .68
+          : .52
+    poiWear = Math.max(poiWear, influence * strength)
+    poiSoil = Math.max(poiSoil, influence * (poi.type === 'camp' || poi.type === 'settlement' ? .94 : .62))
+  }
+
+  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28, 0, 1)
+  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22, 0, 1)
+  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil, 0, 1)
+
+  return {
+    broad,
+    medium,
+    fine,
+    forestFloor,
+    moss,
+    soil,
+    poiWear: clamp(poiWear, 0, 1),
+  }
 }
 
 export function validateGeneratedRegion(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[]) {
@@ -436,11 +486,139 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
     return [{
       id: link.id,
       kind: link.kind,
+      fromNodeId: link.from,
+      toNodeId: link.to,
       width: baseWidth,
       points,
       widths,
     } satisfies GeneratedWorldPath]
   })
+}
+
+function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegionNode[]) {
+  for (const path of paths) path.points = smoothPolyline(path.points, 2)
+
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const incident = new Map<string, GeneratedWorldPath[]>()
+
+  for (const path of paths) {
+    for (const nodeId of [path.fromNodeId, path.toNodeId]) {
+      const list = incident.get(nodeId) ?? []
+      list.push(path)
+      incident.set(nodeId, list)
+    }
+  }
+
+  for (const [nodeId, connected] of incident) {
+    if (connected.length < 2) continue
+    const node = nodeMap.get(nodeId)
+    if (!node) continue
+
+    const main = connected.filter((path) => path.kind === 'main')
+    const mainAxis = main.length >= 2 ? junctionMainAxis(node, main) : undefined
+    const sharedMainWidth = main.length ? Math.max(...main.map((path) => path.width)) : 0
+
+    for (const path of connected) {
+      const atStart = path.fromNodeId === nodeId
+      const endpointIndex = atStart ? 0 : path.points.length - 1
+      const neighborIndex = atStart ? 1 : path.points.length - 2
+      const secondIndex = atStart ? 2 : path.points.length - 3
+      const neighbor = path.points[neighborIndex]
+      const endpoint = path.points[endpointIndex]
+      if (!neighbor || !endpoint) continue
+
+      path.points[endpointIndex] = { x: node.x, z: node.z }
+
+      let away = normalized2(neighbor.x - node.x, neighbor.z - node.z)
+      if (path.kind === 'main' && mainAxis) {
+        const sign = away.x * mainAxis.x + away.z * mainAxis.z >= 0 ? 1 : -1
+        away = { x: mainAxis.x * sign, z: mainAxis.z * sign }
+      } else if (mainAxis && path.kind === 'branch') {
+        // Pull side trails into the main road on a shallow tangent instead of a sharp wedge.
+        const axisSign = away.x * mainAxis.x + away.z * mainAxis.z >= 0 ? 1 : -1
+        const alongMain = { x: mainAxis.x * axisSign, z: mainAxis.z * axisSign }
+        away = normalized2(
+          away.x * .82 + alongMain.x * .18,
+          away.z * .82 + alongMain.z * .18,
+        )
+      }
+
+      const distance1 = Math.max(1.35, Math.hypot(neighbor.x - node.x, neighbor.z - node.z))
+      path.points[neighborIndex] = {
+        x: node.x + away.x * distance1,
+        z: node.z + away.z * distance1,
+      }
+
+      const second = path.points[secondIndex]
+      if (second) {
+        const distance2 = Math.max(distance1 + 1.2, Math.hypot(second.x - node.x, second.z - node.z))
+        const originalAway = normalized2(second.x - node.x, second.z - node.z)
+        const blended = normalized2(
+          away.x * .68 + originalAway.x * .32,
+          away.z * .68 + originalAway.z * .32,
+        )
+        path.points[secondIndex] = {
+          x: node.x + blended.x * distance2,
+          z: node.z + blended.z * distance2,
+        }
+      }
+
+      const endpointWidth = path.kind === 'main'
+        ? Math.max(path.width, sharedMainWidth)
+        : Math.max(path.width * 1.18, sharedMainWidth * .52)
+      path.widths[endpointIndex] = round(endpointWidth, 3)
+      if (path.widths[neighborIndex] !== undefined) {
+        path.widths[neighborIndex] = round(lerp(endpointWidth, path.width, .58), 3)
+      }
+      if (path.widths[secondIndex] !== undefined) {
+        path.widths[secondIndex] = round(lerp(endpointWidth, path.width, .82), 3)
+      }
+    }
+  }
+}
+
+function junctionMainAxis(node: GeneratedRegionNode, paths: GeneratedWorldPath[]) {
+  const directions = paths.map((path) => {
+    const atStart = path.fromNodeId === node.id
+    const neighbor = path.points[atStart ? 1 : path.points.length - 2]
+    return normalized2(neighbor.x - node.x, neighbor.z - node.z)
+  })
+
+  let bestA = directions[0]
+  let bestB = directions[1]
+  let bestDot = 1
+  for (let a = 0; a < directions.length; a += 1) {
+    for (let b = a + 1; b < directions.length; b += 1) {
+      const dot = directions[a].x * directions[b].x + directions[a].z * directions[b].z
+      if (dot < bestDot) {
+        bestDot = dot
+        bestA = directions[a]
+        bestB = directions[b]
+      }
+    }
+  }
+
+  return normalized2(bestA.x - bestB.x, bestA.z - bestB.z)
+}
+
+function smoothPolyline(points: GeneratedWorldPoint[], passes: number) {
+  let current = points.map((point) => ({ ...point }))
+  for (let pass = 0; pass < passes; pass += 1) {
+    const next = current.map((point) => ({ ...point }))
+    for (let index = 1; index < current.length - 1; index += 1) {
+      next[index] = {
+        x: (current[index - 1].x + current[index].x * 2 + current[index + 1].x) / 4,
+        z: (current[index - 1].z + current[index].z * 2 + current[index + 1].z) / 4,
+      }
+    }
+    current = next
+  }
+  return current
+}
+
+function normalized2(x: number, z: number) {
+  const length = Math.max(.00001, Math.hypot(x, z))
+  return { x: x / length, z: z / length }
 }
 
 function buildStream(bounds: GeneratedRegion['bounds'], seed: number, water: number) {
