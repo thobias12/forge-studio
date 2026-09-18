@@ -373,25 +373,25 @@ function makeRibbonGeometry(
   widths: number[],
   heightAt: (x: number, z: number) => number,
 ) {
+  const sections = buildRibbonSections(points, widths)
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
 
-  points.forEach((point, index) => {
-    const half = (widths[index] ?? widths[0] ?? 1) / 2
-    const join = ribbonJoinOffset(points, index, half)
-    const leftX = point.x + join.x
-    const leftZ = point.z + join.z
-    const rightX = point.x - join.x
-    const rightZ = point.z - join.z
+  sections.forEach((section, index) => {
+    const leftX = section.x + section.offsetX
+    const leftZ = section.z + section.offsetZ
+    const rightX = section.x - section.offsetX
+    const rightZ = section.z - section.offsetZ
 
     positions.push(
       leftX, heightAt(leftX, leftZ), leftZ,
       rightX, heightAt(rightX, rightZ), rightZ,
     )
-    uvs.push(0, index / Math.max(1, points.length - 1), 1, index / Math.max(1, points.length - 1))
+    const v = index / Math.max(1, sections.length - 1)
+    uvs.push(0, v, 1, v)
 
-    if (index < points.length - 1) {
+    if (index < sections.length - 1) {
       const a = index * 2
       indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
     }
@@ -411,19 +411,18 @@ function makeProfileRibbonGeometry(
   heights: number[],
   heightOffset: number,
 ) {
+  const sections = buildRibbonSections(points, widths)
   const positions: number[] = []
   const indices: number[] = []
 
-  points.forEach((point, index) => {
-    const half = (widths[index] ?? widths[0] ?? 1) / 2
-    const join = ribbonJoinOffset(points, index, half)
-    const y = (heights[index] ?? heights[0] ?? 0) + heightOffset
+  sections.forEach((section, index) => {
+    const y = (heights[section.sourceIndex] ?? heights[0] ?? 0) + heightOffset
     positions.push(
-      point.x + join.x, y, point.z + join.z,
-      point.x - join.x, y, point.z - join.z,
+      section.x + section.offsetX, y, section.z + section.offsetZ,
+      section.x - section.offsetX, y, section.z - section.offsetZ,
     )
 
-    if (index < points.length - 1) {
+    if (index < sections.length - 1) {
       const a = index * 2
       indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
     }
@@ -436,58 +435,108 @@ function makeProfileRibbonGeometry(
   return geometry
 }
 
-function ribbonJoinOffset(
+function buildRibbonSections(
   points: Array<{ x: number; z: number }>,
-  index: number,
-  halfWidth: number,
+  widths: number[],
 ) {
-  if (points.length < 2) return { x: halfWidth, z: 0 }
+  const sections: Array<{
+    x: number
+    z: number
+    offsetX: number
+    offsetZ: number
+    sourceIndex: number
+  }> = []
 
-  const point = points[index]
-  const previous = points[Math.max(0, index - 1)]
-  const next = points[Math.min(points.length - 1, index + 1)]
-
-  if (index === 0) {
-    const direction = normalizeRibbon2(next.x - point.x, next.z - point.z)
-    return { x: -direction.z * halfWidth, z: direction.x * halfWidth }
-  }
-  if (index === points.length - 1) {
-    const direction = normalizeRibbon2(point.x - previous.x, point.z - previous.z)
-    return { x: -direction.z * halfWidth, z: direction.x * halfWidth }
-  }
-
-  const incomingLength = Math.max(.001, Math.hypot(point.x - previous.x, point.z - previous.z))
-  const outgoingLength = Math.max(.001, Math.hypot(next.x - point.x, next.z - point.z))
-  const incoming = normalizeRibbon2(point.x - previous.x, point.z - previous.z)
-  const outgoing = normalizeRibbon2(next.x - point.x, next.z - point.z)
-  const dot = THREE.MathUtils.clamp(incoming.x * outgoing.x + incoming.z * outgoing.z, -1, 1)
-
-  const incomingNormal = { x: -incoming.z, z: incoming.x }
-  const outgoingNormal = { x: -outgoing.z, z: outgoing.x }
-  let miter = normalizeRibbon2(
-    incomingNormal.x + outgoingNormal.x,
-    incomingNormal.z + outgoingNormal.z,
-  )
-
-  // Near a reversal the summed normal becomes unstable. Use the outgoing
-  // segment normal and shrink the join rather than letting the ribbon cross itself.
-  if (dot < -.2 || Math.hypot(miter.x, miter.z) < .001) {
-    miter = outgoingNormal
+  if (!points.length) return sections
+  if (points.length === 1) {
+    const half = (widths[0] ?? 1) / 2
+    sections.push({ x: points[0].x, z: points[0].z, offsetX: half, offsetZ: 0, sourceIndex: 0 })
+    return sections
   }
 
-  const denominator = Math.max(
-    .34,
-    Math.abs(miter.x * outgoingNormal.x + miter.z * outgoingNormal.z),
-  )
-  const desiredScale = halfWidth / denominator
-  const segmentLimit = Math.min(incomingLength, outgoingLength) * .42
-  const maxScale = Math.max(
-    halfWidth * .62,
-    Math.min(halfWidth * 1.42, segmentLimit),
-  )
-  const scale = Math.min(desiredScale, maxScale)
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    const half = Math.max(.04, (widths[index] ?? widths[0] ?? 1) / 2)
 
-  return { x: miter.x * scale, z: miter.z * scale }
+    if (index === 0 || index === points.length - 1) {
+      const other = index === 0 ? points[1] : points[index - 1]
+      const direction = index === 0
+        ? normalizeRibbon2(other.x - point.x, other.z - point.z)
+        : normalizeRibbon2(point.x - other.x, point.z - other.z)
+      sections.push({
+        x: point.x,
+        z: point.z,
+        offsetX: -direction.z * half,
+        offsetZ: direction.x * half,
+        sourceIndex: index,
+      })
+      continue
+    }
+
+    const previous = points[index - 1]
+    const next = points[index + 1]
+    const incomingLength = Math.max(.001, Math.hypot(point.x - previous.x, point.z - previous.z))
+    const outgoingLength = Math.max(.001, Math.hypot(next.x - point.x, next.z - point.z))
+    const incoming = normalizeRibbon2(point.x - previous.x, point.z - previous.z)
+    const outgoing = normalizeRibbon2(next.x - point.x, next.z - point.z)
+    const dot = THREE.MathUtils.clamp(incoming.x * outgoing.x + incoming.z * outgoing.z, -1, 1)
+    const incomingNormal = { x: -incoming.z, z: incoming.x }
+    const outgoingNormal = { x: -outgoing.z, z: outgoing.x }
+
+    // Acute corners get two short cross-sections. This creates a true bevel
+    // instead of a long miter triangle that can spike or cross the opposite edge.
+    if (dot < .78) {
+      const bevelDistance = Math.max(
+        .08,
+        Math.min(
+          half * .72,
+          incomingLength * .28,
+          outgoingLength * .28,
+        ),
+      )
+      const cornerHalf = dot < -.15 ? half * .78 : half
+
+      sections.push({
+        x: point.x - incoming.x * bevelDistance,
+        z: point.z - incoming.z * bevelDistance,
+        offsetX: incomingNormal.x * cornerHalf,
+        offsetZ: incomingNormal.z * cornerHalf,
+        sourceIndex: index,
+      })
+      sections.push({
+        x: point.x + outgoing.x * bevelDistance,
+        z: point.z + outgoing.z * bevelDistance,
+        offsetX: outgoingNormal.x * cornerHalf,
+        offsetZ: outgoingNormal.z * cornerHalf,
+        sourceIndex: index,
+      })
+      continue
+    }
+
+    const miter = normalizeRibbon2(
+      incomingNormal.x + outgoingNormal.x,
+      incomingNormal.z + outgoingNormal.z,
+    )
+    const denominator = Math.max(
+      .58,
+      Math.abs(miter.x * outgoingNormal.x + miter.z * outgoingNormal.z),
+    )
+    const scale = Math.min(
+      half / denominator,
+      half * 1.16,
+      Math.min(incomingLength, outgoingLength) * .34,
+    )
+
+    sections.push({
+      x: point.x,
+      z: point.z,
+      offsetX: miter.x * Math.max(half * .82, scale),
+      offsetZ: miter.z * Math.max(half * .82, scale),
+      sourceIndex: index,
+    })
+  }
+
+  return sections
 }
 
 function normalizeRibbon2(x: number, z: number) {

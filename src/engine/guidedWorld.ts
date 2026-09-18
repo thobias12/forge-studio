@@ -325,10 +325,20 @@ export function generateGuidedRegion(
       contentRef: node.contentRef,
     }))
   const terrainDraft = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
-  const crossings = buildCrossings(paths, terrainDraft.stream, layerSeeds.routes, settings)
-  const terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
+  let crossings = buildCrossings(paths, terrainDraft.stream, layerSeeds.routes, settings)
+  let terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
+
+  // Crossing planning may have reshaped roads after the draft river was solved.
+  // Reconcile every bridge/ford against the finished stream centerline before
+  // dressing/validation so a rendered bridge can never drift off the water.
+  const reconciledCrossings = reconcileCrossingsWithFinalStream(paths, crossings, terrain.stream)
+  crossings = reconciledCrossings.crossings
+  if (reconciledCrossings.pathsChanged) {
+    terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
+  }
+
   const dressing = buildDressing(region, bounds, terrain, paths, pois, layerSeeds.dressing)
-  const validation = validateGeneratedRegion(nodes, connections)
+  const validation = validateGeneratedRegion(nodes, connections, paths, crossings, terrain.stream)
   const seed = composeWorldSeed(layerSeeds)
 
   return {
@@ -441,7 +451,13 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   }
 }
 
-export function validateGeneratedRegion(nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[]) {
+export function validateGeneratedRegion(
+  nodes: GeneratedRegionNode[],
+  connections: GeneratedRegionConnection[],
+  paths: GeneratedWorldPath[] = [],
+  crossings: GeneratedWorldCrossing[] = [],
+  stream: GeneratedWorldPoint[] = [],
+) {
   const issues: string[] = []
   const entry = nodes.find((item) => item.kind === 'entry')
   const exit = nodes.find((item) => item.kind === 'exit')
@@ -476,6 +492,20 @@ export function validateGeneratedRegion(nodes: GeneratedRegionNode[], connection
     const to = nodes.find((item) => item.id === link.to)
     if (!from || !to) issues.push(`Broken connection ${link.id}.`)
     else if (Math.hypot(to.x - from.x, to.z - from.z) > 52) issues.push(`Connection ${link.id} is too long for reliable traversal.`)
+  }
+
+  if (stream.length > 1) {
+    for (const crossing of crossings) {
+      const path = paths.find((item) => item.id === crossing.pathId)
+      if (!path) {
+        issues.push(`Crossing ${crossing.id} references a missing road.`)
+        continue
+      }
+      const streamDistance = distanceToPolyline(crossing.x, crossing.z, stream)
+      const roadDistance = distanceToPolyline(crossing.x, crossing.z, path.points)
+      if (streamDistance > .2) issues.push(`Crossing ${crossing.id} is not centered on the final river.`)
+      if (roadDistance > .25) issues.push(`Crossing ${crossing.id} is not centered on its road.`)
+    }
   }
 
   return { valid: issues.length === 0, issues }
@@ -923,6 +953,120 @@ function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldC
   if (path.widths[pivot] !== undefined) path.widths[pivot] = round(path.width * .98, 3)
 }
 
+
+function reconcileCrossingsWithFinalStream(
+  paths: GeneratedWorldPath[],
+  crossings: GeneratedWorldCrossing[],
+  stream: GeneratedWorldPoint[],
+) {
+  if (stream.length < 2) return { crossings: [] as GeneratedWorldCrossing[], pathsChanged: false }
+
+  let pathsChanged = false
+  const finalized: GeneratedWorldCrossing[] = []
+
+  for (const source of crossings) {
+    const path = paths.find((item) => item.id === source.pathId)
+    if (!path || path.points.length < 2) continue
+
+    const crossing = { ...source }
+    const exactHit = closestPathStreamIntersection(path, stream, crossing)
+    const streamTarget = exactHit ?? closestPointOnPolyline(crossing.x, crossing.z, stream)
+    const moved = Math.hypot(crossing.x - streamTarget.x, crossing.z - streamTarget.z)
+
+    crossing.x = round(streamTarget.x, 3)
+    crossing.z = round(streamTarget.z, 3)
+
+    const roadDistance = distanceToPolyline(crossing.x, crossing.z, path.points)
+    if (moved > .08 || roadDistance > .18 || !exactHit) {
+      reroutePathViaCrossing(path, crossing)
+      pathsChanged = true
+    }
+
+    shapePathAtCrossing(path, crossing)
+    crossing.rotation = round(pathDirectionAtPoint(path, crossing.x, crossing.z), 4)
+    pathsChanged = true
+
+    const finalStreamDistance = distanceToPolyline(crossing.x, crossing.z, stream)
+    const finalRoadDistance = distanceToPolyline(crossing.x, crossing.z, path.points)
+    if (finalStreamDistance <= .2 && finalRoadDistance <= .25) finalized.push(crossing)
+  }
+
+  return { crossings: finalized, pathsChanged }
+}
+
+function closestPathStreamIntersection(
+  path: GeneratedWorldPath,
+  stream: GeneratedWorldPoint[],
+  crossing: GeneratedWorldCrossing,
+) {
+  let best: GeneratedWorldPoint | undefined
+  let bestDistance = Infinity
+
+  for (let pathIndex = 1; pathIndex < path.points.length; pathIndex += 1) {
+    const a = path.points[pathIndex - 1]
+    const b = path.points[pathIndex]
+    for (let streamIndex = 1; streamIndex < stream.length; streamIndex += 1) {
+      const c = stream[streamIndex - 1]
+      const d = stream[streamIndex]
+      const hit = segmentIntersection(a, b, c, d)
+      if (!hit) continue
+      const distance = Math.hypot(hit.x - crossing.x, hit.z - crossing.z)
+      if (distance >= bestDistance) continue
+      bestDistance = distance
+      best = hit
+    }
+  }
+
+  return best
+}
+
+function closestPointOnPolyline(x: number, z: number, points: GeneratedWorldPoint[]) {
+  let best = { x: points[0]?.x ?? x, z: points[0]?.z ?? z, distance: Infinity }
+
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1]
+    const b = points[index]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const lengthSq = dx * dx + dz * dz
+    const t = lengthSq > .00001
+      ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
+      : 0
+    const px = a.x + dx * t
+    const pz = a.z + dz * t
+    const distance = Math.hypot(x - px, z - pz)
+    if (distance < best.distance) best = { x: px, z: pz, distance }
+  }
+
+  return best
+}
+
+function pathDirectionAtPoint(path: GeneratedWorldPath, x: number, z: number) {
+  let bestIndex = 1
+  let bestDistance = Infinity
+
+  for (let index = 1; index < path.points.length; index += 1) {
+    const a = path.points[index - 1]
+    const b = path.points[index]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const lengthSq = dx * dx + dz * dz
+    const t = lengthSq > .00001
+      ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
+      : 0
+    const px = a.x + dx * t
+    const pz = a.z + dz * t
+    const distance = Math.hypot(x - px, z - pz)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      bestIndex = index
+    }
+  }
+
+  const a = path.points[Math.max(0, bestIndex - 1)]
+  const b = path.points[Math.min(path.points.length - 1, bestIndex)]
+  return Math.atan2(b.z - a.z, b.x - a.x)
+}
 
 function buildTerrain(
   region: ForgeRegionDefinition,
