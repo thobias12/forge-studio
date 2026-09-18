@@ -18,6 +18,7 @@ import {
   saveSkillboundWorkspace,
   type ForgeDensity,
   type ForgePathStyle,
+  type ForgeRegionMood,
   type ForgeProjectWorkspace,
   type ForgeRegionDefinition,
   type ForgeRegionSize,
@@ -29,6 +30,7 @@ type GenerationLocks = Record<GenerationLayer, boolean>
 
 const DEFAULT_WORLD_GEN: ForgeRegionWorldGeneration = {
   size: 'medium',
+  mood: 'auto',
   elevation: .45,
   cliffs: .28,
   water: .4,
@@ -48,6 +50,14 @@ const BIOMES = [
   'Ruined Farmland',
   'Marsh',
   'Corrupted Wilds',
+]
+
+const MOODS: Array<{ value: ForgeRegionMood; label: string }> = [
+  { value: 'auto', label: 'Auto · varies by seed' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'deadwood', label: 'Deadwood' },
+  { value: 'bleak', label: 'Bleak' },
 ]
 
 export default function WorldForge() {
@@ -214,7 +224,7 @@ export default function WorldForge() {
             <button title="New seed" onClick={() => setMasterSeed(randomWorldSeed())}><Shuffle size={13}/></button>
           </div>
         </label>
-        <div className="world-forge-meta"><span>Generator</span><strong>Landscape Generation v3</strong></div>
+        <div className="world-forge-meta"><span>Generator</span><strong>Landscape Generation v4 · Biome Moods</strong></div>
         <button className="world-forge-preset" onClick={applyAncientForestPreset}>Apply Ancient Forest preset</button>
       </section>
 
@@ -250,7 +260,7 @@ export default function WorldForge() {
         <div>
           <span className="eyebrow">OUTDOOR REGION</span>
           <strong>{region.name}</strong>
-          <small>Seed {workspace.editor.previewSeed} · {generated.pois.length} POIs · {generated.dressing.length} dressing objects · {generated.paths.length} paths</small>
+          <small>Seed {workspace.editor.previewSeed} · {moodLabel(generated.mood)} mood · {generated.pois.length} POIs · {generated.dressing.length} dressing objects · {generated.paths.length} paths</small>
         </div>
         <div className="world-forge-toolbar-actions">
           <button onClick={rerollUnlocked}><RefreshCcw size={13}/> Regenerate unlocked</button>
@@ -295,6 +305,11 @@ export default function WorldForge() {
         <Field label="Biome">
           <select value={BIOMES.includes(region.biome) ? region.biome : 'Ancient Forest'} onChange={(event) => updateRegion({ biome: event.target.value })}>
             {BIOMES.map((biome) => <option value={biome} key={biome}>{biome}</option>)}
+          </select>
+        </Field>
+        <Field label="Mood">
+          <select value={worldGen.mood ?? 'auto'} onChange={(event) => updateWorldGen({ mood: event.target.value as ForgeRegionMood })}>
+            {MOODS.map((mood) => <option value={mood.value} key={mood.value}>{mood.label}</option>)}
           </select>
         </Field>
         <Field label="Size">
@@ -364,6 +379,11 @@ function normalizeWorldGen(value: ForgeRegionWorldGeneration | undefined, master
     ...(value ?? {}),
     layerSeeds: value?.layerSeeds ?? createWorldLayerSeeds(masterSeed),
   }
+}
+
+function moodLabel(mood: 'normal' | 'dark' | 'deadwood' | 'bleak') {
+  if (mood === 'deadwood') return 'Deadwood'
+  return mood.charAt(0).toUpperCase() + mood.slice(1)
 }
 
 function layerLabel(layer: GenerationLayer) {

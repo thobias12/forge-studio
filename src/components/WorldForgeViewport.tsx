@@ -74,8 +74,11 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     controls.maxPolarAngle = Math.PI * .47
     controls.minPolarAngle = Math.PI * .14
 
-    scene.add(new THREE.HemisphereLight(0xd7e3d2, 0x253026, 2.25))
+    const hemisphere = new THREE.HemisphereLight(0xd7e3d2, 0x253026, 2.25)
+    hemisphere.name = 'WorldMoodHemisphere'
+    scene.add(hemisphere)
     const sun = new THREE.DirectionalLight(0xffe4ba, 3.1)
+    sun.name = 'WorldMoodSun'
     sun.position.set(-45, 70, 30)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
@@ -86,6 +89,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     scene.add(sun)
 
     const fill = new THREE.DirectionalLight(0x86a891, 1.05)
+    fill.name = 'WorldMoodFill'
     fill.position.set(50, 30, -60)
     scene.add(fill)
 
@@ -125,6 +129,8 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
   useEffect(() => {
     const state = stateRef.current
     if (!state.scene || !state.camera || !state.controls) return
+
+    if (state.renderer) applyEditorMood(state.scene, state.renderer, region.mood)
 
     if (state.root) {
       state.scene.remove(state.root)
@@ -452,7 +458,7 @@ function buildBoundaryBackdrop(region: GeneratedRegion) {
   const depth = region.bounds.maxZ - region.bounds.minZ
   const centerX = (region.bounds.minX + region.bounds.maxX) / 2
   const centerZ = (region.bounds.minZ + region.bounds.maxZ) / 2
-  const palette = editorBiomePalette(region.biome)
+  const palette = editorMoodPalette(editorBiomePalette(region.biome), region.mood)
   const backdrop = new THREE.Mesh(
     new THREE.PlaneGeometry(width + 90, depth + 90),
     new THREE.MeshStandardMaterial({ color: palette.low, roughness: 1, metalness: 0 }),
@@ -471,14 +477,16 @@ function buildTerrain(region: GeneratedRegion) {
   const colors: number[] = []
   const indices: number[] = []
   const color = new THREE.Color()
-  const palette = editorBiomePalette(region.biome)
-  const surfacePalette = editorSurfacePalette(region.biome)
+  const palette = editorMoodPalette(editorBiomePalette(region.biome), region.mood)
+  const surfacePalette = editorMoodPalette(editorSurfacePalette(region.biome), region.mood)
   const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
   const mossColor = new THREE.Color(surfacePalette.moss)
   const soilColor = new THREE.Color(surfacePalette.soil)
   const meadowColor = new THREE.Color(surfacePalette.meadow)
   const scrubColor = new THREE.Color(surfacePalette.scrub)
   const rockyColor = new THREE.Color(surfacePalette.rocky)
+  const moodStyle = editorMoodStyle(region.mood)
+  const moodTerrainTint = new THREE.Color(moodStyle.terrainTint)
 
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
     const z = bounds.minZ + zIndex / (resolution - 1) * (bounds.maxZ - bounds.minZ)
@@ -500,7 +508,8 @@ function buildTerrain(region: GeneratedRegion) {
       color.lerp(scrubColor, surface.scrub * .27)
       color.lerp(rockyColor, surface.rocky * .38)
       color.lerp(soilColor, Math.max(surface.soil * .24, surface.poiWear * .68, surface.roadWear * .42))
-      const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
+      color.lerp(moodTerrainTint, moodStyle.terrainTintStrength)
+      const variation = moodStyle.terrainBrightness * (.96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06)
       colors.push(color.r * variation, color.g * variation, color.b * variation)
     }
   }
@@ -800,10 +809,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const rockOutcrops = region.dressing.filter((item) => item.type === 'rock-outcrop')
   const hedges = region.dressing.filter((item) => item.type === 'hedge')
   const rootClusters = region.dressing.filter((item) => item.type === 'root-cluster')
-  const palette = editorBiomePalette(region.biome)
-  const surfacePalette = editorSurfacePalette(region.biome)
-  const treeVariantColors = editorTreeVariantColors(region.biome, palette.tree)
-  const groundCoverColors = editorGroundCoverColors(region.biome, palette.fern)
+  const palette = editorMoodPalette(editorBiomePalette(region.biome), region.mood)
+  const surfacePalette = editorMoodPalette(editorSurfacePalette(region.biome), region.mood)
+  const treeVariantColors = editorTreeVariantColors(region.biome, palette.tree).map((color) => applyEditorMoodColor(color, region.mood))
+  const groundCoverColors = editorMoodPalette(editorGroundCoverColors(region.biome, palette.fern), region.mood)
   const corruptTrees = region.biome.toLowerCase().includes('corrupt')
 
   if (bankPatches.length) {
@@ -2006,6 +2015,117 @@ function disposeGroup(root?: THREE.Object3D) {
     })
   })
   materials.forEach((material) => material.dispose())
+}
+
+
+function editorMoodStyle(mood: GeneratedRegion['mood']) {
+  if (mood === 'dark') {
+    return {
+      background: 0x101813,
+      fog: 0x142019,
+      fogDensity: .0072,
+      exposure: .96,
+      hemisphere: 1.62,
+      sun: 2.15,
+      fill: .62,
+      terrainTint: 0x243226,
+      terrainTintStrength: .14,
+      terrainBrightness: .82,
+      colorBrightness: .82,
+      colorTint: 0x263229,
+      colorTintStrength: .08,
+    }
+  }
+  if (mood === 'deadwood') {
+    return {
+      background: 0x141713,
+      fog: 0x1b2119,
+      fogDensity: .0069,
+      exposure: 1,
+      hemisphere: 1.78,
+      sun: 2.28,
+      fill: .68,
+      terrainTint: 0x443f2f,
+      terrainTintStrength: .12,
+      terrainBrightness: .86,
+      colorBrightness: .84,
+      colorTint: 0x4a4332,
+      colorTintStrength: .1,
+    }
+  }
+  if (mood === 'bleak') {
+    return {
+      background: 0x1b211f,
+      fog: 0x242b27,
+      fogDensity: .0066,
+      exposure: 1.03,
+      hemisphere: 1.88,
+      sun: 2.36,
+      fill: .72,
+      terrainTint: 0x59605a,
+      terrainTintStrength: .12,
+      terrainBrightness: .91,
+      colorBrightness: .9,
+      colorTint: 0x5d625d,
+      colorTintStrength: .12,
+    }
+  }
+  return {
+    background: 0x17231a,
+    fog: 0x1a281e,
+    fogDensity: .0064,
+    exposure: 1.22,
+    hemisphere: 2.25,
+    sun: 3.1,
+    fill: 1.05,
+    terrainTint: 0x000000,
+    terrainTintStrength: 0,
+    terrainBrightness: 1,
+    colorBrightness: 1,
+    colorTint: 0x000000,
+    colorTintStrength: 0,
+  }
+}
+
+function applyEditorMood(
+  scene: THREE.Scene,
+  renderer: THREE.WebGLRenderer,
+  mood: GeneratedRegion['mood'],
+) {
+  const style = editorMoodStyle(mood)
+  scene.background = new THREE.Color(style.background)
+  scene.fog = new THREE.FogExp2(style.fog, style.fogDensity)
+  renderer.toneMappingExposure = style.exposure
+
+  const hemisphere = scene.getObjectByName('WorldMoodHemisphere')
+  if (hemisphere instanceof THREE.HemisphereLight) hemisphere.intensity = style.hemisphere
+  const sun = scene.getObjectByName('WorldMoodSun')
+  if (sun instanceof THREE.DirectionalLight) sun.intensity = style.sun
+  const fill = scene.getObjectByName('WorldMoodFill')
+  if (fill instanceof THREE.DirectionalLight) fill.intensity = style.fill
+}
+
+function applyEditorMoodColor(
+  value: number,
+  mood: GeneratedRegion['mood'],
+) {
+  const style = editorMoodStyle(mood)
+  return new THREE.Color(value)
+    .multiplyScalar(style.colorBrightness)
+    .lerp(new THREE.Color(style.colorTint), style.colorTintStrength)
+    .getHex()
+}
+
+function editorMoodPalette<T extends Record<string, number>>(
+  palette: T,
+  mood: GeneratedRegion['mood'],
+): T {
+  return Object.fromEntries(
+    Object.entries(palette).map(([key, value]) => [
+      key,
+      applyEditorMoodColor(value, mood),
+    ]),
+  ) as T
 }
 
 function editorBiomePalette(biome: string) {

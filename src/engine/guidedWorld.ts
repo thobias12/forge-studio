@@ -4,6 +4,7 @@ export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'l
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
 export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch' | 'leaf-patch' | 'flower-patch' | 'mud-patch' | 'corrupt-scar' | 'rock-outcrop' | 'hedge' | 'root-cluster'
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
+export type WorldMood = 'normal' | 'dark' | 'deadwood' | 'bleak'
 
 export type GeneratedMicroBiome = {
   id: string
@@ -128,6 +129,7 @@ export type GeneratedRegion = {
   regionId: string
   regionName: string
   biome: string
+  mood: WorldMood
   nodes: GeneratedRegionNode[]
   connections: GeneratedRegionConnection[]
   paths: GeneratedWorldPath[]
@@ -161,6 +163,7 @@ export function generateGuidedRegion(
   const routeRandom = seededRandom(layerSeeds.routes)
   const poiRandom = seededRandom(layerSeeds.pois)
   const settings = worldSettings(region)
+  const mood = resolveWorldMood(region.biome, region.worldGen?.mood ?? 'auto', layerSeeds.dressing)
   const sizeScale = settings.size === 'small' ? .82 : settings.size === 'large' ? 1.22 : 1
   const chunkCount = Math.max(4, Math.round(intRange(routeRandom, region.chunkRange[0], region.chunkRange[1]) * sizeScale))
   const spacing = 17.5 * sizeScale
@@ -466,6 +469,7 @@ export function generateGuidedRegion(
 
   const dressing = buildDressing(
     region,
+    mood,
     bounds,
     terrain,
     paths,
@@ -496,6 +500,7 @@ export function generateGuidedRegion(
     regionId: region.id,
     regionName: region.name,
     biome: region.biome,
+    mood,
     nodes,
     connections,
     paths,
@@ -3825,6 +3830,7 @@ function microBiomeInfluence(microBiomes: GeneratedMicroBiome[], x: number, z: n
 
 function buildDressing(
   region: ForgeRegionDefinition,
+  mood: WorldMood,
   bounds: GeneratedRegion['bounds'],
   terrain: GeneratedWorldTerrain,
   paths: GeneratedWorldPath[],
@@ -3836,17 +3842,18 @@ function buildDressing(
   const random = seededRandom(seed)
   const settings = worldSettings(region)
   const profile = biomeIdentityProfile(region.biome)
+  const moodProfile = worldMoodDressingProfile(mood)
   const biome = region.biome.toLowerCase()
   const sizeFactor = settings.size === 'large' ? 1.35 : settings.size === 'small' ? .72 : 1
   const effectiveForestDensity = clamp(
-    settings.forestDensity * profile.forestScale,
+    settings.forestDensity * profile.forestScale * moodProfile.forestScale,
     .08,
     1,
   )
   const target = Math.round(
     (250 + effectiveForestDensity * 560) *
     sizeFactor *
-    profile.dressingScale,
+    profile.dressingScale * moodProfile.dressingScale,
   )
   const dressing: GeneratedWorldDressing[] = []
   const clusterCount = Math.max(
@@ -3854,7 +3861,7 @@ function buildDressing(
     Math.round(
       (7 + effectiveForestDensity * 10) *
       sizeFactor *
-      profile.clusterScale,
+      profile.clusterScale * moodProfile.clusterScale,
     ),
   )
   const clusters = Array.from({ length: clusterCount }, () => ({
@@ -3939,9 +3946,9 @@ function buildDressing(
     const roll = random()
     let type: WorldDressingType
     const treeThreshold = clamp(
-      .24 +
+      (.24 +
       density * .56 +
-      (profile.treeBias - 1) * .24,
+      (profile.treeBias - 1) * .24) * moodProfile.treeDensityScale,
       .12,
       .93,
     )
@@ -3952,7 +3959,7 @@ function buildDressing(
     else if (micro.moss * profile.mossBias > .42 && roll < clamp(.45 + profile.mossBias * .13, .54, .88)) type = roll < .22 ? 'rock' : 'fern'
     else if (micro.scrub * profile.scrubBias > .38 && roll < clamp(.5 + profile.scrubBias * .14, .6, .9)) type = roll < .5 ? 'shrub' : 'fern'
     else if (roll < treeThreshold) {
-      type = random() < profile.deadTreeBias ? 'dead-tree' : 'tree'
+      type = random() < clamp(profile.deadTreeBias + moodProfile.deadTreeAdd, 0, .86) ? 'dead-tree' : 'tree'
     } else if (roll < treeThreshold + .08 * profile.rockBias) type = 'rock'
     else if (roll < treeThreshold + .19) type = 'fern'
     else if (roll < treeThreshold + .25) type = 'fallen-log'
@@ -4002,6 +4009,20 @@ function buildDressing(
             : 'rock'
     }
 
+    if (
+      mood === 'deadwood' &&
+      (type === 'grass' || type === 'shrub' || type === 'fern') &&
+      random() < .34
+    ) {
+      type = random() < .56 ? 'stump' : 'fallen-log'
+    } else if (
+      mood === 'bleak' &&
+      (type === 'grass' || type === 'shrub' || type === 'fern') &&
+      random() < .28
+    ) {
+      type = random() < .66 ? 'rock' : 'stump'
+    }
+
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
     const baseScale = type === 'tree' || type === 'dead-tree'
@@ -4030,6 +4051,16 @@ function buildDressing(
   appendRiverbankDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   appendBiomeSignatureDressing(
     region,
+    dressing,
+    terrain,
+    bounds,
+    paths,
+    pois,
+    riverMask,
+    random,
+  )
+  appendMoodSignatureDressing(
+    mood,
     dressing,
     terrain,
     bounds,
@@ -4473,6 +4504,83 @@ function appendRiverbankDressing(
   }
 }
 
+
+function appendMoodSignatureDressing(
+  mood: WorldMood,
+  dressing: GeneratedWorldDressing[],
+  terrain: GeneratedWorldTerrain,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
+  random: () => number,
+) {
+  if (mood === 'normal') return
+
+  const pushMood = (
+    type: WorldDressingType,
+    count: number,
+    scaleMin: number,
+    scaleMax: number,
+    minPath = 3.1,
+    minRiver = 1.2,
+  ) => {
+    let placed = 0
+    let attempts = 0
+    while (placed < count && attempts < count * 30) {
+      attempts += 1
+      const x = bounds.minX + 2.4 + random() * (bounds.maxX - bounds.minX - 4.8)
+      const z = bounds.minZ + 2.4 + random() * (bounds.maxZ - bounds.minZ - 4.8)
+      if (distanceToPaths(x, z, paths) < minPath) continue
+
+      const riverClearance = riverMask.points.length
+        ? riverOccupancySample(riverMask, x, z).signedDistance
+        : Infinity
+      if (riverClearance < minRiver) continue
+
+      const poiDistance = pois.reduce(
+        (best, poi) =>
+          Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius),
+        Infinity,
+      )
+      if (poiDistance < 2.8) continue
+
+      dressing.push({
+        id: `mood-${mood}-${type}-${placed}`,
+        type,
+        x: round(x, 2),
+        y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
+        z: round(z, 2),
+        scale: round(scaleMin + random() * (scaleMax - scaleMin), 2),
+        rotation: round(random() * Math.PI * 2, 3),
+        variant: Math.floor(random() * 4),
+      })
+      placed += 1
+    }
+  }
+
+  if (mood === 'dark') {
+    pushMood('dead-tree', 9, .72, 1.35, 3.5, 1.4)
+    pushMood('stump', 7, .62, 1.05)
+    pushMood('fallen-log', 6, .72, 1.28)
+    pushMood('mud-patch', 7, 1.1, 2)
+    return
+  }
+
+  if (mood === 'deadwood') {
+    pushMood('dead-tree', 26, .68, 1.48, 3.4, 1.35)
+    pushMood('stump', 17, .62, 1.18)
+    pushMood('fallen-log', 15, .72, 1.42)
+    pushMood('mud-patch', 10, 1.15, 2.15)
+    return
+  }
+
+  pushMood('dead-tree', 11, .64, 1.28, 3.7, 1.5)
+  pushMood('stump', 8, .58, 1.02)
+  pushMood('rock-outcrop', 12, 1.08, 1.88, 4.1, 1.7)
+  pushMood('fallen-log', 5, .68, 1.18)
+}
+
 function poiPool(region: ForgeRegionDefinition): WorldPoiType[] {
   const features = new Set(region.features.map((feature) => feature.toLowerCase()))
   const pool: WorldPoiType[] = ['ruins', 'camp', 'shrine', 'standing-stones', 'beast-den', 'watchtower']
@@ -4690,6 +4798,99 @@ function biomeIdentityProfile(biome: string) {
       'forest-floor', 'forest-floor', 'moss', 'scrub',
       'forest-floor', 'meadow', 'moss',
     ] as WorldMicroBiomeType[],
+  }
+}
+
+
+function resolveWorldMood(
+  biome: string,
+  requested: string,
+  seed: number,
+): WorldMood {
+  if (
+    requested === 'normal' ||
+    requested === 'dark' ||
+    requested === 'deadwood' ||
+    requested === 'bleak'
+  ) {
+    return requested
+  }
+
+  const value = biome.toLowerCase()
+  const roll = (hashSeed(`${seed}:${value}:mood`) % 10000) / 10000
+
+  if (value.includes('dead')) {
+    if (roll < .16) return 'normal'
+    if (roll < .46) return 'dark'
+    return 'deadwood'
+  }
+  if (value.includes('corrupt')) {
+    if (roll < .35) return 'normal'
+    if (roll < .7) return 'bleak'
+    return 'deadwood'
+  }
+  if (value.includes('highland')) return roll < .68 ? 'normal' : 'bleak'
+  if (
+    value.includes('farmland') ||
+    value.includes('meadow') ||
+    value.includes('grassland')
+  ) {
+    return roll < .74 ? 'normal' : 'bleak'
+  }
+  if (value.includes('autumn')) {
+    if (roll < .56) return 'normal'
+    if (roll < .8) return 'dark'
+    return 'deadwood'
+  }
+  if (
+    value.includes('marsh') ||
+    value.includes('swamp') ||
+    value.includes('drowned')
+  ) {
+    if (roll < .5) return 'normal'
+    if (roll < .74) return 'dark'
+    return 'deadwood'
+  }
+
+  if (roll < .56) return 'normal'
+  if (roll < .82) return 'dark'
+  return 'deadwood'
+}
+
+function worldMoodDressingProfile(mood: WorldMood) {
+  if (mood === 'dark') {
+    return {
+      forestScale: 1.03,
+      dressingScale: 1.04,
+      clusterScale: 1.04,
+      treeDensityScale: 1.02,
+      deadTreeAdd: .12,
+    }
+  }
+  if (mood === 'deadwood') {
+    return {
+      forestScale: .9,
+      dressingScale: 1.03,
+      clusterScale: .9,
+      treeDensityScale: .91,
+      deadTreeAdd: .36,
+    }
+  }
+  if (mood === 'bleak') {
+    return {
+      forestScale: .62,
+      dressingScale: .84,
+      clusterScale: .68,
+      treeDensityScale: .72,
+      deadTreeAdd: .2,
+    }
+  }
+  return {
+    forestScale: 1,
+    dressingScale: 1,
+    clusterScale: 1,
+    treeDensityScale: 1,
+    deadTreeAdd: 0,
   }
 }
 
