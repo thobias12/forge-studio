@@ -1196,9 +1196,9 @@ function makeGeneratedStream(region: GeneratedRegion) {
 function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
   const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
   const road = new THREE.Mesh(
-    makeRuntimeRibbon(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + .054),
+    makeRuntimeRibbon(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + (path.kind === 'main' ? .054 : .049)),
     new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x594f3e : 0x48473c,
+      color: path.kind === 'main' ? 0x594f3e : 0x41463a,
       roughness: 1,
       polygonOffset: true,
       polygonOffsetFactor: -1,
