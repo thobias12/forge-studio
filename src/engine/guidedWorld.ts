@@ -288,6 +288,7 @@ export function generateGuidedRegion(
 
   const paths = buildWorldPaths(nodes, connections, layerSeeds.routes)
   smoothWorldJunctions(paths, nodes)
+  shapeLandmarkApproaches(paths, nodes)
 
   const combatCandidates = nodes.filter((item) => item.kind === 'route' || item.kind === 'branch')
   const encounterCount = region.enemyDensity === 'high' ? 3 : region.enemyDensity === 'low' ? 1 : 2
@@ -323,8 +324,9 @@ export function generateGuidedRegion(
       nodeId: node.id,
       contentRef: node.contentRef,
     }))
+  const terrainDraft = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
+  const crossings = buildCrossings(paths, terrainDraft.stream, layerSeeds.routes, settings)
   const terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
-  const crossings = buildCrossings(paths, terrain.stream, layerSeeds.routes)
   const dressing = buildDressing(region, bounds, terrain, paths, pois, layerSeeds.dressing)
   const validation = validateGeneratedRegion(nodes, connections)
   const seed = composeWorldSeed(layerSeeds)
@@ -417,10 +419,11 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   }
 
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
-  const roadWear = pathEdgeWear(region.paths, x, z)
+  const crossingWear = crossingApproachWear(region.crossings, x, z)
+  const roadWear = Math.max(pathEdgeWear(region.paths, x, z), crossingWear * .7)
   const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92, 0, 1)
   const moss = clamp((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02, 0, 1)
-  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .2 + roadWear * .88, 0, 1)
+  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .2 + roadWear * .76 + crossingWear * .38, 0, 1)
 
   return {
     broad,
@@ -433,6 +436,7 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     scrub: micro.scrub,
     rocky: micro.rocky,
     roadWear,
+    crossingWear,
     poiWear: clamp(poiWear, 0, 1),
   }
 }
@@ -494,7 +498,7 @@ function buildWorldPaths(nodes: GeneratedRegionNode[], connections: GeneratedReg
     const nz = dx / length
     const bend = (random() - .5) * Math.min(link.kind === 'main' ? 7.5 : 5.5, length * .22)
     const secondBend = (random() - .5) * Math.min(link.kind === 'main' ? 3.2 : 2.3, length * .11)
-    const baseWidth = link.kind === 'main' ? 3.15 : 1.55
+    const baseWidth = link.kind === 'main' ? 3.15 : 1.32
     const points: GeneratedWorldPoint[] = []
     const widths: number[] = []
     const segments = Math.max(10, Math.round(length / 2.35))
@@ -601,7 +605,9 @@ function smoothWorldJunctions(paths: GeneratedWorldPath[], nodes: GeneratedRegio
 
       const endpointWidth = path.kind === 'main'
         ? Math.max(path.width, sharedMainWidth)
-        : Math.max(path.width * 1.18, sharedMainWidth * .52)
+        : sharedMainWidth > 0
+          ? Math.min(path.width * .94, sharedMainWidth * .44)
+          : path.width * .94
       path.widths[endpointIndex] = round(endpointWidth, 3)
       if (path.widths[neighborIndex] !== undefined) {
         path.widths[neighborIndex] = round(lerp(endpointWidth, path.width, .58), 3)
@@ -657,87 +663,257 @@ function normalized2(x: number, z: number) {
   return { x: x / length, z: z / length }
 }
 
-function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint[], seed: number) {
+function buildCrossings(
+  paths: GeneratedWorldPath[],
+  stream: GeneratedWorldPoint[],
+  seed: number,
+  settings: ReturnType<typeof worldSettings>,
+) {
   if (stream.length < 2) return [] as GeneratedWorldCrossing[]
-  const random = seededRandom(hashSeed(`${seed}:crossings`))
+
   type CrossingCandidate = {
     path: GeneratedWorldPath
     pathIndex: number
+    streamIndex: number
     hit: GeneratedWorldPoint
     rotation: number
+    score: number
   }
-  const candidates: CrossingCandidate[] = []
 
+  const candidates: CrossingCandidate[] = []
   for (const path of paths) {
     for (let pathIndex = 1; pathIndex < path.points.length; pathIndex += 1) {
       const a = path.points[pathIndex - 1]
       const b = path.points[pathIndex]
+      const roadDir = normalized2(b.x - a.x, b.z - a.z)
       for (let streamIndex = 1; streamIndex < stream.length; streamIndex += 1) {
         const c = stream[streamIndex - 1]
         const d = stream[streamIndex]
         const hit = segmentIntersection(a, b, c, d)
         if (!hit) continue
+
+        const streamDir = normalized2(d.x - c.x, d.z - c.z)
+        const perpendicular = Math.abs(roadDir.x * streamDir.z - roadDir.z * streamDir.x)
+        const streamT = streamIndex / Math.max(1, stream.length - 1)
+        const centerQuality = 1 - Math.abs(streamT - .5) * 2
         candidates.push({
           path,
           pathIndex,
+          streamIndex,
           hit,
           rotation: Math.atan2(b.z - a.z, b.x - a.x),
+          score:
+            (path.kind === 'main' ? 8 : 2.5) +
+            path.width * .55 +
+            perpendicular * 2.8 +
+            centerQuality * .65,
         })
       }
     }
   }
+  if (!candidates.length) return []
 
-  candidates.sort((a, b) => {
-    if (a.path.kind !== b.path.kind) return a.path.kind === 'main' ? -1 : 1
-    return b.path.width - a.path.width
-  })
+  // Collapse multiple triangle/segment hits at the same physical crossing.
+  const representatives: CrossingCandidate[] = []
+  for (const candidate of [...candidates].sort((a, b) => b.score - a.score)) {
+    if (representatives.some((item) => Math.hypot(item.hit.x - candidate.hit.x, item.hit.z - candidate.hit.z) < 8.5)) {
+      continue
+    }
+    representatives.push(candidate)
+  }
 
-  const selected: Array<{ crossing: GeneratedWorldCrossing; candidate: CrossingCandidate }> = []
-  for (const candidate of candidates) {
-    const nearby = selected.find(({ crossing }) =>
-      Math.hypot(crossing.x - candidate.hit.x, crossing.z - candidate.hit.z) < 10.5,
-    )
-    if (nearby) {
-      if (nearby.candidate.path.id !== candidate.path.id) {
-        redirectPathToCrossing(candidate.path, candidate.pathIndex, nearby.crossing.x, nearby.crossing.z)
+  const primary = representatives[0]
+  const minSpacing = settings.size === 'large' ? 34 : 29
+  const distantMain = representatives.find((candidate) =>
+    candidate.path.kind === 'main' &&
+    candidate !== primary &&
+    Math.hypot(candidate.hit.x - primary.hit.x, candidate.hit.z - primary.hit.z) >= minSpacing,
+  )
+  const allowSecondary =
+    settings.size === 'large' ||
+    settings.water > .58 ||
+    settings.exploration > .84 ||
+    Boolean(distantMain)
+
+  const selectedCandidates: CrossingCandidate[] = [primary]
+  if (allowSecondary) {
+    const secondary = [...representatives]
+      .filter((candidate) =>
+        candidate !== primary &&
+        Math.hypot(candidate.hit.x - primary.hit.x, candidate.hit.z - primary.hit.z) >= minSpacing,
+      )
+      .sort((a, b) => {
+        // A distant main-road crossing wins; otherwise prefer the best perpendicular crossing.
+        const aMain = a.path.kind === 'main' ? 2.5 : 0
+        const bMain = b.path.kind === 'main' ? 2.5 : 0
+        return (b.score + bMain) - (a.score + aMain)
+      })[0]
+    if (secondary) selectedCandidates.push(secondary)
+  }
+
+  const selected: Array<{ crossing: GeneratedWorldCrossing; candidate: CrossingCandidate }> =
+    selectedCandidates.map((candidate, index) => {
+      const kind: GeneratedWorldCrossing['kind'] =
+        index === 0 || candidate.path.kind === 'main'
+          ? 'bridge'
+          : 'ford'
+      return {
+        candidate,
+        crossing: {
+          id: `crossing-${index}`,
+          kind,
+          x: round(candidate.hit.x, 3),
+          z: round(candidate.hit.z, 3),
+          rotation: round(candidate.rotation, 4),
+          width: round((candidate.path.width || 2) * (kind === 'bridge' ? 1.08 : 1.38), 3),
+          pathId: candidate.path.id,
+        },
       }
+    })
+
+  // Every road that touches the river is routed toward one of the planned crossings.
+  // This makes the river a meaningful navigation barrier instead of a row of bridges.
+  const byPath = new Map<string, CrossingCandidate[]>()
+  for (const candidate of candidates) {
+    const list = byPath.get(candidate.path.id) ?? []
+    list.push(candidate)
+    byPath.set(candidate.path.id, list)
+  }
+
+  for (const [pathId, pathCandidates] of byPath) {
+    const path = pathCandidates[0].path
+    const alreadySelected = selected.find(({ candidate }) => candidate.path.id === pathId)
+    if (alreadySelected) {
+      shapePathAtCrossing(path, alreadySelected.crossing)
       continue
     }
 
-    const kind: GeneratedWorldCrossing['kind'] =
-      candidate.path.kind === 'main' || random() > .58 ? 'bridge' : 'ford'
-    const crossing: GeneratedWorldCrossing = {
-      id: `crossing-${selected.length}`,
-      kind,
-      x: round(candidate.hit.x, 3),
-      z: round(candidate.hit.z, 3),
-      rotation: round(candidate.rotation, 4),
-      width: round((candidate.path.width || 2) * (kind === 'bridge' ? 1.12 : 1.48), 3),
-      pathId: candidate.path.id,
-    }
-    selected.push({ crossing, candidate })
+    const representative = [...pathCandidates].sort((a, b) => b.score - a.score)[0]
+    const target = [...selected].sort((a, b) =>
+      Math.hypot(a.crossing.x - representative.hit.x, a.crossing.z - representative.hit.z) -
+      Math.hypot(b.crossing.x - representative.hit.x, b.crossing.z - representative.hit.z)
+    )[0]
+    if (!target) continue
+
+    reroutePathViaCrossing(path, target.crossing)
+    shapePathAtCrossing(path, target.crossing)
   }
+
   return selected.map(({ crossing }) => crossing)
 }
+function shapeLandmarkApproaches(paths: GeneratedWorldPath[], nodes: GeneratedRegionNode[]) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  for (const path of paths) {
+    const startNode = nodeMap.get(path.fromNodeId)
+    const endNode = nodeMap.get(path.toNodeId)
+    const endpoint =
+      endNode?.kind === 'landmark'
+        ? { node: endNode, atStart: false }
+        : startNode?.kind === 'landmark'
+          ? { node: startNode, atStart: true }
+          : undefined
+    if (!endpoint || path.points.length < 5) continue
 
-function redirectPathToCrossing(path: GeneratedWorldPath, segmentIndex: number, x: number, z: number) {
-  if (path.points.length < 3) return
-  const left = Math.max(0, segmentIndex - 1)
-  const right = Math.min(path.points.length - 1, segmentIndex)
-  const leftDistance = Math.hypot(path.points[left].x - x, path.points[left].z - z)
-  const rightDistance = Math.hypot(path.points[right].x - x, path.points[right].z - z)
-  const pivot = leftDistance <= rightDistance ? left : right
+    const endpointIndex = endpoint.atStart ? 0 : path.points.length - 1
+    const step = endpoint.atStart ? 1 : -1
+    const neighbor = path.points[endpointIndex + step]
+    if (!neighbor) continue
 
-  path.points[pivot] = { x, z }
-  for (const [offset, strength] of [[-2, .18], [-1, .42], [1, .42], [2, .18]] as const) {
-    const index = pivot + offset
-    if (index <= 0 || index >= path.points.length - 1) continue
-    path.points[index] = {
-      x: path.points[index].x + (x - path.points[index].x) * strength,
-      z: path.points[index].z + (z - path.points[index].z) * strength,
+    const away = normalized2(neighbor.x - endpoint.node.x, neighbor.z - endpoint.node.z)
+    path.points[endpointIndex] = { x: endpoint.node.x, z: endpoint.node.z }
+
+    const distances = [2.2, 4.7, 7.5]
+    for (let offset = 1; offset <= 3; offset += 1) {
+      const index = endpointIndex + step * offset
+      if (index < 0 || index >= path.points.length) continue
+      const original = path.points[index]
+      const target = {
+        x: endpoint.node.x + away.x * distances[offset - 1],
+        z: endpoint.node.z + away.z * distances[offset - 1],
+      }
+      const blend = offset === 1 ? .92 : offset === 2 ? .72 : .42
+      path.points[index] = {
+        x: lerp(original.x, target.x, blend),
+        z: lerp(original.z, target.z, blend),
+      }
     }
+
+    // Approach trails taper into the POI instead of ending in a triangular road blob.
+    const base = path.width
+    path.widths[endpointIndex] = round(base * .78, 3)
+    if (path.widths[endpointIndex + step] !== undefined) path.widths[endpointIndex + step] = round(base * .82, 3)
+    if (path.widths[endpointIndex + step * 2] !== undefined) path.widths[endpointIndex + step * 2] = round(base * .9, 3)
   }
 }
+
+function reroutePathViaCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldCrossing) {
+  if (path.points.length < 6) return
+  const start = path.points[0]
+  const end = path.points[path.points.length - 1]
+  const firstLength = Math.hypot(crossing.x - start.x, crossing.z - start.z)
+  const secondLength = Math.hypot(end.x - crossing.x, end.z - crossing.z)
+  const totalLength = Math.max(.001, firstLength + secondLength)
+  const count = path.points.length
+  const pivot = clamp(Math.round((firstLength / totalLength) * (count - 1)), 2, count - 3)
+
+  const next: GeneratedWorldPoint[] = []
+  for (let index = 0; index < count; index += 1) {
+    if (index <= pivot) {
+      const t = index / Math.max(1, pivot)
+      const eased = smoothstep(t)
+      next.push({
+        x: lerp(start.x, crossing.x, eased),
+        z: lerp(start.z, crossing.z, eased),
+      })
+    } else {
+      const t = (index - pivot) / Math.max(1, count - 1 - pivot)
+      const eased = smoothstep(t)
+      next.push({
+        x: lerp(crossing.x, end.x, eased),
+        z: lerp(crossing.z, end.z, eased),
+      })
+    }
+  }
+  next[pivot] = { x: crossing.x, z: crossing.z }
+  path.points = smoothPolyline(next, 1)
+}
+
+function shapePathAtCrossing(path: GeneratedWorldPath, crossing: GeneratedWorldCrossing) {
+  if (path.points.length < 5) return
+  let pivot = 0
+  let bestDistance = Infinity
+  for (let index = 0; index < path.points.length; index += 1) {
+    const distance = Math.hypot(path.points[index].x - crossing.x, path.points[index].z - crossing.z)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      pivot = index
+    }
+  }
+
+  const prev = path.points[Math.max(0, pivot - 1)]
+  const next = path.points[Math.min(path.points.length - 1, pivot + 1)]
+  let direction = normalized2(Math.cos(crossing.rotation), Math.sin(crossing.rotation))
+  const travel = normalized2(next.x - prev.x, next.z - prev.z)
+  if (direction.x * travel.x + direction.z * travel.z < 0) {
+    direction = { x: -direction.x, z: -direction.z }
+  }
+
+  path.points[pivot] = { x: crossing.x, z: crossing.z }
+  for (const [offset, distance] of [[-2, 4.6], [-1, 2.35], [1, 2.35], [2, 4.6]] as const) {
+    const index = pivot + offset
+    if (index <= 0 || index >= path.points.length - 1) continue
+    const sign = offset < 0 ? -1 : 1
+    path.points[index] = {
+      x: crossing.x + direction.x * distance * sign,
+      z: crossing.z + direction.z * distance * sign,
+    }
+    if (path.widths[index] !== undefined) {
+      path.widths[index] = round(path.width * (Math.abs(offset) === 1 ? .96 : .9), 3)
+    }
+  }
+  if (path.widths[pivot] !== undefined) path.widths[pivot] = round(path.width * .98, 3)
+}
+
 
 function buildTerrain(
   region: ForgeRegionDefinition,
@@ -1477,6 +1653,24 @@ function limitHydrologyCurvature(points: GeneratedWorldPoint[], water: number) {
   }
 
   return result
+}
+
+function crossingApproachWear(crossings: GeneratedWorldCrossing[], x: number, z: number) {
+  let best = 0
+  for (const crossing of crossings) {
+    const dx = x - crossing.x
+    const dz = z - crossing.z
+    const cos = Math.cos(-crossing.rotation)
+    const sin = Math.sin(-crossing.rotation)
+    const along = dx * cos - dz * sin
+    const across = dx * sin + dz * cos
+    const alongRadius = crossing.kind === 'bridge' ? 7.2 : 5.6
+    const acrossRadius = Math.max(2.4, crossing.width * 1.15)
+    const normalized = Math.hypot(along / alongRadius, across / acrossRadius)
+    if (normalized >= 1) continue
+    best = Math.max(best, 1 - smoothstep(clamp(normalized, 0, 1)))
+  }
+  return best
 }
 
 function pathEdgeWear(paths: GeneratedWorldPath[], x: number, z: number) {
