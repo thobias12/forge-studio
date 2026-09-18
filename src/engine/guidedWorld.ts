@@ -2545,7 +2545,7 @@ function buildDressing(
     const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
     const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
-    if (pathDistance < 2.35 || poiDistance < 3.6 || riverClearance < .55) continue
+    if (pathDistance < 2.35 || poiDistance < 2.25 || riverClearance < .55) continue
     const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
     if (random() < openPenalty * (.76 + settings.openSpace * .18)) continue
 
@@ -2614,8 +2614,108 @@ function buildDressing(
     })
   }
 
+  appendPoiTransitionDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   appendRiverbankDressing(dressing, terrain, bounds, paths, pois, riverMask, random)
   return dressing
+}
+
+function appendPoiTransitionDressing(
+  dressing: GeneratedWorldDressing[],
+  terrain: GeneratedWorldTerrain,
+  bounds: GeneratedRegion['bounds'],
+  paths: GeneratedWorldPath[],
+  pois: GeneratedWorldPoi[],
+  riverMask: RiverOccupancyMask,
+  random: () => number,
+) {
+  const pickType = (poi: GeneratedWorldPoi): WorldDressingType => {
+    const roll = random()
+    if (poi.type === 'camp' || poi.type === 'settlement') {
+      if (roll < .34) return 'grass'
+      if (roll < .6) return 'shrub'
+      if (roll < .82) return 'fallen-log'
+      return 'stump'
+    }
+    if (poi.type === 'ruins' || poi.type === 'watchtower' || poi.type === 'dungeon' || poi.type === 'graveyard') {
+      if (roll < .46) return 'rock'
+      if (roll < .68) return 'fern'
+      if (roll < .86) return 'shrub'
+      return 'fallen-log'
+    }
+    if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+      if (roll < .44) return 'rock'
+      if (roll < .7) return 'grass'
+      if (roll < .88) return 'fern'
+      return 'shrub'
+    }
+    if (roll < .38) return 'rock'
+    if (roll < .66) return 'shrub'
+    if (roll < .84) return 'fallen-log'
+    return 'fern'
+  }
+
+  for (let poiIndex = 0; poiIndex < pois.length; poiIndex += 1) {
+    const poi = pois[poiIndex]
+    const count =
+      poi.type === 'settlement'
+        ? 11
+        : poi.type === 'camp'
+          ? 9
+          : poi.type === 'ruins' || poi.type === 'graveyard'
+            ? 8
+            : 6
+    const startAngle = random() * Math.PI * 2
+
+    for (let itemIndex = 0; itemIndex < count; itemIndex += 1) {
+      const angle =
+        startAngle +
+        itemIndex / count * Math.PI * 2 +
+        (random() - .5) * .62
+      const radius = poi.radius + 1.25 + random() * 3.35
+      const x = poi.x + Math.cos(angle) * radius
+      const z = poi.z + Math.sin(angle) * radius
+
+      if (
+        x <= bounds.minX + .8 ||
+        x >= bounds.maxX - .8 ||
+        z <= bounds.minZ + .8 ||
+        z >= bounds.maxZ - .8
+      ) continue
+      if (distanceToPaths(x, z, paths) < 1.75) continue
+
+      const riverClearance = riverMask.points.length > 1
+        ? riverOccupancySample(riverMask, x, z).signedDistance
+        : Infinity
+      if (riverClearance < .8) continue
+
+      const overlapsOtherPoi = pois.some((other) =>
+        other.id !== poi.id &&
+        Math.hypot(x - other.x, z - other.z) < other.radius + 1.5
+      )
+      if (overlapsOtherPoi) continue
+
+      const type = pickType(poi)
+      const baseScale =
+        type === 'rock'
+          ? .42 + random() * .5
+          : type === 'grass' || type === 'fern'
+            ? .4 + random() * .4
+            : type === 'fallen-log'
+              ? .58 + random() * .48
+              : .48 + random() * .46
+
+      dressing.push({
+        id: `poi-transition-${poiIndex}-${itemIndex}`,
+        type,
+        x: round(x, 2),
+        y: round(sampleTerrainHeight({ terrain, bounds }, x, z), 2),
+        z: round(z, 2),
+        scale: round(baseScale, 2),
+        rotation: round(random() * Math.PI * 2, 3),
+        variant: Math.floor(random() * 4),
+      })
+    }
+  }
 }
 
 function appendRiverbankDressing(
