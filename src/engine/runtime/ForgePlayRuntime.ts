@@ -1161,7 +1161,6 @@ function makeGeneratedStream(region: GeneratedRegion) {
   const profile = streamRenderProfile(region)
   const points = profile.points
   const widths = profile.widths
-  const heights = profile.heights
 
   const group = new THREE.Group()
   {
