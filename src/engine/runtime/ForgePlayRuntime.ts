@@ -1433,55 +1433,118 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
     group.rotation.y = poi.rotation
 
     if (poi.type === 'ruins') {
-      runtimeBox(group, -2, .8, 0, .65, 1.6, 4.6, stoneMaterial)
-      runtimeBox(group, 1.65, .55, .9, .65, 1.1, 2.6, darkStone)
-      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 })
+      runtimeBox(group, -3.15, .9, .4, .6, 1.8, 4.8, stoneMaterial)
+      runtimeBox(group, 3, .65, -.9, .6, 1.3, 3.4, darkStone)
+      runtimeBox(group, -1.75, .7, -2.65, 2.8, 1.4, .55, stoneMaterial)
+      runtimeBox(group, 2.25, .38, 2.45, 2.7, .76, .6, darkStone)
+      runtimeBox(group, -.95, 1.45, 2.8, .62, 2.9, .65, stoneMaterial)
+      runtimeBox(group, 1.05, 1.15, 2.8, .62, 2.3, .65, stoneMaterial)
+      runtimeBox(group, .05, 2.55, 2.8, 2.65, .5, .7, darkStone)
+      obstacles.push({ x: poi.x, z: poi.z, radius: 3 })
     } else if (poi.type === 'camp' || poi.type === 'settlement') {
       const count = poi.type === 'settlement' ? 5 : 3
       for (let i = 0; i < count; i += 1) {
-        const angle = i / count * Math.PI * 2
-        const tent = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2, 4), cloth)
-        const tentRadius = poi.type === 'settlement' ? 4 : 3.45
-        tent.position.set(Math.cos(angle) * tentRadius, 1, Math.sin(angle) * tentRadius)
+        const angle = i / count * Math.PI * 2 + .35
+        const tent = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.2, 4), cloth)
+        const tentRadius = poi.type === 'settlement' ? 4.5 : 3.7
+        tent.position.set(Math.cos(angle) * tentRadius, 1.05, Math.sin(angle) * tentRadius)
         tent.rotation.y = angle + Math.PI / 4
         tent.castShadow = true
         group.add(tent)
       }
+      const fire = new THREE.Mesh(
+        new THREE.CylinderGeometry(.5, .5, .1, 12),
+        new THREE.MeshStandardMaterial({ color: 0x6a3823, emissive: 0xff7a2d, emissiveIntensity: .9 }),
+      )
+      fire.position.y = .09
+      group.add(fire)
+      for (let i = 0; i < 4; i += 1) {
+        const angle = i / 4 * Math.PI * 2 + .45
+        const bench = new THREE.Mesh(new THREE.BoxGeometry(1.15, .22, .28), wood)
+        bench.position.set(Math.cos(angle) * 1.45, .22, Math.sin(angle) * 1.45)
+        bench.rotation.y = -angle
+        group.add(bench)
+      }
+      obstacles.push({ x: poi.x, z: poi.z, radius: poi.type === 'settlement' ? 4.5 : 3.7 })
     } else if (poi.type === 'watchtower') {
-      const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 5.5, 7), stoneMaterial)
-      tower.position.y = 2.7
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 2.25, 7, 8), stoneMaterial)
+      tower.position.y = 3.35
       tower.castShadow = true
       group.add(tower)
-      for (let i = 0; i < 7; i += 1) {
-        const angle = i / 7 * Math.PI * 2 + .35
-        const rubble = new THREE.Mesh(new THREE.DodecahedronGeometry(.32 + (i % 3) * .1, 0), darkStone)
-        rubble.position.set(Math.cos(angle) * (2.45 + (i % 2) * .45), .18, Math.sin(angle) * (2.45 + (i % 2) * .45))
-        rubble.scale.y = .62
-        rubble.rotation.y = angle
-        group.add(rubble)
+      const upper = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.05, .58, 8), darkStone)
+      upper.position.y = 6.65
+      group.add(upper)
+      for (let i = 0; i < 8; i += 1) {
+        if (i === 2 || i === 3) continue
+        const angle = i / 8 * Math.PI * 2
+        const battlement = new THREE.Mesh(new THREE.BoxGeometry(.7, .85, .7), darkStone)
+        battlement.position.set(Math.cos(angle) * 1.78, 7.2, Math.sin(angle) * 1.78)
+        battlement.rotation.y = -angle
+        group.add(battlement)
       }
-      obstacles.push({ x: poi.x, z: poi.z, radius: 1.8 })
+      const doorway = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.15, 1.85),
+        new THREE.MeshBasicMaterial({ color: 0x090b09, side: THREE.DoubleSide }),
+      )
+      doorway.position.set(0, .98, 2.18)
+      group.add(doorway)
+      runtimeBox(group, -2.8, .7, -1.6, .55, 1.4, 3.4, darkStone)
+      obstacles.push({ x: poi.x, z: poi.z, radius: 2.2 })
     } else if (poi.type === 'dungeon') {
-      runtimeBox(group, -1.45, 1.25, 0, .7, 2.5, .8, stoneMaterial)
-      runtimeBox(group, 1.45, 1.25, 0, .7, 2.5, .8, stoneMaterial)
-      runtimeBox(group, 0, 2.55, 0, 3.5, .65, .85, darkStone)
-      obstacles.push({ x: poi.x - 1.45, z: poi.z, radius: .7 })
-      obstacles.push({ x: poi.x + 1.45, z: poi.z, radius: .7 })
+      runtimeBox(group, -1.7, 1.5, 0, .82, 3, .9, stoneMaterial)
+      runtimeBox(group, 1.7, 1.5, 0, .82, 3, .9, stoneMaterial)
+      runtimeBox(group, 0, 3.05, 0, 4.2, .72, .95, darkStone)
+      runtimeBox(group, 0, .18, 1.6, 4.5, .36, 2.2, darkStone)
+      const darkness = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.45, 2.55),
+        new THREE.MeshBasicMaterial({ color: 0x080b09, side: THREE.DoubleSide }),
+      )
+      darkness.position.set(0, 1.28, .49)
+      group.add(darkness)
+      obstacles.push({ x: poi.x - 1.7, z: poi.z, radius: .8 })
+      obstacles.push({ x: poi.x + 1.7, z: poi.z, radius: .8 })
     } else if (poi.type === 'shrine') {
-      runtimeBox(group, 0, .3, 0, 2, .6, 1.6, darkStone)
-      runtimeBox(group, 0, 1.35, 0, .65, 2.1, .5, stoneMaterial)
+      runtimeBox(group, 0, .18, .4, 3.4, .36, 3, darkStone)
+      runtimeBox(group, 0, .5, .25, 2.5, .34, 2.2, stoneMaterial)
+      runtimeBox(group, 0, 1.9, -.2, .72, 2.8, .62, stoneMaterial)
+      runtimeBox(group, -1.3, 1.15, -.25, .45, 2.3, .45, darkStone)
+      runtimeBox(group, 1.3, 1.15, -.25, .45, 2.3, .45, darkStone)
+      runtimeBox(group, 0, 2.25, -.25, 3, .42, .48, darkStone)
     } else if (poi.type === 'standing-stones') {
-      runtimeBox(group, -1.35, 1.25, .25, .7, 2.5, .7, stoneMaterial)
-      runtimeBox(group, 0, 1.5, 0, .8, 3, .75, stoneMaterial)
-      runtimeBox(group, 1.35, 1.25, .25, .7, 2.5, .7, stoneMaterial)
+      for (let i = 0; i < 7; i += 1) {
+        const angle = i / 7 * Math.PI * 2
+        const radius = i === 0 ? 0 : 3
+        const height = i === 0 ? 3.8 : 2.4 + (i % 3) * .35
+        const stone = new THREE.Mesh(
+          new THREE.BoxGeometry(i === 0 ? .9 : .7, height, .65),
+          i % 2 ? stoneMaterial : darkStone,
+        )
+        stone.position.set(Math.cos(angle) * radius, height * .5, Math.sin(angle) * radius)
+        stone.rotation.set(0, angle * .23, (i % 3 - 1) * .055)
+        group.add(stone)
+      }
     } else if (poi.type === 'graveyard') {
-      for (let i = 0; i < 8; i += 1) runtimeBox(group, -2 + i % 4 * 1.3, .5, -1 + Math.floor(i / 4) * 2, .4, 1, .18, stoneMaterial)
+      for (let i = 0; i < 12; i += 1) {
+        runtimeBox(group, -2.25 + i % 4 * 1.5, .55, -1.8 + Math.floor(i / 4) * 1.75, .42, 1.1 + (i % 2) * .2, .2, stoneMaterial)
+      }
+      runtimeBox(group, -3.45, .5, 0, .12, 1, 6.4, wood)
+      runtimeBox(group, 3.45, .5, 0, .12, 1, 6.4, wood)
+      runtimeBox(group, 0, .5, -3.15, 6.8, 1, .12, wood)
+      runtimeBox(group, -2.25, .5, 3.15, 2.2, 1, .12, wood)
+      runtimeBox(group, 2.25, .5, 3.15, 2.2, 1, .12, wood)
     } else if (poi.type === 'beast-den') {
-      const den = new THREE.Mesh(new THREE.TorusGeometry(1.65, .5, 7, 12, Math.PI), darkStone)
+      const den = new THREE.Mesh(new THREE.TorusGeometry(2.35, .72, 8, 14, Math.PI), darkStone)
       den.rotation.x = Math.PI / 2
-      den.position.y = 1
+      den.position.y = 1.35
       den.castShadow = true
       group.add(den)
+      runtimeBox(group, 0, .24, .75, 4.8, .48, 3.5, darkStone)
+      const mouth = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.3, 2.35),
+        new THREE.MeshBasicMaterial({ color: 0x070907, side: THREE.DoubleSide }),
+      )
+      mouth.position.set(0, 1.05, .62)
+      group.add(mouth)
     }
 
     addRuntimePoiEnvironment(group, poi, stoneMaterial, darkStone, wood, green)
