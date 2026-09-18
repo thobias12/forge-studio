@@ -143,7 +143,7 @@ export function generateGuidedRegion(
   }
 
   const branchTarget = intRange(routeRandom, region.branchRange[0], region.branchRange[1])
-  const branchCount = Math.max(1, Math.round(branchTarget * (.55 + settings.exploration * .85)))
+  const branchCount = Math.max(1, Math.round(branchTarget * (.5 + settings.exploration * .72 + settings.secretPaths * .28)))
   const usableMain = mainIds.slice(1, -1)
   const usedAnchors = new Set<string>()
 
@@ -434,7 +434,7 @@ function buildTerrain(
   const width = bounds.maxX - bounds.minX
   const depth = bounds.maxZ - bounds.minZ
   const heights: number[] = []
-  const amplitude = .55 + settings.elevation * 4.7
+  const amplitude = (.55 + settings.elevation * 4.7) * (.68 + settings.verticality * .64)
   const waterLevel = -.38 - settings.water * .18
 
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
@@ -449,18 +449,6 @@ function buildTerrain(
       if (settings.cliffs > .08) {
         const ridge = Math.abs(valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5) * 2
         if (ridge > .68) height += (ridge - .68) * 5.5 * settings.cliffs
-      }
-
-      const pathDistance = distanceToPaths(x, z, paths)
-      if (pathDistance < 5.5) {
-        const weight = 1 - pathDistance / 5.5
-        height *= 1 - weight * .72
-      }
-
-      const clearing = nearestClearing(x, z, clearings)
-      if (clearing) {
-        const weight = 1 - clearing.distance / clearing.radius
-        height *= 1 - clamp(weight, 0, 1) * .64
       }
 
       if (stream.length > 1) {
