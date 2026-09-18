@@ -59,6 +59,7 @@ export default function WorldForge() {
   const [showLandmarks, setShowLandmarks] = useState(true)
   const [showBiome, setShowBiome] = useState(true)
   const [showBoundary, setShowBoundary] = useState(false)
+  const [showRiverDebug, setShowRiverDebug] = useState(false)
   const [locks, setLocks] = useState<GenerationLocks>({
     terrain: false,
     routes: false,
@@ -267,6 +268,7 @@ export default function WorldForge() {
         <OverlayButton label="POIs" active={showLandmarks} onClick={() => setShowLandmarks((value) => !value)}/>
         <OverlayButton label="Dressing" active={showBiome} onClick={() => setShowBiome((value) => !value)}/>
         <OverlayButton label="Bounds" active={showBoundary} onClick={() => setShowBoundary((value) => !value)}/>
+        <OverlayButton label="River Debug" active={showRiverDebug} onClick={() => setShowRiverDebug((value) => !value)}/>
         <span className={generated.validation.valid ? 'validation-good' : 'validation-bad'}>
           {generated.validation.valid ? <CheckCircle2 size={13}/> : <Waypoints size={13}/>}
           {generated.validation.valid ? 'Navigation valid' : `${generated.validation.issues.length} issues`}
@@ -276,7 +278,7 @@ export default function WorldForge() {
       <div className="world-forge-stage">
         {playMode
           ? <SkillboundFrontend workspace={workspace} region={generated} autoPlayActive onOpenWorld={() => setPlayMode(false)} onBackHome={() => setPlayMode(false)}/>
-          : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome} showBoundary={showBoundary}/>}
+          : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome} showBoundary={showBoundary} showRiverDebug={showRiverDebug}/>}
       </div>
 
       <footer className="world-forge-status">
