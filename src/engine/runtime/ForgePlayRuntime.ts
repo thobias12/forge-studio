@@ -7,7 +7,7 @@ import type {
   ForgePlayerDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderContinuityIssues, streamWaterSurfaceRows, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
+import { sampleStreamHeight, sampleTerrainHeight, sampleTerrainSurface, streamRenderContinuityIssues, streamWaterSurfaceRows, worldBoundaryBackdropHeight, type GeneratedRegion, type GeneratedRegionNode, type GeneratedWorldPath } from '../guidedWorld'
 import {
   bindCharacterAsset,
   disposeBoundObject,
@@ -1097,7 +1097,7 @@ function makeRuntimeBoundaryBackdrop(region: GeneratedRegion) {
     new THREE.MeshStandardMaterial({ color: palette.low, roughness: 1 }),
   )
   mesh.rotation.x = -Math.PI / 2
-  mesh.position.set(centerX, -1.5, centerZ)
+  mesh.position.set(centerX, worldBoundaryBackdropHeight(region), centerZ)
   mesh.receiveShadow = true
   return mesh
 }
