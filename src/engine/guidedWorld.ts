@@ -1255,7 +1255,8 @@ function enforcePathsOutsideRiverMask(
     key: string,
   ) => {
     const sample = riverOccupancySample(mask, point.x, point.z)
-    const requiredClearance = pathWidth * .5 + .5
+    const footprintHalfWidth = pathFootprintHalfWidth(pathWidth)
+    const requiredClearance = footprintHalfWidth + .5
 
     if (sample.signedDistance >= requiredClearance) return false
     if (crossingAllowsRiverOccupancy(
@@ -1263,7 +1264,7 @@ function enforcePathsOutsideRiverMask(
       point.z,
       crossings,
       sample.radius,
-      pathWidth * .5,
+      footprintHalfWidth,
     )) return false
 
     let dx = point.x - sample.x
@@ -1276,25 +1277,29 @@ function enforcePathsOutsideRiverMask(
       length = 1
     }
 
-    const targetDistance = sample.radius + requiredClearance + .08
+    const targetDistance = sample.radius + requiredClearance + .1
     point.x = sample.x + dx / length * targetDistance
     point.z = sample.z + dz / length * targetDistance
     clampPathPoint(point)
     return true
   }
 
-  // Vertex-only avoidance can still leave the straight segment between two legal
-  // vertices cutting through the river. Correct both vertices and segment interiors
-  // so the generated road geometry and validation use the same occupancy contract.
-  for (let pass = 0; pass < 5; pass += 1) {
+  // Work on the same conservative footprint used by validation. Segment probes
+  // are spaced by distance rather than fixed quarters, and corrections account
+  // for how much each movable endpoint actually influences that probe.
+  for (let pass = 0; pass < 8; pass += 1) {
+    let changed = false
+
     for (const path of paths) {
       for (let index = 1; index < path.points.length - 1; index += 1) {
-        pushPointOutside(
+        if (pushPointOutside(
           path,
           path.points[index],
           path.widths[index] ?? path.width,
           `vertex:${index}`,
-        )
+        )) {
+          changed = true
+        }
       }
 
       for (let index = 1; index < path.points.length; index += 1) {
@@ -1302,15 +1307,19 @@ function enforcePathsOutsideRiverMask(
         const current = path.points[index]
         const previousWidth = path.widths[index - 1] ?? path.width
         const currentWidth = path.widths[index] ?? path.width
+        const segmentLength = Math.hypot(current.x - previous.x, current.z - previous.z)
+        const steps = Math.max(2, Math.ceil(segmentLength / .72))
 
-        for (const t of [.25, .5, .75]) {
+        for (let step = 1; step < steps; step += 1) {
+          const t = step / steps
           const probe = {
             x: lerp(previous.x, current.x, t),
             z: lerp(previous.z, current.z, t),
           }
           const width = lerp(previousWidth, currentWidth, t)
+          const footprintHalfWidth = pathFootprintHalfWidth(width)
           const sample = riverOccupancySample(mask, probe.x, probe.z)
-          const requiredClearance = width * .5 + .5
+          const requiredClearance = footprintHalfWidth + .5
 
           if (sample.signedDistance >= requiredClearance) continue
           if (crossingAllowsRiverOccupancy(
@@ -1318,27 +1327,33 @@ function enforcePathsOutsideRiverMask(
             probe.z,
             crossings,
             sample.radius,
-            width * .5,
+            footprintHalfWidth,
           )) continue
 
           let dx = probe.x - sample.x
           let dz = probe.z - sample.z
           let length = Math.hypot(dx, dz)
           if (length < .001) {
-            const sign = hashSeed(`river-path-segment:${path.id}:${index}:${t}`) % 2 === 0 ? 1 : -1
+            const sign = hashSeed(`river-path-segment:${path.id}:${index}:${step}`) % 2 === 0 ? 1 : -1
             dx = -sample.tangentZ * sign
             dz = sample.tangentX * sign
             length = 1
           }
 
-          const deficit = sample.radius + requiredClearance + .1 - sample.distance
-          const nx = dx / length
-          const nz = dz / length
           const previousMovable = index - 1 > 0
           const currentMovable = index < path.points.length - 1
-          const movableCount = Number(previousMovable) + Number(currentMovable)
-          if (!movableCount) continue
-          const shift = deficit * (movableCount === 1 ? 2.08 : 1.08)
+          const influence =
+            (previousMovable ? 1 - t : 0) +
+            (currentMovable ? t : 0)
+          if (influence <= .001) continue
+
+          const deficit = sample.radius + requiredClearance + .12 - sample.distance
+          const nx = dx / length
+          const nz = dz / length
+          // If only one endpoint can move, compensate for its interpolation
+          // weight. Example: at t=.25 the current endpoint contributes only 25%
+          // of the probe position, so it must move ~4x farther to clear it.
+          const shift = Math.min(10, deficit * 1.08 / influence)
 
           if (previousMovable) {
             previous.x += nx * shift
@@ -1350,9 +1365,12 @@ function enforcePathsOutsideRiverMask(
             current.z += nz * shift
             clampPathPoint(current)
           }
+          changed = true
         }
       }
     }
+
+    if (!changed) break
   }
 }
 
