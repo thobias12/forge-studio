@@ -782,9 +782,18 @@ function buildCrossings(
 
   for (const [pathId, pathCandidates] of byPath) {
     const path = pathCandidates[0].path
-    const alreadySelected = selected.find(({ candidate }) => candidate.path.id === pathId)
-    if (alreadySelected) {
-      shapePathAtCrossing(path, alreadySelected.crossing)
+    const pathSelections = selected.filter(({ candidate }) => candidate.path.id === pathId)
+    if (pathSelections.length) {
+      const distinctHits: CrossingCandidate[] = []
+      for (const candidate of [...pathCandidates].sort((a, b) => b.score - a.score)) {
+        if (distinctHits.some((item) => Math.hypot(item.hit.x - candidate.hit.x, item.hit.z - candidate.hit.z) < 8.5)) continue
+        distinctHits.push(candidate)
+      }
+
+      if (pathSelections.length === 1 && distinctHits.length > 1) {
+        reroutePathViaCrossing(path, pathSelections[0].crossing)
+      }
+      for (const selection of pathSelections) shapePathAtCrossing(path, selection.crossing)
       continue
     }
 
