@@ -264,12 +264,12 @@ function buildTerrain(region: GeneratedRegion) {
       else color.set(palette.ground)
 
       const surface = sampleTerrainSurface(region, x, z)
-      color.lerp(forestFloorColor, surface.forestFloor * .28)
-      color.lerp(mossColor, surface.moss * .22)
-      color.lerp(meadowColor, surface.meadow * .32)
-      color.lerp(scrubColor, surface.scrub * .2)
-      color.lerp(rockyColor, surface.rocky * .3)
-      color.lerp(soilColor, Math.max(surface.soil * .18, surface.poiWear * .68))
+      color.lerp(forestFloorColor, surface.forestFloor * .34)
+      color.lerp(mossColor, surface.moss * .28)
+      color.lerp(meadowColor, surface.meadow * .42)
+      color.lerp(scrubColor, surface.scrub * .28)
+      color.lerp(rockyColor, surface.rocky * .38)
+      color.lerp(soilColor, Math.max(surface.soil * .24, surface.poiWear * .68, surface.roadWear * .42))
       const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
       colors.push(color.r * variation, color.g * variation, color.b * variation)
     }
@@ -352,28 +352,10 @@ function buildStream(region: GeneratedRegion) {
 
 function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
   const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
-  const group = new THREE.Group()
-  group.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
-
-  const shoulderWidths = widths.map((width) => width * (path.kind === 'main' ? 1.5 : 1.62) + .25)
-  const shoulder = new THREE.Mesh(
-    makeRibbonGeometry(path.points, shoulderWidths, (x, z) => sampleTerrainHeight(region, x, z) + .036),
-    new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x49503d : 0x41483a,
-      roughness: 1,
-      metalness: 0,
-      polygonOffset: true,
-      polygonOffsetFactor: 0,
-      polygonOffsetUnits: 0,
-    }),
-  )
-  shoulder.receiveShadow = true
-  group.add(shoulder)
-
   const road = new THREE.Mesh(
-    makeRibbonGeometry(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + .058),
+    makeRibbonGeometry(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + .052),
     new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x5b513f : 0x4a493d,
+      color: path.kind === 'main' ? 0x594f3e : 0x48473c,
       roughness: 1,
       metalness: 0,
       polygonOffset: true,
@@ -381,9 +363,9 @@ function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
       polygonOffsetUnits: -1,
     }),
   )
+  road.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
   road.receiveShadow = true
-  group.add(road)
-  return group
+  return road
 }
 
 function makeRibbonGeometry(
@@ -669,12 +651,13 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
   if (crossing.kind === 'bridge') {
     const plankMaterial = new THREE.MeshStandardMaterial({ color: 0x67503a, roughness: .95 })
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49382b, roughness: 1 })
-    const length = Math.max(5.4, crossing.width * 1.7)
-    const plankCount = Math.max(7, Math.round(length / .55))
+    const bridgeWidth = crossing.width * .92
+    const length = Math.max(4.2, crossing.width * 1.35)
+    const plankCount = Math.max(6, Math.round(length / .5))
     for (let index = 0; index < plankCount; index += 1) {
       const x = -length / 2 + (index + .5) * (length / plankCount)
       const plank = new THREE.Mesh(
-        new THREE.BoxGeometry(length / plankCount * .9, .12, crossing.width),
+        new THREE.BoxGeometry(length / plankCount * .9, .11, bridgeWidth),
         plankMaterial,
       )
       plank.position.set(x, 0, 0)
@@ -683,7 +666,7 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
     }
     for (const side of [-1, 1]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(length, .16, .12), railMaterial)
-      rail.position.set(0, .34, side * crossing.width * .54)
+      rail.position.set(0, .3, side * bridgeWidth * .54)
       rail.castShadow = true
       group.add(rail)
     }
@@ -719,11 +702,12 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     addBox(group, [1.8, .55, 1.25], [.65, 1.1, 3], darkStone, [0, -.25, 0])
     addBox(group, [0, .25, -1.8], [4.5, .5, .65], darkStone, [0, .08, 0])
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
-    const tents = poi.type === 'settlement' ? 4 : 2
+    const tents = poi.type === 'settlement' ? 5 : 3
     for (let i = 0; i < tents; i += 1) {
       const angle = i / tents * Math.PI * 2
       const tent = new THREE.Mesh(new THREE.ConeGeometry(1.3, 2.1, 4), cloth)
-      tent.position.set(Math.cos(angle) * 2.8, 1, Math.sin(angle) * 2.8)
+      const tentRadius = poi.type === 'settlement' ? 4 : 3.45
+      tent.position.set(Math.cos(angle) * tentRadius, 1, Math.sin(angle) * tentRadius)
       tent.rotation.y = Math.PI / 4 + angle
       tent.castShadow = true
       group.add(tent)
@@ -849,29 +833,29 @@ function addPoiEnvironment(
   }
 
   if (poi.type === 'ruins' || poi.type === 'watchtower') {
-    for (let i = 0; i < 9; i += 1) addRock(2.5 + random() * 2.4, .8 + random() * .5)
-    for (let i = 0; i < 3; i += 1) addShrub(3.2 + random() * 2.2)
-    for (let i = 0; i < 2; i += 1) addTimber(3 + random() * 1.5)
+    for (let i = 0; i < 12; i += 1) addRock(3 + random() * 3.2, .8 + random() * .55)
+    for (let i = 0; i < 5; i += 1) addShrub(4 + random() * 2.7)
+    for (let i = 0; i < 3; i += 1) addTimber(3.8 + random() * 2.2)
   } else if (poi.type === 'graveyard') {
     for (let i = -2; i <= 2; i += 1) {
       addBox(group, [i * 1.25, .28, -2.6], [.09, .55, 1.05], wood, [0, .02 * i, 0])
     }
-    for (let i = 0; i < 5; i += 1) addShrub(3.1 + random() * 1.9)
+    for (let i = 0; i < 7; i += 1) addShrub(3.8 + random() * 2.5)
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
-    for (let i = 0; i < (poi.type === 'settlement' ? 5 : 3); i += 1) addTimber(2.6 + random() * 2)
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < (poi.type === 'settlement' ? 7 : 5); i += 1) addTimber(3.1 + random() * 2.8)
+    for (let i = 0; i < (poi.type === 'settlement' ? 5 : 4); i += 1) {
       const angle = random() * Math.PI * 2
       addBox(
         group,
-        [Math.cos(angle) * (2.2 + random() * 1.8), .32, Math.sin(angle) * (2.2 + random() * 1.8)],
+        [Math.cos(angle) * (3 + random() * 2.5), .32, Math.sin(angle) * (3 + random() * 2.5)],
         [.6, .6, .6],
         wood,
         [0, random() * Math.PI, 0],
       )
     }
   } else if (poi.type === 'shrine' || poi.type === 'standing-stones') {
-    for (let i = 0; i < 8; i += 1) addRock(2.6 + random() * 1.4, .65 + random() * .25)
-    for (let i = 0; i < 4; i += 1) addShrub(3.1 + random() * 1.6)
+    for (let i = 0; i < 10; i += 1) addRock(3.1 + random() * 2, .65 + random() * .32)
+    for (let i = 0; i < 5; i += 1) addShrub(3.8 + random() * 2.1)
   } else if (poi.type === 'beast-den') {
     for (let i = 0; i < 7; i += 1) addRock(2.2 + random() * 2.1, .8 + random() * .4)
     for (let i = 0; i < 3; i += 1) addTimber(2.5 + random() * 2)

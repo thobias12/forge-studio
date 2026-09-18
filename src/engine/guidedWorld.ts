@@ -216,10 +216,12 @@ export function generateGuidedRegion(
   const branchEnds = nodes.filter((item) => item.kind === 'branch' && !connections.some((link) => link.kind === 'branch' && link.from === item.id))
   const landmarkTargets = [...branchEnds, ...shuffle(nodes.filter((item) => item.kind === 'route'), poiRandom)]
   const poiTypes = poiPool(region)
+  let poiCycle = shuffle([...new Set(poiTypes)], poiRandom)
 
   for (let index = 0; index < landmarkCount && landmarkTargets.length; index += 1) {
     const target = landmarkTargets.splice(Math.floor(poiRandom() * landmarkTargets.length), 1)[0]
-    const type = poiTypes[Math.floor(poiRandom() * poiTypes.length)]
+    if (!poiCycle.length) poiCycle = shuffle([...new Set(poiTypes)], poiRandom)
+    const type = poiCycle.shift() ?? 'ruins'
     const offsetAngle = poiRandom() * Math.PI * 2
     const offsetDistance = target.kind === 'branch' ? 1.5 + poiRandom() * 2 : 3 + poiRandom() * 5
     const node: GeneratedRegionNode = {
@@ -412,9 +414,10 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
   }
 
   const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
-  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .72, 0, 1)
-  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * .8, 0, 1)
-  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .14, 0, 1)
+  const roadWear = pathEdgeWear(region.paths, x, z)
+  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .92, 0, 1)
+  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * 1.02, 0, 1)
+  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .2 + roadWear * .88, 0, 1)
 
   return {
     broad,
@@ -426,6 +429,7 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     meadow: micro.meadow,
     scrub: micro.scrub,
     rocky: micro.rocky,
+    roadWear,
     poiWear: clamp(poiWear, 0, 1),
   }
 }
@@ -702,7 +706,7 @@ function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint
       x: round(candidate.hit.x, 3),
       z: round(candidate.hit.z, 3),
       rotation: round(candidate.rotation, 4),
-      width: round((candidate.path.width || 2) * (kind === 'bridge' ? 1.38 : 1.72), 3),
+      width: round((candidate.path.width || 2) * (kind === 'bridge' ? 1.12 : 1.48), 3),
       pathId: candidate.path.id,
     }
     selected.push({ crossing, candidate })
@@ -749,10 +753,11 @@ function buildTerrain(
     const z = bounds.minZ + zIndex / (resolution - 1) * depth
     for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
       const x = bounds.minX + xIndex / (resolution - 1) * width
+      const n0 = valueNoise2D(x * .011 - 8.6, z * .011 + 14.2, seed ^ 0x27D4EB2D)
       const n1 = valueNoise2D(x * .026, z * .026, seed)
       const n2 = valueNoise2D(x * .061 + 17.2, z * .061 - 9.4, seed ^ 0x9E3779B9)
       const n3 = valueNoise2D(x * .13 - 31.8, z * .13 + 11.7, seed ^ 0x85EBCA6B)
-      let height = ((n1 - .5) * 1.45 + (n2 - .5) * .58 + (n3 - .5) * .18) * amplitude
+      let height = ((n0 - .5) * .58 + (n1 - .5) * 1.45 + (n2 - .5) * .58 + (n3 - .5) * .18) * amplitude
 
       if (settings.cliffs > .08) {
         const ridge = Math.abs(valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5) * 2
@@ -859,32 +864,44 @@ function solveHydrology(
   const flowLeftToRight = edgeAverage(0) >= edgeAverage(resolution - 1)
   const columnForStep = (step: number) => flowLeftToRight ? step : resolution - 1 - step
   const previousRows: number[][] = Array.from({ length: resolution }, () => Array(resolution).fill(-1))
+  const rowMargin = Math.max(4, Math.round(resolution * .08))
+  const corridorPhase = (hashSeed(`${seed}:river-corridor`) % 1000) / 1000 * Math.PI * 2
+  const targetRow = (step: number) => {
+    const t = step / Math.max(1, resolution - 1)
+    const wave = Math.sin(t * Math.PI * 1.6 + corridorPhase) * .13
+    const noise = (valueNoise2D(step * .07, seed * .00001, seed ^ 0x94D049BB) - .5) * .12
+    return clamp(.5 + wave + noise, .28, .72)
+  }
   let costs = Array(resolution).fill(Infinity)
 
-  for (let row = 2; row < resolution - 2; row += 1) {
+  for (let row = rowMargin; row < resolution - rowMargin; row += 1) {
     const column = columnForStep(0)
     const height = heights[row * resolution + column]
     const normalized = (height - minHeight) / heightRange
-    const edgePenalty = Math.pow(Math.abs(row / (resolution - 1) - .5) * 2, 3) * .55
-    costs[row] = -normalized * .7 + edgePenalty
+    const rowNorm = row / (resolution - 1)
+    const interiorPenalty = Math.pow(Math.abs(rowNorm - targetRow(0)) / .5, 2) * 1.25
+    costs[row] = -normalized * .65 + interiorPenalty
   }
 
   for (let step = 1; step < resolution; step += 1) {
     const column = columnForStep(step)
     const nextCosts = Array(resolution).fill(Infinity)
-    for (let row = 2; row < resolution - 2; row += 1) {
+    const desiredRow = targetRow(step)
+    for (let row = rowMargin; row < resolution - rowMargin; row += 1) {
       const height = heights[row * resolution + column]
       const normalized = (height - minHeight) / heightRange
       const noise = valueNoise2D(column * .17, row * .17, seed ^ 0x165667B1)
-      const edgePenalty = Math.pow(Math.abs(row / (resolution - 1) - .5) * 2, 4) * .5
+      const rowNorm = row / (resolution - 1)
+      const interiorPenalty = Math.pow(Math.abs(rowNorm - desiredRow) / .5, 2) * 1.15
+      const hardEdgePenalty = Math.pow(Math.abs(rowNorm - .5) * 2, 6) * 1.5
 
       for (let delta = -3; delta <= 3; delta += 1) {
         const previousRow = row + delta
-        if (previousRow < 2 || previousRow >= resolution - 2) continue
+        if (previousRow < rowMargin || previousRow >= resolution - rowMargin) continue
         const previousCost = costs[previousRow]
         if (!Number.isFinite(previousCost)) continue
-        const bendPenalty = delta * delta * .055
-        const score = previousCost + normalized * 1.5 + bendPenalty + edgePenalty + noise * .09
+        const bendPenalty = delta * delta * .052
+        const score = previousCost + normalized * 1.42 + bendPenalty + interiorPenalty + hardEdgePenalty + noise * .08
         if (score < nextCosts[row]) {
           nextCosts[row] = score
           previousRows[step][row] = previousRow
@@ -894,8 +911,8 @@ function solveHydrology(
     costs = nextCosts
   }
 
-  let row = 2
-  for (let candidate = 3; candidate < resolution - 2; candidate += 1) {
+  let row = rowMargin
+  for (let candidate = rowMargin + 1; candidate < resolution - rowMargin; candidate += 1) {
     if (costs[candidate] < costs[row]) row = candidate
   }
 
@@ -997,7 +1014,7 @@ function buildMicroBiomes(
   settings: ReturnType<typeof worldSettings>,
 ) {
   const random = seededRandom(hashSeed(`${seed}:micro-biomes`))
-  const count = Math.round((settings.size === 'large' ? 22 : settings.size === 'small' ? 12 : 17) * (.85 + settings.openSpace * .3))
+  const count = Math.round((settings.size === 'large' ? 28 : settings.size === 'small' ? 16 : 22) * (.92 + settings.openSpace * .34))
   const biomes: GeneratedMicroBiome[] = []
 
   for (let index = 0; index < count; index += 1) {
@@ -1021,8 +1038,8 @@ function buildMicroBiomes(
       type,
       x: round(x, 2),
       z: round(z, 2),
-      radius: round(7 + random() * 12, 2),
-      strength: round(.55 + random() * .45, 3),
+      radius: round(10 + random() * 15, 2),
+      strength: round(.68 + random() * .32, 3),
     })
   }
   return biomes
@@ -1158,10 +1175,13 @@ function poiPool(region: ForgeRegionDefinition): WorldPoiType[] {
 }
 
 function poiRadius(type: WorldPoiType) {
-  if (type === 'settlement') return 10
-  if (type === 'watchtower' || type === 'dungeon') return 7
-  if (type === 'graveyard' || type === 'ruins') return 6.5
-  return 5.5
+  if (type === 'settlement') return 11
+  if (type === 'camp') return 7.2
+  if (type === 'watchtower' || type === 'dungeon') return 7.8
+  if (type === 'graveyard' || type === 'ruins') return 7.4
+  if (type === 'standing-stones' || type === 'beast-den') return 6.8
+  if (type === 'shrine') return 6.2
+  return 5.8
 }
 
 function poiLabel(type: WorldPoiType) {
@@ -1204,6 +1224,20 @@ function calculateBounds(nodes: GeneratedRegionNode[], sizeScale: number) {
     minZ: Math.min(...zs) - margin,
     maxZ: Math.max(...zs) + margin,
   }
+}
+
+function pathEdgeWear(paths: GeneratedWorldPath[], x: number, z: number) {
+  let best = 0
+  for (const path of paths) {
+    const distance = distanceToPolyline(x, z, path.points)
+    const halfWidth = path.width * .5
+    const fade = path.kind === 'main' ? path.width * .9 + .9 : path.width * 1.05 + .65
+    if (distance > halfWidth + fade) continue
+    const edgeDistance = Math.max(0, distance - halfWidth)
+    const influence = 1 - smoothstep(clamp(edgeDistance / Math.max(.001, fade), 0, 1))
+    best = Math.max(best, influence)
+  }
+  return best
 }
 
 function distanceToPaths(x: number, z: number, paths: GeneratedWorldPath[]) {
