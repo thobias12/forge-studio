@@ -34,3 +34,75 @@
 .world-forge-v2 .slider-field input{width:105px;accent-color:#5f946f}
 .world-forge-v2 .world-forge-toolbar{min-height:66px}
 .world-forge-v2 .world-forge-toolbar small{color:#778a7e}
+
+
+/* Forge v1.62.0 · Dynamic World Simulation */
+.world-forge-environment-controls{
+  position:absolute;
+  z-index:6;
+  top:14px;
+  right:16px;
+  width:250px;
+  padding:10px;
+  border:1px solid #34443a;
+  border-radius:8px;
+  background:#09110edd;
+  backdrop-filter:blur(10px);
+  box-shadow:0 10px 32px rgba(0,0,0,.34);
+  color:#9eaea5;
+}
+.world-forge-environment-controls header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:8px;
+}
+.world-forge-environment-controls header span{
+  font-size:8px;
+  letter-spacing:.13em;
+  font-weight:800;
+  color:#74867c;
+}
+.world-forge-environment-controls header strong{
+  font-size:13px;
+  color:#dce8e0;
+  font-variant-numeric:tabular-nums;
+}
+.world-forge-environment-controls label{
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr);
+  align-items:center;
+  gap:8px;
+  margin:6px 0;
+  font-size:9px;
+  color:#778a7f;
+}
+.world-forge-environment-controls input[type=range]{
+  width:100%;
+  accent-color:#6c9f7d;
+}
+.world-forge-environment-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 62px 68px;
+  gap:5px;
+  margin-top:8px;
+}
+.world-forge-environment-controls select,
+.world-forge-environment-controls button{
+  min-width:0;
+  padding:5px 6px!important;
+  border:1px solid #304037!important;
+  border-radius:5px!important;
+  background:#111915!important;
+  color:#a9b8b0!important;
+  font-size:9px!important;
+}
+.world-forge-environment-controls button.paused{
+  border-color:#715f3d!important;
+  background:#251f15!important;
+  color:#ddbd78!important;
+}
+@media(max-width:900px){
+  .world-forge-environment-controls{width:210px;right:10px;top:10px}
+}
