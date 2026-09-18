@@ -180,14 +180,15 @@ export class ForgePlayRuntime {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.18
+    const moodStyle = runtimeMoodStyle(this.region.mood)
+    this.renderer.toneMappingExposure = moodStyle.exposure
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.domElement.className = 'skillbound-runtime-canvas'
     this.host.appendChild(this.renderer.domElement)
 
-    this.scene.background = new THREE.Color(0x162119)
-    this.scene.fog = new THREE.FogExp2(0x18251c, 0.009)
+    this.scene.background = new THREE.Color(moodStyle.background)
+    this.scene.fog = new THREE.FogExp2(moodStyle.fog, moodStyle.fogDensity)
     this.buildLighting()
     this.buildRegion()
     this.navigation = new ForgeNavigationGrid(this.region.bounds, this.obstacles)
@@ -345,8 +346,18 @@ export class ForgePlayRuntime {
   }
 
   private buildLighting() {
-    this.scene.add(new THREE.HemisphereLight(0xc6d8c8, 0x202b22, 1.9))
-    const sun = new THREE.DirectionalLight(0xffe3bd, 2.8)
+    const moodStyle = runtimeMoodStyle(this.region.mood)
+    this.scene.add(
+      new THREE.HemisphereLight(
+        moodStyle.hemisphereSky,
+        moodStyle.hemisphereGround,
+        moodStyle.hemisphere,
+      ),
+    )
+    const sun = new THREE.DirectionalLight(
+      moodStyle.sunColor,
+      moodStyle.sun,
+    )
     sun.position.set(-30, 42, 18)
     sun.castShadow = true
     sun.shadow.mapSize.set(1024, 1024)
@@ -355,6 +366,13 @@ export class ForgePlayRuntime {
     sun.shadow.camera.top = 80
     sun.shadow.camera.bottom = -80
     this.scene.add(sun)
+
+    const fill = new THREE.DirectionalLight(
+      moodStyle.fillColor,
+      moodStyle.fill,
+    )
+    fill.position.set(46, 28, -52)
+    this.scene.add(fill)
   }
 
   private buildRegion() {
@@ -365,6 +383,7 @@ export class ForgePlayRuntime {
       if (this.region.terrain.stream.length > 1) this.scene.add(makeGeneratedStream(this.region))
       for (const path of this.region.paths) this.scene.add(makeGeneratedPath(this.region, path))
       for (const crossing of this.region.crossings) this.scene.add(makeRuntimeCrossing(this.region, crossing))
+      appendRuntimeRiverObstacles(this.region, this.obstacles)
       addGeneratedDressing(this.scene, this.region, this.obstacles)
       addGeneratedPois(this.scene, this.region, this.obstacles)
       return
@@ -1091,7 +1110,10 @@ function makeRuntimeBoundaryBackdrop(region: GeneratedRegion) {
   const depth = region.bounds.maxZ - region.bounds.minZ
   const centerX = (region.bounds.minX + region.bounds.maxX) / 2
   const centerZ = (region.bounds.minZ + region.bounds.maxZ) / 2
-  const palette = runtimeBiomePalette(region.biome)
+  const palette = runtimeMoodPalette(
+    runtimeBiomePalette(region.biome),
+    region.mood,
+  )
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(width + 100, depth + 100),
     new THREE.MeshStandardMaterial({ color: palette.low, roughness: 1 }),
@@ -1108,8 +1130,16 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
   const positions: number[] = []
   const colors: number[] = []
   const indices: number[] = []
-  const palette = runtimeBiomePalette(region.biome)
-  const surfacePalette = runtimeSurfacePalette(region.biome)
+  const palette = runtimeMoodPalette(
+    runtimeBiomePalette(region.biome),
+    region.mood,
+  )
+  const surfacePalette = runtimeMoodPalette(
+    runtimeSurfacePalette(region.biome),
+    region.mood,
+  )
+  const moodStyle = runtimeMoodStyle(region.mood)
+  const moodTerrainTint = new THREE.Color(moodStyle.terrainTint)
   const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
   const mossColor = new THREE.Color(surfacePalette.moss)
   const soilColor = new THREE.Color(surfacePalette.soil)
@@ -1132,7 +1162,10 @@ function makeGeneratedTerrain(region: GeneratedRegion) {
       color.lerp(scrubColor, surface.scrub * .27)
       color.lerp(rockyColor, surface.rocky * .38)
       color.lerp(soilColor, Math.max(surface.soil * .24, surface.poiWear * .68, surface.roadWear * .42))
-      const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
+      color.lerp(moodTerrainTint, moodStyle.terrainTintStrength)
+      const variation =
+        moodStyle.terrainBrightness *
+        (.96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06)
       colors.push(color.r * variation, color.g * variation, color.b * variation)
     }
   }
@@ -1244,7 +1277,11 @@ function makeRuntimeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const colors: number[] = []
   const indices: number[] = []
   const deepWater = new THREE.Color(0x377c7d)
-  const bankWater = new THREE.Color(runtimeBiomePalette(region.biome).low).lerp(new THREE.Color(0x668f83), .58)
+  const moodPalette = runtimeMoodPalette(
+    runtimeBiomePalette(region.biome),
+    region.mood,
+  )
+  const bankWater = new THREE.Color(moodPalette.low).lerp(new THREE.Color(0x668f83), .58)
   const sheenWater = new THREE.Color(0x78aaa2)
   const waterColor = new THREE.Color()
 
@@ -1390,6 +1427,45 @@ function normalizeRuntimeRibbon2(x: number, z: number) {
   return { x: x / length, z: z / length }
 }
 
+
+function appendRuntimeRiverObstacles(
+  region: GeneratedRegion,
+  obstacles: CircleObstacle[],
+) {
+  if (region.terrain.stream.length < 2) return
+
+  const surface = streamWaterSurfaceRows(region, 5, .085)
+  for (let index = 0; index < surface.rows.length; index += 2) {
+    const row = surface.rows[index]
+    if (
+      row.x < region.bounds.minX ||
+      row.x > region.bounds.maxX ||
+      row.z < region.bounds.minZ ||
+      row.z > region.bounds.maxZ
+    ) {
+      continue
+    }
+
+    const crossingOpen = region.crossings.some((crossing) => {
+      const openingRadius =
+        crossing.kind === 'bridge'
+          ? Math.max(2.7, crossing.width * .72)
+          : Math.max(2.45, crossing.width * .68)
+      return Math.hypot(row.x - crossing.x, row.z - crossing.z) < openingRadius
+    })
+    if (crossingOpen) continue
+
+    // Movement collision expands this by the actor radius, and navigation adds
+    // its own clearance. This keeps feet out of the visible water without
+    // widening the blocked corridor far beyond the banks.
+    obstacles.push({
+      x: row.x,
+      z: row.z,
+      radius: Math.max(.34, row.width * .5 - .28),
+    })
+  }
+}
+
 function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossings'][number]) {
   const group = new THREE.Group()
   const streamY = sampleStreamHeight(region, crossing.x, crossing.z)
@@ -1436,10 +1512,22 @@ function makeRuntimeCrossing(region: GeneratedRegion, crossing: GeneratedRegion[
 }
 
 function addGeneratedDressing(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
-  const palette = runtimeBiomePalette(region.biome)
-  const surfacePalette = runtimeSurfacePalette(region.biome)
-  const treeVariantColors = runtimeTreeVariantColors(region.biome, palette.tree)
-  const groundCoverColors = runtimeGroundCoverColors(region.biome, palette.fern)
+  const palette = runtimeMoodPalette(
+    runtimeBiomePalette(region.biome),
+    region.mood,
+  )
+  const surfacePalette = runtimeMoodPalette(
+    runtimeSurfacePalette(region.biome),
+    region.mood,
+  )
+  const treeVariantColors = runtimeTreeVariantColors(
+    region.biome,
+    palette.tree,
+  ).map((color) => runtimeMoodColor(color, region.mood))
+  const groundCoverColors = runtimeMoodPalette(
+    runtimeGroundCoverColors(region.biome, palette.fern),
+    region.mood,
+  )
   const corruptTrees = region.biome.toLowerCase().includes('corrupt')
   const bankPatchGeometry = new THREE.CircleGeometry(1, 10)
   bankPatchGeometry.rotateX(-Math.PI / 2)
@@ -2245,6 +2333,115 @@ function runtimeBox(
   mesh.position.set(x, y, z)
   mesh.castShadow = true
   group.add(mesh)
+}
+
+
+function runtimeMoodStyle(mood: GeneratedRegion['mood']) {
+  if (mood === 'dark') {
+    return {
+      background: 0x101813,
+      fog: 0x142019,
+      fogDensity: .0088,
+      exposure: .94,
+      hemisphereSky: 0xb7c8bb,
+      hemisphereGround: 0x18211b,
+      hemisphere: 1.45,
+      sunColor: 0xd8c4a5,
+      sun: 1.95,
+      fillColor: 0x6f8c79,
+      fill: .5,
+      terrainTint: 0x243226,
+      terrainTintStrength: .14,
+      terrainBrightness: .82,
+      colorBrightness: .82,
+      colorTint: 0x263229,
+      colorTintStrength: .08,
+    }
+  }
+  if (mood === 'deadwood') {
+    return {
+      background: 0x141713,
+      fog: 0x1b2119,
+      fogDensity: .0084,
+      exposure: .98,
+      hemisphereSky: 0xc4c7b8,
+      hemisphereGround: 0x241f18,
+      hemisphere: 1.58,
+      sunColor: 0xd8c3a4,
+      sun: 2.08,
+      fillColor: 0x7b806c,
+      fill: .56,
+      terrainTint: 0x443f2f,
+      terrainTintStrength: .12,
+      terrainBrightness: .86,
+      colorBrightness: .84,
+      colorTint: 0x4a4332,
+      colorTintStrength: .1,
+    }
+  }
+  if (mood === 'bleak') {
+    return {
+      background: 0x1b211f,
+      fog: 0x242b27,
+      fogDensity: .0078,
+      exposure: 1.01,
+      hemisphereSky: 0xc5ceca,
+      hemisphereGround: 0x262b28,
+      hemisphere: 1.7,
+      sunColor: 0xd6d2c5,
+      sun: 2.14,
+      fillColor: 0x82908a,
+      fill: .6,
+      terrainTint: 0x59605a,
+      terrainTintStrength: .12,
+      terrainBrightness: .91,
+      colorBrightness: .9,
+      colorTint: 0x5d625d,
+      colorTintStrength: .12,
+    }
+  }
+  return {
+    background: 0x162119,
+    fog: 0x18251c,
+    fogDensity: .009,
+    exposure: 1.18,
+    hemisphereSky: 0xc6d8c8,
+    hemisphereGround: 0x202b22,
+    hemisphere: 1.9,
+    sunColor: 0xffe3bd,
+    sun: 2.8,
+    fillColor: 0x86a891,
+    fill: .72,
+    terrainTint: 0x000000,
+    terrainTintStrength: 0,
+    terrainBrightness: 1,
+    colorBrightness: 1,
+    colorTint: 0x000000,
+    colorTintStrength: 0,
+  }
+}
+
+function runtimeMoodColor(
+  value: number,
+  mood: GeneratedRegion['mood'],
+) {
+  const style = runtimeMoodStyle(mood)
+  return new THREE.Color(value)
+    .multiplyScalar(style.colorBrightness)
+    .lerp(new THREE.Color(style.colorTint), style.colorTintStrength)
+    .getHex()
+}
+
+function runtimeMoodPalette<T extends Record<string, number>>(
+  palette: T,
+  mood: GeneratedRegion['mood'],
+): T {
+  return Object.fromEntries(
+    Object.entries(palette).map(([key, value]) => [
+      key,
+      runtimeMoodColor(value, mood),
+    ]),
+  ) as T
 }
 
 function runtimeBiomePalette(biome: string) {
