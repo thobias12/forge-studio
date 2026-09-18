@@ -2241,7 +2241,6 @@ function appendRiverbankDressing(
     const next = terrain.stream[index + 1]
     const tangent = normalized2(next.x - prev.x, next.z - prev.z)
     const normal = { x: -tangent.z, z: tangent.x }
-    const width = terrain.streamWidths[index] ?? 2
 
     for (const side of [-1, 1]) {
       const clusterSize = 1 + Math.floor(random() * 3)
