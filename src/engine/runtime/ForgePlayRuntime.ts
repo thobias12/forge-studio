@@ -1443,6 +1443,8 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
   const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x62685f, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x444943, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5742, roughness: 1 })
+  const wood = new THREE.MeshStandardMaterial({ color: 0x513c2c, roughness: 1 })
+  const green = new THREE.MeshStandardMaterial({ color: 0x2f4b34, roughness: 1 })
 
   for (const poi of region.pois) {
     const group = new THREE.Group()
@@ -1500,6 +1502,8 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       group.add(den)
     }
 
+    addRuntimePoiEnvironment(group, poi, stoneMaterial, darkStone, wood, green)
+
     group.traverse((object) => {
       if (object instanceof THREE.Mesh) {
         object.castShadow = true
@@ -1507,6 +1511,85 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       }
     })
     scene.add(group)
+  }
+}
+
+function addRuntimePoiEnvironment(
+  group: THREE.Group,
+  poi: GeneratedRegion['pois'][number],
+  stone: THREE.MeshStandardMaterial,
+  darkStone: THREE.MeshStandardMaterial,
+  wood: THREE.MeshStandardMaterial,
+  green: THREE.MeshStandardMaterial,
+) {
+  const random = runtimeVisualRandom(poi.id)
+  const addRock = (radius: number, scale = 1) => {
+    const angle = random() * Math.PI * 2
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.28 + random() * .32, 0), random() > .45 ? stone : darkStone)
+    mesh.position.set(Math.cos(angle) * radius, .16 + random() * .12, Math.sin(angle) * radius)
+    mesh.scale.set(scale * (1 + random() * .35), scale * (.55 + random() * .3), scale)
+    mesh.rotation.y = random() * Math.PI
+    group.add(mesh)
+  }
+  const addShrub = (radius: number) => {
+    const angle = random() * Math.PI * 2
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.42 + random() * .2, 0), green)
+    mesh.position.set(Math.cos(angle) * radius, .35, Math.sin(angle) * radius)
+    mesh.scale.y = .7
+    mesh.rotation.y = random() * Math.PI
+    group.add(mesh)
+  }
+  const addTimber = (radius: number) => {
+    const angle = random() * Math.PI * 2
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, 1.6 + random() * 1.4, 6), wood)
+    mesh.rotation.z = Math.PI / 2
+    mesh.rotation.y = random() * Math.PI
+    mesh.position.set(Math.cos(angle) * radius, .16, Math.sin(angle) * radius)
+    group.add(mesh)
+  }
+
+  if (poi.type === 'ruins' || poi.type === 'watchtower') {
+    for (let i = 0; i < 9; i += 1) addRock(2.5 + random() * 2.4, .8 + random() * .5)
+    for (let i = 0; i < 3; i += 1) addShrub(3.2 + random() * 2.2)
+    for (let i = 0; i < 2; i += 1) addTimber(3 + random() * 1.5)
+  } else if (poi.type === 'graveyard') {
+    for (let i = -2; i <= 2; i += 1) {
+      runtimeBox(group, i * 1.25, .28, -2.6, .09, .55, 1.05, wood)
+    }
+    for (let i = 0; i < 5; i += 1) addShrub(3.1 + random() * 1.9)
+  } else if (poi.type === 'camp' || poi.type === 'settlement') {
+    for (let i = 0; i < (poi.type === 'settlement' ? 5 : 3); i += 1) addTimber(2.6 + random() * 2)
+    for (let i = 0; i < 3; i += 1) {
+      const angle = random() * Math.PI * 2
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(.6, .6, .6), wood)
+      crate.position.set(Math.cos(angle) * (2.2 + random() * 1.8), .32, Math.sin(angle) * (2.2 + random() * 1.8))
+      crate.rotation.y = random() * Math.PI
+      group.add(crate)
+    }
+  } else if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+    for (let i = 0; i < 8; i += 1) addRock(2.6 + random() * 1.4, .65 + random() * .25)
+    for (let i = 0; i < 4; i += 1) addShrub(3.1 + random() * 1.6)
+  } else if (poi.type === 'beast-den') {
+    for (let i = 0; i < 7; i += 1) addRock(2.2 + random() * 2.1, .8 + random() * .4)
+    for (let i = 0; i < 3; i += 1) addTimber(2.5 + random() * 2)
+  } else if (poi.type === 'dungeon') {
+    for (let i = 0; i < 7; i += 1) addRock(2.8 + random() * 2.1, .75 + random() * .45)
+    for (let i = 0; i < 2; i += 1) addShrub(3.8 + random() * 1.5)
+  }
+}
+
+function runtimeVisualRandom(value: string) {
+  let state = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    state ^= value.charCodeAt(index)
+    state = Math.imul(state, 16777619)
+  }
+  return () => {
+    state |= 0
+    state = state + 0x6D2B79F5 | 0
+    let result = Math.imul(state ^ state >>> 15, 1 | state)
+    result = result + Math.imul(result ^ result >>> 7, 61 | result) ^ result
+    return ((result ^ result >>> 14) >>> 0) / 4294967296
   }
 }
 
