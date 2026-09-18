@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
+  sampleStreamHeight,
   sampleTerrainHeight,
   sampleTerrainSurface,
   type GeneratedRegion,
@@ -245,6 +246,9 @@ function buildTerrain(region: GeneratedRegion) {
   const forestFloorColor = new THREE.Color(surfacePalette.forestFloor)
   const mossColor = new THREE.Color(surfacePalette.moss)
   const soilColor = new THREE.Color(surfacePalette.soil)
+  const meadowColor = new THREE.Color(surfacePalette.meadow)
+  const scrubColor = new THREE.Color(surfacePalette.scrub)
+  const rockyColor = new THREE.Color(surfacePalette.rocky)
 
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
     const z = bounds.minZ + zIndex / (resolution - 1) * (bounds.maxZ - bounds.minZ)
@@ -262,6 +266,9 @@ function buildTerrain(region: GeneratedRegion) {
       const surface = sampleTerrainSurface(region, x, z)
       color.lerp(forestFloorColor, surface.forestFloor * .28)
       color.lerp(mossColor, surface.moss * .22)
+      color.lerp(meadowColor, surface.meadow * .32)
+      color.lerp(scrubColor, surface.scrub * .2)
+      color.lerp(rockyColor, surface.rocky * .3)
       color.lerp(soilColor, Math.max(surface.soil * .18, surface.poiWear * .68))
       const variation = .96 + (surface.medium - .5) * .08 + (surface.fine - .5) * .06
       colors.push(color.r * variation, color.g * variation, color.b * variation)
@@ -301,13 +308,20 @@ function buildStream(region: GeneratedRegion) {
   const widths = region.terrain.streamWidths.length === points.length
     ? region.terrain.streamWidths
     : points.map(() => 2.3)
+  const heights = region.terrain.streamHeights.length === points.length
+    ? region.terrain.streamHeights
+    : points.map(() => region.terrain.waterLevel)
 
   const group = new THREE.Group()
   group.name = 'GeneratedStream'
 
   const bankWidths = widths.map((width) => width * 1.72 + .55)
   const bank = new THREE.Mesh(
-    makeRibbonGeometry(points, bankWidths, () => region.terrain.waterLevel + .028),
+    makeRibbonGeometry(
+      points,
+      bankWidths,
+      (x, z) => sampleTerrainHeight(region, x, z) + .018,
+    ),
     new THREE.MeshStandardMaterial({
       color: 0x354238,
       roughness: 1,
@@ -321,13 +335,13 @@ function buildStream(region: GeneratedRegion) {
   group.add(bank)
 
   const water = new THREE.Mesh(
-    makeRibbonGeometry(points, widths, () => region.terrain.waterLevel + .052),
+    makeProfileRibbonGeometry(points, widths, heights, .055),
     new THREE.MeshStandardMaterial({
       color: 0x355f61,
-      roughness: .34,
-      metalness: .03,
+      roughness: .28,
+      metalness: .04,
       transparent: true,
-      opacity: .84,
+      opacity: .86,
       side: THREE.DoubleSide,
     }),
   )
@@ -418,12 +432,53 @@ function makeRibbonGeometry(
   return geometry
 }
 
+function makeProfileRibbonGeometry(
+  points: Array<{ x: number; z: number }>,
+  widths: number[],
+  heights: number[],
+  heightOffset: number,
+) {
+  const positions: number[] = []
+  const indices: number[] = []
+
+  points.forEach((point, index) => {
+    const prev = points[Math.max(0, index - 1)]
+    const next = points[Math.min(points.length - 1, index + 1)]
+    const dx = next.x - prev.x
+    const dz = next.z - prev.z
+    const length = Math.max(.001, Math.hypot(dx, dz))
+    const nx = -dz / length
+    const nz = dx / length
+    const half = (widths[index] ?? widths[0] ?? 1) / 2
+    const y = (heights[index] ?? heights[0] ?? 0) + heightOffset
+
+    positions.push(
+      point.x + nx * half, y, point.z + nz * half,
+      point.x - nx * half, y, point.z - nz * half,
+    )
+
+    if (index < points.length - 1) {
+      const a = index * 2
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+    }
+  })
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
 function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const trees = region.dressing.filter((item) => item.type === 'tree')
   const rocks = region.dressing.filter((item) => item.type === 'rock')
   const ferns = region.dressing.filter((item) => item.type === 'fern')
   const logs = region.dressing.filter((item) => item.type === 'fallen-log')
   const stumps = region.dressing.filter((item) => item.type === 'stump')
+  const grasses = region.dressing.filter((item) => item.type === 'grass')
+  const shrubs = region.dressing.filter((item) => item.type === 'shrub')
+  const reeds = region.dressing.filter((item) => item.type === 'reeds')
   const palette = editorBiomePalette(region.biome)
 
   if (trees.length) {
@@ -524,6 +579,61 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
     mesh.castShadow = true
     group.add(mesh)
   }
+
+  if (grasses.length) {
+    const geometry = new THREE.ConeGeometry(.22, .62, 5)
+    const material = new THREE.MeshStandardMaterial({ color: 0x58704a, roughness: 1 })
+    const mesh = new THREE.InstancedMesh(geometry, material, grasses.length)
+    setInstances(mesh, grasses, (item) => ({
+      position: new THREE.Vector3(item.x, item.y + .23 * item.scale, item.z),
+      rotation: new THREE.Euler(0, item.rotation, 0),
+      scale: new THREE.Vector3(item.scale * .9, item.scale, item.scale * .9),
+    }))
+    group.add(mesh)
+  }
+
+  if (shrubs.length) {
+    const geometry = new THREE.DodecahedronGeometry(.48, 0)
+    const material = new THREE.MeshStandardMaterial({ color: 0x2f4c33, roughness: 1 })
+    const mesh = new THREE.InstancedMesh(geometry, material, shrubs.length)
+    setInstances(mesh, shrubs, (item) => ({
+      position: new THREE.Vector3(item.x, item.y + .35 * item.scale, item.z),
+      rotation: new THREE.Euler(0, item.rotation, 0),
+      scale: new THREE.Vector3(item.scale * 1.15, item.scale * .72, item.scale),
+    }))
+    mesh.castShadow = true
+    group.add(mesh)
+  }
+
+  if (reeds.length) {
+    const geometry = new THREE.CylinderGeometry(.035, .06, 1.05, 5)
+    const material = new THREE.MeshStandardMaterial({ color: 0x607453, roughness: 1 })
+    const mesh = new THREE.InstancedMesh(geometry, material, reeds.length * 3)
+    const matrix = new THREE.Matrix4()
+    const quaternion = new THREE.Quaternion()
+    const scale = new THREE.Vector3()
+    let cursor = 0
+    for (const item of reeds) {
+      for (let blade = 0; blade < 3; blade += 1) {
+        const angle = item.rotation + blade * 2.1
+        const radius = .12 + blade * .07
+        quaternion.setFromEuler(new THREE.Euler(0, angle, (blade - 1) * .05))
+        scale.set(item.scale, item.scale * (.8 + blade * .12), item.scale)
+        matrix.compose(
+          new THREE.Vector3(
+            item.x + Math.cos(angle) * radius,
+            item.y + .45 * item.scale,
+            item.z + Math.sin(angle) * radius,
+          ),
+          quaternion,
+          scale,
+        )
+        mesh.setMatrixAt(cursor++, matrix)
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    group.add(mesh)
+  }
 }
 
 function setInstances(
@@ -549,9 +659,10 @@ function setInstances(
 function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossings'][number]) {
   const group = new THREE.Group()
   group.name = `Crossing_${crossing.kind}`
+  const streamY = sampleStreamHeight(region, crossing.x, crossing.z)
   const y = crossing.kind === 'bridge'
-    ? Math.max(region.terrain.waterLevel + .32, sampleTerrainHeight(region, crossing.x, crossing.z) + .1)
-    : region.terrain.waterLevel + .07
+    ? Math.max(streamY + .32, sampleTerrainHeight(region, crossing.x, crossing.z) + .1)
+    : streamY + .07
   group.position.set(crossing.x, y, crossing.z)
   group.rotation.y = -crossing.rotation
 
@@ -601,6 +712,8 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5842, roughness: 1 })
+  const wood = new THREE.MeshStandardMaterial({ color: 0x513c2c, roughness: 1 })
+  const green = new THREE.MeshStandardMaterial({ color: 0x2f4b34, roughness: 1 })
   if (poi.type === 'ruins') {
     addBox(group, [-2.3, .85, 0], [.65, 1.7, 5], stone, [0, .16, 0])
     addBox(group, [1.8, .55, 1.25], [.65, 1.1, 3], darkStone, [0, -.25, 0])
@@ -664,6 +777,8 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     group.add(darkness)
   }
 
+  addPoiEnvironment(group, poi, stone, darkStone, wood, green)
+
   const label = makeLabelSprite(poi.label)
   label.position.set(0, Math.max(3.5, poi.radius * .58), 0)
   group.add(label)
@@ -696,6 +811,88 @@ function addEntryExitMarkers(region: GeneratedRegion, group: THREE.Group) {
     const label = makeLabelSprite(node.label)
     label.position.set(node.x, y + 3.15, node.z)
     group.add(label)
+  }
+}
+
+function addPoiEnvironment(
+  group: THREE.Group,
+  poi: GeneratedWorldPoi,
+  stone: THREE.MeshStandardMaterial,
+  darkStone: THREE.MeshStandardMaterial,
+  wood: THREE.MeshStandardMaterial,
+  green: THREE.MeshStandardMaterial,
+) {
+  const random = seededVisualRandom(poi.id)
+  const addRock = (radius: number, scale = 1) => {
+    const angle = random() * Math.PI * 2
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.28 + random() * .32, 0), random() > .45 ? stone : darkStone)
+    mesh.position.set(Math.cos(angle) * radius, .16 + random() * .12, Math.sin(angle) * radius)
+    mesh.scale.set(scale * (1 + random() * .35), scale * (.55 + random() * .3), scale)
+    mesh.rotation.y = random() * Math.PI
+    group.add(mesh)
+  }
+  const addShrub = (radius: number) => {
+    const angle = random() * Math.PI * 2
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.42 + random() * .2, 0), green)
+    mesh.position.set(Math.cos(angle) * radius, .35, Math.sin(angle) * radius)
+    mesh.scale.y = .7
+    mesh.rotation.y = random() * Math.PI
+    group.add(mesh)
+  }
+  const addTimber = (radius: number) => {
+    const angle = random() * Math.PI * 2
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, 1.6 + random() * 1.4, 6), wood)
+    mesh.rotation.z = Math.PI / 2
+    mesh.rotation.y = random() * Math.PI
+    mesh.position.set(Math.cos(angle) * radius, .16, Math.sin(angle) * radius)
+    group.add(mesh)
+  }
+
+  if (poi.type === 'ruins' || poi.type === 'watchtower') {
+    for (let i = 0; i < 9; i += 1) addRock(2.5 + random() * 2.4, .8 + random() * .5)
+    for (let i = 0; i < 3; i += 1) addShrub(3.2 + random() * 2.2)
+    for (let i = 0; i < 2; i += 1) addTimber(3 + random() * 1.5)
+  } else if (poi.type === 'graveyard') {
+    for (let i = -2; i <= 2; i += 1) {
+      addBox(group, [i * 1.25, .28, -2.6], [.09, .55, 1.05], wood, [0, .02 * i, 0])
+    }
+    for (let i = 0; i < 5; i += 1) addShrub(3.1 + random() * 1.9)
+  } else if (poi.type === 'camp' || poi.type === 'settlement') {
+    for (let i = 0; i < (poi.type === 'settlement' ? 5 : 3); i += 1) addTimber(2.6 + random() * 2)
+    for (let i = 0; i < 3; i += 1) {
+      const angle = random() * Math.PI * 2
+      addBox(
+        group,
+        [Math.cos(angle) * (2.2 + random() * 1.8), .32, Math.sin(angle) * (2.2 + random() * 1.8)],
+        [.6, .6, .6],
+        wood,
+        [0, random() * Math.PI, 0],
+      )
+    }
+  } else if (poi.type === 'shrine' || poi.type === 'standing-stones') {
+    for (let i = 0; i < 8; i += 1) addRock(2.6 + random() * 1.4, .65 + random() * .25)
+    for (let i = 0; i < 4; i += 1) addShrub(3.1 + random() * 1.6)
+  } else if (poi.type === 'beast-den') {
+    for (let i = 0; i < 7; i += 1) addRock(2.2 + random() * 2.1, .8 + random() * .4)
+    for (let i = 0; i < 3; i += 1) addTimber(2.5 + random() * 2)
+  } else if (poi.type === 'dungeon') {
+    for (let i = 0; i < 7; i += 1) addRock(2.8 + random() * 2.1, .75 + random() * .45)
+    for (let i = 0; i < 2; i += 1) addShrub(3.8 + random() * 1.5)
+  }
+}
+
+function seededVisualRandom(value: string) {
+  let state = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    state ^= value.charCodeAt(index)
+    state = Math.imul(state, 16777619)
+  }
+  return () => {
+    state |= 0
+    state = state + 0x6D2B79F5 | 0
+    let result = Math.imul(state ^ state >>> 15, 1 | state)
+    result = result + Math.imul(result ^ result >>> 7, 61 | result) ^ result
+    return ((result ^ result >>> 14) >>> 0) / 4294967296
   }
 }
 
@@ -763,12 +960,12 @@ function editorBiomePalette(biome: string) {
 
 function editorSurfacePalette(biome: string) {
   const value = biome.toLowerCase()
-  if (value.includes('autumn')) return { forestFloor: 0x473d2c, moss: 0x62613a, soil: 0x6a5538 }
-  if (value.includes('highland')) return { forestFloor: 0x3f4939, moss: 0x59654a, soil: 0x625a47 }
-  if (value.includes('marsh')) return { forestFloor: 0x26372e, moss: 0x3f5a43, soil: 0x4a4938 }
-  if (value.includes('corrupt')) return { forestFloor: 0x322b37, moss: 0x4b3b50, soil: 0x57464f }
-  if (value.includes('farmland')) return { forestFloor: 0x4b4c34, moss: 0x5a653e, soil: 0x6c5a3c }
-  return { forestFloor: 0x253a29, moss: 0x3c5738, soil: 0x5d523d }
+  if (value.includes('autumn')) return { forestFloor: 0x473d2c, moss: 0x62613a, soil: 0x6a5538, meadow: 0x6b6840, scrub: 0x564b31, rocky: 0x6e6759 }
+  if (value.includes('highland')) return { forestFloor: 0x3f4939, moss: 0x59654a, soil: 0x625a47, meadow: 0x596849, scrub: 0x4b563f, rocky: 0x73786d }
+  if (value.includes('marsh')) return { forestFloor: 0x26372e, moss: 0x3f5a43, soil: 0x4a4938, meadow: 0x496047, scrub: 0x31493a, rocky: 0x5a6259 }
+  if (value.includes('corrupt')) return { forestFloor: 0x322b37, moss: 0x4b3b50, soil: 0x57464f, meadow: 0x57475a, scrub: 0x403344, rocky: 0x6a5e6d }
+  if (value.includes('farmland')) return { forestFloor: 0x4b4c34, moss: 0x5a653e, soil: 0x6c5a3c, meadow: 0x727047, scrub: 0x5c5838, rocky: 0x6e6d61 }
+  return { forestFloor: 0x253a29, moss: 0x3c5738, soil: 0x5d523d, meadow: 0x506447, scrub: 0x344a35, rocky: 0x62685f }
 }
 
 function hashUnit(value: string) {

@@ -2,7 +2,17 @@ import type { ForgeRegionDefinition } from './forgeProject'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
-export type WorldDressingType = 'tree' | 'rock' | 'fern' | 'fallen-log' | 'stump'
+export type WorldDressingType = 'tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds'
+export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
+
+export type GeneratedMicroBiome = {
+  id: string
+  type: WorldMicroBiomeType
+  x: number
+  z: number
+  radius: number
+  strength: number
+}
 
 export type GeneratedRegionNode = {
   id: string
@@ -77,6 +87,8 @@ export type GeneratedWorldTerrain = {
   waterLevel: number
   stream: GeneratedWorldPoint[]
   streamWidths: number[]
+  streamHeights: number[]
+  microBiomes: GeneratedMicroBiome[]
   clearings: Array<{ x: number; z: number; radius: number }>
 }
 
@@ -89,7 +101,7 @@ export type WorldGenerationLayerSeeds = {
 
 export type GeneratedRegion = {
   format: 'forge-generated-region'
-  version: 4
+  version: 5
   seed: number
   masterSeed: number
   layerSeeds: WorldGenerationLayerSeeds
@@ -293,11 +305,6 @@ export function generateGuidedRegion(
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
     .map((node) => ({ x: node.x, z: node.z, radius: node.radius + (node.kind === 'landmark' ? 2 : 0) }))
 
-  const streamResult = settings.water > .08
-    ? buildStream(bounds, layerSeeds.terrain, settings.water)
-    : { points: [] as GeneratedWorldPoint[], widths: [] as number[] }
-  const terrain = buildTerrain(region, bounds, paths, clearings, streamResult.points, streamResult.widths, layerSeeds.terrain)
-  const crossings = buildCrossings(paths, streamResult.points, layerSeeds.routes)
   const pois = nodes
     .filter((node): node is GeneratedRegionNode & { poiType: WorldPoiType } => Boolean(node.poiType))
     .map((node, index) => ({
@@ -311,13 +318,15 @@ export function generateGuidedRegion(
       nodeId: node.id,
       contentRef: node.contentRef,
     }))
+  const terrain = buildTerrain(region, bounds, paths, clearings, pois, layerSeeds.terrain)
+  const crossings = buildCrossings(paths, terrain.stream, layerSeeds.routes)
   const dressing = buildDressing(region, bounds, terrain, paths, pois, layerSeeds.dressing)
   const validation = validateGeneratedRegion(nodes, connections)
   const seed = composeWorldSeed(layerSeeds)
 
   return {
     format: 'forge-generated-region',
-    version: 4,
+    version: 5,
     seed,
     masterSeed: worldSeed,
     layerSeeds,
@@ -357,6 +366,19 @@ export function sampleTerrainHeight(region: Pick<GeneratedRegion, 'terrain' | 'b
   return a + (b - a) * tz
 }
 
+export function sampleStreamHeight(region: GeneratedRegion, x: number, z: number) {
+  if (region.terrain.stream.length < 2 || region.terrain.streamHeights.length !== region.terrain.stream.length) {
+    return region.terrain.waterLevel
+  }
+  return nearestHydrologySample(
+    x,
+    z,
+    region.terrain.stream,
+    region.terrain.streamWidths,
+    region.terrain.streamHeights,
+  ).height
+}
+
 export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: number) {
   const seed = region.layerSeeds.terrain
   const broad = valueNoise2D(x * .021 + 8.7, z * .021 - 13.4, seed ^ 0x51ED270B)
@@ -389,9 +411,10 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     poiSoil = Math.max(poiSoil, influence * (poi.type === 'camp' || poi.type === 'settlement' ? .94 : .62))
   }
 
-  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28, 0, 1)
-  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22, 0, 1)
-  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil, 0, 1)
+  const micro = microBiomeInfluence(region.terrain.microBiomes, x, z)
+  const forestFloor = clamp((.58 - broad) * .9 + (medium - .5) * .28 + micro['forest-floor'] * .72, 0, 1)
+  const moss = clamp((broad - .42) * .85 + (fine - .5) * .22 + micro.moss * .8, 0, 1)
+  const soil = clamp((medium - .48) * .7 + (1 - broad) * .18 + poiSoil + micro.rocky * .14, 0, 1)
 
   return {
     broad,
@@ -400,6 +423,9 @@ export function sampleTerrainSurface(region: GeneratedRegion, x: number, z: numb
     forestFloor,
     moss,
     soil,
+    meadow: micro.meadow,
+    scrub: micro.scrub,
+    rocky: micro.rocky,
     poiWear: clamp(poiWear, 0, 1),
   }
 }
@@ -621,28 +647,6 @@ function normalized2(x: number, z: number) {
   return { x: x / length, z: z / length }
 }
 
-function buildStream(bounds: GeneratedRegion['bounds'], seed: number, water: number) {
-  const random = seededRandom(hashSeed(`${seed}:stream`))
-  const points: GeneratedWorldPoint[] = []
-  const widths: number[] = []
-  const count = 34
-  const baseZ = bounds.minZ + (bounds.maxZ - bounds.minZ) * (.28 + random() * .44)
-  const amplitude = 5 + water * 11
-  const phaseA = random() * Math.PI * 2
-  const phaseB = random() * Math.PI * 2
-
-  for (let index = 0; index < count; index += 1) {
-    const t = index / (count - 1)
-    const x = bounds.minX - 7 + (bounds.maxX - bounds.minX + 14) * t
-    const broad = Math.sin(t * Math.PI * 1.45 + phaseA) * amplitude * .46
-    const fine = Math.sin(t * Math.PI * 4.1 + phaseB) * amplitude * .18
-    const noise = (valueNoise2D(x * .025, baseZ * .025 + t * 2.7, seed ^ 0x27D4EB2D) - .5) * amplitude * .72
-    points.push({ x, z: baseZ + broad + fine + noise })
-    widths.push(round(1.45 + water * 1.35 + Math.sin(t * Math.PI * 3 + phaseB) * .32, 3))
-  }
-  return { points, widths }
-}
-
 function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint[], seed: number) {
   if (stream.length < 2) return [] as GeneratedWorldCrossing[]
   const random = seededRandom(hashSeed(`${seed}:crossings`))
@@ -673,22 +677,16 @@ function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint
     }
   }
 
-  // Prefer one deliberate crossing over several bridges packed into the same small area.
   candidates.sort((a, b) => {
     if (a.path.kind !== b.path.kind) return a.path.kind === 'main' ? -1 : 1
     return b.path.width - a.path.width
   })
 
-  const selected: Array<{
-    crossing: GeneratedWorldCrossing
-    candidate: CrossingCandidate
-  }> = []
-
+  const selected: Array<{ crossing: GeneratedWorldCrossing; candidate: CrossingCandidate }> = []
   for (const candidate of candidates) {
     const nearby = selected.find(({ crossing }) =>
       Math.hypot(crossing.x - candidate.hit.x, crossing.z - candidate.hit.z) < 10.5,
     )
-
     if (nearby) {
       if (nearby.candidate.path.id !== candidate.path.id) {
         redirectPathToCrossing(candidate.path, candidate.pathIndex, nearby.crossing.x, nearby.crossing.z)
@@ -709,7 +707,6 @@ function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint
     }
     selected.push({ crossing, candidate })
   }
-
   return selected.map(({ crossing }) => crossing)
 }
 
@@ -737,18 +734,17 @@ function buildTerrain(
   bounds: GeneratedRegion['bounds'],
   paths: GeneratedWorldPath[],
   clearings: GeneratedWorldTerrain['clearings'],
-  stream: GeneratedWorldPoint[],
-  streamWidths: number[],
+  pois: GeneratedWorldPoi[],
   seed: number,
 ): GeneratedWorldTerrain {
   const settings = worldSettings(region)
-  const resolution = settings.size === 'large' ? 69 : settings.size === 'small' ? 49 : 61
+  const resolution = settings.size === 'large' ? 73 : settings.size === 'small' ? 53 : 65
   const width = bounds.maxX - bounds.minX
   const depth = bounds.maxZ - bounds.minZ
   const heights: number[] = []
   const amplitude = (.55 + settings.elevation * 4.7) * (.68 + settings.verticality * .64)
-  const waterLevel = -.38 - settings.water * .18
 
+  // Pass 1: build uninterrupted land. Water does not dictate the shape yet.
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
     const z = bounds.minZ + zIndex / (resolution - 1) * depth
     for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
@@ -762,21 +758,291 @@ function buildTerrain(
         const ridge = Math.abs(valueNoise2D(x * .035 + 41, z * .035 - 23, seed ^ 0xC2B2AE35) - .5) * 2
         if (ridge > .68) height += (ridge - .68) * 5.5 * settings.cliffs
       }
-
-      if (stream.length > 1) {
-        const streamDistance = distanceToPolyline(x, z, stream)
-        const valleyWidth = 4.5 + settings.water * 4
-        if (streamDistance < valleyWidth) {
-          const weight = 1 - streamDistance / valleyWidth
-          height = Math.min(height, waterLevel - .12 + (1 - weight) * .7)
-        }
-      }
-
-      heights.push(round(height, 3))
+      heights.push(round(height, 4))
     }
   }
 
-  return { resolution, width, depth, heights, waterLevel, stream, streamWidths, clearings }
+  // Pass 2: solve a low-cost route over the actual heightfield and make it flow from
+  // the higher map edge toward the lower one.
+  const hydrology = settings.water > .08
+    ? solveHydrology(bounds, resolution, heights, seed, settings.water)
+    : { points: [] as GeneratedWorldPoint[], widths: [] as number[], heights: [] as number[] }
+
+  // Pass 3: carve a bed and sloped banks into the heightfield around that route.
+  if (hydrology.points.length > 1) {
+    for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+      const z = bounds.minZ + zIndex / (resolution - 1) * depth
+      for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+        const x = bounds.minX + xIndex / (resolution - 1) * width
+        const index = zIndex * resolution + xIndex
+        const sample = nearestHydrologySample(x, z, hydrology.points, hydrology.widths, hydrology.heights)
+        const bankWidth = sample.width * 2.15 + 2.8
+        if (sample.distance >= bankWidth) continue
+
+        const normalized = sample.distance / Math.max(.001, bankWidth)
+        const channel = 1 - smoothstep(clamp(normalized, 0, 1))
+        const bedTarget = sample.height - .34 + Math.pow(normalized, 1.45) * 1.08
+        heights[index] = round(Math.min(heights[index], lerp(heights[index], bedTarget, channel * .94)), 4)
+      }
+    }
+  }
+
+  // Pass 4: POIs gently terrace the existing landscape instead of placing a flat disc.
+  for (const poi of pois) {
+    const centerHeight = sampleGridHeight(bounds, resolution, heights, poi.x, poi.z)
+    for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
+      const z = bounds.minZ + zIndex / (resolution - 1) * depth
+      for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
+        const x = bounds.minX + xIndex / (resolution - 1) * width
+        const distance = Math.hypot(x - poi.x, z - poi.z)
+        const terraceRadius = poi.radius * (poi.type === 'settlement' ? 1.02 : .78)
+        if (distance >= terraceRadius) continue
+        const riverDistance = hydrology.points.length > 1 ? distanceToPolyline(x, z, hydrology.points) : Infinity
+        if (riverDistance < 3.5) continue
+        const influence = 1 - smoothstep(clamp(distance / terraceRadius, 0, 1))
+        const index = zIndex * resolution + xIndex
+        heights[index] = round(lerp(heights[index], centerHeight, influence * .48), 4)
+      }
+    }
+  }
+
+  const microBiomes = buildMicroBiomes(
+    bounds,
+    resolution,
+    heights,
+    hydrology.points,
+    paths,
+    clearings,
+    seed,
+    settings,
+  )
+  const waterLevel = hydrology.heights.length
+    ? hydrology.heights.reduce((sum, height) => sum + height, 0) / hydrology.heights.length
+    : -.4
+
+  return {
+    resolution,
+    width,
+    depth,
+    heights,
+    waterLevel: round(waterLevel, 3),
+    stream: hydrology.points,
+    streamWidths: hydrology.widths,
+    streamHeights: hydrology.heights,
+    microBiomes,
+    clearings,
+  }
+}
+
+function solveHydrology(
+  bounds: GeneratedRegion['bounds'],
+  resolution: number,
+  heights: number[],
+  seed: number,
+  water: number,
+) {
+  const width = bounds.maxX - bounds.minX
+  const depth = bounds.maxZ - bounds.minZ
+  const minHeight = Math.min(...heights)
+  const maxHeight = Math.max(...heights)
+  const heightRange = Math.max(.001, maxHeight - minHeight)
+  const edgeAverage = (xIndex: number) => {
+    let total = 0
+    let count = 0
+    for (let z = 2; z < resolution - 2; z += 1) {
+      total += heights[z * resolution + xIndex]
+      count += 1
+    }
+    return total / Math.max(1, count)
+  }
+
+  const flowLeftToRight = edgeAverage(0) >= edgeAverage(resolution - 1)
+  const columnForStep = (step: number) => flowLeftToRight ? step : resolution - 1 - step
+  const previousRows: number[][] = Array.from({ length: resolution }, () => Array(resolution).fill(-1))
+  let costs = Array(resolution).fill(Infinity)
+
+  for (let row = 2; row < resolution - 2; row += 1) {
+    const column = columnForStep(0)
+    const height = heights[row * resolution + column]
+    const normalized = (height - minHeight) / heightRange
+    const edgePenalty = Math.pow(Math.abs(row / (resolution - 1) - .5) * 2, 3) * .55
+    costs[row] = -normalized * .7 + edgePenalty
+  }
+
+  for (let step = 1; step < resolution; step += 1) {
+    const column = columnForStep(step)
+    const nextCosts = Array(resolution).fill(Infinity)
+    for (let row = 2; row < resolution - 2; row += 1) {
+      const height = heights[row * resolution + column]
+      const normalized = (height - minHeight) / heightRange
+      const noise = valueNoise2D(column * .17, row * .17, seed ^ 0x165667B1)
+      const edgePenalty = Math.pow(Math.abs(row / (resolution - 1) - .5) * 2, 4) * .5
+
+      for (let delta = -3; delta <= 3; delta += 1) {
+        const previousRow = row + delta
+        if (previousRow < 2 || previousRow >= resolution - 2) continue
+        const previousCost = costs[previousRow]
+        if (!Number.isFinite(previousCost)) continue
+        const bendPenalty = delta * delta * .055
+        const score = previousCost + normalized * 1.5 + bendPenalty + edgePenalty + noise * .09
+        if (score < nextCosts[row]) {
+          nextCosts[row] = score
+          previousRows[step][row] = previousRow
+        }
+      }
+    }
+    costs = nextCosts
+  }
+
+  let row = 2
+  for (let candidate = 3; candidate < resolution - 2; candidate += 1) {
+    if (costs[candidate] < costs[row]) row = candidate
+  }
+
+  const gridPath: Array<{ column: number; row: number }> = []
+  for (let step = resolution - 1; step >= 0; step -= 1) {
+    gridPath.push({ column: columnForStep(step), row })
+    const previous = previousRows[step][row]
+    if (step > 0 && previous >= 0) row = previous
+  }
+  gridPath.reverse()
+
+  let points = gridPath.map(({ column, row }) => ({
+    x: bounds.minX + column / (resolution - 1) * width,
+    z: bounds.minZ + row / (resolution - 1) * depth,
+  }))
+  points = smoothPolyline(points, 2)
+
+  const random = seededRandom(hashSeed(`${seed}:hydrology-width`))
+  const widths = points.map((_, index) => {
+    const t = index / Math.max(1, points.length - 1)
+    const pulse = Math.sin(t * Math.PI * 4 + random() * .35) * .16
+    return round(1.15 + water * 1.05 + t * (.75 + water * .75) + pulse, 3)
+  })
+
+  const streamHeights: number[] = []
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    const raw = sampleGridHeight(bounds, resolution, heights, point.x, point.z) - .18
+    if (index === 0) streamHeights.push(raw)
+    else streamHeights.push(Math.min(raw, streamHeights[index - 1] - .006))
+  }
+
+  return {
+    points,
+    widths,
+    heights: streamHeights.map((height) => round(height, 3)),
+  }
+}
+
+function nearestHydrologySample(
+  x: number,
+  z: number,
+  points: GeneratedWorldPoint[],
+  widths: number[],
+  heights: number[],
+) {
+  let best = { distance: Infinity, width: widths[0] ?? 2, height: heights[0] ?? 0 }
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1]
+    const b = points[index]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const lengthSq = dx * dx + dz * dz
+    const t = lengthSq > .00001
+      ? clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0, 1)
+      : 0
+    const px = a.x + dx * t
+    const pz = a.z + dz * t
+    const distance = Math.hypot(x - px, z - pz)
+    if (distance >= best.distance) continue
+    best = {
+      distance,
+      width: lerp(widths[index - 1] ?? 2, widths[index] ?? 2, t),
+      height: lerp(heights[index - 1] ?? 0, heights[index] ?? 0, t),
+    }
+  }
+  return best
+}
+
+function sampleGridHeight(
+  bounds: GeneratedRegion['bounds'],
+  resolution: number,
+  heights: number[],
+  x: number,
+  z: number,
+) {
+  const u = clamp((x - bounds.minX) / Math.max(.001, bounds.maxX - bounds.minX), 0, 1)
+  const v = clamp((z - bounds.minZ) / Math.max(.001, bounds.maxZ - bounds.minZ), 0, 1)
+  const gx = u * (resolution - 1)
+  const gz = v * (resolution - 1)
+  const x0 = Math.floor(gx), z0 = Math.floor(gz)
+  const x1 = Math.min(resolution - 1, x0 + 1), z1 = Math.min(resolution - 1, z0 + 1)
+  const tx = gx - x0, tz = gz - z0
+  const h00 = heights[z0 * resolution + x0] ?? 0
+  const h10 = heights[z0 * resolution + x1] ?? h00
+  const h01 = heights[z1 * resolution + x0] ?? h00
+  const h11 = heights[z1 * resolution + x1] ?? h00
+  return lerp(lerp(h00, h10, tx), lerp(h01, h11, tx), tz)
+}
+
+function buildMicroBiomes(
+  bounds: GeneratedRegion['bounds'],
+  resolution: number,
+  heights: number[],
+  stream: GeneratedWorldPoint[],
+  paths: GeneratedWorldPath[],
+  clearings: GeneratedWorldTerrain['clearings'],
+  seed: number,
+  settings: ReturnType<typeof worldSettings>,
+) {
+  const random = seededRandom(hashSeed(`${seed}:micro-biomes`))
+  const count = Math.round((settings.size === 'large' ? 22 : settings.size === 'small' ? 12 : 17) * (.85 + settings.openSpace * .3))
+  const biomes: GeneratedMicroBiome[] = []
+
+  for (let index = 0; index < count; index += 1) {
+    const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
+    const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
+    const height = sampleGridHeight(bounds, resolution, heights, x, z)
+    const streamDistance = stream.length > 1 ? distanceToPolyline(x, z, stream) : Infinity
+    const pathDistance = distanceToPaths(x, z, paths)
+    const clearing = nearestClearing(x, z, clearings)
+    const noise = valueNoise2D(x * .037 + 5.2, z * .037 - 11.4, seed ^ 0xD3A2646C)
+
+    let type: WorldMicroBiomeType
+    if (streamDistance < 8) type = 'moss'
+    else if (height > .95 + settings.elevation * .8 || noise > .82) type = 'rocky'
+    else if (clearing || (noise > .63 && pathDistance < 12)) type = 'meadow'
+    else if (noise < .34) type = 'forest-floor'
+    else type = 'scrub'
+
+    biomes.push({
+      id: `micro-${index}`,
+      type,
+      x: round(x, 2),
+      z: round(z, 2),
+      radius: round(7 + random() * 12, 2),
+      strength: round(.55 + random() * .45, 3),
+    })
+  }
+  return biomes
+}
+
+function microBiomeInfluence(microBiomes: GeneratedMicroBiome[], x: number, z: number) {
+  const result: Record<WorldMicroBiomeType, number> = {
+    'forest-floor': 0,
+    moss: 0,
+    meadow: 0,
+    scrub: 0,
+    rocky: 0,
+  }
+  for (const biome of microBiomes) {
+    const distance = Math.hypot(x - biome.x, z - biome.z)
+    if (distance >= biome.radius) continue
+    const influence = (1 - smoothstep(clamp(distance / biome.radius, 0, 1))) * biome.strength
+    result[biome.type] = Math.max(result[biome.type], influence)
+  }
+  return result
 }
 
 function buildDressing(
@@ -790,19 +1056,18 @@ function buildDressing(
   const random = seededRandom(seed)
   const settings = worldSettings(region)
   const sizeFactor = settings.size === 'large' ? 1.35 : settings.size === 'small' ? .72 : 1
-  const target = Math.round((210 + settings.forestDensity * 500) * sizeFactor)
+  const target = Math.round((250 + settings.forestDensity * 560) * sizeFactor)
   const dressing: GeneratedWorldDressing[] = []
   const clusterCount = Math.max(6, Math.round((7 + settings.forestDensity * 10) * sizeFactor))
-  const clusters = Array.from({ length: clusterCount }, (_, index) => ({
+  const clusters = Array.from({ length: clusterCount }, () => ({
     x: bounds.minX + random() * (bounds.maxX - bounds.minX),
     z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
     radius: 13 + random() * 20,
     strength: .48 + random() * .52,
-    phase: index * 1.91 + random() * 4,
   }))
   let attempts = 0
 
-  while (dressing.length < target && attempts < target * 14) {
+  while (dressing.length < target && attempts < target * 16) {
     attempts += 1
     const x = bounds.minX + random() * (bounds.maxX - bounds.minX)
     const z = bounds.minZ + random() * (bounds.maxZ - bounds.minZ)
@@ -810,10 +1075,11 @@ function buildDressing(
     const streamDistance = terrain.stream.length ? distanceToPolyline(x, z, terrain.stream) : Infinity
     const clearing = nearestClearing(x, z, terrain.clearings)
     const poiDistance = pois.reduce((best, poi) => Math.min(best, Math.hypot(x - poi.x, z - poi.z) - poi.radius), Infinity)
+    const micro = microBiomeInfluence(terrain.microBiomes, x, z)
 
-    if (pathDistance < 2.45 || streamDistance < 3.1 || poiDistance < 3.8) continue
+    if (pathDistance < 2.35 || poiDistance < 3.6 || streamDistance < 1.15) continue
     const openPenalty = clearing ? clamp(1 - clearing.distance / Math.max(1, clearing.radius), 0, 1) : 0
-    if (random() < openPenalty * (.82 + settings.openSpace * .16)) continue
+    if (random() < openPenalty * (.76 + settings.openSpace * .18)) continue
 
     const edgeDistance = Math.min(
       x - bounds.minX,
@@ -829,37 +1095,52 @@ function buildDressing(
       const influence = 1 - distance / cluster.radius
       clusterDensity = Math.max(clusterDensity, influence * influence * cluster.strength)
     }
+
     const broadNoise = valueNoise2D(x * .031 + 12.3, z * .031 - 17.7, seed ^ 0xA24BAED4)
-    const density = clamp(
+    let density = clamp(
       settings.forestDensity * (.18 + clusterDensity * 1.08 + broadNoise * .42) + edgeBoost,
       0,
       1,
     )
-    if (random() > density) continue
+    density *= 1 - micro.meadow * .72
+    density *= 1 - micro.rocky * .18
+    density += micro['forest-floor'] * .12 + micro.scrub * .08
+
+    const nearRiver = streamDistance < 5
+    if (!nearRiver && random() > clamp(density, .05, 1)) continue
 
     const roll = random()
     let type: WorldDressingType
-    const treeThreshold = clamp(.42 + density * .46, .48, .9)
-    if (roll < treeThreshold) type = 'tree'
-    else if (roll < treeThreshold + .12) type = 'rock'
-    else if (roll < treeThreshold + .22) type = 'fern'
-    else if (roll < treeThreshold + .28) type = 'fallen-log'
-    else type = 'stump'
+    const treeThreshold = clamp(.4 + density * .44, .42, .88)
+
+    if (nearRiver && random() < .58) type = 'reeds'
+    else if (micro.rocky > .45 && roll < .58) type = 'rock'
+    else if (micro.meadow > .42 && roll < .66) type = roll < .38 ? 'grass' : 'shrub'
+    else if (micro.scrub > .42 && roll < .68) type = roll < .42 ? 'shrub' : 'fern'
+    else if (roll < treeThreshold) type = 'tree'
+    else if (roll < treeThreshold + .1) type = 'rock'
+    else if (roll < treeThreshold + .19) type = 'fern'
+    else if (roll < treeThreshold + .25) type = 'fallen-log'
+    else if (roll < treeThreshold + .3) type = 'stump'
+    else type = random() > .5 ? 'shrub' : 'grass'
 
     const y = sampleTerrainHeight({ terrain, bounds }, x, z)
     const clusterVariation = .88 + broadNoise * .26
+    const baseScale = type === 'tree'
+      ? .7 + random() * .9
+      : type === 'grass' || type === 'reeds'
+        ? .45 + random() * .55
+        : type === 'shrub'
+          ? .55 + random() * .65
+          : .55 + random() * .82
+
     dressing.push({
       id: `dress-${dressing.length}`,
       type,
       x: round(x, 2),
       y: round(y, 2),
       z: round(z, 2),
-      scale: round(
-        type === 'tree'
-          ? (.7 + random() * .9) * clusterVariation
-          : (.55 + random() * .82) * clusterVariation,
-        2,
-      ),
+      scale: round(baseScale * clusterVariation, 2),
       rotation: round(random() * Math.PI * 2, 3),
       variant: Math.floor(random() * 4),
     })
