@@ -1186,9 +1186,26 @@ function makeGeneratedStream(region: GeneratedRegion) {
 
   const water = new THREE.Mesh(
     makeRuntimeTerrainSafeWaterGeometry(region),
-    new THREE.MeshStandardMaterial({ color: 0x355f61, roughness: .28, transparent: true, opacity: .86, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({
+      color: 0x4ea6a3,
+      emissive: 0x1c6b67,
+      emissiveIntensity: .18,
+      roughness: .58,
+      metalness: 0,
+      transparent: false,
+      opacity: 1,
+      depthTest: true,
+      depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      side: THREE.DoubleSide,
+    }),
   )
-  water.receiveShadow = true
+  water.castShadow = false
+  water.receiveShadow = false
+  water.renderOrder = 20
+  water.position.y += .025
   group.add(water)
   return group
 }
