@@ -468,7 +468,13 @@ function buildStream(bounds: GeneratedRegion['bounds'], seed: number, water: num
 function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint[], seed: number) {
   if (stream.length < 2) return [] as GeneratedWorldCrossing[]
   const random = seededRandom(hashSeed(`${seed}:crossings`))
-  const crossings: GeneratedWorldCrossing[] = []
+  type CrossingCandidate = {
+    path: GeneratedWorldPath
+    pathIndex: number
+    hit: GeneratedWorldPoint
+    rotation: number
+  }
+  const candidates: CrossingCandidate[] = []
 
   for (const path of paths) {
     for (let pathIndex = 1; pathIndex < path.points.length; pathIndex += 1) {
@@ -479,22 +485,73 @@ function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint
         const d = stream[streamIndex]
         const hit = segmentIntersection(a, b, c, d)
         if (!hit) continue
-        if (crossings.some((item) => Math.hypot(item.x - hit.x, item.z - hit.z) < 8)) continue
-        const rotation = Math.atan2(b.z - a.z, b.x - a.x)
-        const kind: GeneratedWorldCrossing['kind'] = path.kind === 'main' || random() > .5 ? 'bridge' : 'ford'
-        crossings.push({
-          id: `crossing-${crossings.length}`,
-          kind,
-          x: round(hit.x, 3),
-          z: round(hit.z, 3),
-          rotation: round(rotation, 4),
-          width: round((path.width || 2) * (kind === 'bridge' ? 1.55 : 1.85), 3),
-          pathId: path.id,
+        candidates.push({
+          path,
+          pathIndex,
+          hit,
+          rotation: Math.atan2(b.z - a.z, b.x - a.x),
         })
       }
     }
   }
-  return crossings
+
+  // Prefer one deliberate crossing over several bridges packed into the same small area.
+  candidates.sort((a, b) => {
+    if (a.path.kind !== b.path.kind) return a.path.kind === 'main' ? -1 : 1
+    return b.path.width - a.path.width
+  })
+
+  const selected: Array<{
+    crossing: GeneratedWorldCrossing
+    candidate: CrossingCandidate
+  }> = []
+
+  for (const candidate of candidates) {
+    const nearby = selected.find(({ crossing }) =>
+      Math.hypot(crossing.x - candidate.hit.x, crossing.z - candidate.hit.z) < 10.5,
+    )
+
+    if (nearby) {
+      if (nearby.candidate.path.id !== candidate.path.id) {
+        redirectPathToCrossing(candidate.path, candidate.pathIndex, nearby.crossing.x, nearby.crossing.z)
+      }
+      continue
+    }
+
+    const kind: GeneratedWorldCrossing['kind'] =
+      candidate.path.kind === 'main' || random() > .58 ? 'bridge' : 'ford'
+    const crossing: GeneratedWorldCrossing = {
+      id: `crossing-${selected.length}`,
+      kind,
+      x: round(candidate.hit.x, 3),
+      z: round(candidate.hit.z, 3),
+      rotation: round(candidate.rotation, 4),
+      width: round((candidate.path.width || 2) * (kind === 'bridge' ? 1.38 : 1.72), 3),
+      pathId: candidate.path.id,
+    }
+    selected.push({ crossing, candidate })
+  }
+
+  return selected.map(({ crossing }) => crossing)
+}
+
+function redirectPathToCrossing(path: GeneratedWorldPath, segmentIndex: number, x: number, z: number) {
+  if (path.points.length < 3) return
+  const left = Math.max(0, segmentIndex - 1)
+  const right = Math.min(path.points.length - 1, segmentIndex)
+  const leftDistance = Math.hypot(path.points[left].x - x, path.points[left].z - z)
+  const rightDistance = Math.hypot(path.points[right].x - x, path.points[right].z - z)
+  const pivot = leftDistance <= rightDistance ? left : right
+
+  path.points[pivot] = { x, z }
+  for (const [offset, strength] of [[-2, .18], [-1, .42], [1, .42], [2, .18]] as const) {
+    const index = pivot + offset
+    if (index <= 0 || index >= path.points.length - 1) continue
+    path.points[index] = {
+      x: path.points[index].x + (x - path.points[index].x) * strength,
+      z: path.points[index].z + (z - path.points[index].z) * strength,
+    }
+  }
 }
 
 function buildTerrain(
