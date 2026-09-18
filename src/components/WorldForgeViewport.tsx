@@ -20,6 +20,7 @@ type Props = {
   showLandmarks: boolean
   showBiome: boolean
   showBoundary: boolean
+  showRiverDebug: boolean
 }
 
 type ViewState = {
@@ -33,11 +34,12 @@ type ViewState = {
   landmarks?: THREE.Group
   biome?: THREE.Group
   boundary?: THREE.Group
+  riverDebug?: THREE.Group
   observer?: ResizeObserver
   raf?: number
 }
 
-export default function WorldForgeViewport({ region, showRoute, showBranches, showLandmarks, showBiome, showBoundary }: Props) {
+export default function WorldForgeViewport({ region, showRoute, showBranches, showLandmarks, showBiome, showBoundary, showRiverDebug }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ViewState>({})
 
@@ -133,6 +135,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     state.landmarks = built.landmarks
     state.biome = built.biome
     state.boundary = built.boundary
+    state.riverDebug = built.riverDebug
     state.scene.add(built.root)
 
     const width = region.bounds.maxX - region.bounds.minX
@@ -152,6 +155,7 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     built.landmarks.visible = showLandmarks
     built.biome.visible = showBiome
     built.boundary.visible = showBoundary
+    built.riverDebug.visible = showRiverDebug
   }, [region])
 
   useEffect(() => {
@@ -174,6 +178,10 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     if (stateRef.current.boundary) stateRef.current.boundary.visible = showBoundary
   }, [showBoundary])
 
+  useEffect(() => {
+    if (stateRef.current.riverDebug) stateRef.current.riverDebug.visible = showRiverDebug
+  }, [showRiverDebug])
+
   return <div className="world-forge-map world-forge-map-3d" ref={hostRef}>
     <div className="world-forge-map-legend">
       <span><i className="main"/>Main road</span>
@@ -181,6 +189,14 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
       <span><i className="landmark"/>POIs</span>
       <span><i className="biome"/>Biome dressing</span>
     </div>
+    {showRiverDebug && <div className="world-forge-river-debug-legend">
+      <span><i className="raw"/>Raw frozen hydrology</span>
+      <span><i className="profile"/>Render profile</span>
+      <span><i className="rows"/>Water row centers</span>
+      <span><i className="bounds"/>Terrain bounds</span>
+      <span><i className="start"/>START</span>
+      <span><i className="end"/>END</span>
+    </div>}
     <div className="world-forge-camera-hint">LMB rotate · RMB pan · Wheel zoom</div>
   </div>
 }
@@ -201,6 +217,10 @@ function buildRegionScene(region: GeneratedRegion) {
 
   const stream = buildStream(region)
   if (stream) root.add(stream)
+
+  const riverDebug = buildRiverDiagnostics(region)
+  riverDebug.visible = false
+  root.add(riverDebug)
 
   const route = new THREE.Group()
   route.name = 'MainRoutes'
@@ -229,7 +249,132 @@ function buildRegionScene(region: GeneratedRegion) {
   addEntryExitMarkers(region, landmarks)
   root.add(landmarks)
 
-  return { root, route, branches, landmarks, biome, boundary }
+  return { root, route, branches, landmarks, biome, boundary, riverDebug }
+}
+
+function buildRiverDiagnostics(region: GeneratedRegion) {
+  const group = new THREE.Group()
+  group.name = 'RiverDiagnostics'
+
+  const raw = region.terrain.stream
+  const rawHeights = region.terrain.streamHeights
+  const profile = streamRenderProfile(region)
+  const surface = streamWaterSurfaceRows(region, 5, .065)
+
+  if (raw.length > 1) {
+    const rawPoints = raw.map((point, index) => new THREE.Vector3(
+      point.x,
+      Math.max(
+        (rawHeights[index] ?? region.terrain.waterLevel) + .8,
+        sampleTerrainHeight(region, point.x, point.z) + .8,
+      ),
+      point.z,
+    ))
+    group.add(makeRiverDebugLine(rawPoints, 0xff3ccf))
+
+    group.add(makeRiverEndpointMarker(
+      rawPoints[0],
+      0x63ff85,
+      'sphere',
+    ))
+    group.add(makeRiverEndpointMarker(
+      rawPoints[rawPoints.length - 1],
+      0xff5b5b,
+      'sphere',
+    ))
+  }
+
+  if (profile.points.length > 1) {
+    const renderPoints = profile.points.map((point, index) => new THREE.Vector3(
+      point.x,
+      (surface.rows[index]?.y ?? profile.heights[index] ?? region.terrain.waterLevel) + .46,
+      point.z,
+    ))
+    group.add(makeRiverDebugLine(renderPoints, 0x35e8ff))
+
+    group.add(makeRiverEndpointMarker(
+      renderPoints[0],
+      0x63ff85,
+      'box',
+    ))
+    group.add(makeRiverEndpointMarker(
+      renderPoints[renderPoints.length - 1],
+      0xff5b5b,
+      'box',
+    ))
+  }
+
+  if (surface.rows.length) {
+    const positions: number[] = []
+    for (const row of surface.rows) {
+      positions.push(row.x, row.y + .7, row.z)
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      color: 0xffe85b,
+      size: .62,
+      sizeAttenuation: true,
+      depthTest: false,
+      transparent: true,
+      opacity: .95,
+    })
+    const dots = new THREE.Points(geometry, material)
+    dots.renderOrder = 94
+    group.add(dots)
+  }
+
+  const boundsPoints = [
+    new THREE.Vector3(region.bounds.minX, 1.8, region.bounds.minZ),
+    new THREE.Vector3(region.bounds.maxX, 1.8, region.bounds.minZ),
+    new THREE.Vector3(region.bounds.maxX, 1.8, region.bounds.maxZ),
+    new THREE.Vector3(region.bounds.minX, 1.8, region.bounds.maxZ),
+  ]
+  const boundsGeometry = new THREE.BufferGeometry().setFromPoints(boundsPoints)
+  const boundsMaterial = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    depthTest: false,
+    transparent: true,
+    opacity: .95,
+  })
+  const boundsLine = new THREE.LineLoop(boundsGeometry, boundsMaterial)
+  boundsLine.renderOrder = 95
+  group.add(boundsLine)
+
+  return group
+}
+
+function makeRiverDebugLine(points: THREE.Vector3[], color: number) {
+  const geometry = new THREE.BufferGeometry().setFromPoints(points)
+  const material = new THREE.LineBasicMaterial({
+    color,
+    depthTest: false,
+    transparent: true,
+    opacity: .96,
+  })
+  const line = new THREE.Line(geometry, material)
+  line.renderOrder = 93
+  return line
+}
+
+function makeRiverEndpointMarker(
+  position: THREE.Vector3,
+  color: number,
+  shape: 'sphere' | 'box',
+) {
+  const geometry = shape === 'sphere'
+    ? new THREE.SphereGeometry(.72, 12, 8)
+    : new THREE.BoxGeometry(1.15, 1.15, 1.15)
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    depthTest: false,
+    transparent: true,
+    opacity: .98,
+  })
+  const marker = new THREE.Mesh(geometry, material)
+  marker.position.copy(position)
+  marker.renderOrder = 96
+  return marker
 }
 
 function buildTerrainBoundaryDebug(region: GeneratedRegion) {
