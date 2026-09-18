@@ -1,1 +1,1 @@
-export const FORGE_VERSION = '1.59.33'
+export const FORGE_VERSION = '1.59.34'
