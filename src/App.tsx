@@ -99,8 +99,8 @@ const navGroups: NavGroup[] = [
     label: 'CHARACTERS',
     items: [
       { id: 'conceptforge', label: 'Concept Forge', icon: Sparkles },
-      { id: 'characterforge', label: 'Character Forge', icon: Skull },
-      { id: 'characters', label: 'Character Assembly', icon: UserRoundCog },
+      { id: 'characterforge', label: 'Character Creator', icon: Skull },
+      { id: 'characters', label: 'Equipment Assembly', icon: UserRoundCog },
       { id: 'animations', label: 'Animation Studio', icon: Clapperboard },
     ],
   },
