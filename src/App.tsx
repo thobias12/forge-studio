@@ -91,7 +91,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'WORLD',
     items: [
-      { id: 'maps', label: 'Map Studio', icon: MapPinned },
+      { id: 'maps', label: 'Dungeon Forge', icon: MapPinned },
       { id: 'destruction', label: 'Destruction Lab', icon: Hammer },
     ],
   },
