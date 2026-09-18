@@ -468,12 +468,13 @@ function buildStream(bounds: GeneratedRegion['bounds'], seed: number, water: num
 function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint[], seed: number) {
   if (stream.length < 2) return [] as GeneratedWorldCrossing[]
   const random = seededRandom(hashSeed(`${seed}:crossings`))
-  const candidates: Array<{
+  type CrossingCandidate = {
     path: GeneratedWorldPath
     pathIndex: number
     hit: GeneratedWorldPoint
     rotation: number
-  }> = []
+  }
+  const candidates: CrossingCandidate[] = []
 
   for (const path of paths) {
     for (let pathIndex = 1; pathIndex < path.points.length; pathIndex += 1) {
@@ -502,7 +503,7 @@ function buildCrossings(paths: GeneratedWorldPath[], stream: GeneratedWorldPoint
 
   const selected: Array<{
     crossing: GeneratedWorldCrossing
-    candidate: typeof candidates[number]
+    candidate: CrossingCandidate
   }> = []
 
   for (const candidate of candidates) {
