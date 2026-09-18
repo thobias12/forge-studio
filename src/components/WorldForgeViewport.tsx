@@ -6,7 +6,7 @@ import {
   sampleTerrainHeight,
   streamRenderContinuityIssues,
   streamRenderProfile,
-  visibleStreamRenderHeight,
+  streamWaterSurfaceRows,
   sampleTerrainSurface,
   type GeneratedRegion,
   type GeneratedWorldPath,
@@ -361,7 +361,6 @@ function buildStream(region: GeneratedRegion) {
   const points = profile.points
   if (points.length < 2) return undefined
   const widths = profile.widths
-  const heights = profile.heights
 
   const group = new THREE.Group()
   group.name = 'GeneratedStream'
@@ -391,12 +390,7 @@ function buildStream(region: GeneratedRegion) {
   group.add(bank)
 
   const water = new THREE.Mesh(
-    makeProfileRibbonGeometry(
-      points,
-      widths,
-      heights,
-      (nominalHeight, x, z) => visibleStreamRenderHeight(region, nominalHeight, x, z),
-    ),
+    makeTerrainSafeWaterGeometry(region),
     new THREE.MeshStandardMaterial({
       color: 0x355f61,
       roughness: .28,
@@ -466,35 +460,37 @@ function makeRibbonGeometry(
   return geometry
 }
 
-function makeProfileRibbonGeometry(
-  points: Array<{ x: number; z: number }>,
-  widths: number[],
-  heights: number[],
-  heightAt: (nominalHeight: number, x: number, z: number) => number,
-) {
-  const sections = buildRibbonSections(points, widths)
+function makeTerrainSafeWaterGeometry(region: GeneratedRegion) {
+  const surface = streamWaterSurfaceRows(region, 5, .065)
+  const rows = surface.rows
+  const lanes = surface.laneCount
   const positions: number[] = []
+  const uvs: number[] = []
   const indices: number[] = []
 
-  sections.forEach((section, index) => {
-    const nominalHeight = heights[section.sourceIndex] ?? heights[0] ?? 0
-    const leftX = section.x + section.offsetX
-    const leftZ = section.z + section.offsetZ
-    const rightX = section.x - section.offsetX
-    const rightZ = section.z - section.offsetZ
-    positions.push(
-      leftX, heightAt(nominalHeight, leftX, leftZ), leftZ,
-      rightX, heightAt(nominalHeight, rightX, rightZ), rightZ,
-    )
-
-    if (index < sections.length - 1) {
-      const a = index * 2
-      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
-    }
+  rows.forEach((row, rowIndex) => {
+    row.points.forEach((point, laneIndex) => {
+      positions.push(point.x, row.y, point.z)
+      uvs.push(
+        laneIndex / Math.max(1, lanes - 1),
+        rowIndex / Math.max(1, rows.length - 1),
+      )
+    })
   })
+
+  for (let rowIndex = 0; rowIndex < rows.length - 1; rowIndex += 1) {
+    for (let laneIndex = 0; laneIndex < lanes - 1; laneIndex += 1) {
+      const a = rowIndex * lanes + laneIndex
+      const b = a + 1
+      const c = (rowIndex + 1) * lanes + laneIndex
+      const d = c + 1
+      indices.push(a, c, b, b, c, d)
+    }
+  }
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
