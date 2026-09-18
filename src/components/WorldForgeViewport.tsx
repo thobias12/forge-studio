@@ -1818,7 +1818,24 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     addBox(group, [2.25, .38, 2.45], [2.7, .76, .6], darkStone, [0, -.08, 0])
     addBox(group, [-.95, 1.45, 2.8], [.62, 2.9, .65], stone)
     addBox(group, [1.05, 1.15, 2.8], [.62, 2.3, .65], stone)
-    addBox(group, [.05, 2.55, 2.8], [2.65, .5, .7], darkStone)
+    addBox(group, [-.83, 2.55, 2.8], [1.05, .5, .7], darkStone)
+    addBox(group, [.94, 2.46, 2.8], [.7, .42, .68], darkStone, [0, -.05, .08])
+
+    const standingColumn = new THREE.Mesh(
+      new THREE.CylinderGeometry(.32, .45, 2.35, 6),
+      stone,
+    )
+    standingColumn.position.set(-2.25, 1.16, -1.2)
+    standingColumn.rotation.z = -.05
+    group.add(standingColumn)
+
+    const fallenColumn = new THREE.Mesh(
+      new THREE.CylinderGeometry(.3, .42, 2.75, 6),
+      darkStone,
+    )
+    fallenColumn.position.set(1.45, .34, -2.05)
+    fallenColumn.rotation.set(.08, .42, Math.PI / 2)
+    group.add(fallenColumn)
   } else if (poi.type === 'camp' || poi.type === 'settlement') {
     const tents = poi.type === 'settlement' ? 5 : 3
     const tentRandom = seededVisualRandom(`${poi.id}:tent-layout`)
@@ -1861,40 +1878,183 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
         [0, -benchAngle + (tentRandom() - .5) * .08, 0],
       )
     }
-    addBox(group, [-2.1, .5, 1.2], [1.4, 1, .7], wood, [0, .22, 0])
+
+    const pot = new THREE.Mesh(
+      new THREE.CylinderGeometry(.24, .31, .3, 8),
+      darkStone,
+    )
+    pot.position.set(.18, .34, -.12)
+    group.add(pot)
+
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(.34, .38, .72, 8),
+      wood,
+    )
+    barrel.position.set(-2.25, .36, 1.35)
+    barrel.rotation.z = .04
+    group.add(barrel)
+
+    const bedrollCount = poi.type === 'settlement' ? 3 : 2
+    for (let i = 0; i < bedrollCount; i += 1) {
+      const angle = 1.9 + i * 1.6 + (tentRandom() - .5) * .2
+      const radius = (poi.type === 'settlement' ? 3.15 : 2.75) + i * .18
+      addBox(
+        group,
+        [
+          Math.cos(angle) * radius,
+          .09,
+          Math.sin(angle) * radius,
+        ],
+        [1.05, .14, .5],
+        cloth,
+        [0, -angle + .25, 0],
+      )
+    }
+
+    const sackMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6b6045,
+      roughness: 1,
+    })
+    for (let i = 0; i < 2; i += 1) {
+      const sack = new THREE.Mesh(
+        new THREE.SphereGeometry(.27 + i * .05, 7, 5),
+        sackMaterial,
+      )
+      sack.scale.y = 1.2
+      sack.position.set(-1.75 + i * .48, .28, -2.05 + i * .2)
+      group.add(sack)
+    }
+
+    const fireGlow = new THREE.PointLight(0xff8738, .9, 6)
+    fireGlow.position.set(0, .7, 0)
+    group.add(fireGlow)
   } else if (poi.type === 'shrine') {
-    addBox(group, [0, .18, .4], [3.4, .36, 3], darkStone)
-    addBox(group, [0, .5, .25], [2.5, .34, 2.2], stone)
-    addBox(group, [0, 1.9, -.2], [.72, 2.8, .62], stone)
-    addBox(group, [-1.3, 1.15, -.25], [.45, 2.3, .45], darkStone)
-    addBox(group, [1.3, 1.15, -.25], [.45, 2.3, .45], darkStone)
-    addBox(group, [0, 2.25, -.25], [3, .42, .48], darkStone)
-    const glow = new THREE.PointLight(0xd6c58a, 1.8, 9)
-    glow.position.y = 2.8
+    addBox(group, [0, .12, .45], [3.5, .24, 3.1], darkStone)
+    addBox(group, [0, .33, .5], [2.85, .22, 2.45], stone)
+    addBox(group, [0, .68, .1], [1.55, .48, .9], darkStone)
+    addBox(group, [0, 1.08, -.55], [.92, 1.35, .55], stone)
+    addBox(group, [-1.15, 1.5, -.78], [.38, 2.45, .42], darkStone)
+    addBox(group, [1.15, 1.5, -.78], [.38, 2.45, .42], darkStone)
+    addBox(group, [0, 2.72, -.78], [2.72, .34, .5], darkStone)
+
+    const offeringMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb8a06b,
+      emissive: 0x6a4b1e,
+      emissiveIntensity: .45,
+      roughness: .7,
+    })
+    for (const x of [-.42, .42]) {
+      const candle = new THREE.Mesh(
+        new THREE.CylinderGeometry(.07, .08, .3, 7),
+        offeringMaterial,
+      )
+      candle.position.set(x, 1.02, .16)
+      group.add(candle)
+
+      const flame = new THREE.Mesh(
+        new THREE.SphereGeometry(.075, 7, 5),
+        new THREE.MeshStandardMaterial({
+          color: 0xffd27a,
+          emissive: 0xff9b39,
+          emissiveIntensity: 1.2,
+          roughness: .4,
+        }),
+      )
+      flame.scale.y = 1.5
+      flame.position.set(x, 1.25, .16)
+      group.add(flame)
+    }
+
+    const glow = new THREE.PointLight(0xd6b36d, 1.15, 7)
+    glow.position.set(0, 1.5, .1)
     group.add(glow)
   } else if (poi.type === 'standing-stones') {
     for (let i = 0; i < 7; i += 1) {
       const angle = i / 7 * Math.PI * 2
       const radius = i === 0 ? 0 : 3
       const height = i === 0 ? 3.8 : 2.4 + (i % 3) * .35
-      addBox(
-        group,
-        [Math.cos(angle) * radius, height * .5, Math.sin(angle) * radius],
-        [i === 0 ? .9 : .7, height, .65],
+      const standingStone = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          i === 0 ? .4 : .29,
+          i === 0 ? .56 : .43,
+          height,
+          5,
+        ),
         i % 2 ? stone : darkStone,
-        [0, angle * .23, (i % 3 - 1) * .055],
       )
+      standingStone.position.set(
+        Math.cos(angle) * radius,
+        height * .5,
+        Math.sin(angle) * radius,
+      )
+      standingStone.rotation.set(
+        (i % 2 ? .04 : -.03),
+        angle * .23,
+        (i % 3 - 1) * .07,
+      )
+      group.add(standingStone)
     }
   } else if (poi.type === 'beast-den') {
-    const outer = new THREE.Mesh(new THREE.TorusGeometry(2.35, .72, 8, 14, Math.PI), darkStone)
-    outer.rotation.x = Math.PI / 2
-    outer.position.y = 1.35
-    outer.castShadow = true
-    group.add(outer)
-    addBox(group, [0, .24, .75], [4.8, .48, 3.5], darkStone)
-    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 2.35), new THREE.MeshBasicMaterial({ color: 0x070907, side: THREE.DoubleSide }))
-    mouth.position.set(0, 1.05, .62)
+    const denRock = (
+      x: number,
+      y: number,
+      z: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      material: THREE.Material,
+      rotation = 0,
+    ) => {
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1, 0),
+        material,
+      )
+      rock.position.set(x, y, z)
+      rock.scale.set(sx, sy, sz)
+      rock.rotation.set(.08 * Math.sin(rotation), rotation, .06 * Math.cos(rotation))
+      rock.castShadow = true
+      group.add(rock)
+    }
+
+    denRock(-1.48, .92, .36, .9, 1.2, .85, darkStone, -.24)
+    denRock(1.43, .9, .34, .92, 1.15, .86, stone, .3)
+    denRock(-.72, 1.72, .2, .86, 1.02, .78, stone, -.1)
+    denRock(.36, 1.95, .15, .94, 1.08, .82, darkStone, .2)
+    denRock(1.12, 1.62, .2, .82, .96, .76, stone, .46)
+    denRock(-1.72, .48, -.72, 1.08, .72, 1, stone, -.35)
+    denRock(-.35, .5, -1.05, 1.35, .74, 1.2, darkStone, .12)
+    denRock(1.25, .46, -.88, 1.18, .68, 1.05, stone, .42)
+
+    const mouth = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.45, 1.95),
+      new THREE.MeshBasicMaterial({
+        color: 0x050705,
+        side: THREE.DoubleSide,
+      }),
+    )
+    mouth.position.set(0, .92, .56)
     group.add(mouth)
+
+    const boneMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb8b29a,
+      roughness: .92,
+    })
+    for (let i = 0; i < 2; i += 1) {
+      const bone = new THREE.Mesh(
+        new THREE.CylinderGeometry(.045, .055, .82, 6),
+        boneMaterial,
+      )
+      bone.position.set(-.62 + i * .34, .09, 1.85 + i * .16)
+      bone.rotation.set(.05, .35 + i * .75, Math.PI / 2)
+      group.add(bone)
+    }
+    const skull = new THREE.Mesh(
+      new THREE.SphereGeometry(.19, 7, 5),
+      boneMaterial,
+    )
+    skull.scale.set(1, .8, .85)
+    skull.position.set(-.2, .19, 1.72)
+    group.add(skull)
   } else if (poi.type === 'graveyard') {
     for (let i = 0; i < 12; i += 1) {
       const col = i % 4
@@ -1908,18 +2068,55 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     addBox(group, [-2.25, .5, 3.15], [2.2, 1, .12], wood)
     addBox(group, [2.25, .5, 3.15], [2.2, 1, .12], wood)
   } else if (poi.type === 'watchtower') {
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.95, 7, 8), stone)
-    tower.position.y = 3.35
+    const tower = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.5, 1.95, 5.6, 8),
+      stone,
+    )
+    tower.position.y = 2.68
     tower.castShadow = true
     group.add(tower)
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(1.88, 1.78, .5, 8), darkStone)
-    upper.position.y = 6.62
-    group.add(upper)
-    for (let i = 0; i < 8; i += 1) {
-      if (i === 2 || i === 3) continue
-      const angle = i / 8 * Math.PI * 2
-      addBox(group, [Math.cos(angle) * 1.58, 7.08, Math.sin(angle) * 1.58], [.5, .68, .5], darkStone, [0, -angle, 0])
-    }
+
+    const upperWall = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        1.58,
+        1.64,
+        1.55,
+        8,
+        1,
+        true,
+        -Math.PI * .75,
+        Math.PI * 1.5,
+      ),
+      darkStone,
+    )
+    upperWall.position.y = 5.92
+    upperWall.castShadow = true
+    group.add(upperWall)
+
+    const survivingAngles = [-.62, -.32, 0, .31, .58].map(
+      (value) => value * Math.PI,
+    )
+    survivingAngles.forEach((angle, index) => {
+      addBox(
+        group,
+        [
+          Math.sin(angle) * 1.56,
+          6.82 + (index % 2) * .06,
+          Math.cos(angle) * 1.56,
+        ],
+        [index === 2 ? .56 : .46, .55 + (index % 2) * .16, .5],
+        darkStone,
+        [0, angle, 0],
+      )
+    })
+
+    addBox(
+      group,
+      [1.95, .34, -1.6],
+      [.72, .45, .58],
+      darkStone,
+      [.22, .42, .28],
+    )
     const doorwayRecess = new THREE.Mesh(
       new THREE.BoxGeometry(1.02, 1.72, .18),
       new THREE.MeshStandardMaterial({ color: 0x161914, roughness: 1 }),
@@ -1944,9 +2141,14 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
 
   const label = makeLabelSprite(poi.label)
   const labelScaleCompensation = 1 / poiVisualScale
+  const landmarkLabelHeight =
+    poi.type === 'watchtower' ? 7.75 :
+      poi.type === 'standing-stones' ? 4.55 :
+        poi.type === 'shrine' ? 3.75 :
+          Math.max(3.5, poi.radius * .58)
   label.position.set(
     0,
-    Math.max(3.5, poi.radius * .58) * labelScaleCompensation,
+    landmarkLabelHeight * labelScaleCompensation,
     0,
   )
   label.scale.multiplyScalar(labelScaleCompensation)
