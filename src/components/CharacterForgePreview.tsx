@@ -13,6 +13,16 @@ import {
 } from '../lib/characterAssetRegistry'
 import type { CharacterIdentityRecipe } from '../lib/characterCreator'
 import type { LibraryAsset } from '../lib/library'
+import {
+  FORGE_EQUIPMENT_SLOTS,
+  type ForgeEquipmentSlot,
+} from '../engine/equipment'
+import type { ForgeItemDefinition } from '../engine/forgeProject'
+import {
+  bindEquipmentVisualModel,
+  clearEquipmentVisualAnchors,
+  clearEquipmentVisualModels,
+} from '../engine/runtime/ForgeEquipmentVisuals'
 
 type PreviewStats = { bones: number; skinnedMeshes: number; triangles: number }
 
@@ -29,6 +39,10 @@ type Props = {
   headAsset?: LibraryAsset
   hairAsset?: LibraryAsset
   baseClothingVisible?: boolean
+  paperDoll?: boolean
+  equipmentItems?: Partial<
+    Record<ForgeEquipmentSlot, ForgeItemDefinition>
+  >
   onStats?: (stats: PreviewStats) => void
 }
 
@@ -42,6 +56,23 @@ type PreviewState = {
   scene?: THREE.Scene
   camera?: THREE.PerspectiveCamera
   controls?: OrbitControls
+  turntable?: THREE.Group
+  equipmentModels?: Map<
+    ForgeEquipmentSlot,
+    THREE.Object3D
+  >
+  equipmentAnchors?: Map<
+    ForgeEquipmentSlot,
+    THREE.Group
+  >
+  equipmentRevision?: number
+  paperDollYaw?: number
+  paperDollYawTarget?: number
+  paperDollDrag?: {
+    pointerId: number
+    startX: number
+    startYaw: number
+  }
 }
 
 export default function CharacterForgePreview({
@@ -57,31 +88,64 @@ export default function CharacterForgePreview({
   headAsset,
   hairAsset,
   baseClothingVisible = true,
+  paperDoll = false,
+  equipmentItems,
   onStats,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<PreviewState>({})
   const callbackRef = useRef(onStats)
   callbackRef.current = onStats
+  const equipmentItemsRef = useRef(equipmentItems)
+  equipmentItemsRef.current = equipmentItems
+  const equipmentSignature = FORGE_EQUIPMENT_SLOTS
+    .map((slot) => equipmentItems?.[slot]?.id ?? '')
+    .join('|')
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
+
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x070b10)
-    scene.fog = new THREE.Fog(0x070b10, 7, 18)
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.02, 80)
+    scene.background = paperDoll
+      ? null
+      : new THREE.Color(0x070b10)
+    scene.fog = paperDoll
+      ? null
+      : new THREE.Fog(0x070b10, 7, 18)
+
+    const camera = new THREE.PerspectiveCamera(
+      38,
+      1,
+      0.02,
+      80,
+    )
     camera.position.set(2.55, 1.65, -3.7)
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-    renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: paperDoll,
+      powerPreference: 'high-performance',
+    })
+    renderer.setPixelRatio(
+      Math.min(devicePixelRatio, 2),
+    )
+    renderer.outputColorSpace =
+      THREE.SRGBColorSpace
+    renderer.toneMapping =
+      THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.18
-    renderer.shadowMap.enabled = true
+    renderer.shadowMap.enabled = !paperDoll
     renderer.domElement.style.touchAction = 'none'
+    if (paperDoll) {
+      renderer.setClearColor(0x000000, 0)
+    }
     host.appendChild(renderer.domElement)
 
-    const controls = new OrbitControls(camera, renderer.domElement)
+    const controls = new OrbitControls(
+      camera,
+      renderer.domElement,
+    )
     controls.enableDamping = true
     controls.enablePan = false
     controls.rotateSpeed = 0.72
@@ -89,37 +153,152 @@ export default function CharacterForgePreview({
     controls.target.set(0, 0.95, 0)
     controls.minDistance = 1.4
     controls.maxDistance = 10
-    scene.add(new THREE.HemisphereLight(0xd7e6f3, 0x151b22, 2.3))
-    const key = new THREE.DirectionalLight(0xfff3df, 3.5)
+    controls.enabled = !paperDoll
+
+    scene.add(
+      new THREE.HemisphereLight(
+        0xd7e6f3,
+        0x151b22,
+        2.3,
+      ),
+    )
+    const key = new THREE.DirectionalLight(
+      0xfff3df,
+      3.5,
+    )
     key.position.set(3.8, 5.5, 4.4)
-    key.castShadow = true
+    key.castShadow = !paperDoll
     scene.add(key)
-    const rim = new THREE.DirectionalLight(0x718fb0, 2)
+    const rim = new THREE.DirectionalLight(
+      0x718fb0,
+      2,
+    )
     rim.position.set(-3.5, 3, -4)
     scene.add(rim)
-    const warm = new THREE.PointLight(0xff9d5c, 1.2, 6, 2)
+    const warm = new THREE.PointLight(
+      0xff9d5c,
+      1.2,
+      6,
+      2,
+    )
     warm.position.set(-2.4, 1.4, 2)
     scene.add(warm)
 
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(3, 48),
-      new THREE.MeshStandardMaterial({ color: 0x10171e, roughness: 0.93 }),
-    )
-    ground.rotation.x = -Math.PI / 2
-    ground.receiveShadow = true
-    scene.add(ground)
-    const grid = new THREE.GridHelper(8, 24, 0x2a3a48, 0x17222c)
-    grid.position.y = 0.003
-    scene.add(grid)
+    if (!paperDoll) {
+      const ground = new THREE.Mesh(
+        new THREE.CircleGeometry(3, 48),
+        new THREE.MeshStandardMaterial({
+          color: 0x10171e,
+          roughness: 0.93,
+        }),
+      )
+      ground.rotation.x = -Math.PI / 2
+      ground.receiveShadow = true
+      scene.add(ground)
+      const grid = new THREE.GridHelper(
+        8,
+        24,
+        0x2a3a48,
+        0x17222c,
+      )
+      grid.position.y = 0.003
+      scene.add(grid)
+    }
 
     stateRef.current.scene = scene
     stateRef.current.camera = camera
     stateRef.current.controls = controls
+    stateRef.current.paperDollYaw = 0
+    stateRef.current.paperDollYawTarget = 0
+
+    const canvas = renderer.domElement
+    const onPointerDown = (event: PointerEvent) => {
+      if (!paperDoll || event.button !== 0) return
+      const state = stateRef.current
+      if (!state.turntable) return
+      event.preventDefault()
+      event.stopPropagation()
+      state.paperDollDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startYaw:
+          state.paperDollYawTarget ?? 0,
+      }
+      canvas.setPointerCapture?.(event.pointerId)
+      host.classList.add('is-rotating')
+    }
+    const onPointerMove = (event: PointerEvent) => {
+      const state = stateRef.current
+      const drag = state.paperDollDrag
+      if (
+        !paperDoll ||
+        !drag ||
+        drag.pointerId !== event.pointerId
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      state.paperDollYawTarget =
+        drag.startYaw +
+        (event.clientX - drag.startX) * 0.012
+    }
+    const stopRotate = (event: PointerEvent) => {
+      const state = stateRef.current
+      if (
+        state.paperDollDrag?.pointerId !==
+        event.pointerId
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      state.paperDollDrag = undefined
+      if (
+        canvas.hasPointerCapture?.(event.pointerId)
+      ) {
+        canvas.releasePointerCapture(event.pointerId)
+      }
+      host.classList.remove('is-rotating')
+    }
+    const resetRotate = (event: MouseEvent) => {
+      if (!paperDoll) return
+      event.preventDefault()
+      event.stopPropagation()
+      stateRef.current.paperDollYawTarget = 0
+    }
+
+    if (paperDoll) {
+      canvas.addEventListener(
+        'pointerdown',
+        onPointerDown,
+      )
+      canvas.addEventListener(
+        'pointermove',
+        onPointerMove,
+      )
+      canvas.addEventListener(
+        'pointerup',
+        stopRotate,
+      )
+      canvas.addEventListener(
+        'pointercancel',
+        stopRotate,
+      )
+      canvas.addEventListener(
+        'dblclick',
+        resetRotate,
+      )
+    }
 
     const resize = () => {
       const rect = host.getBoundingClientRect()
       if (!rect.width || !rect.height) return
-      renderer.setSize(rect.width, rect.height, false)
+      renderer.setSize(
+        rect.width,
+        rect.height,
+        false,
+      )
       camera.aspect = rect.width / rect.height
       camera.updateProjectionMatrix()
     }
@@ -127,12 +306,30 @@ export default function CharacterForgePreview({
     const observer = new ResizeObserver(resize)
     observer.observe(host)
     resize()
+
     let raf = 0
     let previous = performance.now()
     const frame = (now: number) => {
-      const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000))
+      const dt = Math.min(
+        0.05,
+        Math.max(0, (now - previous) / 1000),
+      )
       previous = now
-      stateRef.current.mixer?.update(dt)
+      const state = stateRef.current
+      state.mixer?.update(dt)
+      if (state.turntable) {
+        const current = state.paperDollYaw ?? 0
+        const target =
+          state.paperDollYawTarget ?? current
+        const delta = Math.atan2(
+          Math.sin(target - current),
+          Math.cos(target - current),
+        )
+        const alpha = 1 - Math.exp(-dt * 16)
+        const next = current + delta * alpha
+        state.paperDollYaw = next
+        state.turntable.rotation.y = next
+      }
       controls.update()
       renderer.render(scene, camera)
       raf = requestAnimationFrame(frame)
@@ -142,13 +339,35 @@ export default function CharacterForgePreview({
     return () => {
       cancelAnimationFrame(raf)
       observer.disconnect()
+      if (paperDoll) {
+        canvas.removeEventListener(
+          'pointerdown',
+          onPointerDown,
+        )
+        canvas.removeEventListener(
+          'pointermove',
+          onPointerMove,
+        )
+        canvas.removeEventListener(
+          'pointerup',
+          stopRotate,
+        )
+        canvas.removeEventListener(
+          'pointercancel',
+          stopRotate,
+        )
+        canvas.removeEventListener(
+          'dblclick',
+          resetRotate,
+        )
+      }
       controls.dispose()
       clearPreview(stateRef.current)
       renderer.dispose()
       renderer.domElement.remove()
       stateRef.current = {}
     }
-  }, [])
+  }, [paperDoll])
 
   useEffect(() => {
     const state = stateRef.current
@@ -175,8 +394,23 @@ export default function CharacterForgePreview({
 
         state.root = preview.root
         state.clips = preview.clips
-        state.scene.add(preview.root)
+        if (paperDoll) {
+          const turntable = new THREE.Group()
+          turntable.name = '__forge_paperdoll_turntable'
+          turntable.rotation.y =
+            state.paperDollYaw ?? 0
+          turntable.add(preview.root)
+          state.turntable = turntable
+          state.scene.add(turntable)
+        } else {
+          state.scene.add(preview.root)
+        }
         callbackRef.current?.(preview.stats)
+        void refreshPreviewEquipment(
+          state,
+          preview.root,
+          equipmentItemsRef.current,
+        )
 
         state.mixer = new THREE.AnimationMixer(preview.root)
         const clip = preview.clips.find((entry) => entry.name === animation)
@@ -191,8 +425,20 @@ export default function CharacterForgePreview({
           state.helper = makeSkeletonHelper(preview.root)
           state.scene.add(state.helper)
         }
-        if (showHitbox) state.hitbox = addHitbox(state.scene, config)
-        frameCamera(state, preview.root, cameraMode)
+        if (showHitbox) {
+          state.hitbox = addHitbox(
+            state.scene,
+            config,
+          )
+        }
+        frameCamera(
+          state,
+          state.turntable ?? preview.root,
+          cameraMode,
+        )
+        if (paperDoll && state.controls) {
+          state.controls.enabled = false
+        }
       } catch (error) {
         console.error('Character preview build failed', error)
       }
@@ -209,6 +455,7 @@ export default function CharacterForgePreview({
     hairAsset,
     baseClothingVisible,
     cameraMode,
+    paperDoll,
   ])
 
   useEffect(() => {
@@ -257,7 +504,26 @@ export default function CharacterForgePreview({
     }
   }, [showHitbox, config])
 
-  return <div className="character-forge-preview" ref={hostRef} />
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state.root) return
+    void refreshPreviewEquipment(
+      state,
+      state.root,
+      equipmentItems,
+    )
+    return () => {
+      state.equipmentRevision =
+        (state.equipmentRevision ?? 0) + 1
+    }
+  }, [equipmentSignature])
+
+  return (
+    <div
+      className={`character-forge-preview${paperDoll ? ' paper-doll-preview' : ''}`}
+      ref={hostRef}
+    />
+  )
 }
 
 async function buildPreview(
@@ -532,7 +798,74 @@ function frameCamera(state: PreviewState, root: THREE.Object3D, cameraMode: 'stu
   state.controls.update()
 }
 
+async function refreshPreviewEquipment(
+  state: PreviewState,
+  root: THREE.Object3D,
+  equipmentItems:
+    | Partial<
+        Record<
+          ForgeEquipmentSlot,
+          ForgeItemDefinition
+        >
+      >
+    | undefined,
+) {
+  clearPreviewEquipment(state)
+  const revision = state.equipmentRevision ?? 0
+  const models =
+    new Map<ForgeEquipmentSlot, THREE.Object3D>()
+  const anchors =
+    new Map<ForgeEquipmentSlot, THREE.Group>()
+  state.equipmentModels = models
+  state.equipmentAnchors = anchors
+
+  for (const slot of FORGE_EQUIPMENT_SLOTS) {
+    const item = equipmentItems?.[slot]
+    if (!item) continue
+    try {
+      const model = await bindEquipmentVisualModel(
+        {
+          characterRoot: root,
+          fallbackParent: root,
+          anchors,
+        },
+        item,
+        slot,
+      )
+      if (
+        revision !== state.equipmentRevision ||
+        state.root !== root
+      ) {
+        clearEquipmentVisualModels(
+          new Map([[slot, model]]),
+        )
+        continue
+      }
+      models.set(slot, model)
+    } catch {
+      // Keep the character visible even if one optional
+      // equipment asset cannot be loaded.
+    }
+  }
+}
+
+function clearPreviewEquipment(
+  state: PreviewState,
+) {
+  state.equipmentRevision =
+    (state.equipmentRevision ?? 0) + 1
+  clearEquipmentVisualModels(
+    state.equipmentModels,
+  )
+  clearEquipmentVisualAnchors(
+    state.equipmentAnchors,
+  )
+  state.equipmentModels = undefined
+  state.equipmentAnchors = undefined
+}
+
 function clearPreview(state: PreviewState) {
+  clearPreviewEquipment(state)
   state.mixer?.stopAllAction()
   state.mixer = undefined
   state.action = undefined
@@ -548,11 +881,19 @@ function clearPreview(state: PreviewState) {
     if (!Array.isArray(material)) material.dispose()
     state.hitbox = undefined
   }
-  if (state.root && state.scene) {
-    state.scene.remove(state.root)
+  if (state.turntable && state.scene) {
+    state.scene.remove(state.turntable)
+    if (state.root) {
+      state.turntable.remove(state.root)
+    }
+    state.turntable = undefined
+  }
+  if (state.root) {
+    state.root.removeFromParent()
     disposeRoot(state.root)
     state.root = undefined
   }
+  state.paperDollDrag = undefined
   state.clips = undefined
 }
 
