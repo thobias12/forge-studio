@@ -1,3 +1,9 @@
+import {
+  createGameplaySocket,
+  normalizeGameplaySockets,
+  type GameplaySocket,
+} from '../engine/gameplaySockets'
+
 export type PropCategory =
   | 'storage'
   | 'furniture'
@@ -70,6 +76,7 @@ export type PropPrefab = {
   snap: boolean
   lod: PropLodSettings
   parts: PropPart[]
+  sockets: GameplaySocket[]
   thumbnail?: string
   createdAt: string
   updatedAt: string
@@ -171,6 +178,7 @@ export function createBlankPropPrefab(
         scale: [1.2, 1, 1],
       }),
     ],
+    sockets: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -209,6 +217,10 @@ export function clonePropPrefab(
   clone.parts = clone.parts.map((part) => ({
     ...part,
     id: makeId('part'),
+  }))
+  clone.sockets = clone.sockets.map((socket) => ({
+    ...socket,
+    id: makeId('socket'),
   }))
   return clone
 }
@@ -370,6 +382,7 @@ export function starterPropPrefabs(): PropPrefab[] {
       ...lod,
     },
     parts,
+    sockets: starterPropSockets(id),
     createdAt: now,
     updatedAt: now,
   })
@@ -691,6 +704,174 @@ export function starterPropPrefabs(): PropPrefab[] {
   ]
 }
 
+function starterPropSockets(id: string): GameplaySocket[] {
+  if (id === 'prop-chest') {
+    return [
+      createGameplaySocket('loot', {
+        id: 'socket-chest-open',
+        name: 'Open Chest',
+        position: [0, .9, .46],
+        radius: 2.4,
+        prompt: 'Open Chest',
+        action: 'container',
+        oneShot: true,
+        message: 'Ironbound chest opened. Loot binding is ready for Loot Forge.',
+      }),
+    ]
+  }
+  if (id === 'prop-signpost') {
+    return [
+      createGameplaySocket('interaction', {
+        id: 'socket-sign-read',
+        name: 'Read Sign',
+        position: [0, 1.65, .12],
+        radius: 2.1,
+        prompt: 'Read Sign',
+        action: 'message',
+        message: 'The weathered sign points toward the old road.',
+      }),
+    ]
+  }
+  if (id === 'prop-well') {
+    return [
+      createGameplaySocket('interaction', {
+        id: 'socket-well-use',
+        name: 'Inspect Well',
+        position: [0, 1.2, .95],
+        radius: 2.3,
+        prompt: 'Inspect Well',
+        action: 'message',
+        cooldown: 1,
+        message: 'Cold air rises from the old village well.',
+      }),
+    ]
+  }
+  if (id === 'prop-lantern-post') {
+    return [
+      createGameplaySocket('light', {
+        id: 'socket-lantern-light',
+        name: 'Lantern Light',
+        position: [.72, 2.46, 0],
+        radius: .5,
+        targetRef: 'warm-lantern',
+      }),
+      createGameplaySocket('vfx', {
+        id: 'socket-lantern-vfx',
+        name: 'Lantern Flame',
+        position: [.72, 2.46, 0],
+        radius: .4,
+        targetRef: 'small-flame',
+      }),
+      createGameplaySocket('audio', {
+        id: 'socket-lantern-audio',
+        name: 'Lantern Fire Loop',
+        position: [.72, 2.46, 0],
+        radius: 5,
+        targetRef: 'fire-small',
+      }),
+    ]
+  }
+  if (id === 'prop-brazier') {
+    return [
+      createGameplaySocket('vfx', {
+        id: 'socket-brazier-vfx',
+        name: 'Brazier Fire',
+        position: [0, 1.35, 0],
+        radius: .6,
+        targetRef: 'brazier-fire',
+      }),
+      createGameplaySocket('audio', {
+        id: 'socket-brazier-audio',
+        name: 'Brazier Audio',
+        position: [0, 1.15, 0],
+        radius: 6,
+        targetRef: 'fire-medium',
+      }),
+    ]
+  }
+  if (id === 'prop-wall-torch') {
+    return [
+      createGameplaySocket('vfx', {
+        id: 'socket-walltorch-vfx',
+        name: 'Torch Flame',
+        position: [0, 1.94, .02],
+        radius: .45,
+        targetRef: 'torch-flame',
+      }),
+      createGameplaySocket('audio', {
+        id: 'socket-walltorch-audio',
+        name: 'Torch Audio',
+        position: [0, 1.9, .02],
+        radius: 4.5,
+        targetRef: 'fire-small',
+      }),
+    ]
+  }
+  if (id === 'prop-gate') {
+    return [
+      createGameplaySocket('door', {
+        id: 'socket-gate-door',
+        name: 'Gate Interaction',
+        position: [0, 1.05, .45],
+        radius: 2.6,
+        prompt: 'Open Gate',
+        action: 'door',
+        cooldown: .5,
+        message: 'Gate interaction triggered.',
+      }),
+    ]
+  }
+  if (id === 'prop-altar') {
+    return [
+      createGameplaySocket('interaction', {
+        id: 'socket-altar-use',
+        name: 'Activate Altar',
+        position: [0, 1.15, .35],
+        radius: 2.35,
+        prompt: 'Activate Altar',
+        trigger: 'hold',
+        holdSeconds: .8,
+        action: 'shrine',
+        cooldown: 2,
+        message: 'The altar answers with a faint pulse of energy.',
+      }),
+    ]
+  }
+  if (id === 'prop-market-stall') {
+    return [
+      createGameplaySocket('npc', {
+        id: 'socket-market-npc',
+        name: 'Merchant Position',
+        position: [0, 0, -.9],
+        targetRef: 'merchant',
+      }),
+      createGameplaySocket('interaction', {
+        id: 'socket-market-counter',
+        name: 'Market Counter',
+        position: [0, 1.05, .65],
+        radius: 2.2,
+        prompt: 'Browse Wares',
+        action: 'message',
+        message: 'Merchant interaction socket is ready for an NPC/shop binding.',
+      }),
+    ]
+  }
+  if (id === 'prop-training-dummy') {
+    return [
+      createGameplaySocket('interaction', {
+        id: 'socket-dummy-use',
+        name: 'Training Dummy',
+        position: [0, 1.35, .65],
+        radius: 2,
+        prompt: 'Inspect Dummy',
+        action: 'message',
+        message: 'A battered training dummy. Combat hooks can bind here.',
+      }),
+    ]
+  }
+  return []
+}
+
 function normalizePropPrefab(value: unknown): PropPrefab | undefined {
   if (!value || typeof value !== 'object') return undefined
   const source = value as Partial<PropPrefab>
@@ -732,6 +913,7 @@ function normalizePropPrefab(value: unknown): PropPrefab | undefined {
       simplify: clampNumber(source.lod?.simplify, .1, .9, .45),
     },
     parts,
+    sockets: normalizeGameplaySockets(source.sockets),
     thumbnail:
       typeof source.thumbnail === 'string' &&
       source.thumbnail.startsWith('data:image/')
