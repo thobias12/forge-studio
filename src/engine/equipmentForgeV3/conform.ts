@@ -573,9 +573,9 @@ function createSleeveTemplate(
   const direction =
     arm.clone().normalize()
   const endFraction =
-    sleeve === 'long' ? .86 : .42
+    sleeve === 'long' ? .86 : .4
   const startFraction =
-    sleeve === 'long' ? .025 : -.025
+    sleeve === 'long' ? .025 : .035
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -587,8 +587,6 @@ function createSleeveTemplate(
       endFraction,
     )
 
-  const radius =
-    armLength * .17
   const helper =
     Math.abs(direction.y) < .88
       ? new THREE.Vector3(0, 1, 0)
@@ -605,12 +603,11 @@ function createSleeveTemplate(
   const sideSign =
     Math.sign(start.x) ||
     (side === 'L' ? 1 : -1)
-  const candidateStart =
-    sleeve === 'long' ? 0 : -.045
+  const candidateStart = 0
   const candidateEnd =
     sleeve === 'long' ? .96 : .54
   const maxArmRadius =
-    armLength * .235
+    armLength * .32
 
   // Only sample vertices that actually belong to the upper/lower arm tube.
   // The old filter used a hard-coded X sign and no radial limit, so chest
@@ -691,26 +688,6 @@ function createSleeveTemplate(
       const u = segment / segments
       const angle =
         u * Math.PI * 2
-      const desired =
-        center
-          .clone()
-          .addScaledVector(
-            axisA,
-            Math.cos(angle) *
-              radius,
-          )
-          .addScaledVector(
-            axisB,
-            Math.sin(angle) *
-              radius,
-          )
-
-      const nearest =
-        nearestEuclideanVertex(
-          candidates,
-          desired,
-        )
-
       const radialDirection =
         axisA
           .clone()
@@ -723,43 +700,34 @@ function createSleeveTemplate(
           )
           .normalize()
 
-      const fromCenter =
-        nearest.position
-          .clone()
-          .sub(center)
-      const axialDistance =
-        fromCenter.dot(direction)
-      const sampledRadius =
-        fromCenter
-          .addScaledVector(
-            direction,
-            -axialDistance,
-          )
-          .length()
-
-      const cleanRadius =
-        THREE.MathUtils.clamp(
-          sampledRadius,
-          armLength * .11,
-          armLength * .235,
+      const surface =
+        sampleArmSurface(
+          candidates,
+          center,
+          direction,
+          radialDirection,
+          armLength,
+          ring < 2 ? .1 : .08,
         )
+
       const extra =
         armLength *
-        (.008 +
-          recipe.looseness * .018)
+          (.014 +
+            recipe.looseness *
+              .01)
       const position =
         center
           .clone()
           .addScaledVector(
             radialDirection,
-            cleanRadius + extra,
+            surface.radius + extra,
           )
 
       ringPositions.push(position)
       ringInfluences.push(
         readSkinInfluence(
           source.geometry,
-          nearest.index,
+          surface.vertex.index,
         ),
       )
     }
@@ -1290,6 +1258,173 @@ function nearestAngularVertex(
         ? normal.normalize()
         : best.vertex.normal.clone(),
     angle: targetAngle,
+  }
+}
+
+function sampleArmSurface(
+  vertices: SourceVertex[],
+  center: THREE.Vector3,
+  direction: THREE.Vector3,
+  radialDirection: THREE.Vector3,
+  armLength: number,
+  bandFraction: number,
+) {
+  const band =
+    armLength * bandFraction
+  const ranked:
+    Array<{
+      vertex: SourceVertex
+      radius: number
+      score: number
+    }> = []
+
+  for (const vertex of vertices) {
+    const relative =
+      vertex.position
+        .clone()
+        .sub(center)
+    const axial =
+      relative.dot(direction)
+
+    if (
+      Math.abs(axial) >
+      band
+    ) {
+      continue
+    }
+
+    const radial =
+      relative
+        .clone()
+        .addScaledVector(
+          direction,
+          -axial,
+        )
+    const radius =
+      radial.length()
+
+    if (radius < 1e-6) {
+      continue
+    }
+
+    const alignment =
+      radial
+        .multiplyScalar(
+          1 / radius,
+        )
+        .dot(radialDirection)
+
+    if (alignment < .76) {
+      continue
+    }
+
+    const score =
+      Math.abs(axial) /
+        Math.max(
+          band,
+          1e-6,
+        ) +
+      (1 - alignment) * 4
+
+    let insertAt =
+      ranked.length
+
+    for (
+      let index = 0;
+      index < ranked.length;
+      index += 1
+    ) {
+      if (
+        score <
+        ranked[index].score
+      ) {
+        insertAt = index
+        break
+      }
+    }
+
+    if (insertAt < 8) {
+      ranked.splice(
+        insertAt,
+        0,
+        {
+          vertex,
+          radius,
+          score,
+        },
+      )
+      if (ranked.length > 8) {
+        ranked.pop()
+      }
+    } else if (
+      ranked.length < 8
+    ) {
+      ranked.push({
+        vertex,
+        radius,
+        score,
+      })
+    }
+  }
+
+  if (ranked.length === 0) {
+    const fallback =
+      nearestEuclideanVertex(
+        vertices,
+        center,
+      )
+    const relative =
+      fallback.position
+        .clone()
+        .sub(center)
+    const axial =
+      relative.dot(direction)
+    const radius =
+      relative
+        .addScaledVector(
+          direction,
+          -axial,
+        )
+        .length()
+
+    return {
+      vertex: fallback,
+      radius:
+        THREE.MathUtils.clamp(
+          radius,
+          armLength * .12,
+          armLength * .3,
+        ),
+    }
+  }
+
+  const radii =
+    ranked
+      .map(
+        (sample) =>
+          sample.radius,
+      )
+      .sort(
+        (a, b) => a - b,
+      )
+
+  const percentileIndex =
+    Math.min(
+      radii.length - 1,
+      Math.floor(
+        (radii.length - 1) *
+          .8,
+      ),
+    )
+
+  return {
+    vertex: ranked[0].vertex,
+    radius:
+      THREE.MathUtils.clamp(
+        radii[percentileIndex],
+        armLength * .12,
+        armLength * .3,
+      ),
   }
 }
 
