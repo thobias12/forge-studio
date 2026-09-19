@@ -105,9 +105,11 @@ export default function AnimationCombatTestArena({ target, animationSet, action 
     dummyBase.receiveShadow = true
     scene.add(dummyBase)
 
-    void bindCharacterAsset(player, target.id, animationPackAssetId(target.id), 1.9).then((visual) => {
+    const animationTargetId = animationSet?.targetAssetId ?? target.id
+    void bindCharacterAsset(player, target.id, animationPackAssetId(animationTargetId), 1.9).then((visual) => {
       if (disposed) { visual?.dispose(); return }
       bindingRef.current = visual
+      visual?.setAnimationSet(animationSet)
       setReady(Boolean(visual))
       if (visual) visual.play('idle', true)
     }).catch(() => setReady(false))
@@ -155,7 +157,7 @@ export default function AnimationCombatTestArena({ target, animationSet, action 
       renderer.domElement.remove()
       setReady(false)
     }
-  }, [target?.id])
+  }, [target?.id, animationSet?.targetAssetId])
 
   const trigger = async () => {
     if (!bindingRef.current || !target) return
