@@ -92,6 +92,7 @@ export function buildConformedTunic(
   trim: THREE.MeshStandardMaterial,
   leather: THREE.MeshStandardMaterial,
   accent: THREE.MeshStandardMaterial,
+  metal: THREE.MeshStandardMaterial,
 ): ConformedTunicResult {
   source.updateMatrixWorld(true)
 
@@ -202,11 +203,18 @@ export function buildConformedTunic(
   }
 
   if (recipe.layers.vest) {
-    meshes.push(
+    const vest =
       createVestOverlay(
         source,
         torso.geometry,
         leather,
+      )
+    meshes.push(vest)
+    meshes.push(
+      ...createVestDetailTrim(
+        source,
+        vest.geometry,
+        trim,
       ),
     )
   }
@@ -225,6 +233,13 @@ export function buildConformedTunic(
         .0045,
       ),
     )
+    meshes.push(
+      createBeltBuckle(
+        source,
+        torso.geometry,
+        metal,
+      ),
+    )
   }
 
   if (recipe.layers.tabard) {
@@ -240,13 +255,23 @@ export function buildConformedTunic(
   }
 
   if (recipe.layers.cape) {
-    meshes.push(
+    const cape =
       createCapeLayer(
         source,
+        sourceVertices,
         torso.geometry,
         frame,
         recipe,
         accent,
+      )
+    meshes.push(cape)
+    meshes.push(
+      ...createCapeDetails(
+        source,
+        cape.geometry,
+        trim,
+        leather,
+        metal,
       ),
     )
   }
@@ -1429,6 +1454,99 @@ function sampleArmSurface(
   }
 }
 
+function sampleBackSurfaceZ(
+  vertices: SourceVertex[],
+  targetX: number,
+  targetY: number,
+  height: number,
+) {
+  const ranked:
+    Array<{
+      z: number
+      score: number
+    }> = []
+
+  for (const vertex of vertices) {
+    if (
+      vertex.position.z > 0
+    ) {
+      continue
+    }
+
+    const dx =
+      Math.abs(
+        vertex.position.x -
+          targetX,
+      ) /
+      height
+    const dy =
+      Math.abs(
+        vertex.position.y -
+          targetY,
+      ) /
+      height
+
+    if (
+      dx > .16 ||
+      dy > .08
+    ) {
+      continue
+    }
+
+    const score =
+      dx * 2.4 +
+      dy * 6
+
+    let insertAt =
+      ranked.length
+
+    for (
+      let index = 0;
+      index < ranked.length;
+      index += 1
+    ) {
+      if (
+        score <
+        ranked[index].score
+      ) {
+        insertAt = index
+        break
+      }
+    }
+
+    if (insertAt < 10) {
+      ranked.splice(
+        insertAt,
+        0,
+        {
+          z: vertex.position.z,
+          score,
+        },
+      )
+      if (ranked.length > 10) {
+        ranked.pop()
+      }
+    } else if (
+      ranked.length < 10
+    ) {
+      ranked.push({
+        z: vertex.position.z,
+        score,
+      })
+    }
+  }
+
+  if (ranked.length === 0) {
+    return -height * .05
+  }
+
+  return Math.min(
+    ...ranked.map(
+      (sample) => sample.z,
+    ),
+  )
+}
+
 function nearestEuclideanVertex(
   vertices: SourceVertex[],
   target: THREE.Vector3,
@@ -2038,6 +2156,7 @@ function createFrontTabard(
 
 function createCapeLayer(
   source: THREE.SkinnedMesh,
+  sourceVertices: SourceVertex[],
   torsoGeometry: THREE.BufferGeometry,
   frame: TunicTemplateFrame,
   recipe: EquipmentForgeV3Recipe,
@@ -2189,17 +2308,45 @@ function createCapeLayer(
         (.0015 +
           v * .0035)
 
+      const x =
+        top.x * widthScale
+      const y =
+        top.y -
+        v * length -
+        hemDrop
+      const surfaceClearance =
+        frame.height *
+        recipe.cape.clearance *
+        THREE.MathUtils.lerp(
+          .65,
+          1.1,
+          v,
+        )
+      const sampledBackZ =
+        sampleBackSurfaceZ(
+          sourceVertices,
+          x,
+          y,
+          frame.height,
+        )
+      const drapeZ =
+        top.z -
+        surfaceClearance -
+        v * .008 -
+        v * v * .014 +
+        fold
+      const safeZ =
+        sampledBackZ -
+        surfaceClearance
+
       const point =
         new THREE.Vector3(
-          top.x * widthScale,
-          top.y -
-            v * length -
-            hemDrop,
-          top.z -
-            .004 -
-            v * .01 -
-            v * v * .014 +
-            fold,
+          x,
+          y,
+          Math.min(
+            drapeZ,
+            safeZ,
+          ),
         )
 
       positions.push(
@@ -2283,6 +2430,578 @@ function createCapeLayer(
     geometry,
     material,
     'EFV3_Cape',
+  )
+}
+
+function createVestDetailTrim(
+  source: THREE.SkinnedMesh,
+  vestGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+) {
+  const rowCount = 10
+  const columnCount = 48
+
+  return [
+    createGridColumnStrip(
+      source,
+      vestGeometry,
+      rowCount,
+      columnCount,
+      5,
+      6,
+      material,
+      'EFV3_VestEdge_L',
+      'radial',
+      .0022,
+    ),
+    createGridColumnStrip(
+      source,
+      vestGeometry,
+      rowCount,
+      columnCount,
+      43,
+      42,
+      material,
+      'EFV3_VestEdge_R',
+      'radial',
+      .0022,
+    ),
+    createGridRowStrip(
+      source,
+      vestGeometry,
+      columnCount,
+      0,
+      1,
+      5,
+      43,
+      material,
+      'EFV3_VestHem',
+      'radial',
+      .0022,
+    ),
+    createGridRowStrip(
+      source,
+      vestGeometry,
+      columnCount,
+      9,
+      8,
+      5,
+      43,
+      material,
+      'EFV3_VestShoulderSeam',
+      'radial',
+      .0022,
+    ),
+  ]
+}
+
+function createBeltBuckle(
+  source: THREE.SkinnedMesh,
+  torsoGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+) {
+  const segments = 48
+  const position =
+    torsoGeometry.getAttribute(
+      'position',
+    )
+  const corners = [
+    4 * segments + 47,
+    2 * segments + 47,
+    4 * segments + 1,
+    2 * segments + 1,
+  ]
+  const positions: number[] = []
+  const influences: SkinInfluence[] = []
+
+  for (const index of corners) {
+    const point =
+      new THREE.Vector3(
+        position.getX(index),
+        position.getY(index),
+        position.getZ(index),
+      )
+    offsetDetailPoint(
+      point,
+      'radial',
+      .008,
+    )
+    positions.push(
+      point.x,
+      point.y,
+      point.z,
+    )
+    influences.push(
+      readSkinInfluence(
+        torsoGeometry,
+        index,
+      ),
+    )
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      [
+        0, 1,
+        0, 0,
+        1, 1,
+        1, 0,
+      ],
+      2,
+    ),
+  )
+  geometry.setIndex([
+    0, 1, 2,
+    2, 1, 3,
+  ])
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    material,
+    'EFV3_BeltBuckle',
+  )
+}
+
+function createCapeDetails(
+  source: THREE.SkinnedMesh,
+  capeGeometry: THREE.BufferGeometry,
+  trim: THREE.Material,
+  leather: THREE.Material,
+  metal: THREE.Material,
+) {
+  const rows = 15
+  const columns = 11
+
+  return [
+    createGridColumnStrip(
+      source,
+      capeGeometry,
+      rows,
+      columns,
+      0,
+      1,
+      trim,
+      'EFV3_CapeBorder_L',
+      'back',
+      .0018,
+    ),
+    createGridColumnStrip(
+      source,
+      capeGeometry,
+      rows,
+      columns,
+      10,
+      9,
+      trim,
+      'EFV3_CapeBorder_R',
+      'back',
+      .0018,
+    ),
+    createGridRowStrip(
+      source,
+      capeGeometry,
+      columns,
+      14,
+      13,
+      0,
+      10,
+      trim,
+      'EFV3_CapeHem',
+      'back',
+      .0018,
+    ),
+    createGridRowStrip(
+      source,
+      capeGeometry,
+      columns,
+      0,
+      1,
+      0,
+      10,
+      leather,
+      'EFV3_CapeYoke',
+      'back',
+      .0022,
+    ),
+    createGridPatch(
+      source,
+      capeGeometry,
+      columns,
+      0,
+      2,
+      2,
+      3,
+      metal,
+      'EFV3_CapeFastener_L',
+      'back',
+      .003,
+    ),
+    createGridPatch(
+      source,
+      capeGeometry,
+      columns,
+      0,
+      2,
+      7,
+      8,
+      metal,
+      'EFV3_CapeFastener_R',
+      'back',
+      .003,
+    ),
+  ]
+}
+
+function createGridColumnStrip(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  rowCount: number,
+  columnCount: number,
+  columnA: number,
+  columnB: number,
+  material: THREE.Material,
+  name: string,
+  offsetMode: 'radial' | 'back',
+  offset: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+
+  for (
+    let row = 0;
+    row < rowCount;
+    row += 1
+  ) {
+    for (
+      const [slot, column] of
+        [columnA, columnB].entries()
+    ) {
+      const index =
+        row * columnCount +
+        column
+      const point =
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        )
+      offsetDetailPoint(
+        point,
+        offsetMode,
+        offset,
+      )
+      positions.push(
+        point.x,
+        point.y,
+        point.z,
+      )
+      uvs.push(
+        slot,
+        row /
+          Math.max(
+            1,
+            rowCount - 1,
+          ),
+      )
+      influences.push(
+        readSkinInfluence(
+          sourceGeometry,
+          index,
+        ),
+      )
+    }
+  }
+
+  for (
+    let row = 0;
+    row < rowCount - 1;
+    row += 1
+  ) {
+    const a = row * 2
+    const b = a + 1
+    const c0 = a + 2
+    const d = a + 3
+    indices.push(
+      a, c0, b,
+      b, c0, d,
+    )
+  }
+
+  return createDetailMesh(
+    source,
+    positions,
+    uvs,
+    indices,
+    influences,
+    material,
+    name,
+  )
+}
+
+function createGridRowStrip(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  columnCount: number,
+  rowA: number,
+  rowB: number,
+  columnStart: number,
+  columnEnd: number,
+  material: THREE.Material,
+  name: string,
+  offsetMode: 'radial' | 'back',
+  offset: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+  const columns =
+    Math.max(
+      1,
+      columnEnd -
+        columnStart,
+    )
+
+  for (
+    let column = columnStart;
+    column <= columnEnd;
+    column += 1
+  ) {
+    const u =
+      (column - columnStart) /
+      columns
+
+    for (
+      const [slot, row] of
+        [rowA, rowB].entries()
+    ) {
+      const index =
+        row * columnCount +
+        column
+      const point =
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        )
+      offsetDetailPoint(
+        point,
+        offsetMode,
+        offset,
+      )
+      positions.push(
+        point.x,
+        point.y,
+        point.z,
+      )
+      uvs.push(u, slot)
+      influences.push(
+        readSkinInfluence(
+          sourceGeometry,
+          index,
+        ),
+      )
+    }
+  }
+
+  const pairCount =
+    columnEnd -
+    columnStart +
+    1
+
+  for (
+    let column = 0;
+    column < pairCount - 1;
+    column += 1
+  ) {
+    const a = column * 2
+    const b = a + 1
+    const c0 = a + 2
+    const d = a + 3
+    indices.push(
+      a, b, c0,
+      c0, b, d,
+    )
+  }
+
+  return createDetailMesh(
+    source,
+    positions,
+    uvs,
+    indices,
+    influences,
+    material,
+    name,
+  )
+}
+
+function createGridPatch(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  columnCount: number,
+  rowA: number,
+  rowB: number,
+  columnA: number,
+  columnB: number,
+  material: THREE.Material,
+  name: string,
+  offsetMode: 'radial' | 'back',
+  offset: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const sourceIndices = [
+    rowA * columnCount +
+      columnA,
+    rowB * columnCount +
+      columnA,
+    rowA * columnCount +
+      columnB,
+    rowB * columnCount +
+      columnB,
+  ]
+  const positions: number[] = []
+  const influences: SkinInfluence[] = []
+
+  for (const index of sourceIndices) {
+    const point =
+      new THREE.Vector3(
+        position.getX(index),
+        position.getY(index),
+        position.getZ(index),
+      )
+    offsetDetailPoint(
+      point,
+      offsetMode,
+      offset,
+    )
+    positions.push(
+      point.x,
+      point.y,
+      point.z,
+    )
+    influences.push(
+      readSkinInfluence(
+        sourceGeometry,
+        index,
+      ),
+    )
+  }
+
+  return createDetailMesh(
+    source,
+    positions,
+    [
+      0, 1,
+      0, 0,
+      1, 1,
+      1, 0,
+    ],
+    [
+      0, 1, 2,
+      2, 1, 3,
+    ],
+    influences,
+    material,
+    name,
+  )
+}
+
+function offsetDetailPoint(
+  point: THREE.Vector3,
+  mode: 'radial' | 'back',
+  offset: number,
+) {
+  if (mode === 'back') {
+    point.z -= offset
+    return
+  }
+
+  const radial =
+    new THREE.Vector3(
+      point.x,
+      0,
+      point.z,
+    )
+
+  if (
+    radial.lengthSq() >
+    1e-7
+  ) {
+    point.addScaledVector(
+      radial.normalize(),
+      offset,
+    )
+  }
+}
+
+function createDetailMesh(
+  source: THREE.SkinnedMesh,
+  positions: number[],
+  uvs: number[],
+  indices: number[],
+  influences: SkinInfluence[],
+  material: THREE.Material,
+  name: string,
+) {
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    material,
+    name,
   )
 }
 

@@ -277,6 +277,7 @@ export default function EquipmentCreatorV3Panel({
                   ...(recipe.cape ?? {
                     width: .3,
                     flare: .16,
+                    clearance: .009,
                   }),
                   length: value,
                 })
@@ -293,6 +294,7 @@ export default function EquipmentCreatorV3Panel({
                   ...(recipe.cape ?? {
                     length: .62,
                     flare: .16,
+                    clearance: .009,
                   }),
                   width: value,
                 })
@@ -309,8 +311,26 @@ export default function EquipmentCreatorV3Panel({
                   ...(recipe.cape ?? {
                     length: .62,
                     width: .3,
+                    clearance: .009,
                   }),
                   flare: value,
+                })
+              }
+            />
+            <V3Range
+              label="Cape back gap"
+              value={recipe.cape?.clearance ?? .009}
+              min={.004}
+              max={.025}
+              step={.001}
+              onChange={(value) =>
+                patch('cape', {
+                  ...(recipe.cape ?? {
+                    length: .62,
+                    width: .3,
+                    flare: .16,
+                  }),
+                  clearance: value,
                 })
               }
             />
@@ -364,6 +384,19 @@ export default function EquipmentCreatorV3Panel({
           onChange={(value) =>
             patchMaterial(
               'accent',
+              value,
+            )
+          }
+        />
+        <V3Color
+          label="Metal details"
+          value={
+            recipe.materials.metal ??
+            '#6f7880'
+          }
+          onChange={(value) =>
+            patchMaterial(
+              'metal',
               value,
             )
           }

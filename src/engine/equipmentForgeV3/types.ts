@@ -36,12 +36,14 @@ export type EquipmentForgeV3Recipe = {
     length: number
     width: number
     flare: number
+    clearance: number
   }
   materials: {
     cloth: string
     trim: string
     leather: string
     accent: string
+    metal: string
   }
 }
 
@@ -71,12 +73,14 @@ export function createEquipmentForgeV3Recipe(
       length: .62,
       width: .3,
       flare: .16,
+      clearance: .009,
     },
     materials: {
       cloth: '#344b35',
       trim: '#4b3528',
       leather: '#3b281d',
       accent: '#5a1625',
+      metal: '#6f7880',
     },
   }
 }
@@ -139,6 +143,7 @@ export function applyEquipmentForgeV3StylePreset(
         length: .72,
         width: .34,
         flare: .22,
+        clearance: .011,
       },
       materials: {
         ...recipe.materials,
@@ -169,6 +174,7 @@ export function applyEquipmentForgeV3StylePreset(
       length: .62,
       width: .3,
       flare: .16,
+      clearance: .009,
     },
     materials: {
       ...recipe.materials,

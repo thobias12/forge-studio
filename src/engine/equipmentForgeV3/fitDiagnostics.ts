@@ -41,6 +41,7 @@ type ZoneDefinition = {
   id: string
   label: string
   names: RegExp
+  maxV?: number
 }
 
 const FIT_ZONES: ZoneDefinition[] = [
@@ -60,6 +61,12 @@ const FIT_ZONES: ZoneDefinition[] = [
     label: 'Right sleeve',
     names:
       /^EFV3_(?:Sleeve|ShoulderBridge)_R$/,
+  },
+  {
+    id: 'cape-upper',
+    label: 'Cape upper back',
+    names: /^EFV3_Cape$/,
+    maxV: .35,
   },
 ]
 
@@ -102,6 +109,7 @@ export function analyzeEquipmentForgeV3Fit(
         collectGapSamples(
           bodySamples,
           zoneMeshes,
+          zone.maxV,
         ),
         idealGap,
         floatingThreshold,
@@ -112,12 +120,13 @@ export function analyzeEquipmentForgeV3Fit(
     )
 
   const allSamples =
-    collectGapSamples(
-      bodySamples,
-      meshes.filter((mesh) =>
-        FIT_ZONES.some((zone) =>
+    FIT_ZONES.flatMap((zone) =>
+      collectGapSamples(
+        bodySamples,
+        meshes.filter((mesh) =>
           zone.names.test(mesh.name),
         ),
+        zone.maxV,
       ),
     )
 
@@ -205,6 +214,7 @@ function collectBodySamples(
 function collectGapSamples(
   bodySamples: BodySample[],
   meshes: THREE.SkinnedMesh[],
+  maxV?: number,
 ) {
   const samples: GapSample[] = []
 
@@ -215,6 +225,10 @@ function collectGapSamples(
       )
     if (!position) continue
 
+    const uv =
+      mesh.geometry.getAttribute(
+        'uv',
+      )
     const stride =
       position.count > 1_500
         ? 2
@@ -225,6 +239,14 @@ function collectGapSamples(
       index < position.count;
       index += stride
     ) {
+      if (
+        maxV !== undefined &&
+        uv &&
+        uv.getY(index) > maxV
+      ) {
+        continue
+      }
+
       const point =
         new THREE.Vector3(
           position.getX(index),
