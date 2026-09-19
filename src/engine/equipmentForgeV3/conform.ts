@@ -170,8 +170,8 @@ function createTorsoTemplate(
   recipe: EquipmentForgeV3Recipe,
   material: THREE.MeshStandardMaterial,
 ) {
-  const rings = 15
-  const segments = 36
+  const rings = 18
+  const segments = 48
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
