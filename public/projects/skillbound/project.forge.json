@@ -4,18 +4,30 @@
   "id": "skillbound",
   "name": "Skillbound",
   "generationVersion": 2,
-  "contentRevision": 7,
+  "contentRevision": 8,
   "runtime": {
     "renderer": "three",
     "entryWorld": "act1",
     "mode": "single-player"
   },
   "content": {
-    "worlds": ["worlds/act1.world.json"],
-    "regions": ["regions/deadwood.region.json", "regions/drowned-march.region.json"],
-    "dungeons": ["dungeons/hollow-vault.dungeon.json"],
-    "encounters": ["encounters/hollow-vault-ambush.encounter.json", "encounters/ossuary-guard.encounter.json"],
-    "bosses": ["bosses/vault-warden.boss.json"],
+    "worlds": [
+      "worlds/act1.world.json"
+    ],
+    "regions": [
+      "regions/deadwood.region.json",
+      "regions/drowned-march.region.json"
+    ],
+    "dungeons": [
+      "dungeons/hollow-vault.dungeon.json"
+    ],
+    "encounters": [
+      "encounters/hollow-vault-ambush.encounter.json",
+      "encounters/ossuary-guard.encounter.json"
+    ],
+    "bosses": [
+      "bosses/vault-warden.boss.json"
+    ],
     "player": "players/skillbound-player.player.json",
     "abilities": [
       "abilities/iron-cleave.ability.json",
@@ -25,7 +37,9 @@
       "abilities/arc-bolt.ability.json",
       "abilities/ember-burst.ability.json"
     ],
-    "enemies": ["enemies/road-wretch.enemy.json"],
+    "enemies": [
+      "enemies/road-wretch.enemy.json"
+    ],
     "items": [
       "items/rusted-sword.item.json",
       "items/worn-buckler.item.json",
@@ -37,7 +51,10 @@
       "items/drowned-greaves.item.json",
       "items/trail-boots.item.json"
     ],
-    "lootTables": ["loot/road-wretch.loot.json"],
+    "lootTables": [
+      "loot/road-wretch.loot.json",
+      "loot/world-cache.loot.json"
+    ],
     "ui": "ui/skillbound.ui.json"
   }
 }
