@@ -67,7 +67,7 @@ import {
   type ForgeContentEntry,
   type ForgeContentPage,
 } from './engine/contentRegistry'
-import { FORGE_VERSION } from './version'
+import { FORGE_BUILD, FORGE_VERSION } from './version'
 import './styles.css'
 import './retarget.css'
 import './texture-v071.css'
@@ -207,7 +207,7 @@ export default function App() {
         <div className="sidebar-spacer" />
         <button className="project-card" onClick={() => navigate('projects')}><div className="project-icon"><Sparkles size={16} /></div><div><span>Active project</span><strong>Skillbound</strong></div></button>
         <button className="sidebar-settings"><Settings size={17} /><span>Settings</span></button>
-        <div className="build-tag">FORGE v{FORGE_VERSION}</div>
+        <div className="build-tag">FORGE v{FORGE_VERSION} · {FORGE_BUILD}</div>
       </aside>
 
       <div className="studio-body">
