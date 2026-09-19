@@ -671,6 +671,7 @@ export default function AnimationStudioV3() {
             smoothing={smoothing}
             mirrorX={mirrorX}
             showRig={showRig}
+            groundedNeutral={purpose === 'idle'}
             onRigInfo={setRigInfo}
           />
           <div className="viewport-overlay top-left"><span className={`live-dot ${phoneConnected ? 'connected' : ''}`}/><span>{phoneConnected ? `${phoneName} connected` : 'Waiting for phone'}</span></div>
