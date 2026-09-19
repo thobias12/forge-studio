@@ -222,6 +222,7 @@ export function buildConformedTunic(
         leather,
         'EFV3_Belt',
         1,
+        .0045,
       ),
     )
   }
@@ -1690,8 +1691,8 @@ function createVestOverlay(
   material: THREE.Material,
 ) {
   const segments = 48
-  const firstRow = 7
-  const lastRow = 16
+  const firstRow = 5
+  const lastRow = 14
   const sourcePosition =
     torsoGeometry.getAttribute(
       'position',
@@ -1744,7 +1745,7 @@ function createVestOverlay(
       ) {
         point.addScaledVector(
           radial.normalize(),
-          .0065,
+          .004,
         )
       }
 
@@ -1781,8 +1782,8 @@ function createVestOverlay(
     ) {
       // Leave a clean split down the front of the leather vest.
       const frontGap =
-        segment <= 1 ||
-        segment >= segments - 2
+        segment <= 4 ||
+        segment >= segments - 4
       if (frontGap) continue
 
       const next =
@@ -2149,8 +2150,8 @@ function createCapeLayer(
         Math.sin(
           u * Math.PI * 6,
         ) *
-        (.004 +
-          v * .009)
+        (.002 +
+          v * .004)
 
       const point =
         new THREE.Vector3(
@@ -2161,9 +2162,9 @@ function createCapeLayer(
             v * length -
             hemDrop,
           back.z -
-            .008 -
-            v * .035 -
-            v * v * .055 +
+            .004 -
+            v * .012 -
+            v * v * .016 +
             fold,
         )
 
@@ -2260,6 +2261,7 @@ function createSkinnedRowBand(
   material: THREE.Material,
   name: string,
   widthFraction: number,
+  outwardOffset = .0018,
 ) {
   const position =
     sourceGeometry.getAttribute(
@@ -2316,7 +2318,9 @@ function createSkinnedRowBand(
     ) {
       radial
         .normalize()
-        .multiplyScalar(.0018)
+        .multiplyScalar(
+          outwardOffset,
+        )
       outer.add(radial)
       inset.add(radial)
     }
