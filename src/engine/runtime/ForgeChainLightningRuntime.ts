@@ -33,6 +33,7 @@ export type ForgeChainLightningHop = {
   from: THREE.Vector3
   to: THREE.Vector3
   delay: number
+  travel?: number
 }
 
 export type ForgeChainLightningVisualOptions = {
@@ -49,26 +50,32 @@ type BoltPathPool = {
   material: THREE.MeshBasicMaterial
   meshes: THREE.Mesh[]
   radius: number
+  points: THREE.Vector3[]
 }
 
 type LightningPiece = {
   group: THREE.Group
+  impactRoot: THREE.Group
   hop: ForgeChainLightningHop
   delay: number
+  travel: number
   lifetime: number
   primaryPaths: BoltPathPool[]
   strandPaths: BoltPathPool[]
   branchPaths: BoltPathPool[]
   boltMaterials: THREE.MeshBasicMaterial[]
   impactMaterials: THREE.MeshBasicMaterial[]
+  impactRings: THREE.Mesh[]
   light: THREE.PointLight
   flash: THREE.Mesh
+  tip: THREE.Mesh
+  tipMaterial: THREE.MeshBasicMaterial
   impacted: boolean
   frame: number
 }
 
-const FLICKER_INTERVAL = .028
-const MAX_SEGMENTS = 15
+const FLICKER_INTERVAL = .024
+const MAX_SEGMENTS = 16
 const SEGMENT_GEOMETRY = new THREE.CylinderGeometry(
   1,
   .72,
@@ -78,17 +85,24 @@ const SEGMENT_GEOMETRY = new THREE.CylinderGeometry(
   true,
 )
 const FLASH_GEOMETRY = new THREE.SphereGeometry(
-  .105,
+  .16,
+  12,
+  9,
+)
+const TIP_GEOMETRY = new THREE.SphereGeometry(
+  .082,
   10,
   8,
 )
 const RING_GEOMETRY = new THREE.RingGeometry(
-  .11,
-  .135,
-  20,
+  .14,
+  .18,
+  24,
 )
 const UNIT_Y = new THREE.Vector3(0, 1, 0)
 const TEMP_DELTA = new THREE.Vector3()
+const TEMP_PARTIAL = new THREE.Vector3()
+const TEMP_HEAD = new THREE.Vector3()
 
 export function normalizeChainConfig(
   config?: ForgeChainAbilityConfig,
@@ -120,27 +134,27 @@ export function normalizeChainConfig(
       config?.selectionMode ??
       ('nearest' as ForgeChainSelectionMode),
     boltLifetime: THREE.MathUtils.clamp(
-      config?.boltLifetime ?? .22,
+      config?.boltLifetime ?? .28,
       .06,
       .7,
     ),
     arcAmplitude: THREE.MathUtils.clamp(
-      config?.arcAmplitude ?? .42,
+      config?.arcAmplitude ?? .55,
       0,
       1.6,
     ),
     branchCount: THREE.MathUtils.clamp(
-      Math.round(config?.branchCount ?? 3),
+      Math.round(config?.branchCount ?? 4),
       0,
       6,
     ),
     glowWidth: THREE.MathUtils.clamp(
-      config?.glowWidth ?? .085,
+      config?.glowWidth ?? .115,
       .01,
       .28,
     ),
     lightFlashIntensity: THREE.MathUtils.clamp(
-      config?.lightFlashIntensity ?? 8.5,
+      config?.lightFlashIntensity ?? 11,
       0,
       24,
     ),
@@ -238,15 +252,12 @@ export class ForgeChainLightningEffect {
     this.root.name = '__forge_chain_lightning'
     scene.add(this.root)
 
-    const innerColor = this.color
-      .clone()
-      .lerp(new THREE.Color('#c7e8ff'), .58)
-    const strandA = new THREE.Color('#d9f2ff')
-    const strandB = this.color
-      .clone()
-      .lerp(new THREE.Color('#ffffff'), .62)
-    const branchColor =
-      new THREE.Color('#c7e8ff')
+    const outerColor = new THREE.Color('#667ee8')
+    const innerColor = new THREE.Color('#c5e3ff')
+    const coreColor = new THREE.Color('#f4fcff')
+    const strandA = new THREE.Color('#bcecff')
+    const strandB = new THREE.Color('#b1a0ff')
+    const branchColor = new THREE.Color('#9bbcff')
 
     for (const hop of hops) {
       const group = new THREE.Group()
@@ -260,26 +271,32 @@ export class ForgeChainLightningEffect {
       const primaryPaths = [
         createBoltPath(
           boltRoot,
-          this.config.glowWidth * 1.35,
+          this.config.glowWidth * 2.05,
+          outerColor,
+          .12,
+        ),
+        createBoltPath(
+          boltRoot,
+          this.config.glowWidth * .86,
           this.color,
-          .18,
+          .42,
         ),
         createBoltPath(
           boltRoot,
           Math.max(
-            .014,
-            this.config.glowWidth * .46,
+            .018,
+            this.config.glowWidth * .34,
           ),
           innerColor,
-          .72,
+          .92,
         ),
         createBoltPath(
           boltRoot,
           Math.max(
-            .0055,
-            this.config.glowWidth * .14,
+            .0075,
+            this.config.glowWidth * .12,
           ),
-          new THREE.Color('#ffffff'),
+          coreColor,
           1,
         ),
       ]
@@ -288,20 +305,20 @@ export class ForgeChainLightningEffect {
         createBoltPath(
           boltRoot,
           Math.max(
-            .0045,
-            this.config.glowWidth * .095,
+            .007,
+            this.config.glowWidth * .115,
           ),
           strandA,
-          .68,
+          .56,
         ),
         createBoltPath(
           boltRoot,
           Math.max(
-            .0045,
-            this.config.glowWidth * .095,
+            .006,
+            this.config.glowWidth * .1,
           ),
           strandB,
-          .52,
+          .46,
         ),
       ]
 
@@ -311,35 +328,48 @@ export class ForgeChainLightningEffect {
           createBoltPath(
             boltRoot,
             Math.max(
-              .004,
-              this.config.glowWidth * .08,
+              .006,
+              this.config.glowWidth * .085,
             ),
             branchColor,
-            .62,
+            .54,
           ),
       )
 
+      const tipMaterial = new THREE.MeshBasicMaterial({
+        color: coreColor,
+        transparent: true,
+        opacity: 1,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      })
+      tipMaterial.userData.baseOpacity = 1
+      const tip = new THREE.Mesh(
+        TIP_GEOMETRY,
+        tipMaterial,
+      )
+      tip.visible = false
+      tip.renderOrder = 26
+      group.add(tip)
+
       const impactRoot = new THREE.Group()
       impactRoot.name = '__forge_chain_impact'
+      impactRoot.visible = false
       group.add(impactRoot)
 
       const impactMaterials:
         THREE.MeshBasicMaterial[] = []
       const flashMaterial =
         new THREE.MeshBasicMaterial({
-          color: this.color
-            .clone()
-            .lerp(
-              new THREE.Color('#ffffff'),
-              .72,
-            ),
+          color: coreColor,
           transparent: true,
-          opacity: .88,
+          opacity: 1,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
           toneMapped: false,
         })
-      flashMaterial.userData.baseOpacity = .88
+      flashMaterial.userData.baseOpacity = 1
       impactMaterials.push(flashMaterial)
 
       const flash = new THREE.Mesh(
@@ -347,6 +377,7 @@ export class ForgeChainLightningEffect {
         flashMaterial,
       )
       flash.position.copy(hop.to)
+      flash.renderOrder = 25
       impactRoot.add(flash)
 
       addImpactSparks(
@@ -356,7 +387,7 @@ export class ForgeChainLightningEffect {
         `${this.seed}:hop:${hop.index}:sparks`,
         impactMaterials,
       )
-      addImpactRings(
+      const impactRings = addImpactRings(
         impactRoot,
         hop.to,
         this.color,
@@ -364,20 +395,15 @@ export class ForgeChainLightningEffect {
       )
 
       const light = new THREE.PointLight(
-        this.color
-          .clone()
-          .lerp(
-            new THREE.Color('#ffffff'),
-            .28,
-          ),
-        this.config.lightFlashIntensity,
-        5.8,
+        new THREE.Color('#a5baff'),
+        0,
+        7.5,
         2,
       )
-      light.position.copy(hop.to)
+      light.position.copy(hop.from)
       light.userData.baseIntensity =
         this.config.lightFlashIntensity
-      impactRoot.add(light)
+      group.add(light)
 
       const boltMaterials = [
         ...primaryPaths,
@@ -387,16 +413,25 @@ export class ForgeChainLightningEffect {
 
       this.pieces.push({
         group,
+        impactRoot,
         hop,
         delay: hop.delay,
+        travel: THREE.MathUtils.clamp(
+          hop.travel ?? .085,
+          .035,
+          .18,
+        ),
         lifetime: this.config.boltLifetime,
         primaryPaths,
         strandPaths,
         branchPaths,
         boltMaterials,
         impactMaterials,
+        impactRings,
         light,
         flash,
+        tip,
+        tipMaterial,
         impacted: false,
         frame: -1,
       })
@@ -420,19 +455,13 @@ export class ForgeChainLightningEffect {
         continue
       }
 
-      if (!piece.impacted) {
-        piece.impacted = true
-        piece.group.visible = true
-        this.reshapeBolt(piece, index, 0)
-        this.onImpact?.(index)
-      }
-
-      if (local >= piece.lifetime) {
-        piece.group.visible = false
-        continue
-      }
-
-      alive = true
+      piece.group.visible = true
+      const travelProgress =
+        THREE.MathUtils.clamp(
+          local / piece.travel,
+          0,
+          1,
+        )
       const frame = Math.floor(
         local / FLICKER_INTERVAL,
       )
@@ -444,19 +473,96 @@ export class ForgeChainLightningEffect {
         )
       }
 
-      const life = THREE.MathUtils.clamp(
-        local / piece.lifetime,
-        0,
-        1,
+      for (const path of [
+        ...piece.primaryPaths,
+        ...piece.strandPaths,
+        ...piece.branchPaths,
+      ]) {
+        updateBoltPathProgress(
+          path,
+          travelProgress,
+        )
+      }
+
+      const headPath =
+        piece.primaryPaths[2] ??
+        piece.primaryPaths[0]
+      pointAlongPath(
+        headPath.points,
+        travelProgress,
+        TEMP_HEAD,
       )
+
+      const travelFlicker =
+        .8 +
+        hashUnit(
+          `${this.seed}:hop:${index}:travel:${frame}`,
+        ) *
+          .2
+      piece.tip.visible = travelProgress < 1
+      piece.tip.position.copy(TEMP_HEAD)
+      piece.tip.scale.setScalar(
+        .7 +
+          Math.sin(
+            Math.min(1, travelProgress * 1.4) *
+              Math.PI,
+          ) *
+            .65,
+      )
+      piece.tipMaterial.opacity =
+        travelProgress < 1
+          ? .82 + travelFlicker * .18
+          : 0
+      piece.light.position.copy(TEMP_HEAD)
+
+      if (!piece.impacted && travelProgress >= 1) {
+        piece.impacted = true
+        piece.tip.visible = false
+        piece.impactRoot.visible = true
+        this.onImpact?.(index)
+      }
+
       const flicker =
-        .76 +
+        .72 +
         hashUnit(
           `${this.seed}:hop:${index}:flicker:${frame}`,
         ) *
-          .24
+          .28
+
+      if (!piece.impacted) {
+        alive = true
+        for (const material of piece.boltMaterials) {
+          material.opacity =
+            THREE.MathUtils.clamp(
+              flicker *
+                Number(
+                  material.userData.baseOpacity ??
+                    1,
+                ),
+              0,
+              1,
+            )
+        }
+        piece.light.intensity =
+          this.config.lightFlashIntensity *
+          (.24 + travelFlicker * .2)
+        continue
+      }
+
+      const sinceImpact = local - piece.travel
+      if (sinceImpact >= piece.lifetime) {
+        piece.group.visible = false
+        continue
+      }
+
+      alive = true
+      const life = THREE.MathUtils.clamp(
+        sinceImpact / piece.lifetime,
+        0,
+        1,
+      )
       const boltEnvelope =
-        Math.pow(1 - life, .42)
+        Math.pow(1 - life, .5)
 
       for (const material of piece.boltMaterials) {
         material.opacity =
@@ -474,12 +580,12 @@ export class ForgeChainLightningEffect {
 
       const impactLife =
         THREE.MathUtils.clamp(
-          local / .115,
+          sinceImpact / .16,
           0,
           1,
         )
       const impactEnvelope =
-        Math.pow(1 - impactLife, 1.7)
+        Math.pow(1 - impactLife, 1.55)
       for (
         const material of piece.impactMaterials
       ) {
@@ -495,25 +601,35 @@ export class ForgeChainLightningEffect {
           )
       }
 
-      piece.light.intensity =
-        Number(
-          piece.light.userData.baseIntensity ??
-            0,
-        ) *
-        Math.pow(1 - impactLife, 2.2)
+      const impactLight =
+        this.config.lightFlashIntensity *
+        Math.pow(1 - impactLife, 2.05)
+      piece.light.position.copy(piece.hop.to)
+      piece.light.intensity = Math.max(
+        impactLight,
+        this.config.lightFlashIntensity *
+          .14 *
+          boltEnvelope,
+      )
 
       const flashScale =
-        .85 +
+        .9 +
         Math.sin(
           Math.min(
             1,
-            impactLife * 1.8,
+            impactLife * 1.65,
           ) * Math.PI,
         ) *
-          1.35
+          2.2
       piece.flash.scale.setScalar(
         flashScale,
       )
+
+      const ringScale =
+        .72 + impactLife * 2.7
+      for (const ring of piece.impactRings) {
+        ring.scale.setScalar(ringScale)
+      }
     }
 
     if (!alive) this.dispose()
@@ -537,9 +653,9 @@ export class ForgeChainLightningEffect {
     const distance =
       piece.hop.from.distanceTo(piece.hop.to)
     const lift = THREE.MathUtils.clamp(
-      .14 + distance * .035,
-      .18,
-      .52,
+      .2 + distance * .05,
+      .24,
+      .72,
     )
 
     const mainPoints =
@@ -554,7 +670,7 @@ export class ForgeChainLightningEffect {
     for (
       const path of piece.primaryPaths
     ) {
-      updateBoltPath(
+      setBoltPathPoints(
         path,
         mainPoints,
       )
@@ -570,12 +686,12 @@ export class ForgeChainLightningEffect {
           piece.hop.from,
           piece.hop.to,
           this.config.arcAmplitude *
-            (.62 + strand * .08),
+            (.72 + strand * .1),
           `${this.seed}:hop:${hopIndex}:frame:${frame}:strand:${strand}`,
           lift *
-            (.72 + strand * .08),
+            (.78 + strand * .08),
         )
-      updateBoltPath(
+      setBoltPathPoints(
         piece.strandPaths[strand],
         points,
       )
@@ -592,12 +708,15 @@ export class ForgeChainLightningEffect {
           this.config.arcAmplitude,
           `${this.seed}:hop:${hopIndex}:frame:${frame}:branch:${branch}`,
         )
-      updateBoltPath(
+      setBoltPathPoints(
         piece.branchPaths[branch],
         branchPoints,
       )
     }
   }
+}
+
+function createBoltPath(
 }
 
 function createBoltPath(
@@ -635,17 +754,31 @@ function createBoltPath(
     material,
     meshes,
     radius,
+    points: [],
   }
 }
 
-function updateBoltPath(
+function setBoltPathPoints(
   path: BoltPathPool,
   points: THREE.Vector3[],
 ) {
-  const count = Math.min(
+  path.points = points
+}
+
+function updateBoltPathProgress(
+  path: BoltPathPool,
+  progress: number,
+) {
+  const points = path.points
+  const segmentCount = Math.min(
     path.meshes.length,
     Math.max(0, points.length - 1),
   )
+  const position =
+    THREE.MathUtils.clamp(progress, 0, 1) *
+    segmentCount
+  const fullSegments = Math.floor(position)
+  const partial = position - fullSegments
 
   for (
     let index = 0;
@@ -653,18 +786,56 @@ function updateBoltPath(
     index += 1
   ) {
     const mesh = path.meshes[index]
-    if (index >= count) {
-      mesh.visible = false
+    if (index < fullSegments) {
+      mesh.visible = true
+      updateSegmentTransform(
+        mesh,
+        points[index],
+        points[index + 1],
+        path.radius,
+      )
       continue
     }
-    mesh.visible = true
-    updateSegmentTransform(
-      mesh,
-      points[index],
-      points[index + 1],
-      path.radius,
-    )
+
+    if (
+      index === fullSegments &&
+      partial > .001 &&
+      index < segmentCount
+    ) {
+      mesh.visible = true
+      TEMP_PARTIAL
+        .copy(points[index])
+        .lerp(points[index + 1], partial)
+      updateSegmentTransform(
+        mesh,
+        points[index],
+        TEMP_PARTIAL,
+        path.radius,
+      )
+      continue
+    }
+
+    mesh.visible = false
   }
+}
+
+function pointAlongPath(
+  points: THREE.Vector3[],
+  progress: number,
+  target: THREE.Vector3,
+) {
+  if (!points.length) return target.set(0, 0, 0)
+  if (points.length === 1) return target.copy(points[0])
+  const at =
+    THREE.MathUtils.clamp(progress, 0, 1) *
+    (points.length - 1)
+  const index = Math.min(
+    points.length - 2,
+    Math.floor(at),
+  )
+  return target
+    .copy(points[index])
+    .lerp(points[index + 1], at - index)
 }
 
 function buildLightningPoints(
@@ -677,8 +848,8 @@ function buildLightningPoints(
   const distance =
     Math.max(.001, from.distanceTo(to))
   const count = THREE.MathUtils.clamp(
-    Math.round(distance * 1.45),
-    7,
+    Math.round(distance * 1.6),
+    8,
     MAX_SEGMENTS,
   )
   const direction = to
@@ -696,8 +867,6 @@ function buildLightningPoints(
     new THREE.Vector3()
       .crossVectors(side, direction)
       .normalize()
-  const worldUp =
-    new THREE.Vector3(0, 1, 0)
   const points: THREE.Vector3[] = []
 
   for (
@@ -714,8 +883,14 @@ function buildLightningPoints(
     ) {
       const edge =
         Math.sin(Math.PI * t)
+      const kick =
+        hashUnit(`${seed}:kick-strength:${index}`) > .72
+          ? 1.38
+          : 1
       const scale =
-        amplitude * edge
+        amplitude * edge * kick
+      const alternating =
+        index % 2 === 0 ? 1 : -1
       const sideOffset =
         (
           hashUnit(
@@ -724,7 +899,16 @@ function buildLightningPoints(
             2 -
           1
         ) *
-        scale
+          scale +
+        alternating *
+          scale *
+          (
+            .28 +
+            hashUnit(
+              `${seed}:kink:${index}`,
+            ) *
+              .24
+          )
       const planeOffset =
         (
           hashUnit(
@@ -734,7 +918,7 @@ function buildLightningPoints(
           1
         ) *
         scale *
-        .68
+        .78
 
       point.addScaledVector(
         side,
@@ -746,22 +930,6 @@ function buildLightningPoints(
       )
       point.y +=
         verticalLift * edge
-      point.addScaledVector(
-        side,
-        (
-          index % 2 === 0
-            ? 1
-            : -1
-        ) *
-          scale *
-          (
-            .16 +
-            hashUnit(
-              `${seed}:kink:${index}`,
-            ) *
-              .18
-          ),
-      )
     }
     points.push(point)
   }
@@ -829,11 +997,11 @@ function buildBranchPoints(
       )
       .normalize()
   const length =
-    .28 +
+    .42 +
     hashUnit(
       `${seed}:length`,
     ) *
-      .72
+      1.05
   const direction =
     side
       .multiplyScalar(
@@ -852,7 +1020,7 @@ function buildBranchPoints(
             2 -
           1
         ) *
-          .58,
+          .72,
       )
       .normalize()
 
@@ -867,13 +1035,15 @@ function buildBranchPoints(
     start,
     end,
     Math.min(
-      .16,
-      amplitude * .48,
+      .24,
+      amplitude * .58,
     ),
     seed,
-    .04,
+    .07,
   )
 }
+
+function addImpactSparks(
 
 function addImpactSparks(
   parent: THREE.Group,
@@ -888,20 +1058,20 @@ function addImpactSparks(
         .clone()
         .lerp(
           new THREE.Color('#ffffff'),
-          .48,
+          .58,
         ),
       transparent: true,
-      opacity: .82,
+      opacity: .9,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
     })
-  material.userData.baseOpacity = .82
+  material.userData.baseOpacity = .9
   materials.push(material)
 
   for (
     let index = 0;
-    index < 14;
+    index < 18;
     index += 1
   ) {
     const theta =
@@ -926,11 +1096,11 @@ function addImpactSparks(
         Math.sin(theta),
       ).normalize()
     const length =
-      .14 +
+      .2 +
       hashUnit(
         `${seed}:length:${index}`,
       ) *
-        .42
+        .58
     const end =
       origin
         .clone()
@@ -948,7 +1118,7 @@ function addImpactSparks(
       mesh,
       origin,
       end,
-      .007,
+      .009,
     )
     parent.add(mesh)
   }
@@ -966,18 +1136,19 @@ function addImpactRings(
         .clone()
         .lerp(
           new THREE.Color('#ffffff'),
-          .35,
+          .48,
         ),
       transparent: true,
-      opacity: .5,
+      opacity: .62,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
       side: THREE.DoubleSide,
     })
-  material.userData.baseOpacity = .5
+  material.userData.baseOpacity = .62
   materials.push(material)
 
+  const rings: THREE.Mesh[] = []
   for (
     let axis = 0;
     axis < 2;
@@ -988,14 +1159,19 @@ function addImpactRings(
       material,
     )
     ring.position.copy(origin)
+    ring.renderOrder = 25
     if (axis === 0) {
       ring.rotation.x = Math.PI / 2
     } else {
       ring.rotation.y = Math.PI / 2
     }
     parent.add(ring)
+    rings.push(ring)
   }
+  return rings
 }
+
+function updateSegmentTransform(
 
 function updateSegmentTransform(
   mesh: THREE.Mesh,
