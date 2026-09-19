@@ -113,6 +113,11 @@ async function bindSkillboundFoundation(
     hidePlaceholder(target)
 
     const binding = new ForgeCharacterVisualBinding(root)
+    const foundationBodyType =
+      skillboundBodyTypeFromAsset(asset)
+    if (foundationBodyType === 'female') {
+      binding.enableSubtleChestSecondaryMotion()
+    }
     if (authoredSet) binding.setAnimationSet(authoredSet)
     ;(
       binding as ForgeCharacterVisualBinding & {
@@ -124,8 +129,7 @@ async function bindSkillboundFoundation(
       binding as ForgeCharacterVisualBinding & {
         forgeFoundationBodyType?: 'male' | 'female'
       }
-    ).forgeFoundationBodyType =
-      skillboundBodyTypeFromAsset(asset)
+    ).forgeFoundationBodyType = foundationBodyType
 
     binding.setAnimations(clips)
     return binding
