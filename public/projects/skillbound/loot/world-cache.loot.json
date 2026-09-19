@@ -1,0 +1,81 @@
+{
+  "format": "forge-loot-table",
+  "version": 1,
+  "id": "world-cache",
+  "name": "World Cache",
+  "rollMode": "weighted",
+  "rolls": [1, 2],
+  "allowDuplicates": false,
+  "nothingWeight": 12,
+  "scatterRadius": 1.15,
+  "gold": {
+    "min": 4,
+    "max": 18,
+    "chance": 0.65
+  },
+  "entries": [
+    {
+      "itemId": "rusted-sword",
+      "chance": 0.2,
+      "weight": 18,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "worn-buckler",
+      "chance": 0.16,
+      "weight": 15,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "road-worn-chest",
+      "chance": 0.12,
+      "weight": 12,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "marsh-hood",
+      "chance": 0.1,
+      "weight": 10,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "gripwrap-gloves",
+      "chance": 0.11,
+      "weight": 11,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "drowned-greaves",
+      "chance": 0.09,
+      "weight": 9,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "trail-boots",
+      "chance": 0.11,
+      "weight": 11,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "hunter-bow",
+      "chance": 0.08,
+      "weight": 8,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "ash-staff",
+      "chance": 0.07,
+      "weight": 7,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    }
+  ]
+}
