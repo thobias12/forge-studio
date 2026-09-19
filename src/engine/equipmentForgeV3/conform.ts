@@ -2008,10 +2008,10 @@ function createFrontTabard(
       'position',
     )
 
-  const columns = 6
-  const rows = 9
+  const columns = 8
+  const rows = 10
   const topRow = 3
-  const topSpan = 4
+  const topSpan = 5
   const length =
     frame.height *
     THREE.MathUtils.lerp(
@@ -2134,6 +2134,15 @@ function createFrontTabard(
       column < columns;
       column += 1
     ) {
+      // Open a narrow center slit through the lower third so the tabard
+      // reads like a constructed garment instead of a single rectangle.
+      if (
+        row >= 6 &&
+        column === 3
+      ) {
+        continue
+      }
+
       const a =
         row *
           (columns + 1) +
