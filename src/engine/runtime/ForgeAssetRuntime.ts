@@ -5,7 +5,7 @@ import { skillboundBodyTypeFromAsset } from '../../lib/characterAssetRegistry'
 import { getAsset, type LibraryAsset } from '../../lib/library'
 import { parseVfxPackage, type ForgeVfxEmitter, type ForgeVfxPackage } from '../../lib/vfxPackage'
 import { animationBindingAssetId, parseAnimationSet, resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
-import type { ForgeAnimationControllerV3 } from '../animationV3'
+import { createAnimationControllerV3, type ForgeAnimationControllerV3 } from '../animationV3'
 
 export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge'
 
@@ -446,13 +446,23 @@ export async function bindCharacterAsset(
   if (skillboundBodyTypeFromAsset(asset) === 'female') {
     binding.enableSubtleChestSecondaryMotion()
   }
-  binding.setAnimationSet(await loadAnimationSetForCharacter(characterAssetId))
-  let clips = loaded.animations
-  if (animationAssetId) {
-    const external = await loadLibraryAnimationClips(animationAssetId)
-    if (external.length) clips = external
-  }
-  binding.setAnimations(clips)
+
+  // Runtime 3 profiles are keyed by the semantic character/profile target, not
+  // by a GLB animation pack. Generic characters and NPCs use their character
+  // asset ID as that stable target. Embedded clips are converted once into
+  // semantic fallback actions for anything not yet authored in Animation Studio.
+  void animationAssetId
+  const controller = await createAnimationControllerV3({
+    targetRoot: loaded.root,
+    targetId: characterAssetId,
+    fallbackSource: {
+      root: loaded.root,
+      clips: loaded.animations,
+      sourceAssetId: characterAssetId,
+    },
+  })
+  binding.setAnimationRuntimeV3(controller)
+  ;(binding as ForgeCharacterVisualBinding & { forgeAnimationRuntime?: 'v3' }).forgeAnimationRuntime = 'v3'
   return binding
 }
 
