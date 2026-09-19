@@ -2047,33 +2047,24 @@ function createCapeLayer(
     torsoGeometry.getAttribute(
       'position',
     )
-  const backSegment = 24
-  const backIndex =
-    18 * 48 +
-    backSegment
-  const back =
-    new THREE.Vector3(
-      sourcePosition.getX(
-        backIndex,
-      ),
-      sourcePosition.getY(
-        backIndex,
-      ),
-      sourcePosition.getZ(
-        backIndex,
-      ),
-    )
 
   const columns = 10
   const rows = 14
-  const topWidth =
-    frame.height *
-    recipe.cape.width *
-    .42
-  const bottomWidth =
-    topWidth *
-    (1 +
-      recipe.cape.flare * 2.15)
+  const topRow = 18
+  const topSpan =
+    Math.round(
+      THREE.MathUtils.lerp(
+        5,
+        8,
+        THREE.MathUtils.clamp(
+          (recipe.cape.width -
+            .18) /
+            .32,
+          0,
+          1,
+        ),
+      ),
+    )
   const length =
     frame.height *
     recipe.cape.length *
@@ -2114,12 +2105,49 @@ function createCapeLayer(
         )
       : spineIndex
 
+  const topIndices =
+    Array.from(
+      {
+        length:
+          columns + 1,
+      },
+      (_, column) => {
+        const u =
+          column / columns
+        const offset =
+          Math.round(
+            THREE.MathUtils.lerp(
+              -topSpan,
+              topSpan,
+              u,
+            ),
+          )
+        const segment =
+          (24 + offset + 48) %
+          48
+        return (
+          topRow * 48 +
+          segment
+        )
+      },
+    )
+
   for (
     let row = 0;
     row <= rows;
     row += 1
   ) {
     const v = row / rows
+    const widthT =
+      v *
+      v *
+      (3 - 2 * v)
+    const widthScale =
+      1 +
+      recipe.cape.flare *
+        1.8 *
+        widthT
+
     for (
       let column = 0;
       column <= columns;
@@ -2131,47 +2159,46 @@ function createCapeLayer(
         u - .5
       const edge =
         Math.abs(centered) * 2
+      const topIndex =
+        topIndices[column]
+      const top =
+        new THREE.Vector3(
+          sourcePosition.getX(
+            topIndex,
+          ),
+          sourcePosition.getY(
+            topIndex,
+          ),
+          sourcePosition.getZ(
+            topIndex,
+          ),
+        )
+
       const hipWeight =
         v * .32
       const chestWeight =
         1 - hipWeight
-
-      const widthT =
-        v * v *
-        (3 - 2 * v)
-      const shapedWidth =
-        THREE.MathUtils.lerp(
-          topWidth,
-          bottomWidth,
-          widthT,
-        )
-      const shoulderLift =
-        (1 - v) *
-        edge *
-        .014
       const hemDrop =
         Math.pow(v, 4) *
-        .045 *
+        .035 *
         (1 - edge * edge)
       const fold =
         Math.sin(
           u * Math.PI * 6,
         ) *
-        (.002 +
-          v * .004)
+        (.0015 +
+          v * .0035)
 
       const point =
         new THREE.Vector3(
-          centered * shapedWidth,
-          frame.shoulderY -
-            frame.height * .024 +
-            shoulderLift -
+          top.x * widthScale,
+          top.y -
             v * length -
             hemDrop,
-          back.z -
+          top.z -
             .004 -
-            v * .012 -
-            v * v * .016 +
+            v * .01 -
+            v * v * .014 +
             fold,
         )
 
