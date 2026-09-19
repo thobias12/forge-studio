@@ -1,0 +1,22 @@
+name: Equipment QA Link v1.76.4 CI
+
+on:
+  push:
+    branches:
+      - forge-qa-link-fix-v1764
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
