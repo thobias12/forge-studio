@@ -64,6 +64,71 @@ export function equipItemIntoState(gameplay: ForgeGameplayContent, current: Forg
   return { equipment: next, slot }
 }
 
+export function unequipItemFromState(
+  current: ForgeEquipmentState,
+  slot: ForgeEquipmentSlot,
+) {
+  if (!current[slot]) return current
+  const next = { ...current }
+  delete next[slot]
+  return next
+}
+
+export function equipmentGearPower(
+  gameplay: ForgeGameplayContent,
+  equipment: ForgeEquipmentState,
+) {
+  const stats = equipmentStats(gameplay, equipment)
+  return stats.damageBonus * 3 + stats.defense
+}
+
+export function bestEquipmentState(
+  gameplay: ForgeGameplayContent,
+  current: ForgeEquipmentState,
+  inventoryIds: string[],
+) {
+  const candidates = inventoryIds
+    .map((id) => gameplay.items.find((item) => item.id === id))
+    .filter((item): item is ForgeItemDefinition => Boolean(item))
+    .filter((item) => Boolean(itemEquipmentSlot(item)))
+
+  let best = { ...current }
+  let bestPower = equipmentGearPower(gameplay, best)
+
+  // The supported Forge slot set is deliberately small, so exhaustive
+  // single-item improvement passes are deterministic and cheap. Repeating
+  // until no improvement also handles two-handed/off-hand conflicts.
+  for (let pass = 0; pass < FORGE_EQUIPMENT_SLOTS.length + 2; pass += 1) {
+    let improved = false
+    for (const item of candidates) {
+      const next = equipItemIntoState(gameplay, best, item).equipment
+      const power = equipmentGearPower(gameplay, next)
+      if (
+        power > bestPower ||
+        (power === bestPower &&
+          equipmentTieBreak(gameplay, next) >
+            equipmentTieBreak(gameplay, best))
+      ) {
+        best = next
+        bestPower = power
+        improved = true
+      }
+    }
+    if (!improved) break
+  }
+
+  return best
+}
+
+function equipmentTieBreak(
+  gameplay: ForgeGameplayContent,
+  equipment: ForgeEquipmentState,
+) {
+  const stats = equipmentStats(gameplay, equipment)
+  return stats.damageBonus * 100000 + stats.defense * 100 +
+    FORGE_EQUIPMENT_SLOTS.filter((slot) => equipment[slot]).length
+}
+
 export function compareEquipmentChange(gameplay: ForgeGameplayContent, current: ForgeEquipmentState, item: ForgeItemDefinition): ForgeEquipmentComparison {
   const before = equipmentStats(gameplay, current)
   const result = equipItemIntoState(gameplay, current, item)
