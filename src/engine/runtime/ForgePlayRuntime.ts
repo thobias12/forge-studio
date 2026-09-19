@@ -70,6 +70,8 @@ import {
 } from '../gameplaySockets'
 import { loadPoiPrefabs } from '../../lib/poiPrefab'
 import { loadPropPrefabs } from '../../lib/propPrefab'
+import { rollLootTable } from '../lootForge'
+import { grantForgeRewardTotals } from './ForgeRewardPickupRuntime'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -163,6 +165,7 @@ type RuntimeInteraction = {
   sourceName: string
   radiusScale: number
   cooldownRemaining: number
+  activationCount: number
   used: boolean
 }
 
@@ -1062,19 +1065,78 @@ export class ForgePlayRuntime {
   }
 
   private rollLoot(enemy: RuntimeEnemy, position: THREE.Vector3) {
-    const table = this.gameplay.lootTables.find((candidate) => candidate.id === enemy.definition.lootTable)
-    if (!table) return
-    table.entries.forEach((entry, index) => {
-      const roll = hashUnit(`${enemy.id}:${entry.itemId}:${index}`)
-      if (roll > entry.chance) return
-      const angle = hashUnit(`${enemy.id}:angle:${index}`) * Math.PI * 2
-      this.spawnLoot({
-        id: `${enemy.id}:drop:${index}`,
-        itemId: entry.itemId,
-        x: position.x + Math.cos(angle) * 0.8,
-        z: position.z + Math.sin(angle) * 0.8,
-      }, true)
-    })
+    this.rollLootTableAt(
+      enemy.definition.lootTable,
+      `enemy:${enemy.id}`,
+      position,
+      true,
+    )
+  }
+
+  private rollLootTableAt(
+    tableId: string | undefined,
+    sourceId: string,
+    position: THREE.Vector3,
+    persist: boolean,
+  ) {
+    if (!tableId) return undefined
+    const table = this.gameplay.lootTables.find(
+      (candidate) => candidate.id === tableId,
+    )
+    if (!table) return undefined
+
+    const result = rollLootTable(table, sourceId)
+    const scatter = THREE.MathUtils.clamp(
+      table.scatterRadius ?? .85,
+      .2,
+      4,
+    )
+    let ordinal = 0
+
+    for (const rolled of result.items) {
+      for (
+        let quantityIndex = 0;
+        quantityIndex < rolled.quantity;
+        quantityIndex += 1
+      ) {
+        const angle =
+          hashUnit(
+            `${sourceId}:angle:${rolled.entryIndex}:${quantityIndex}`,
+          ) *
+          Math.PI *
+          2
+        const radius =
+          scatter *
+          (
+            .35 +
+            hashUnit(
+              `${sourceId}:radius:${rolled.entryIndex}:${quantityIndex}`,
+            ) *
+              .65
+          )
+        this.spawnLoot(
+          {
+            id: `${sourceId}:drop:${ordinal}:${rolled.itemId}`,
+            itemId: rolled.itemId,
+            x: position.x + Math.cos(angle) * radius,
+            z: position.z + Math.sin(angle) * radius,
+          },
+          false,
+        )
+        ordinal += 1
+      }
+    }
+
+    if (result.gold > 0 || result.xp > 0) {
+      grantForgeRewardTotals(
+        this as unknown,
+        result.gold,
+        result.xp,
+      )
+    }
+
+    if (persist) this.saveGame(false)
+    return result
   }
 
   private spawnLoot(save: ForgeRuntimeLootSave, persist: boolean) {
@@ -1548,7 +1610,7 @@ export class ForgePlayRuntime {
       interaction.socket.action ?? 'message'
     const fallbackMessage =
       action === 'container'
-        ? 'Container opened. Loot Forge can bind rewards here.'
+        ? 'Container opened.'
         : action === 'shrine'
           ? 'The shrine answers with a warm pulse.'
           : action === 'door'
@@ -1559,10 +1621,47 @@ export class ForgePlayRuntime {
                 ? 'Quest interaction triggered.'
                 : `${socketActionLabel(interaction.socket)} triggered.`
 
-    this.setMessage(
+    let resultMessage =
       interaction.socket.message?.trim() ||
-        fallbackMessage,
-      action === 'message' ? 3.2 : 2.8,
+      fallbackMessage
+
+    if (action === 'container') {
+      const tableId =
+        interaction.socket.targetRef?.trim()
+      const loot = this.rollLootTableAt(
+        tableId,
+        `container:${interaction.id}:open:${interaction.activationCount}`,
+        world,
+        false,
+      )
+      if (tableId && !loot) {
+        resultMessage =
+          `Loot table "${tableId}" is missing.`
+      } else if (loot) {
+        const itemCount = loot.items.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        )
+        const rewards = [
+          itemCount > 0
+            ? `${itemCount} item${itemCount === 1 ? '' : 's'}`
+            : '',
+          loot.gold > 0 ? `${loot.gold} gold` : '',
+          loot.xp > 0 ? `${loot.xp} XP` : '',
+        ].filter(Boolean)
+        resultMessage = rewards.length
+          ? `${resultMessage} · ${rewards.join(' · ')}`
+          : `${resultMessage} · Empty`
+      } else if (!tableId) {
+        resultMessage =
+          'Container opened · no Loot Forge table is assigned.'
+      }
+      interaction.activationCount += 1
+    }
+
+    this.setMessage(
+      resultMessage,
+      action === 'message' ? 3.2 : 3.1,
     )
 
     if (action === 'shrine') {
@@ -2870,6 +2969,7 @@ function addGeneratedPois(
           radiusScale:
             placement.scale * poiVisualScale,
           cooldownRemaining: 0,
+          activationCount: 0,
           used: false,
         })
       }

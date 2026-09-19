@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   Landmark,
   MapPinned,
+  PackageOpen,
   PackagePlus,
   Play,
   Search,
@@ -36,6 +37,7 @@ import WorldForge from './pages/WorldForge'
 import GameplayForge from './pages/GameplayForge'
 import SkillForge from './pages/SkillForge'
 import ItemForge from './pages/ItemForge'
+import LootForge from './pages/LootForge'
 import EncounterForge from './pages/EncounterForge'
 import BossForge from './pages/BossForge'
 import AnimationStudioRuntime2 from './pages/AnimationStudioRuntime2'
@@ -77,7 +79,7 @@ import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge' | 'propforge'
+type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'lootforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge' | 'propforge'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -116,6 +118,7 @@ const navGroups: NavGroup[] = [
       { id: 'encounterforge', label: 'Encounter Forge', icon: Crosshair },
       { id: 'bossforge', label: 'Boss Forge', icon: Crown },
       { id: 'itemforge', label: 'Item Forge', icon: PackagePlus },
+      { id: 'lootforge', label: 'Loot & Containers', icon: PackageOpen },
       { id: 'uiforge', label: 'UI Forge', icon: LayoutGrid },
       { id: 'vfx', label: 'VFX Studio', icon: WandSparkles },
       { id: 'audio', label: 'Voice & Audio', icon: AudioLines },
@@ -140,7 +143,7 @@ const navGroups: NavGroup[] = [
 ]
 
 const nav: NavItem[] = navGroups.flatMap((group) => group.items)
-const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'poiforge', 'gameplay', 'skillforge', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'animations', 'play', 'validation'])
+const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'poiforge', 'gameplay', 'skillforge', 'encounterforge', 'bossforge', 'itemforge', 'lootforge', 'uiforge', 'animations', 'play', 'validation'])
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -239,6 +242,7 @@ export default function App() {
           {page === 'encounterforge' && <EncounterForge />}
           {page === 'bossforge' && <BossForge />}
           {page === 'itemforge' && <ItemForge />}
+          {page === 'lootforge' && <LootForge />}
           {page === 'play' && <ProjectPlay onOpenWorld={() => navigate('world')} onBackHome={() => navigate('home')} />}
           {page === 'validation' && <ProjectValidation registry={registry} onNavigate={(target) => navigate(target)} />}
           {page === 'mocap' && <AnimationStudioRuntime2 onTestGame={() => navigate('play')} />}

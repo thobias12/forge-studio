@@ -292,6 +292,43 @@ function splitAmount(total: number, count: number) {
   return Array.from({ length: count }).map(() => base + (remainder-- > 0 ? 1 : 0)).filter((value) => value > 0)
 }
 
+export function grantForgeRewardTotals(
+  runtimeValue: unknown,
+  gold: number,
+  xp: number,
+) {
+  const runtime = runtimeValue as RewardRuntime
+  ensureRewardState(runtime)
+
+  const goldAdded = Math.max(0, Math.round(gold))
+  const xpAdded = Math.max(0, Math.round(xp))
+  runtime.__forgeGold =
+    (runtime.__forgeGold ?? 0) + goldAdded
+  runtime.__forgeXp =
+    (runtime.__forgeXp ?? 0) + xpAdded
+
+  let levelsGained = 0
+  while (
+    (runtime.__forgeXp ?? 0) >=
+    xpRequired(runtime.__forgeLevel ?? 1)
+  ) {
+    runtime.__forgeXp =
+      (runtime.__forgeXp ?? 0) -
+      xpRequired(runtime.__forgeLevel ?? 1)
+    runtime.__forgeLevel =
+      (runtime.__forgeLevel ?? 1) + 1
+    levelsGained += 1
+  }
+
+  runtime.emitState()
+  return {
+    goldAdded,
+    xpAdded,
+    level: runtime.__forgeLevel ?? 1,
+    levelsGained,
+  }
+}
+
 export function xpRequired(level: number) {
   return 100 + Math.max(0, level - 1) * 55
 }
