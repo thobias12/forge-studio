@@ -254,6 +254,7 @@
   display:flex;
   flex-direction:column;
   align-items:center;
+  container-type:inline-size;
 }
 .skillbound-character-inventory>.skillbound-section-heading{
   width:100%;
