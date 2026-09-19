@@ -1858,25 +1858,11 @@ function createFrontTabard(
     torsoGeometry.getAttribute(
       'position',
     )
-  const anchorIndex =
-    3 * 48
-  const anchor =
-    new THREE.Vector3(
-      sourcePosition.getX(
-        anchorIndex,
-      ),
-      sourcePosition.getY(
-        anchorIndex,
-      ),
-      sourcePosition.getZ(
-        anchorIndex,
-      ),
-    )
 
   const columns = 6
   const rows = 9
-  const width =
-    frame.height * .105
+  const topRow = 3
+  const topSpan = 4
   const length =
     frame.height *
     THREE.MathUtils.lerp(
@@ -1894,21 +1880,31 @@ function createFrontTabard(
   const indices: number[] = []
   const influences: SkinInfluence[] = []
 
-  const pelvis =
-    findSkeletonBone(
-      source,
-      'pelvis',
-      'hips',
-    )
-  const pelvisIndex =
-    pelvis
-      ? Math.max(
-          0,
-          source.skeleton.bones.indexOf(
-            pelvis,
-          ),
+  const topIndices =
+    Array.from(
+      {
+        length:
+          columns + 1,
+      },
+      (_, column) => {
+        const u =
+          column / columns
+        const offset =
+          Math.round(
+            THREE.MathUtils.lerp(
+              -topSpan,
+              topSpan,
+              u,
+            ),
+          )
+        const segment =
+          (offset + 48) % 48
+        return (
+          topRow * 48 +
+          segment
         )
-      : 0
+      },
+    )
 
   for (
     let row = 0;
@@ -1916,8 +1912,7 @@ function createFrontTabard(
     row += 1
   ) {
     const v = row / rows
-    const rowWidth =
-      width *
+    const taper =
       THREE.MathUtils.lerp(
         1,
         .72,
@@ -1931,23 +1926,38 @@ function createFrontTabard(
     ) {
       const u =
         column / columns
-      const centered =
-        u - .5
       const edge =
-        Math.abs(centered) * 2
+        Math.abs(u - .5) * 2
+      const topIndex =
+        topIndices[column]
+      const top =
+        new THREE.Vector3(
+          sourcePosition.getX(
+            topIndex,
+          ),
+          sourcePosition.getY(
+            topIndex,
+          ),
+          sourcePosition.getZ(
+            topIndex,
+          ),
+        )
+
       const point =
         new THREE.Vector3(
-          anchor.x +
-            centered * rowWidth,
-          anchor.y -
+          top.x * taper,
+          top.y -
             v * length -
             Math.pow(v, 4) *
-              .025 *
+              .02 *
               (1 - edge * edge),
-          anchor.z +
-            .012 +
-            Math.sin(v * Math.PI) *
-              .012,
+          top.z +
+            .004 +
+            Math.sin(
+              v * Math.PI,
+            ) *
+              .008 -
+            v * .003,
         )
 
       positions.push(
@@ -1956,15 +1966,12 @@ function createFrontTabard(
         point.z,
       )
       uvs.push(u, v)
-      influences.push({
-        indices: [
-          pelvisIndex,
-          0,
-          0,
-          0,
-        ],
-        weights: [1, 0, 0, 0],
-      })
+      influences.push(
+        readSkinInfluence(
+          torsoGeometry,
+          topIndex,
+        ),
+      )
     }
   }
 
