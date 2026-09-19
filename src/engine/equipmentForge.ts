@@ -4,6 +4,7 @@ import {
   type LibraryAsset,
 } from '../lib/library'
 import type { SkillboundBodyType } from '../lib/characterAssetRegistry'
+import type { ProceduralEquipmentRecipe } from './equipmentForgeProcedural'
 
 export const EQUIPMENT_FORGE_SLOTS = [
   'Head',
@@ -51,6 +52,7 @@ export type EquipmentForgePresetData = {
   bodyType?: SkillboundBodyType
   slots: Partial<Record<EquipmentForgeSlot, string>>
   materialOverrides: EquipmentMaterialOverrides
+  proceduralRecipe?: ProceduralEquipmentRecipe
   createdAt: string
 }
 
