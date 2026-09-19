@@ -304,6 +304,9 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     <div className="skillbound-runtime-hint">
       <strong>SKILLBOUND · {profile?.name ?? 'FORGE HERO'}</strong>
       <span>WASD move · LMB primary · 1–5 skills · Q slot 1 · Space dodge · wheel zoom · E interact · Esc menu</span>
+      {snapshot.animation && <span className="skillbound-animation-runtime-debug">
+        {snapshot.animation.runtime} · base {snapshot.animation.base}{snapshot.animation.baseClip ? ` / ${snapshot.animation.baseClip}` : ''}{snapshot.animation.action ? ` · action ${snapshot.animation.action}` : ''}
+      </span>}
     </div>
 
     <HudPickupFlights events={snapshot.pickupEvents} layout={hudLayout}/>

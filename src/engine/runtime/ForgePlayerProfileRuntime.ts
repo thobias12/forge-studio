@@ -1,5 +1,5 @@
 // @ts-nocheck
-import type { ForgeAnimationSet } from '../animationBindings'
+import type { ForgeAnimationActionId, ForgeAnimationEvent } from '../animationBindings'
 import type { ForgeCharacterBlueprint } from '../characterBlueprint'
 import { playLibraryAudio } from './ForgeAnimationAudio'
 import { bindCharacterBlueprint } from './ForgeBlueprintRuntime'
@@ -23,7 +23,9 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
       const binding = await bindCharacterBlueprint(this.player, blueprint, 1.95, animationTargetId)
       if (this.disposed) { binding.dispose(); return }
       this.playerVisual = binding
-      if (binding && this.preloadAbilityAnimations) await this.preloadAbilityAnimations(binding)
+      if (binding && !binding.getAnimationRuntimeV3?.() && this.preloadAbilityAnimations) {
+        await this.preloadAbilityAnimations(binding)
+      }
       if (!this.disposed && this.refreshEquippedModel) void this.refreshEquippedModel()
     } catch {
       return originalBindPlayerVisual.call(this)
@@ -60,10 +62,13 @@ function wrapTimedAbility(proto: any) {
     if (this.__forgeProfilePaused) return
     if ((this.cooldowns?.get?.(ability?.id) ?? 0) > 0 || this.playerHealth <= 0) return original.call(this, ability)
 
-    const set = this.playerVisual?.forgeAnimationSet as ForgeAnimationSet | undefined
     const basicId = this.gameplay?.player?.basicAbility
-    const action = ability?.id === basicId ? 'attackPrimary' : 'cast'
-    const events = set?.actions?.[action]?.events ?? []
+    const action: ForgeAnimationActionId =
+      ability?.id === basicId ? 'attackPrimary' : 'cast'
+    const events =
+      this.playerVisual
+        ?.getAnimationRuntimeV3?.()
+        ?.getEvents(action) ?? []
     const hitMarker = events.find((event) => event.kind === 'hit')
     const delayMs = Math.max(0, Number(hitMarker?.time ?? 0) * 1000)
     const markerPosition = abilityMarkerPosition(this, ability)
@@ -97,7 +102,7 @@ function wrapTimedAbility(proto: any) {
   }
 }
 
-function schedulePresentationEvents(runtime: any, events: NonNullable<ForgeAnimationSet['actions']['attackPrimary']>['events'] = [], position: any) {
+function schedulePresentationEvents(runtime: any, events: ForgeAnimationEvent[] = [], position: any) {
   for (const event of events ?? []) {
     if ((event.kind !== 'vfx' && event.kind !== 'sfx') || !event.assetId) continue
     const fire = () => {

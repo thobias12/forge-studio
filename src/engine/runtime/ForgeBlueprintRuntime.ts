@@ -7,24 +7,12 @@ import {
 import { disposeForgeCharacter } from '../../lib/proceduralCharacter'
 import { getAsset } from '../../lib/library'
 import {
-  animationBindingAssetId,
-  animationPackAssetId,
-  parseAnimationSet,
-  type ForgeAnimationSet,
-} from '../animationBindings'
-import {
   blueprintToConfig,
   type ForgeCharacterBlueprint,
 } from '../characterBlueprint'
 import { createConceptForgeCharacter } from '../conceptCharacterV2'
-import {
-  remapSameRigHumanoidClips,
-  retargetForgeHumanoidClips,
-  uniqueAnimationClips,
-} from '../skillboundCharacterAnimation'
-import {
-  ForgeCharacterVisualBinding,
-} from './ForgeAssetRuntime'
+import { createAnimationControllerV3 } from '../animationV3'
+import { ForgeCharacterVisualBinding } from './ForgeAssetRuntime'
 
 export async function bindCharacterBlueprint(
   target: THREE.Object3D,
@@ -70,93 +58,53 @@ async function bindSkillboundFoundation(
   )
   prepareRuntimeMeshes(root)
 
-  const source = createConceptForgeCharacter(
+  // Generated clips are converted once into semantic V3 fallback animations.
+  // Published .forgeanim actions override them explicitly by action ID.
+  const fallback = createConceptForgeCharacter(
     blueprintToConfig(blueprint),
   )
-  let authoredSource: THREE.Object3D | undefined
 
   try {
-    let clips = retargetForgeHumanoidClips(
-      source.root,
-      root,
-      source.clips,
-    )
-
-    let authoredSet: ForgeAnimationSet | undefined
-    if (animationTargetId) {
-      const bindingAsset = await getAsset(
-        animationBindingAssetId(animationTargetId),
-      ).catch(() => undefined)
-      authoredSet = bindingAsset
-        ? await parseAnimationSet(
-            bindingAsset.blob,
-            animationTargetId,
-          )
-        : undefined
-
-      const packAsset = await getAsset(
-        animationPackAssetId(animationTargetId),
-      ).catch(() => undefined)
-      const authoredLoaded = packAsset
-        ? await loadCharacterAssetScene(packAsset.blob).catch(() => undefined)
-        : undefined
-      const authored = authoredLoaded?.animations.map((clip) => clip.clone()) ?? []
-      authoredSource = authoredLoaded?.scene
-
-      if (authored.length && authoredSource) {
-        const authoredOnSameFoundation = packAsset?.tags?.includes(
-          `source-character:${asset.id}`,
-        )
-        const authoredClips = authoredOnSameFoundation
-          ? remapSameRigHumanoidClips(
-              authoredSource,
-              root,
-              authored,
-            )
-          : retargetForgeHumanoidClips(
-              authoredSource,
-              root,
-              authored,
-            )
-
-        clips = uniqueAnimationClips([
-          ...clips,
-          ...authoredClips,
-        ])
-      }
-    }
+    const controller = await createAnimationControllerV3({
+      targetRoot: root,
+      targetId: animationTargetId,
+      fallbackSource: {
+        root: fallback.root,
+        clips: fallback.clips,
+        sourceAssetId: `generated-blueprint:${blueprint.role}`,
+      },
+    })
 
     target.add(root)
     hidePlaceholder(target)
 
     const binding = new ForgeCharacterVisualBinding(root)
-    const foundationBodyType =
-      skillboundBodyTypeFromAsset(asset)
+    binding.setAnimationRuntimeV3(controller)
+
+    const foundationBodyType = skillboundBodyTypeFromAsset(asset)
     if (foundationBodyType === 'female') {
       binding.enableSubtleChestSecondaryMotion()
     }
-    if (authoredSet) binding.setAnimationSet(authoredSet)
+
     ;(
       binding as ForgeCharacterVisualBinding & {
-        forgeAnimationSet?: ForgeAnimationSet
+        forgeAnimationRuntime?: 'v3'
         forgeFoundationBodyType?: 'male' | 'female'
       }
-    ).forgeAnimationSet = authoredSet
+    ).forgeAnimationRuntime = 'v3'
     ;(
       binding as ForgeCharacterVisualBinding & {
         forgeFoundationBodyType?: 'male' | 'female'
       }
     ).forgeFoundationBodyType = foundationBodyType
 
-    binding.setAnimations(clips)
     return binding
   } catch (error) {
     root.removeFromParent()
     disposeObject(root)
     throw error
   } finally {
-    if (authoredSource) disposeObject(authoredSource)
-    disposeForgeCharacter(source.root)
+    disposeForgeCharacter(fallback.root)
   }
 }
 
@@ -177,47 +125,23 @@ async function bindProceduralBlueprint(
   hidePlaceholder(target)
 
   const binding = new ForgeCharacterVisualBinding(root)
-  let clips = build.clips.map((clip) => clip.clone())
-  let authoredSet: ForgeAnimationSet | undefined
-
-  if (animationTargetId) {
-    const bindingAsset = await getAsset(
-      animationBindingAssetId(animationTargetId),
-    ).catch(() => undefined)
-    authoredSet = bindingAsset
-      ? await parseAnimationSet(
-          bindingAsset.blob,
-          animationTargetId,
-        )
-      : undefined
-    if (authoredSet) binding.setAnimationSet(authoredSet)
-
-    const packAsset = await getAsset(
-      animationPackAssetId(animationTargetId),
-    ).catch(() => undefined)
-    const authoredLoaded = packAsset
-      ? await loadCharacterAssetScene(packAsset.blob).catch(() => undefined)
-      : undefined
-    const authored = authoredLoaded?.animations.map((clip) => clip.clone()) ?? []
-    if (authored.length && authoredLoaded?.scene) {
-      clips = uniqueAnimationClips([
-        ...clips,
-        ...retargetForgeHumanoidClips(
-          authoredLoaded.scene,
-          root,
-          authored,
-        ),
-      ])
-    }
-    if (authoredLoaded?.scene) disposeObject(authoredLoaded.scene)
-  }
+  const controller = await createAnimationControllerV3({
+    targetRoot: root,
+    targetId: animationTargetId,
+    fallbackSource: {
+      root,
+      clips: build.clips,
+      sourceAssetId: `generated-blueprint:${blueprint.role}`,
+    },
+  })
+  binding.setAnimationRuntimeV3(controller)
 
   ;(
     binding as ForgeCharacterVisualBinding & {
-      forgeAnimationSet?: ForgeAnimationSet
+      forgeAnimationRuntime?: 'v3'
     }
-  ).forgeAnimationSet = authoredSet
-  binding.setAnimations(clips)
+  ).forgeAnimationRuntime = 'v3'
+
   return binding
 }
 

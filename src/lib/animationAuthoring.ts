@@ -16,6 +16,12 @@ import {
   type ForgeAnimationSet,
 } from '../engine/animationBindings'
 import { loadSkillboundWorkspace, patchGameplay, saveSkillboundWorkspace } from '../engine/forgeProject'
+import {
+  forgeAnimationV3AssetId,
+  forgeAnimationV3FromGlb,
+  parseForgeAnimationV3,
+  saveForgeAnimationV3,
+} from '../engine/animationV3'
 import type { ForgeMotion, PoseFrame } from '../types'
 
 export type AnimationAuthoringEdit = {
@@ -126,6 +132,55 @@ export async function buildAuthoredAnimation(input: BuildAuthoredAnimationInput)
   } finally {
     if (characterUrl) URL.revokeObjectURL(characterUrl)
     if (bakedUrl) URL.revokeObjectURL(bakedUrl)
+  }
+}
+
+export async function publishAuthoredAnimationV3(input: BuildAuthoredAnimationInput & {
+  characterAsset: LibraryAsset
+  action: ForgeAnimationActionId
+  bindingTargetId?: string
+  bindingTargetName?: string
+}) {
+  const built = await buildAuthoredAnimation({
+    ...input,
+    groundedNeutral: input.action === 'idle',
+  })
+  const runtimeTargetId = input.bindingTargetId ?? input.characterAsset.id
+  const runtimeTargetName = input.bindingTargetName ?? input.characterAsset.name
+  const assetId = forgeAnimationV3AssetId(runtimeTargetId, input.action)
+
+  const existingAsset = await getAsset(assetId).catch(() => undefined)
+  const existing = existingAsset
+    ? await parseForgeAnimationV3(existingAsset.blob)
+    : undefined
+
+  const animation = await forgeAnimationV3FromGlb({
+    blob: built.blob,
+    clipName: built.clipName,
+    id: assetId,
+    name: built.clipName,
+    loop: input.edit.loop,
+    // Skillbound owns world-space player/NPC movement. Root motion is explicit
+    // in V3 and intentionally disabled until a gameplay action opts into it.
+    rootMotion: 'none',
+    sourceAssetId: input.characterAsset.id,
+    events: existing?.events,
+  })
+
+  const saved = await saveForgeAnimationV3({
+    targetId: runtimeTargetId,
+    targetName: runtimeTargetName,
+    sourceBodyAssetId: input.characterAsset.id,
+    action: input.action,
+    animation,
+    previousEvents: existing?.events,
+  })
+
+  return {
+    built,
+    ...saved,
+    runtimeTargetId,
+    sourceCharacterAssetId: input.characterAsset.id,
   }
 }
 

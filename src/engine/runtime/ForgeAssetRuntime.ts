@@ -4,7 +4,8 @@ import { characterPackageDataToBlob, parseCharacterPackage } from '../../lib/cha
 import { skillboundBodyTypeFromAsset } from '../../lib/characterAssetRegistry'
 import { getAsset, type LibraryAsset } from '../../lib/library'
 import { parseVfxPackage, type ForgeVfxEmitter, type ForgeVfxPackage } from '../../lib/vfxPackage'
-import { animationBindingAssetId, parseAnimationSet, resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
+import { resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
+import { createAnimationControllerV3, type ForgeAnimationControllerV3 } from '../animationV3'
 
 export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge'
 
@@ -33,6 +34,7 @@ type SecondaryMotionState = {
 const vfxPackageCache = new Map<string, ForgeVfxPackage | null>()
 
 export class ForgeCharacterVisualBinding {
+  private animationV3?: ForgeAnimationControllerV3
   private mixer?: THREE.AnimationMixer
   private clips: THREE.AnimationClip[] = []
   private animationSet?: ForgeAnimationSet
@@ -48,7 +50,24 @@ export class ForgeCharacterVisualBinding {
   private disposed = false
   private secondaryMotion?: SecondaryMotionState
 
-  constructor(private readonly root: THREE.Object3D) {}
+  constructor(readonly root: THREE.Object3D) {}
+
+  setAnimationRuntimeV3(controller: ForgeAnimationControllerV3 | undefined) {
+    this.animationV3?.dispose()
+    this.animationV3 = controller
+    if (!controller) return
+    this.mixer?.stopAllAction()
+    this.mixer = undefined
+    this.clips = []
+    this.active = undefined
+    this.activeKey = ''
+    this.fallbackState = undefined
+    this.oneShot = false
+  }
+
+  getAnimationRuntimeV3() {
+    return this.animationV3
+  }
 
   enableSubtleChestSecondaryMotion() {
     const left = this.root.getObjectByName('breast_L')
@@ -102,6 +121,11 @@ export class ForgeCharacterVisualBinding {
   }
 
   update(delta: number) {
+    if (this.animationV3) {
+      this.animationV3.update(delta)
+      this.updateSecondaryMotion(delta)
+      return
+    }
     this.mixer?.update(delta)
     this.updateSecondaryMotion(delta)
     if (this.oneShot && this.active && !this.active.isRunning()) {
@@ -130,6 +154,7 @@ export class ForgeCharacterVisualBinding {
   }
 
   play(cue: ForgeAnimationCue, loop = cue === 'idle' || cue === 'move') {
+    if (this.animationV3) return this.animationV3.playCue(cue)
     if (!this.mixer || !this.clips.length) return false
 
     const authored = resolveRuntimeBinding(this.animationSet, cue)
@@ -166,6 +191,7 @@ export class ForgeCharacterVisualBinding {
   }
 
   playClipName(name: string, loop = false, speed = 1) {
+    if (this.animationV3) return this.animationV3.playNamed(name, loop)
     if (!this.mixer || !this.clips.length) return false
     const clip = findClipByName(this.clips, name)
     if (!clip) return false
@@ -321,6 +347,8 @@ export class ForgeCharacterVisualBinding {
   dispose() {
     if (this.disposed) return
     this.disposed = true
+    this.animationV3?.dispose()
+    this.animationV3 = undefined
     this.mixer?.stopAllAction()
     disposeBoundObject(this.root)
   }
@@ -418,13 +446,23 @@ export async function bindCharacterAsset(
   if (skillboundBodyTypeFromAsset(asset) === 'female') {
     binding.enableSubtleChestSecondaryMotion()
   }
-  binding.setAnimationSet(await loadAnimationSetForCharacter(characterAssetId))
-  let clips = loaded.animations
-  if (animationAssetId) {
-    const external = await loadLibraryAnimationClips(animationAssetId)
-    if (external.length) clips = external
-  }
-  binding.setAnimations(clips)
+
+  // Runtime 3 profiles are keyed by the semantic character/profile target, not
+  // by a GLB animation pack. Generic characters and NPCs use their character
+  // asset ID as that stable target. Embedded clips are converted once into
+  // semantic fallback actions for anything not yet authored in Animation Studio.
+  void animationAssetId
+  const controller = await createAnimationControllerV3({
+    targetRoot: loaded.root,
+    targetId: animationAssetId || characterAssetId,
+    fallbackSource: {
+      root: loaded.root,
+      clips: loaded.animations,
+      sourceAssetId: characterAssetId,
+    },
+  })
+  binding.setAnimationRuntimeV3(controller)
+  ;(binding as ForgeCharacterVisualBinding & { forgeAnimationRuntime?: 'v3' }).forgeAnimationRuntime = 'v3'
   return binding
 }
 
@@ -563,11 +601,6 @@ export async function spawnLibraryVfx(scene: THREE.Scene, assetId: string | unde
   }
   if (!pkg) return undefined
   return new ForgeLibraryVfxInstance(scene, pkg, position)
-}
-
-async function loadAnimationSetForCharacter(characterAssetId: string) {
-  const asset = await getAsset(animationBindingAssetId(characterAssetId))
-  return asset ? await parseAnimationSet(asset.blob, characterAssetId) : undefined
 }
 
 async function loadCharacterLibraryAsset(asset: LibraryAsset): Promise<LoadedScene | undefined> {

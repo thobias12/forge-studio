@@ -114,6 +114,14 @@ export type ForgeRuntimeSnapshot = {
   interaction?: ForgeRuntimeInteractionSnapshot
   message: string
   savedAt?: string
+  animation?: {
+    runtime: string
+    base: string
+    baseClip?: string
+    action?: string
+    actionClip?: string
+    available: string[]
+  }
 }
 
 export type ForgePlayRuntimeOptions = {
@@ -428,7 +436,9 @@ export class ForgePlayRuntime {
       const binding = await bindCharacterAsset(this.player, this.playerDefinition.characterAssetId, this.playerDefinition.animationAssetId, FORGE_WORLD_SCALE.characterHeight)
       if (this.disposed) { binding?.dispose(); return }
       this.playerVisual = binding
-      if (binding) await this.preloadAbilityAnimations(binding)
+      if (binding && !binding.getAnimationRuntimeV3()) {
+        await this.preloadAbilityAnimations(binding)
+      }
       if (!this.disposed) void this.refreshEquippedModel()
     } catch {
       // Asset bindings are optional; placeholders remain a valid development fallback.
@@ -976,8 +986,24 @@ export class ForgePlayRuntime {
     if (aim.lengthSq() < 0.01) aim.set(0, 0, -1)
     aim.normalize()
     const damage = ability.damage + this.getEquippedDamageBonus()
-    const clipName = this.abilityAnimationClipNames.get(ability.id)
-    if (!clipName || !this.playerVisual?.playClipName(clipName, false)) this.playerVisual?.play('attack', false)
+    const animationV3 = this.playerVisual?.getAnimationRuntimeV3()
+    if (animationV3) {
+      const action =
+        ability.id === this.playerDefinition.basicAbility
+          ? 'attackPrimary'
+          : 'cast'
+      if (!animationV3.playAction(action)) {
+        animationV3.playAction('attackPrimary')
+      }
+    } else {
+      const clipName = this.abilityAnimationClipNames.get(ability.id)
+      if (
+        !clipName ||
+        !this.playerVisual?.playClipName(clipName, false)
+      ) {
+        this.playerVisual?.play('attack', false)
+      }
+    }
     if (ability.kind === 'melee') {
       const impact = this.player.position.clone().addScaledVector(aim, Math.max(1, ability.range * 0.5))
       this.spawnPulse(impact, ability.color, ability.radius, 0.24)
@@ -1784,6 +1810,9 @@ export class ForgePlayRuntime {
       } : undefined,
       message: this.message,
       savedAt: this.savedAt,
+      animation: this.playerVisual
+        ?.getAnimationRuntimeV3()
+        ?.getDebugState(),
     }
   }
 
