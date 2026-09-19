@@ -54,6 +54,13 @@ import {
   type WorldWeather,
   type WorldWeatherVisuals,
 } from '../worldEnvironment'
+import {
+  authoredPoiRuntimeObstacleRadius,
+  buildPoiPrefabVisual,
+  loadAuthoredPoiSettings,
+  resolvePoiPrefab,
+} from '../poiPrefabWorld'
+import { loadPoiPrefabs } from '../../lib/poiPrefab'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -2468,6 +2475,10 @@ function addGeneratedDressing(
 }
 
 function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
+  const authoredPoiSettings = loadAuthoredPoiSettings()
+  const authoredPoiPrefabs = authoredPoiSettings.enabled
+    ? loadPoiPrefabs()
+    : []
   const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x62685f, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x444943, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5742, roughness: 1 })
@@ -2476,13 +2487,34 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
 
   for (const poi of region.pois) {
     const group = new THREE.Group()
-    const poiVisualScale = forgePoiVisualScale(poi.type)
-    const poiRotation = forgePoiPresentationRotation(region.nodes, poi)
+    group.userData.forgePoiId = poi.id
+    group.userData.forgePoiType = poi.type
+    const resolvedPrefab = resolvePoiPrefab(
+      authoredPoiPrefabs,
+      region,
+      poi,
+      authoredPoiSettings,
+    )
+    const poiVisualScale =
+      resolvedPrefab?.worldScale ?? forgePoiVisualScale(poi.type)
+    const poiRotation =
+      resolvedPrefab?.worldRotation ??
+      forgePoiPresentationRotation(region.nodes, poi)
     group.position.set(poi.x, sampleTerrainHeight(region, poi.x, poi.z), poi.z)
     group.rotation.y = poiRotation
     group.scale.setScalar(poiVisualScale)
 
-    if (poi.type === 'ruins') {
+    if (resolvedPrefab) {
+      group.userData.forgePoiPrefabId = resolvedPrefab.prefab.id
+      group.userData.forgePoiPrefabName = resolvedPrefab.prefab.name
+      group.add(buildPoiPrefabVisual(resolvedPrefab.prefab))
+      appendAuthoredPoiLegacyObstacles(
+        poi,
+        poiVisualScale,
+        poiRotation,
+        obstacles,
+      )
+    } else if (poi.type === 'ruins') {
       runtimeBox(group, -3.15, .9, .4, .6, 1.8, 4.8, stoneMaterial)
       runtimeBox(group, 3, .65, -.9, .6, 1.3, 3.4, darkStone)
       runtimeBox(group, -1.75, .7, -2.65, 2.8, 1.4, .55, stoneMaterial)
@@ -2846,6 +2878,33 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       }
     })
     scene.add(group)
+  }
+}
+
+function appendAuthoredPoiLegacyObstacles(
+  poi: GeneratedRegion['pois'][number],
+  poiVisualScale: number,
+  poiRotation: number,
+  obstacles: CircleObstacle[],
+) {
+  const radius = authoredPoiRuntimeObstacleRadius(poi.type)
+  if (radius !== undefined) {
+    obstacles.push({
+      x: poi.x,
+      z: poi.z,
+      radius: radius * poiVisualScale,
+    })
+    return
+  }
+
+  if (poi.type === 'dungeon') {
+    for (const localX of [-1.7, 1.7]) {
+      obstacles.push({
+        x: poi.x + Math.cos(poiRotation) * localX * poiVisualScale,
+        z: poi.z - Math.sin(poiRotation) * localX * poiVisualScale,
+        radius: .8 * poiVisualScale,
+      })
+    }
   }
 }
 
