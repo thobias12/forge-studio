@@ -48,6 +48,7 @@ jobs:
           path: ./dist
 
   qa:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
