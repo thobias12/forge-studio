@@ -1512,14 +1512,24 @@ export class ForgePlayRuntime {
   }
 
   private updateCorpses(delta: number) {
-    for (const corpse of [...this.corpses]) {
+    for (
+      let index = this.corpses.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const corpse = this.corpses[index]
       corpse.age += delta
       corpse.visual?.update(delta)
       if (corpse.age < corpse.duration) continue
-      const index = this.corpses.indexOf(corpse)
-      if (index >= 0) this.corpses.splice(index, 1)
+
+      this.corpses.splice(index, 1)
       this.scene.remove(corpse.group)
-      corpse.visual?.dispose()
+
+      if (corpse.visual) {
+        const visualRoot = corpse.visual.root
+        corpse.visual.dispose()
+        visualRoot.removeFromParent()
+      }
       this.disposeObject(corpse.group)
     }
   }
@@ -1644,32 +1654,118 @@ export class ForgePlayRuntime {
   }
 
   private updateEnemies(delta: number) {
-    for (const enemy of [...this.enemies]) {
-      enemy.attackCooldown = Math.max(0, enemy.attackCooldown - delta)
-      enemy.repathRemaining = Math.max(0, enemy.repathRemaining - delta)
-      enemy.bodyMaterial.emissive.lerp(new THREE.Color(0x000000), Math.min(1, delta * 22))
-      enemy.visual?.update(delta)
-      if (enemy.knockback.lengthSq() > 0.02) {
-        this.moveActor(enemy.group, enemy.knockback.clone().multiplyScalar(delta), ENEMY_RADIUS)
-        enemy.knockback.multiplyScalar(Math.max(0, 1 - delta * 8.5))
-      }
-      const distance = this.player.position.distanceTo(enemy.group.position)
-      if (enemy.windupRemaining > 0) {
-        enemy.moving = false
-        enemy.windupRemaining = Math.max(0, enemy.windupRemaining - delta)
-        const progress = 1 - enemy.windupRemaining / Math.max(0.01, enemy.windupDuration)
-        enemy.telegraph.visible = true
-        const material = enemy.telegraph.material as THREE.MeshBasicMaterial
-        material.opacity = 0.18 + progress * 0.62
-        enemy.telegraph.scale.setScalar(0.85 + progress * 0.2)
-        if (enemy.windupRemaining <= 0) this.resolveEnemyAttack(enemy)
+    const playerX = this.player.position.x
+    const playerZ = this.player.position.z
+
+    for (const enemy of this.enemies) {
+      enemy.attackCooldown = Math.max(
+        0,
+        enemy.attackCooldown - delta,
+      )
+      enemy.repathRemaining = Math.max(
+        0,
+        enemy.repathRemaining - delta,
+      )
+
+      // Avoid allocating a new Color for every enemy every frame.
+      enemy.bodyMaterial.emissive.multiplyScalar(
+        Math.max(0, 1 - delta * 22),
+      )
+
+      const dx = playerX - enemy.group.position.x
+      const dz = playerZ - enemy.group.position.z
+      const distanceSq = dx * dx + dz * dz
+      const activeRange = Math.max(
+        12,
+        enemy.definition.aggroRange + 3,
+      )
+      const needsFullSimulation =
+        distanceSq <= activeRange * activeRange ||
+        enemy.windupRemaining > 0 ||
+        enemy.knockback.lengthSq() > .02
+
+      if (!needsFullSimulation) {
+        if (enemy.moving) this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+
+        // Distant actors still animate, just at a much cheaper 8–10 Hz.
+        enemy.visualAccumulator += delta
+        if (enemy.visualAccumulator >= .11) {
+          enemy.visual?.update(enemy.visualAccumulator)
+          enemy.visualAccumulator = 0
+        }
         continue
       }
+
+      if (enemy.visualAccumulator > 0) {
+        enemy.visual?.update(
+          enemy.visualAccumulator + delta,
+        )
+        enemy.visualAccumulator = 0
+      } else {
+        enemy.visual?.update(delta)
+      }
+
+      if (enemy.knockback.lengthSq() > .02) {
+        this.tempMove
+          .copy(enemy.knockback)
+          .multiplyScalar(delta)
+        this.moveActor(
+          enemy.group,
+          this.tempMove,
+          ENEMY_RADIUS,
+        )
+        enemy.knockback.multiplyScalar(
+          Math.max(0, 1 - delta * 8.5),
+        )
+      }
+
+      const distance = Math.hypot(
+        playerX - enemy.group.position.x,
+        playerZ - enemy.group.position.z,
+      )
+
+      if (enemy.windupRemaining > 0) {
+        enemy.moving = false
+        enemy.windupRemaining = Math.max(
+          0,
+          enemy.windupRemaining - delta,
+        )
+        const progress =
+          1 -
+          enemy.windupRemaining /
+            Math.max(.01, enemy.windupDuration)
+        enemy.telegraph.visible = true
+        const material =
+          enemy.telegraph.material as THREE.MeshBasicMaterial
+        material.opacity = .18 + progress * .62
+        enemy.telegraph.scale.setScalar(
+          .85 + progress * .2,
+        )
+        if (enemy.windupRemaining <= 0) {
+          this.resolveEnemyAttack(enemy)
+        }
+        continue
+      }
+
       enemy.telegraph.visible = false
-      if (distance > enemy.definition.aggroRange) { this.setEnemyMoving(enemy, false); continue }
-      if (distance <= enemy.definition.attackRange && enemy.attackCooldown <= 0) { this.beginEnemyAttack(enemy); continue }
-      if (distance > enemy.definition.attackRange) { this.setEnemyMoving(enemy, true); this.updateEnemyPath(enemy, delta) }
-      else this.setEnemyMoving(enemy, false)
+      if (distance > enemy.definition.aggroRange) {
+        this.setEnemyMoving(enemy, false)
+        continue
+      }
+      if (
+        distance <= enemy.definition.attackRange &&
+        enemy.attackCooldown <= 0
+      ) {
+        this.beginEnemyAttack(enemy)
+        continue
+      }
+      if (distance > enemy.definition.attackRange) {
+        this.setEnemyMoving(enemy, true)
+        this.updateEnemyPath(enemy, delta)
+      } else {
+        this.setEnemyMoving(enemy, false)
+      }
     }
   }
 
@@ -1700,13 +1796,25 @@ export class ForgePlayRuntime {
 
   private enemySeparation(enemy: RuntimeEnemy) {
     const force = new THREE.Vector3()
+    const x = enemy.group.position.x
+    const z = enemy.group.position.z
+
     for (const other of this.enemies) {
       if (other === enemy) continue
-      const away = enemy.group.position.clone().sub(other.group.position).setY(0)
-      const distance = away.length()
-      if (distance <= 0.001 || distance >= 1.8) continue
-      force.addScaledVector(away.normalize(), (1.8 - distance) / 1.8)
+      const dx = x - other.group.position.x
+      const dz = z - other.group.position.z
+      const distanceSq = dx * dx + dz * dz
+      if (distanceSq <= 1e-6 || distanceSq >= 3.24) {
+        continue
+      }
+
+      const distance = Math.sqrt(distanceSq)
+      const weight =
+        (1.8 - distance) / (1.8 * distance)
+      force.x += dx * weight
+      force.z += dz * weight
     }
+
     return force
   }
 
