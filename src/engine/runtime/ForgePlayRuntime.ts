@@ -1538,12 +1538,16 @@ export class ForgePlayRuntime {
       this.corpses.splice(index, 1)
       this.scene.remove(corpse.group)
 
-      if (corpse.visual) {
-        const visualRoot = corpse.visual.root
-        corpse.visual.dispose()
-        visualRoot.removeFromParent()
-      }
-      this.disposeObject(corpse.group)
+      const visual = corpse.visual
+      const group = corpse.group
+      this.runWhenIdle(() => {
+        if (visual) {
+          const visualRoot = visual.root
+          visual.dispose()
+          visualRoot.removeFromParent()
+        }
+        this.disposeObject(group)
+      })
     }
   }
 
@@ -1646,8 +1650,33 @@ export class ForgePlayRuntime {
     this.scene.add(group)
     const drop: RuntimeLoot = { save: { ...save }, group, fallback, age: 0 }
     this.loot.push(drop)
-    void this.bindLootPresentation(drop, item)
+    this.runWhenIdle(() => {
+      if (this.disposed || !this.loot.includes(drop)) return
+      void this.bindLootPresentation(drop, item)
+    }, 700)
     if (persist) this.saveGame(false)
+  }
+
+  private runWhenIdle(
+    task: () => void,
+    timeout = 450,
+  ) {
+    const runtimeWindow = window as typeof window & {
+      requestIdleCallback?: (
+        callback: () => void,
+        options?: { timeout: number },
+      ) => number
+    }
+
+    if (runtimeWindow.requestIdleCallback) {
+      runtimeWindow.requestIdleCallback(
+        task,
+        { timeout },
+      )
+      return
+    }
+
+    window.setTimeout(task, 16)
   }
 
   private async bindLootPresentation(drop: RuntimeLoot, item: ForgeItemDefinition) {
