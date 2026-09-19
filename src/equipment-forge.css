@@ -659,3 +659,52 @@ button:disabled,
     padding: 0 7px;
   }
 }
+
+
+/* Equipment Forge V3 */
+.ef-v3-card {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(74, 111, 138, .12),
+      rgba(11, 17, 24, 0) 78%
+    );
+}
+
+.ef-v3-badge {
+  margin-top: 10px;
+  min-height: 30px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #b8c8d6;
+  background: rgba(91, 135, 169, .1);
+  border: 1px solid rgba(112, 166, 207, .22);
+  border-radius: 6px;
+  font-size: 9px;
+}
+
+.ef-v3-choice {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.ef-v3-choice button {
+  min-height: 29px;
+  padding: 0 7px;
+  color: #81909d;
+  background: #0c1219;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 6px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.ef-v3-choice button.active {
+  color: #e3edf4;
+  background: rgba(72, 116, 151, .24);
+  border-color: rgba(112, 166, 207, .38);
+}
