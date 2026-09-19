@@ -173,7 +173,7 @@ export function sampleWorldEnvironment(
   const altitude = Math.sin(solarAngle)
   // Keep a long readable dusk/dawn instead of snapping to deep night
   // shortly after the sun crosses the horizon.
-  const daylight = smoothstep(-.5, .24, altitude)
+  const daylight = smoothstep(-.88, .24, altitude)
   const night = 1 - daylight
   const twilight =
     (1 - smoothstep(.08, .58, Math.abs(altitude))) *
@@ -224,7 +224,7 @@ export function sampleWorldEnvironment(
 
   const daySky = mixHex(base.nightSky, base.daySky, daylight)
   const hemisphereIntensity =
-    (.86 + daylight * .94) *
+    (1.15 + daylight * .65) *
     weatherStyle.hemi +
     lightning * 1.6
 
@@ -239,7 +239,7 @@ export function sampleWorldEnvironment(
     smoothstep(.04, .34, daylight),
   )
   const sunIntensity =
-    (.3 + daylight * 2.44) *
+    (.46 + daylight * 2.28) *
       weatherStyle.sun +
     twilight * .34 +
     lightning * 4.5
@@ -257,7 +257,7 @@ export function sampleWorldEnvironment(
 
   const exposure =
     base.exposure *
-      (.98 + daylight * .02) *
+      (1.12 - daylight * .12) *
       weatherStyle.exposure +
     lightning * .18
 
@@ -330,7 +330,7 @@ export function sampleWorldEnvironment(
     exposure,
     hemisphereSky: daySky,
     hemisphereGround: mixHex(
-      scaleHex(base.ground, 1.35),
+      scaleHex(base.ground, 1.65),
       base.ground,
       daylight,
     ),
@@ -340,7 +340,7 @@ export function sampleWorldEnvironment(
     sunPosition,
     fillColor: base.fill,
     fillIntensity:
-      (.62 + daylight * .18) *
+      (.78 + daylight * .02) *
       weatherStyle.hemi +
       lightning * 1.4,
   }
@@ -775,7 +775,7 @@ function moodBase(mood: WorldMood): MoodBase {
       fogDensity: .0084,
       exposure: .98,
       daySky: 0xb8c9bd,
-      nightSky: 0x35483f,
+      nightSky: 0x465b50,
       ground: 0x202b24,
       daySun: 0xdfcaa8,
       duskSun: 0xe58d55,
@@ -792,7 +792,7 @@ function moodBase(mood: WorldMood): MoodBase {
       fogDensity: .0082,
       exposure: 1,
       daySky: 0xc4c7b8,
-      nightSky: 0x474b40,
+      nightSky: 0x59645a,
       ground: 0x2d2a23,
       daySun: 0xd8c3a4,
       duskSun: 0xd77f49,
@@ -809,7 +809,7 @@ function moodBase(mood: WorldMood): MoodBase {
       fogDensity: .0078,
       exposure: 1.02,
       daySky: 0xc5ceca,
-      nightSky: 0x46554f,
+      nightSky: 0x586760,
       ground: 0x303733,
       daySun: 0xd6d2c5,
       duskSun: 0xc49b7a,
@@ -825,7 +825,7 @@ function moodBase(mood: WorldMood): MoodBase {
     fogDensity: .0073,
     exposure: 1.16,
     daySky: 0xc6d8c8,
-    nightSky: 0x3b5748,
+    nightSky: 0x4d6959,
     ground: 0x27362c,
     daySun: 0xffe3bd,
     duskSun: 0xff9d5f,
