@@ -14,6 +14,7 @@ export type PoiPartKind =
   | 'tent'
   | 'log'
   | 'torch'
+  | 'prop'
   | 'entry'
 
 export type PoiMaterialPreset =
@@ -35,6 +36,7 @@ export type PoiPrefabPart = {
   rotation: [number, number, number]
   scale: [number, number, number]
   color?: string
+  assetRef?: string
   solid: boolean
 }
 
@@ -79,6 +81,7 @@ export const POI_PART_LIBRARY: Array<{
   { kind: 'tent', label: 'Tent', material: 'cloth', scale: [1.5, 1.6, 1.5], y: .8 },
   { kind: 'log', label: 'Log / Beam', material: 'wood', scale: [1.8, .35, .35], y: .2 },
   { kind: 'torch', label: 'Torch / Light', material: 'wood', scale: [1, 1, 1], y: 0 },
+  { kind: 'prop', label: 'Saved Prop', material: 'wood', scale: [1, 1, 1], y: 0 },
   { kind: 'entry', label: 'Access Marker', material: 'earth', scale: [1, 1, 1], y: 0 },
 ]
 
@@ -131,6 +134,7 @@ export function createPoiPart(
     rotation: patch.rotation ?? [0, 0, 0],
     scale: patch.scale ?? preset?.scale ?? [1, 1, 1],
     color: patch.color,
+    assetRef: patch.assetRef,
     solid: patch.solid ?? (kind !== 'entry' && kind !== 'torch'),
   }
 }
@@ -175,6 +179,14 @@ export function validatePoiPrefab(prefab: PoiPrefab): PoiPrefabValidation {
   if (!entries.length) warnings.push('Add an Access Marker so World Forge knows which side faces the approach path.')
   if (entries.length > 1) warnings.push('Use one Access Marker per prefab.')
   if (!solids.length) warnings.push('Prefab has no solid landmark geometry.')
+  const missingNestedProps = prefab.parts.filter(
+    (part) => part.kind === 'prop' && !part.assetRef,
+  )
+  if (missingNestedProps.length) {
+    warnings.push(
+      `${missingNestedProps.length} saved prop part${missingNestedProps.length === 1 ? '' : 's'} need an asset reference.`,
+    )
+  }
   if (outside.length) warnings.push(`${outside.length} part${outside.length === 1 ? '' : 's'} extend beyond the authored footprint.`)
   if (prefab.bounds.width < 4 || prefab.bounds.depth < 4) warnings.push('Footprint is unusually small for a world landmark.')
   return {
@@ -391,6 +403,7 @@ function normalizePoiPrefab(value: unknown): PoiPrefab | undefined {
       rotation: tuple3(part.rotation, [0, 0, 0]),
       scale: tuple3(part.scale, [1, 1, 1]),
       color: typeof part.color === 'string' ? part.color : undefined,
+      assetRef: typeof part.assetRef === 'string' ? part.assetRef : undefined,
       solid: typeof part.solid === 'boolean' ? part.solid : part.kind !== 'entry',
     }))
 
@@ -426,7 +439,7 @@ function tuple3(
 }
 
 function isPartKind(value: unknown): value is PoiPartKind {
-  return ['box', 'cylinder', 'rock', 'tent', 'log', 'torch', 'entry'].includes(String(value))
+  return ['box', 'cylinder', 'rock', 'tent', 'log', 'torch', 'prop', 'entry'].includes(String(value))
 }
 
 function isMaterialPreset(value: unknown): value is PoiMaterialPreset {
