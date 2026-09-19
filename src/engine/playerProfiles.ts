@@ -4,9 +4,9 @@ import {
   createCharacterBlueprint,
   type ForgeCharacterBlueprint,
 } from './characterBlueprint'
-import { exportConceptForgeCharacterGlb } from './conceptCharacterV2'
+import { exportConceptForgeAnimationTargetGlb } from './conceptCharacterV2'
 import { OFFICIAL_SKILLBOUND_BASE_IDS } from '../lib/characterAssetRegistry'
-import { getAsset, saveAsset } from '../lib/library'
+import { getAsset, saveAsset, type LibraryAsset } from '../lib/library'
 
 export type SkillboundPlayerProfile = {
   format: 'skillbound-player-profile'
@@ -21,7 +21,8 @@ export type SkillboundPlayerProfile = {
 
 const PROFILE_KEY = 'skillbound-player-profiles:v1'
 const ACTIVE_KEY = 'skillbound-player-profile:active:v1'
-const syncingProfiles = new Set<string>()
+const PLAYER_ANIMATION_TARGET_TAG = 'animation-target-rig-v2'
+const syncingProfiles = new Map<string, Promise<LibraryAsset | undefined>>()
 
 export function playerAnimationTargetId(profileId: string) {
   return `skillbound-player:${profileId}`
@@ -151,29 +152,38 @@ export function setActivePlayerProfileId(profileId: string) {
   localStorage.setItem(ACTIVE_KEY, profileId)
 }
 
-async function ensurePlayerAnimationCharacter(profile: SkillboundPlayerProfile, refresh = false) {
+export function ensurePlayerAnimationCharacter(profile: SkillboundPlayerProfile, refresh = false): Promise<LibraryAsset | undefined> {
   const id = playerAnimationTargetId(profile.id)
-  if (syncingProfiles.has(id)) return
-  syncingProfiles.add(id)
-  try {
-    const existing = await getAsset(id).catch(() => undefined)
-    if (existing && !refresh) return
-    const blob = await exportConceptForgeCharacterGlb(blueprintToConfig(profile.blueprint))
-    await saveAsset({
-      id,
-      name: `${profile.name} · Skillbound Player`,
-      category: 'characters',
-      kind: 'glb',
-      mime: 'model/gltf-binary',
-      tags: ['skillbound-player-profile', 'animation-target', 'ForgeHumanoidV1', profile.id],
-      source: 'Skillbound Player Creator · Animation target',
-      blob,
-    })
-  } catch {
-    // The playable procedural character remains valid even if its animation authoring mirror cannot be refreshed.
-  } finally {
+  const inFlight = syncingProfiles.get(id)
+  if (inFlight) return inFlight
+
+  const task = (async () => {
+    try {
+      const existing = await getAsset(id).catch(() => undefined)
+      const current = existing?.tags?.includes(PLAYER_ANIMATION_TARGET_TAG)
+      if (existing && current && !refresh) return existing
+
+      const blob = await exportConceptForgeAnimationTargetGlb(blueprintToConfig(profile.blueprint))
+      return await saveAsset({
+        id,
+        name: `${profile.name} · Skillbound Player`,
+        category: 'characters',
+        kind: 'glb',
+        mime: 'model/gltf-binary',
+        tags: ['skillbound-player-profile', 'animation-target', PLAYER_ANIMATION_TARGET_TAG, 'ForgeHumanoidV1', profile.id],
+        source: 'Skillbound Player Creator · Rig-preserving animation target v2',
+        blob,
+      })
+    } catch {
+      // The playable procedural character remains valid even if its animation authoring mirror cannot be refreshed.
+      return undefined
+    }
+  })().finally(() => {
     syncingProfiles.delete(id)
-  }
+  })
+
+  syncingProfiles.set(id, task)
+  return task
 }
 
 function readProfiles(): SkillboundPlayerProfile[] {
