@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  CheckCircle2, CircleDot, Eye, EyeOff, Globe2, Lock, MapPinned, Play, RefreshCcw,
-  RotateCcw, Save, Shuffle, Square, StopCircle, Unlock, Waypoints,
+  CheckCircle2, ChevronLeft, ChevronRight, CircleDot, Eye, EyeOff, FlaskConical,
+  Globe2, Lock, MapPinned, Play, RefreshCcw, RotateCcw, Save, Shuffle, Square,
+  StopCircle, Unlock, Waypoints,
 } from 'lucide-react'
 import WorldForgeViewport from '../components/WorldForgeViewport'
 import SkillboundFrontend from '../components/SkillboundFrontend'
@@ -24,6 +25,16 @@ import {
   type ForgeRegionSize,
   type ForgeRegionWorldGeneration,
 } from '../engine/forgeProject'
+import { loadPoiPrefabs, type PoiPrefab } from '../lib/poiPrefab'
+import {
+  compatiblePoiPrefabs,
+  loadAuthoredPoiSettings,
+  resolvePoiPrefab,
+  saveAuthoredPoiSettings,
+  withAuthoredPoiOverride,
+  withoutAuthoredPoiOverride,
+  type AuthoredPoiSettings,
+} from '../engine/poiPrefabWorld'
 
 type GenerationLayer = keyof WorldGenerationLayerSeeds
 type GenerationLocks = Record<GenerationLayer, boolean>
@@ -70,6 +81,11 @@ export default function WorldForge() {
   const [showBiome, setShowBiome] = useState(true)
   const [showBoundary, setShowBoundary] = useState(false)
   const [showRiverDebug, setShowRiverDebug] = useState(false)
+  const [poiPrefabs, setPoiPrefabs] = useState<PoiPrefab[]>(() => loadPoiPrefabs())
+  const [authoredPoiSettings, setAuthoredPoiSettings] = useState<AuthoredPoiSettings>(
+    () => loadAuthoredPoiSettings(),
+  )
+  const [selectedPoiId, setSelectedPoiId] = useState<string>()
   const [locks, setLocks] = useState<GenerationLocks>({
     terrain: false,
     routes: false,
@@ -84,6 +100,16 @@ export default function WorldForge() {
         setStatus('World Forge 2 · Landscape Generation loaded. Terrain now drives rivers, micro-biomes and POI composition.')
       })
       .catch((error) => setStatus(error instanceof Error ? error.message : 'Could not load Skillbound project.'))
+  }, [])
+
+  useEffect(() => {
+    saveAuthoredPoiSettings(authoredPoiSettings)
+  }, [authoredPoiSettings])
+
+  useEffect(() => {
+    const refreshPoiLibrary = () => setPoiPrefabs(loadPoiPrefabs())
+    window.addEventListener('focus', refreshPoiLibrary)
+    return () => window.removeEventListener('focus', refreshPoiLibrary)
   }, [])
 
   const world = workspace?.worlds.find((item) => item.id === workspace.editor.selectedWorldId) ?? workspace?.worlds[0]
@@ -102,6 +128,20 @@ export default function WorldForge() {
       worldGen.layerSeeds ?? createWorldLayerSeeds(workspace.editor.previewSeed),
     )
   }, [workspace, region, worldGen])
+
+  const selectedPoi = generated?.pois.find((poi) => poi.id === selectedPoiId)
+  const selectedPoiCandidates = selectedPoi
+    ? compatiblePoiPrefabs(poiPrefabs, selectedPoi.type)
+    : []
+  const selectedPoiResolved =
+    generated && selectedPoi
+      ? resolvePoiPrefab(
+          poiPrefabs,
+          generated,
+          selectedPoi,
+          authoredPoiSettings,
+        )
+      : undefined
 
   const updateRegion = (patch: Partial<ForgeRegionDefinition>) => {
     if (!workspace || !region) return
@@ -178,6 +218,50 @@ export default function WorldForge() {
 
   const toggleLock = (layer: GenerationLayer) => {
     setLocks((current) => ({ ...current, [layer]: !current[layer] }))
+  }
+
+  const toggleAuthoredPois = () => {
+    const enabled = !authoredPoiSettings.enabled
+    setAuthoredPoiSettings((current) => ({
+      ...current,
+      enabled,
+    }))
+    setStatus(
+      enabled
+        ? 'Experimental authored POIs enabled. Compatible landmarks now use POI Forge prefabs.'
+        : 'Authored POIs disabled. World Forge is using the proven hardcoded landmark fallback.',
+    )
+  }
+
+  const patchSelectedPoiOverride = (
+    patch: Parameters<typeof withAuthoredPoiOverride>[3],
+  ) => {
+    if (!generated || !selectedPoi) return
+    setAuthoredPoiSettings((current) =>
+      withAuthoredPoiOverride(current, generated, selectedPoi, patch),
+    )
+  }
+
+  const cycleSelectedPoiVariant = (direction: number) => {
+    if (!selectedPoiResolved || !selectedPoiCandidates.length || !selectedPoi) return
+    const nextIndex =
+      (selectedPoiResolved.index + direction + selectedPoiCandidates.length) %
+      selectedPoiCandidates.length
+    patchSelectedPoiOverride({
+      prefabId: selectedPoiCandidates[nextIndex].id,
+      variantOffset: 0,
+    })
+    setStatus(
+      `${selectedPoi.label} now uses ${selectedPoiCandidates[nextIndex].name}.`,
+    )
+  }
+
+  const resetSelectedPoiPresentation = () => {
+    if (!generated || !selectedPoi) return
+    setAuthoredPoiSettings((current) =>
+      withoutAuthoredPoiOverride(current, generated, selectedPoi),
+    )
+    setStatus(`${selectedPoi.label} returned to its deterministic prefab variant and default presentation.`)
   }
 
   const selectNode = (nodeId: string) => {
@@ -279,6 +363,14 @@ export default function WorldForge() {
         <OverlayButton label="Dressing" active={showBiome} onClick={() => setShowBiome((value) => !value)}/>
         <OverlayButton label="Bounds" active={showBoundary} onClick={() => setShowBoundary((value) => !value)}/>
         <OverlayButton label="River Debug" active={showRiverDebug} onClick={() => setShowRiverDebug((value) => !value)}/>
+        <button
+          className={authoredPoiSettings.enabled ? 'active authored-poi-toggle' : 'authored-poi-toggle'}
+          onClick={toggleAuthoredPois}
+          title="Experimental: replace compatible hardcoded landmarks with POI Forge prefabs"
+        >
+          <FlaskConical size={12}/>
+          Authored POIs
+        </button>
         <span className={generated.validation.valid ? 'validation-good' : 'validation-bad'}>
           {generated.validation.valid ? <CheckCircle2 size={13}/> : <Waypoints size={13}/>}
           {generated.validation.valid ? 'Navigation valid' : `${generated.validation.issues.length} issues`}
@@ -288,7 +380,19 @@ export default function WorldForge() {
       <div className="world-forge-stage">
         {playMode
           ? <SkillboundFrontend workspace={workspace} region={generated} autoPlayActive onOpenWorld={() => setPlayMode(false)} onBackHome={() => setPlayMode(false)}/>
-          : <WorldForgeViewport region={generated} showRoute={showRoute} showBranches={showBranches} showLandmarks={showLandmarks} showBiome={showBiome} showBoundary={showBoundary} showRiverDebug={showRiverDebug}/>}
+          : <WorldForgeViewport
+              region={generated}
+              showRoute={showRoute}
+              showBranches={showBranches}
+              showLandmarks={showLandmarks}
+              showBiome={showBiome}
+              showBoundary={showBoundary}
+              showRiverDebug={showRiverDebug}
+              poiPrefabs={poiPrefabs}
+              authoredPoiSettings={authoredPoiSettings}
+              selectedPoiId={selectedPoiId}
+              onSelectPoi={setSelectedPoiId}
+            />}
       </div>
 
       <footer className="world-forge-status">
@@ -322,6 +426,104 @@ export default function WorldForge() {
             <option value="direct">Direct</option><option value="winding">Winding</option><option value="meandering">Meandering</option>
           </select>
         </Field>
+      </section>
+
+      <section className="world-forge-section authored-poi-panel">
+        <div className="authored-poi-heading">
+          <h3>Authored POIs</h3>
+          <span>EXPERIMENTAL</span>
+        </div>
+        <p>
+          POI Forge prefabs replace compatible landmark visuals only. Placement,
+          approach trails, terrain grounding and navigation topology stay unchanged.
+        </p>
+        <label className="authored-poi-switch">
+          <input
+            type="checkbox"
+            checked={authoredPoiSettings.enabled}
+            onChange={toggleAuthoredPois}
+          />
+          <span>
+            <strong>{authoredPoiSettings.enabled ? 'Prefab integration on' : 'Hardcoded fallback active'}</strong>
+            <small>{poiPrefabs.length} prefab{poiPrefabs.length === 1 ? '' : 's'} in local library</small>
+          </span>
+        </label>
+
+        {authoredPoiSettings.enabled && <>
+          <Field label="Selected POI">
+            <select
+              value={selectedPoiId ?? ''}
+              onChange={(event) => setSelectedPoiId(event.target.value || undefined)}
+            >
+              <option value="">Select a landmark…</option>
+              {generated.pois.map((poi) => (
+                <option key={poi.id} value={poi.id}>
+                  {poi.label} · {poi.type}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {selectedPoi && selectedPoiResolved && <>
+            <div className="poi-variant-browser">
+              <button
+                title="Previous compatible prefab"
+                onClick={() => cycleSelectedPoiVariant(-1)}
+                disabled={selectedPoiCandidates.length < 2}
+              ><ChevronLeft size={13}/></button>
+              <span>
+                <strong>{selectedPoiResolved.prefab.name}</strong>
+                <small>
+                  Variant {selectedPoiResolved.index + 1}/{selectedPoiCandidates.length}
+                  {' · '}click a POI in the viewport to select it
+                </small>
+              </span>
+              <button
+                title="Next compatible prefab"
+                onClick={() => cycleSelectedPoiVariant(1)}
+                disabled={selectedPoiCandidates.length < 2}
+              ><ChevronRight size={13}/></button>
+            </div>
+            <Slider
+              label="Prefab scale"
+              value={selectedPoiResolved.override.scale ?? 1}
+              min={.65}
+              max={1.5}
+              step={.05}
+              onChange={(scale) => patchSelectedPoiOverride({ scale })}
+            />
+            <label className="world-forge-field slider-field">
+              <span>Rotation offset</span>
+              <div>
+                <input
+                  type="range"
+                  min={-180}
+                  max={180}
+                  step={15}
+                  value={selectedPoiResolved.override.rotation ?? 0}
+                  onChange={(event) =>
+                    patchSelectedPoiOverride({ rotation: Number(event.target.value) })
+                  }
+                />
+                <b>{selectedPoiResolved.override.rotation ?? 0}°</b>
+              </div>
+            </label>
+            <button
+              className="authored-poi-reset"
+              onClick={resetSelectedPoiPresentation}
+            ><RotateCcw size={12}/> Reset selected presentation</button>
+          </>}
+
+          {selectedPoi && !selectedPoiResolved && (
+            <div className="authored-poi-fallback">
+              <strong>Hardcoded fallback</strong>
+              <span>
+                No compatible {selectedPoi.type} prefab exists yet. This POI keeps
+                the current v1.60 landmark automatically.
+              </span>
+            </div>
+          )}
+        </>}
       </section>
 
       <section className="world-forge-section">
@@ -421,10 +623,27 @@ function RangePair({ label, value, min, max, onChange }: {
   </div></label>
 }
 
-function Slider({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function Slider({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 1,
+  step = .05,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+  step?: number
+}) {
+  const display = min === 0 && max === 1
+    ? `${Math.round(value * 100)}%`
+    : value.toFixed(step < .1 ? 2 : 1)
   return <label className="world-forge-field slider-field"><span>{label}</span><div>
-    <input type="range" min="0" max="1" step="0.05" value={value} onChange={(event) => onChange(Number(event.target.value))}/>
-    <b>{Math.round(value * 100)}%</b>
+    <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))}/>
+    <b>{display}</b>
   </div></label>
 }
 
