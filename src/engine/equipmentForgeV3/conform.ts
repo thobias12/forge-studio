@@ -111,13 +111,14 @@ export function buildConformedTunic(
   )
 
   const meshes = [torso]
+  void trim
 
   if (recipe.sleeve !== 'none') {
     const left = createSleeveTemplate(
       source,
       sourceVertices,
       recipe,
-      trim,
+      cloth,
       'L',
       recipe.sleeve,
     )
@@ -125,7 +126,7 @@ export function buildConformedTunic(
       source,
       sourceVertices,
       recipe,
-      trim,
+      cloth,
       'R',
       recipe.sleeve,
     )
@@ -417,8 +418,9 @@ function createSleeveTemplate(
   const direction =
     arm.clone().normalize()
   const endFraction =
-    sleeve === 'long' ? .82 : .34
-  const startFraction = .08
+    sleeve === 'long' ? .84 : .4
+  const startFraction =
+    sleeve === 'long' ? .07 : .1
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -445,33 +447,63 @@ function createSleeveTemplate(
       .crossVectors(direction, axisA)
       .normalize()
 
+  const sideSign =
+    Math.sign(start.x) ||
+    (side === 'L' ? 1 : -1)
+  const candidateStart =
+    sleeve === 'long' ? .025 : .055
+  const candidateEnd =
+    sleeve === 'long' ? .94 : .52
+  const maxArmRadius =
+    armLength * .235
+
+  // Only sample vertices that actually belong to the upper/lower arm tube.
+  // The old filter used a hard-coded X sign and no radial limit, so chest
+  // and shoulder-cap vertices could be selected and stretched into spikes.
   const candidates =
     sourceVertices.filter((vertex) => {
-      if (
-        side === 'L' &&
-        vertex.position.x < 0
-      ) {
-        return false
-      }
-      if (
-        side === 'R' &&
-        vertex.position.x > 0
-      ) {
-        return false
-      }
       const projected =
         projectOnLine(
           vertex.position,
           start,
           direction,
         )
+      if (
+        projected <
+          armLength * candidateStart ||
+        projected >
+          armLength * candidateEnd
+      ) {
+        return false
+      }
+
+      const closest =
+        start
+          .clone()
+          .addScaledVector(
+            direction,
+            projected,
+          )
+      const radialDistance =
+        vertex.position.distanceTo(
+          closest,
+        )
+
+      const sameSide =
+        vertex.position.x *
+          sideSign >
+        -armLength * .015
+
       return (
-        projected >=
-          -armLength * .08 &&
-        projected <=
-          armLength * .92
+        sameSide &&
+        radialDistance <=
+          maxArmRadius
       )
     })
+
+  if (candidates.length < 24) {
+    return undefined
+  }
 
   const rings =
     sleeve === 'long' ? 12 : 7
@@ -491,6 +523,10 @@ function createSleeveTemplate(
       sleeveStart
         .clone()
         .lerp(sleeveEnd, v)
+    const ringPositions:
+      THREE.Vector3[] = []
+    const ringInfluences:
+      SkinInfluence[] = []
 
     for (
       let segment = 0;
@@ -521,18 +557,61 @@ function createSleeveTemplate(
         )
       const position =
         nearest.position.clone()
-      const normal =
-        nearest.normal.clone().normalize()
+      const outward =
+        position
+          .clone()
+          .sub(center)
+
+      if (
+        outward.lengthSq() <
+        1e-6
+      ) {
+        outward.copy(
+          axisA
+            .clone()
+            .multiplyScalar(
+              Math.cos(angle),
+            )
+            .addScaledVector(
+              axisB,
+              Math.sin(angle),
+            ),
+        )
+      }
+      outward.normalize()
+
       const extra =
         armLength *
-        (.012 +
-          recipe.looseness * .025)
-
+        (.008 +
+          recipe.looseness * .018)
       position.addScaledVector(
-        normal,
+        outward,
         extra,
       )
 
+      ringPositions.push(position)
+      ringInfluences.push(
+        readSkinInfluence(
+          source.geometry,
+          nearest.index,
+        ),
+      )
+    }
+
+    const smoothed =
+      smoothCircularRing3D(
+        ringPositions,
+        ring === 0 ? 3 : 2,
+      )
+
+    for (
+      let segment = 0;
+      segment < segments;
+      segment += 1
+    ) {
+      const u = segment / segments
+      const position =
+        smoothed[segment]
       positions.push(
         position.x,
         position.y,
@@ -540,10 +619,7 @@ function createSleeveTemplate(
       )
       uvs.push(u, v)
       influences.push(
-        readSkinInfluence(
-          source.geometry,
-          nearest.index,
-        ),
+        ringInfluences[segment],
       )
     }
   }
@@ -739,7 +815,7 @@ function createTunicFrame(
     )
   const underarmY =
     shoulderY -
-    height * .082
+    height * .071
 
   return {
     bottomY,
@@ -884,15 +960,63 @@ function smoothCircularRingXZ(
   return current
 }
 
+function smoothCircularRing3D(
+  input: THREE.Vector3[],
+  passes: number,
+) {
+  let current =
+    input.map((point) =>
+      point.clone(),
+    )
+
+  for (
+    let pass = 0;
+    pass < passes;
+    pass += 1
+  ) {
+    current =
+      current.map((point, index) => {
+        const previous =
+          current[
+            (index -
+              1 +
+              current.length) %
+              current.length
+          ]
+        const following =
+          current[
+            (index + 1) %
+              current.length
+          ]
+
+        return previous
+          .clone()
+          .multiplyScalar(.2)
+          .addScaledVector(
+            point,
+            .6,
+          )
+          .addScaledVector(
+            following,
+            .2,
+          )
+      })
+  }
+
+  return current
+}
+
 function nearestAngularVertex(
   vertices: SourceVertex[],
   targetY: number,
   targetAngle: number,
   height: number,
 ) {
-  let best = vertices[0]
-  let bestScore =
-    Number.POSITIVE_INFINITY
+  const nearest:
+    Array<{
+      vertex: SourceVertex
+      score: number
+    }> = []
 
   for (const vertex of vertices) {
     const dy =
@@ -911,18 +1035,93 @@ function nearestAngularVertex(
       dy * 5.4 +
       da * .85
 
-    if (score < bestScore) {
-      best = vertex
-      bestScore = score
+    let insertAt =
+      nearest.length
+    for (
+      let index = 0;
+      index < nearest.length;
+      index += 1
+    ) {
+      if (
+        score <
+        nearest[index].score
+      ) {
+        insertAt = index
+        break
+      }
+    }
+
+    if (insertAt < 5) {
+      nearest.splice(
+        insertAt,
+        0,
+        { vertex, score },
+      )
+      if (nearest.length > 5) {
+        nearest.pop()
+      }
+    } else if (
+      nearest.length < 5
+    ) {
+      nearest.push({
+        vertex,
+        score,
+      })
     }
   }
 
+  const best = nearest[0]
   if (!best) {
     throw new Error(
       'Could not conform the tunic template to the body.',
     )
   }
-  return best
+
+  // Blend several nearby samples instead of snapping the garment to one
+  // raw body vertex. This removes the center-front/back ridge and small
+  // surface dents that were still visible in v1.76.2.
+  const position =
+    new THREE.Vector3()
+  const normal =
+    new THREE.Vector3()
+  let totalWeight = 0
+
+  for (const sample of nearest) {
+    const weight =
+      1 /
+      Math.pow(
+        sample.score + .018,
+        2,
+      )
+    position.addScaledVector(
+      sample.vertex.position,
+      weight,
+    )
+    normal.addScaledVector(
+      sample.vertex.normal,
+      weight,
+    )
+    totalWeight += weight
+  }
+
+  if (totalWeight > 0) {
+    position.multiplyScalar(
+      1 / totalWeight,
+    )
+    normal.multiplyScalar(
+      1 / totalWeight,
+    )
+  }
+
+  return {
+    ...best.vertex,
+    position,
+    normal:
+      normal.lengthSq() > 1e-6
+        ? normal.normalize()
+        : best.vertex.normal.clone(),
+    angle: targetAngle,
+  }
 }
 
 function nearestEuclideanVertex(

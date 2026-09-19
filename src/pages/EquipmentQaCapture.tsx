@@ -17,9 +17,13 @@ import {
   type EquipmentForgeV3Recipe,
 } from '../engine/equipmentForgeV3/types'
 import {
+  OFFICIAL_SKILLBOUND_BASE_IDS,
   setSkillboundBaseClothingVisible,
   type SkillboundBodyType,
 } from '../lib/characterAssetRegistry'
+import {
+  getAsset,
+} from '../lib/library'
 import {
   FORGE_BUILD,
   FORGE_VERSION,
@@ -148,15 +152,32 @@ export default function EquipmentQaCapture() {
   const modelUrl =
     params.get('model') ??
     window.__FORGE_EQUIPMENT_QA_MODEL_URL__ ??
-    './qa-foundation/__qa-base.glb'
+    'library'
 
   const recipe = useMemo(() => {
     const base =
       createEquipmentForgeV3Recipe(
         bodyType,
       )
+    let queryOverride:
+      | Partial<EquipmentForgeV3Recipe>
+      | undefined
+
+    const rawRecipe =
+      params.get('recipe')
+    if (rawRecipe) {
+      try {
+        queryOverride =
+          JSON.parse(rawRecipe) as
+            Partial<EquipmentForgeV3Recipe>
+      } catch {
+        queryOverride = undefined
+      }
+    }
+
     const override =
-      window.__FORGE_EQUIPMENT_QA_RECIPE__
+      window.__FORGE_EQUIPMENT_QA_RECIPE__ ??
+      queryOverride
 
     return {
       ...base,
@@ -168,7 +189,7 @@ export default function EquipmentQaCapture() {
         ...(override?.materials ?? {}),
       },
     } as EquipmentForgeV3Recipe
-  }, [bodyType])
+  }, [bodyType, params])
 
   const [source, setSource] =
     useState<THREE.Group>()
@@ -181,19 +202,54 @@ export default function EquipmentQaCapture() {
 
   useEffect(() => {
     let cancelled = false
+    let localObjectUrl:
+      | string
+      | undefined
+
+    setError('')
+    setSource(undefined)
+    setReadyViews([])
+    setViewErrors([])
 
     const load = async () => {
       try {
+        let resolvedModelUrl =
+          modelUrl
+
+        if (modelUrl === 'library') {
+          const asset =
+            await getAsset(
+              OFFICIAL_SKILLBOUND_BASE_IDS[
+                bodyType
+              ],
+            )
+
+          if (!asset) {
+            throw new Error(
+              `The Skillbound ${bodyType} foundation is not installed in this browser. Open Equipment Forge once and install Skillbound-Base-Characters-v1.zip.`,
+            )
+          }
+
+          localObjectUrl =
+            URL.createObjectURL(
+              asset.blob,
+            )
+          resolvedModelUrl =
+            localObjectUrl
+        }
+
         const loader =
           new GLTFLoader()
         const gltf =
           await loader.loadAsync(
-            modelUrl,
+            resolvedModelUrl,
           )
+
         if (cancelled) {
           disposeScene(gltf.scene)
           return
         }
+
         gltf.scene.updateMatrixWorld(true)
         setSource(gltf.scene)
       } catch (cause) {
@@ -209,8 +265,13 @@ export default function EquipmentQaCapture() {
     void load()
     return () => {
       cancelled = true
+      if (localObjectUrl) {
+        URL.revokeObjectURL(
+          localObjectUrl,
+        )
+      }
     }
-  }, [modelUrl])
+  }, [modelUrl, bodyType])
 
   useEffect(() => {
     const allReady =
@@ -283,6 +344,9 @@ export default function EquipmentQaCapture() {
           </h1>
           <p>
             {bodyType} · {recipe.name}
+            {modelUrl === 'library'
+              ? ' · live Forge Library model'
+              : ''}
           </p>
         </div>
         <div className="equipment-qa-build">
