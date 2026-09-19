@@ -103,18 +103,17 @@ async function bindSkillboundFoundation(
       authoredSource = authoredLoaded?.scene
 
       if (authored.length && authoredSource) {
-        const authoredOnFoundation = packAsset?.tags?.includes(
-          `source-character:${asset.id}`,
-        )
+        // Even when the authored pack came from the same library body asset,
+        // it is a separate GLTF instance with different runtime UUIDs. Always
+        // remap through the pack's source skeleton so every authored bone track
+        // (arms included) binds by humanoid bone identity onto the live body.
         clips = uniqueAnimationClips([
           ...clips,
-          ...(authoredOnFoundation
-            ? authored
-            : retargetForgeHumanoidClips(
-                authoredSource,
-                root,
-                authored,
-              )),
+          ...retargetForgeHumanoidClips(
+            authoredSource,
+            root,
+            authored,
+          ),
         ])
       }
     }

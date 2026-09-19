@@ -220,14 +220,62 @@ function aimBone(runtime: RetargetRuntime, key: HumanoidBoneKey, directionWorld:
 }
 
 function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
-  if (source.lengthSq() < 1e-8) return new THREE.Vector3(0, 1, 0)
-  const up = source.clone().normalize()
-  if (up.y < 0) up.multiplyScalar(-1)
-  return new THREE.Vector3(0, 1, 0).lerp(up, THREE.MathUtils.clamp(leanAmount, 0, 1)).normalize()
+  const worldUp = new THREE.Vector3(0, 1, 0)
+  if (source.lengthSq() < 1e-8) return worldUp
+
+  const measuredUp = source.clone().normalize()
+  if (measuredUp.y < 0) measuredUp.multiplyScalar(-1)
+
+  const requested = worldUp
+    .clone()
+    .lerp(
+      measuredUp,
+      THREE.MathUtils.clamp(leanAmount, 0, 1),
+    )
+    .normalize()
+
+  // Phone/world landmark depth can introduce a few degrees of artificial body
+  // pitch/roll even when the performer is standing upright. Preserve deliberate
+  // lean, but cap the torso away from world-up so small tracking bias does not
+  // make the entire character look tilted.
+  const maxLean = THREE.MathUtils.degToRad(
+    THREE.MathUtils.lerp(
+      5,
+      10,
+      THREE.MathUtils.clamp(leanAmount, 0, 1),
+    ),
+  )
+  const angle = Math.acos(
+    THREE.MathUtils.clamp(
+      worldUp.dot(requested),
+      -1,
+      1,
+    ),
+  )
+  if (angle <= maxLean || angle < 1e-5) return requested
+
+  return worldUp
+    .clone()
+    .lerp(requested, maxLean / angle)
+    .normalize()
 }
 function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
-  const direction = toe.clone().sub(heel); direction.x *= 0.72; direction.y *= 0.24
-  return direction.lengthSq() < 1e-8 ? direction : direction.normalize()
+  const direction = toe.clone().sub(heel)
+  direction.x *= 0.72
+  direction.y *= 0.12
+  if (direction.lengthSq() < 1e-8) return direction
+
+  const horizontal = Math.hypot(direction.x, direction.z)
+  if (horizontal > 1e-6) {
+    const maxVertical =
+      horizontal * Math.tan(THREE.MathUtils.degToRad(15))
+    direction.y = THREE.MathUtils.clamp(
+      direction.y,
+      -maxVertical,
+      maxVertical,
+    )
+  }
+  return direction.normalize()
 }
 function dampYawDepth(right: THREE.Vector3, bodySpace: 'world' | 'image') {
   const result = right.clone(); result.y = 0; result.z *= bodySpace === 'world' ? 0.18 : 0.08; return result
