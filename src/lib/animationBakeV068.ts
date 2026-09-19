@@ -16,6 +16,7 @@ export type BakeMotionOptions = {
   smoothing: number
   mirrorX: boolean
   cleanup: MotionCleanupOptions
+  groundedNeutral?: boolean
 }
 
 export type BakeMotionResult = {
@@ -68,7 +69,7 @@ function getSupportY(runtime: RetargetRuntime) {
 }
 
 export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeMotionResult> {
-  const { motion, characterSrc, clipName, smoothing, mirrorX, cleanup } = options
+  const { motion, characterSrc, clipName, smoothing, mirrorX, cleanup, groundedNeutral = false } = options
   if (motion.frames.length < 2) throw new Error('Record at least two mocap frames before exporting an animated GLB.')
 
   const cleaned = cleanupMotion(motion, cleanup)
@@ -134,6 +135,7 @@ export async function bakeMotionToGlb(options: BakeMotionOptions): Promise<BakeM
       leftHand,
       rightHand,
       handPointsIgnoreVisibility: true,
+      groundedNeutral,
     })
     root.updateMatrixWorld(true)
 
