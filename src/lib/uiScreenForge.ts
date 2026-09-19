@@ -235,26 +235,62 @@ export function normalizeUiScreens(value?: Partial<SkillboundUiScreens>): Skillb
     })) ?? defaults[meta.id].elements
 
     if (meta.id === 'inventory') {
-      const hasStats = elements.some(
-        (element) => element.id === 'stats',
+      const legacyEquipment = elements.find(
+        (element) => element.id === 'equipment',
       )
-      if (!hasStats) {
-        const legacyDetails = elements.find(
-          (element) => element.id === 'details',
+      const legacyBag = elements.find(
+        (element) => element.id === 'bag',
+      )
+      const legacyDetails = elements.find(
+        (element) => element.id === 'details',
+      )
+      const legacyDefaultLayout =
+        legacyEquipment?.placement.col === 1 &&
+        legacyEquipment.placement.row === 2 &&
+        legacyEquipment.placement.colSpan === 4 &&
+        legacyBag?.placement.col === 5 &&
+        legacyBag.placement.row === 2 &&
+        legacyBag.placement.colSpan === 5 &&
+        legacyDetails?.placement.col === 10 &&
+        legacyDetails.placement.colSpan === 3
+
+      if (legacyDefaultLayout) {
+        elements = defaults.inventory.elements.map(
+          (element) => ({ ...element }),
         )
-        elements = [
-          ...elements.filter(
-            (element) => element.id !== 'details',
-          ),
-          {
-            ...(legacyDetails ?? defaults.inventory.elements.find(
-              (element) => element.id === 'stats',
-            )!),
-            id: 'stats',
-            label: 'Attributes & Combat Stats',
-            kind: 'stats',
-          },
-        ]
+      } else {
+        const hasStats = elements.some(
+          (element) => element.id === 'stats',
+        )
+        if (!hasStats) {
+          elements = [
+            ...elements.filter(
+              (element) => element.id !== 'details',
+            ),
+            {
+              ...(legacyDetails ?? defaults.inventory.elements.find(
+                (element) => element.id === 'stats',
+              )!),
+              id: 'stats',
+              label: 'Attributes & Combat Stats',
+              kind: 'stats',
+            },
+          ]
+        }
+        if (
+          !elements.some(
+            (element) => element.id === 'footer',
+          )
+        ) {
+          elements = [
+            ...elements,
+            {
+              ...defaults.inventory.elements.find(
+                (element) => element.id === 'footer',
+              )!,
+            },
+          ]
+        }
       }
     }
 
