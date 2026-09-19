@@ -1,6 +1,8 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
@@ -17,6 +19,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import CharacterForgePreview from './CharacterForgePreview'
 import {
   FORGE_EQUIPMENT_SLOTS,
@@ -33,6 +36,8 @@ import {
   type ForgeEquipmentState,
 } from '../engine/equipment'
 import {
+  inventoryFootprintCells,
+  itemInventoryFootprint,
   resolveInventoryPack,
   SKILLBOUND_PACK_CELLS,
   SKILLBOUND_PACK_COLUMNS,
@@ -88,19 +93,43 @@ type TypeFilter = 'weapons' | 'armor' | 'offhand' | 'other'
 type RarityFilter = ForgeItemDefinition['rarity']
 
 type DragSource =
-  | { kind: 'bag'; index: number }
+  | {
+      kind: 'bag'
+      index: number
+      item: ForgeItemDefinition
+      grabX: number
+      grabY: number
+    }
   | {
       kind: 'equipment'
       index: number
       slot: ForgeEquipmentSlot
+      item: ForgeItemDefinition
+      grabX: 0
+      grabY: 0
     }
+
+type TooltipAnchor = {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
 
 type TooltipState = {
   item: ForgeItemDefinition
   index?: number
-  x: number
-  y: number
+  anchor: TooltipAnchor
   equippedSlot?: ForgeEquipmentSlot
+}
+
+type PackDropPreview = {
+  cell: number
+  valid: boolean
+  footprint: {
+    width: number
+    height: number
+  }
 }
 
 const TYPE_FILTERS: Array<{ id: TypeFilter; label: string }> = [
@@ -192,6 +221,8 @@ export default function SkillboundCharacterInventoryPanel({
     useState<TooltipState>()
   const [dragSource, setDragSource] =
     useState<DragSource>()
+  const [dropPreview, setDropPreview] =
+    useState<PackDropPreview>()
 
   useEffect(() => {
     let cancelled = false
@@ -214,6 +245,40 @@ export default function SkillboundCharacterInventoryPanel({
       cancelled = true
     }
   }, [profile.blueprint.foundation?.bodyAssetId])
+
+  useEffect(() => {
+    const closeTooltip = () =>
+      setTooltip(undefined)
+    const clearDrag = () => {
+      setDragSource(undefined)
+      setDropPreview(undefined)
+    }
+    window.addEventListener(
+      'resize',
+      closeTooltip,
+    )
+    window.addEventListener(
+      'scroll',
+      closeTooltip,
+      true,
+    )
+    window.addEventListener('blur', clearDrag)
+    return () => {
+      window.removeEventListener(
+        'resize',
+        closeTooltip,
+      )
+      window.removeEventListener(
+        'scroll',
+        closeTooltip,
+        true,
+      )
+      window.removeEventListener(
+        'blur',
+        clearDrag,
+      )
+    }
+  }, [])
 
   const visibleElements = new Map(
     layout.elements
@@ -299,70 +364,177 @@ export default function SkillboundCharacterInventoryPanel({
     equippedSlot?: ForgeEquipmentSlot,
   ) => {
     const rect = target.getBoundingClientRect()
-    const x = Math.min(
-      rect.right + 10,
-      window.innerWidth - 570,
-    )
-    const y = Math.max(
-      12,
-      Math.min(rect.top, window.innerHeight - 430),
-    )
     setTooltip({
       item,
       index,
       equippedSlot,
-      x,
-      y,
+      anchor: {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+      },
     })
+  }
+
+  const resolvePackDrop = (
+    pack: HTMLDivElement,
+    clientX: number,
+    clientY: number,
+  ): PackDropPreview | undefined => {
+    if (!dragSource) return undefined
+
+    const cells = pack.querySelectorAll<HTMLElement>(
+      '.skillbound-pack-cell',
+    )
+    const first = cells[0]?.getBoundingClientRect()
+    const second =
+      cells[1]?.getBoundingClientRect()
+    const nextRow =
+      cells[
+        SKILLBOUND_PACK_COLUMNS
+      ]?.getBoundingClientRect()
+    if (!first) return undefined
+
+    const pitchX =
+      second && second.left > first.left
+        ? second.left - first.left
+        : first.width
+    const pitchY =
+      nextRow && nextRow.top > first.top
+        ? nextRow.top - first.top
+        : first.height
+
+    const column =
+      Math.floor(
+        (clientX - first.left) /
+          Math.max(1, pitchX),
+      ) - dragSource.grabX
+    const row =
+      Math.floor(
+        (clientY - first.top) /
+          Math.max(1, pitchY),
+      ) - dragSource.grabY
+
+    if (
+      column < 0 ||
+      row < 0 ||
+      column >= SKILLBOUND_PACK_COLUMNS ||
+      row >= SKILLBOUND_PACK_ROWS
+    ) {
+      return undefined
+    }
+
+    const cell =
+      row * SKILLBOUND_PACK_COLUMNS + column
+    const footprint =
+      itemInventoryFootprint(dragSource.item)
+    const targetCells = inventoryFootprintCells(
+      footprint,
+      cell,
+    )
+    if (!targetCells) return undefined
+
+    const occupied = new Set<number>()
+    for (const entry of packed.entries) {
+      if (
+        entry.index === dragSource.index ||
+        entry.cell === undefined ||
+        entry.overflow
+      ) {
+        continue
+      }
+      inventoryFootprintCells(
+        entry.footprint,
+        entry.cell,
+      )?.forEach((value) => occupied.add(value))
+    }
+
+    return {
+      cell,
+      footprint,
+      valid: targetCells.every(
+        (value) => !occupied.has(value),
+      ),
+    }
+  }
+
+  const updateDropPreview = (
+    event: ReactDragEvent<HTMLDivElement>,
+  ) => {
+    if (!dragSource) return
+    const next = resolvePackDrop(
+      event.currentTarget,
+      event.clientX,
+      event.clientY,
+    )
+    setDropPreview((current) => {
+      if (
+        current?.cell === next?.cell &&
+        current?.valid === next?.valid &&
+        current?.footprint.width ===
+          next?.footprint.width &&
+        current?.footprint.height ===
+          next?.footprint.height
+      ) {
+        return current
+      }
+      return next
+    })
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect =
+        next?.valid ? 'move' : 'none'
+    }
+    if (next?.valid) event.preventDefault()
   }
 
   const placeDraggedItem = (
     event: ReactDragEvent<HTMLDivElement>,
   ) => {
     if (!dragSource) return
+    const next = resolvePackDrop(
+      event.currentTarget,
+      event.clientX,
+      event.clientY,
+    )
+    if (!next?.valid) {
+      setDropPreview(undefined)
+      return
+    }
+
     event.preventDefault()
-    const bounds =
-      event.currentTarget.getBoundingClientRect()
-    const x = Math.max(
-      0,
-      Math.min(
-        bounds.width - 1,
-        event.clientX - bounds.left,
-      ),
-    )
-    const y = Math.max(
-      0,
-      Math.min(
-        bounds.height - 1,
-        event.clientY - bounds.top,
-      ),
-    )
-    const column = Math.min(
-      SKILLBOUND_PACK_COLUMNS - 1,
-      Math.floor(
-        (x / bounds.width) *
-          SKILLBOUND_PACK_COLUMNS,
-      ),
-    )
-    const row = Math.min(
-      SKILLBOUND_PACK_ROWS - 1,
-      Math.floor(
-        (y / bounds.height) *
-          SKILLBOUND_PACK_ROWS,
-      ),
-    )
-    const cell =
-      row * SKILLBOUND_PACK_COLUMNS + column
+    let moved = false
     if (dragSource.kind === 'equipment') {
-      unequipActiveSkillboundSlot(
-        dragSource.slot,
+      const unequipped =
+        unequipActiveSkillboundSlot(
+          dragSource.slot,
+        )
+      if (unequipped) {
+        moved = moveActiveSkillboundInventoryItem(
+          dragSource.index,
+          next.cell,
+        )
+        if (!moved) {
+          equipActiveSkillboundItem(
+            dragSource.item.id,
+          )
+        }
+      }
+    } else {
+      moved = moveActiveSkillboundInventoryItem(
+        dragSource.index,
+        next.cell,
       )
     }
-    moveActiveSkillboundInventoryItem(
-      dragSource.index,
-      cell,
-    )
+
+    setTooltip(undefined)
+    setDropPreview(undefined)
     setDragSource(undefined)
+  }
+
+  const endItemDrag = () => {
+    setDragSource(undefined)
+    setDropPreview(undefined)
   }
 
   return (
@@ -425,6 +597,7 @@ export default function SkillboundCharacterInventoryPanel({
               <div className="skillbound-paperdoll-model">
                 <CharacterForgePreview
                   conceptMode
+                  paperDoll
                   config={config}
                   animation="Idle"
                   playing={false}
@@ -432,6 +605,25 @@ export default function SkillboundCharacterInventoryPanel({
                   showHitbox={false}
                   cameraMode="studio"
                   bodyAsset={bodyAsset}
+                  equipmentItems={Object.fromEntries(
+                    FORGE_EQUIPMENT_SLOTS.map(
+                      (slot) => [
+                        slot,
+                        equipmentItem(
+                          gameplay,
+                          equipment,
+                          slot,
+                        ),
+                      ],
+                    ).filter(
+                      (
+                        entry,
+                      ): entry is [
+                        ForgeEquipmentSlot,
+                        ForgeItemDefinition,
+                      ] => Boolean(entry[1]),
+                    ),
+                  )}
                   baseClothingVisible={
                     profile.blueprint.foundation
                       ?.baseClothingVisible ?? true
@@ -467,6 +659,9 @@ export default function SkillboundCharacterInventoryPanel({
                         slot,
                       )
                     }
+                    onDismiss={() =>
+                      setTooltip(undefined)
+                    }
                     onUnequip={() =>
                       unequipActiveSkillboundSlot(slot)
                     }
@@ -491,18 +686,23 @@ export default function SkillboundCharacterInventoryPanel({
                       )
                     }}
                     onDragStart={
-                      itemIndex === undefined
+                      itemIndex === undefined ||
+                      !item
                         ? undefined
-                        : () =>
+                        : () => {
+                            setTooltip(undefined)
+                            setDropPreview(undefined)
                             setDragSource({
                               kind: 'equipment',
                               index: itemIndex,
                               slot,
+                              item,
+                              grabX: 0,
+                              grabY: 0,
                             })
+                          }
                     }
-                    onDragEnd={() =>
-                      setDragSource(undefined)
-                    }
+                    onDragEnd={endItemDrag}
                   />
                 )
               })}
@@ -628,10 +828,19 @@ export default function SkillboundCharacterInventoryPanel({
             )}
 
             <div
-              className="skillbound-tetris-pack"
-              onDragOver={(event) =>
-                event.preventDefault()
-              }
+              className={`skillbound-tetris-pack${dragSource ? ' is-item-dragging' : ''}`}
+              onDragEnter={updateDropPreview}
+              onDragOver={updateDropPreview}
+              onDragLeave={(event) => {
+                const next =
+                  event.relatedTarget
+                if (
+                  !(next instanceof Node) ||
+                  !event.currentTarget.contains(next)
+                ) {
+                  setDropPreview(undefined)
+                }
+              }}
               onDrop={placeDraggedItem}
             >
               {Array.from({
@@ -653,6 +862,16 @@ export default function SkillboundCharacterInventoryPanel({
                   }}
                 />
               ))}
+
+              {dropPreview && (
+                <i
+                  className={`skillbound-pack-placement${dropPreview.valid ? '' : ' is-invalid'}`}
+                  style={{
+                    gridColumn: `${(dropPreview.cell % SKILLBOUND_PACK_COLUMNS) + 1} / span ${dropPreview.footprint.width}`,
+                    gridRow: `${Math.floor(dropPreview.cell / SKILLBOUND_PACK_COLUMNS) + 1} / span ${dropPreview.footprint.height}`,
+                  }}
+                />
+              )}
 
               {packed.entries
                 .filter(
@@ -683,18 +902,27 @@ export default function SkillboundCharacterInventoryPanel({
                         entry.index,
                       )
                     }
+                    onDismiss={() =>
+                      setTooltip(undefined)
+                    }
                     onQuickToggle={() =>
                       quickToggleItem(entry.item)
                     }
-                    onDragStart={() =>
+                    onDragStart={(
+                      grabX,
+                      grabY,
+                    ) => {
+                      setTooltip(undefined)
+                      setDropPreview(undefined)
                       setDragSource({
                         kind: 'bag',
                         index: entry.index,
+                        item: entry.item,
+                        grabX,
+                        grabY,
                       })
-                    }
-                    onDragEnd={() =>
-                      setDragSource(undefined)
-                    }
+                    }}
+                    onDragEnd={endItemDrag}
                   />
                 ))}
             </div>
@@ -843,14 +1071,18 @@ export default function SkillboundCharacterInventoryPanel({
         )}
       </div>
 
-      {tooltip && (
-        <ItemTooltip
-          state={tooltip}
-          gameplay={gameplay}
-          equipment={equipment}
-          onClose={() => setTooltip(undefined)}
-        />
-      )}
+      {tooltip &&
+        createPortal(
+          <ItemTooltip
+            key={`${tooltip.item.id}:${tooltip.index ?? tooltip.equippedSlot ?? ''}`}
+            state={tooltip}
+            gameplay={gameplay}
+            equipment={equipment}
+          />,
+          document.querySelector(
+            '.skillbound-game-menu-layer',
+          ) ?? document.body,
+        )}
     </section>
   )
 }
@@ -917,6 +1149,7 @@ function EquipmentSlot({
   slot,
   item,
   onInspect,
+  onDismiss,
   onUnequip,
   onDropBagItem,
   onDragStart,
@@ -928,6 +1161,7 @@ function EquipmentSlot({
     item: ForgeItemDefinition,
     target: HTMLElement,
   ) => void
+  onDismiss: () => void
   onUnequip: () => void
   onDropBagItem: (index: number) => void
   onDragStart?: () => void
@@ -952,16 +1186,17 @@ function EquipmentSlot({
       type="button"
       draggable={Boolean(item && onDragStart)}
       className={`skillbound-equipment-slot slot-${slot.toLowerCase()} ${item ? 'filled' : ''}`}
-      disabled={!item}
+      aria-disabled={!item}
       onMouseEnter={(event) => {
         if (item)
           onInspect(item, event.currentTarget)
       }}
-      onMouseLeave={() => undefined}
+      onMouseLeave={onDismiss}
       onFocus={(event) => {
         if (item)
           onInspect(item, event.currentTarget)
       }}
+      onBlur={onDismiss}
       onDoubleClick={() => item && onUnequip()}
       onDragOver={(event) => {
         if (!item) event.preventDefault()
@@ -1010,6 +1245,7 @@ function PackItem({
   dimmed,
   equipped,
   onInspect,
+  onDismiss,
   onQuickToggle,
   onDragStart,
   onDragEnd,
@@ -1023,8 +1259,12 @@ function PackItem({
     item: ForgeItemDefinition,
     target: HTMLElement,
   ) => void
+  onDismiss: () => void
   onQuickToggle: () => void
-  onDragStart: () => void
+  onDragStart: (
+    grabX: number,
+    grabY: number,
+  ) => void
   onDragEnd: () => void
 }) {
   const row = Math.floor(
@@ -1059,6 +1299,7 @@ function PackItem({
           event.currentTarget,
         )
       }
+      onMouseLeave={onDismiss}
       onFocus={(
         event: ReactFocusEvent<HTMLButtonElement>,
       ) =>
@@ -1067,6 +1308,7 @@ function PackItem({
           event.currentTarget,
         )
       }
+      onBlur={onDismiss}
       onClick={activate}
       onDoubleClick={onQuickToggle}
       onKeyDown={(event) => {
@@ -1084,7 +1326,35 @@ function PackItem({
           'text/plain',
           String(entry.index),
         )
-        onDragStart()
+        const bounds =
+          event.currentTarget.getBoundingClientRect()
+        const cellWidth =
+          bounds.width /
+          Math.max(1, entry.footprint.width)
+        const cellHeight =
+          bounds.height /
+          Math.max(1, entry.footprint.height)
+        const grabX = Math.min(
+          entry.footprint.width - 1,
+          Math.max(
+            0,
+            Math.floor(
+              (event.clientX - bounds.left) /
+                Math.max(1, cellWidth),
+            ),
+          ),
+        )
+        const grabY = Math.min(
+          entry.footprint.height - 1,
+          Math.max(
+            0,
+            Math.floor(
+              (event.clientY - bounds.top) /
+                Math.max(1, cellHeight),
+            ),
+          ),
+        )
+        onDragStart(grabX, grabY)
       }}
       onDragEnd={onDragEnd}
       aria-label={entry.item.name}
@@ -1099,13 +1369,17 @@ function ItemTooltip({
   state,
   gameplay,
   equipment,
-  onClose,
 }: {
   state: TooltipState
   gameplay: ReturnType<typeof resolveGameplayForRole>
   equipment: ForgeEquipmentState
-  onClose: () => void
 }) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<{
+    left: number
+    top: number
+  }>()
+
   const slot =
     state.equippedSlot ??
     itemEquipmentSlot(state.item)
@@ -1130,14 +1404,98 @@ function ItemTooltip({
         )
       : undefined
 
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+
+    const rect = host.getBoundingClientRect()
+    const viewportWidth =
+      document.documentElement.clientWidth
+    const viewportHeight =
+      document.documentElement.clientHeight
+    const margin = 12
+    const gap = 10
+    const maxLeft = Math.max(
+      margin,
+      viewportWidth - rect.width - margin,
+    )
+    const maxTop = Math.max(
+      margin,
+      viewportHeight - rect.height - margin,
+    )
+
+    const right =
+      state.anchor.right + gap
+    const left =
+      state.anchor.left - gap - rect.width
+    const fitsRight =
+      right + rect.width <=
+      viewportWidth - margin
+    const fitsLeft = left >= margin
+
+    let nextLeft = fitsRight
+      ? right
+      : fitsLeft
+        ? left
+        : viewportWidth -
+              state.anchor.right >=
+            state.anchor.left
+          ? right
+          : left
+    nextLeft = Math.min(
+      maxLeft,
+      Math.max(margin, nextLeft),
+    )
+
+    let nextTop = Math.min(
+      maxTop,
+      Math.max(margin, state.anchor.top),
+    )
+
+    const overlapsAnchor =
+      nextLeft < state.anchor.right &&
+      nextLeft + rect.width >
+        state.anchor.left
+    if (overlapsAnchor) {
+      const below = state.anchor.bottom + gap
+      const above =
+        state.anchor.top - gap - rect.height
+      if (
+        below + rect.height <=
+        viewportHeight - margin
+      ) {
+        nextTop = below
+      } else if (above >= margin) {
+        nextTop = above
+      }
+    }
+
+    setPosition({
+      left: nextLeft,
+      top: nextTop,
+    })
+  }, [
+    state.item.id,
+    state.index,
+    state.equippedSlot,
+    state.anchor.left,
+    state.anchor.right,
+    state.anchor.top,
+    state.anchor.bottom,
+    equipped?.id,
+  ])
+
   return (
     <div
+      ref={hostRef}
       className="skillbound-item-tooltip-stack"
       style={{
-        left: state.x,
-        top: state.y,
+        left: position?.left ?? 0,
+        top: position?.top ?? 0,
+        visibility: position
+          ? 'visible'
+          : 'hidden',
       }}
-      onMouseLeave={onClose}
     >
       {equipped &&
         equipped.id !== state.item.id && (
