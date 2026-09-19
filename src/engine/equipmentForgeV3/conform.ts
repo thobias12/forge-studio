@@ -111,7 +111,19 @@ export function buildConformedTunic(
   )
 
   const meshes = [torso]
-  void trim
+
+  const necklineTrim =
+    createSkinnedRowBand(
+      source,
+      torso.geometry,
+      18,
+      17,
+      48,
+      trim,
+      'EFV3_NecklineTrim',
+      .34,
+    )
+  meshes.push(necklineTrim)
 
   if (recipe.sleeve !== 'none') {
     const left = createSleeveTemplate(
@@ -130,8 +142,43 @@ export function buildConformedTunic(
       'R',
       recipe.sleeve,
     )
-    if (left) meshes.push(left)
-    if (right) meshes.push(right)
+
+    const sleeveRings =
+      recipe.sleeve === 'long'
+        ? 12
+        : 7
+
+    if (left) {
+      meshes.push(left)
+      meshes.push(
+        createSkinnedRowBand(
+          source,
+          left.geometry,
+          sleeveRings,
+          sleeveRings - 1,
+          18,
+          trim,
+          'EFV3_SleeveCuff_L',
+          .5,
+        ),
+      )
+    }
+
+    if (right) {
+      meshes.push(right)
+      meshes.push(
+        createSkinnedRowBand(
+          source,
+          right.geometry,
+          sleeveRings,
+          sleeveRings - 1,
+          18,
+          trim,
+          'EFV3_SleeveCuff_R',
+          .5,
+        ),
+      )
+    }
   }
 
   return { meshes, frame }
@@ -1191,6 +1238,156 @@ function nearestEuclideanVertex(
     )
   }
   return best
+}
+
+function createSkinnedRowBand(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  outerRow: number,
+  innerRow: number,
+  segments: number,
+  material: THREE.Material,
+  name: string,
+  widthFraction: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+
+  for (
+    let segment = 0;
+    segment < segments;
+    segment += 1
+  ) {
+    const outerIndex =
+      outerRow * segments +
+      segment
+    const innerIndex =
+      innerRow * segments +
+      segment
+
+    const outer =
+      new THREE.Vector3(
+        position.getX(outerIndex),
+        position.getY(outerIndex),
+        position.getZ(outerIndex),
+      )
+    const inner =
+      new THREE.Vector3(
+        position.getX(innerIndex),
+        position.getY(innerIndex),
+        position.getZ(innerIndex),
+      )
+
+    const inset =
+      outer
+        .clone()
+        .lerp(
+          inner,
+          widthFraction,
+        )
+
+    const radial =
+      new THREE.Vector3(
+        outer.x,
+        0,
+        outer.z,
+      )
+    if (
+      radial.lengthSq() >
+      1e-6
+    ) {
+      radial
+        .normalize()
+        .multiplyScalar(.0018)
+      outer.add(radial)
+      inset.add(radial)
+    }
+
+    positions.push(
+      outer.x,
+      outer.y,
+      outer.z,
+      inset.x,
+      inset.y,
+      inset.z,
+    )
+    uvs.push(
+      segment / segments,
+      1,
+      segment / segments,
+      0,
+    )
+    influences.push(
+      readSkinInfluence(
+        sourceGeometry,
+        outerIndex,
+      ),
+      readSkinInfluence(
+        sourceGeometry,
+        innerIndex,
+      ),
+    )
+  }
+
+  for (
+    let segment = 0;
+    segment < segments;
+    segment += 1
+  ) {
+    const next =
+      (segment + 1) %
+      segments
+    const a = segment * 2
+    const b = a + 1
+    const c0 = next * 2
+    const d = c0 + 1
+    indices.push(
+      a,
+      b,
+      c0,
+      c0,
+      b,
+      d,
+    )
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    material,
+    name,
+  )
 }
 
 function makeSkinnedTemplate(
