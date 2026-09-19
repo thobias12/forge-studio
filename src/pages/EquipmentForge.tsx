@@ -73,7 +73,7 @@ export default function EquipmentForge() {
   const [
     showImportedEquipment,
     setShowImportedEquipment,
-  ] = useState(true)
+  ] = useState(false)
   const [
     proceduralRecipe,
     setProceduralRecipe,
