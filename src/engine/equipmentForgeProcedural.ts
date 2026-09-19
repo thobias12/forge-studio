@@ -149,9 +149,9 @@ export function applyProceduralStyle(
     next.chest.length = 1.02
     next.chest.looseness = .08
     next.chest.leatherVest = true
-    next.chest.plateCoverage = .12
-    next.chest.collarHeight = .11
-    next.chest.shoulderSize = .06
+    next.chest.plateCoverage = .08
+    next.chest.collarHeight = .06
+    next.chest.shoulderSize = .04
     next.chest.shoulderAsymmetry = .22
     next.chest.strapCount = 2
     next.waist.beltWidth = .08
@@ -521,7 +521,7 @@ function buildChest(
   fit: ReturnType<typeof bodyFit>,
 ) {
   const chest = recipe.chest
-  const topY = fit.neckY - .105
+  const topY = fit.shoulderY - .055
   const bottomY = THREE.MathUtils.clamp(
     fit.waistY + .015 -
       (chest.length - .85) * .22,
@@ -529,7 +529,7 @@ function buildChest(
     fit.waistY + .11,
   )
   const shellOffset =
-    .006 + chest.looseness * .035
+    .012 + chest.looseness * .03
 
   const shell = new THREE.Mesh(
     fittedGarmentTorsoGeometry(
@@ -540,7 +540,7 @@ function buildChest(
       chest.depth,
       chest.looseness,
     ),
-    materials.cloth,
+    materials.clothDouble,
   )
   shell.castShadow = true
   shell.receiveShadow = false
@@ -553,15 +553,28 @@ function buildChest(
   root.userData.chestShell = shell
 
   if (chest.leatherVest) {
-    buildVestPanels(
+    const vest = new THREE.Mesh(
+      fittedGarmentTorsoGeometry(
+        fit,
+        bottomY + .035,
+        topY - .025,
+        chest.width * 1.012,
+        chest.depth * 1.012,
+        chest.looseness + .018,
+      ),
+      materials.leather,
+    )
+    vest.castShadow = true
+    vest.receiveShadow = false
+    vest.name = 'Procedural_LeatherVest'
+    attachPreservingWorld(
       bodyRoot,
-      materials,
-      fit,
-      chest.width,
-      chest.depth,
-      topY,
-      bottomY,
-      shellOffset,
+      findBone(
+        bodyRoot,
+        'spine_02',
+        'spine_03',
+      ),
+      vest,
     )
   }
 
@@ -601,23 +614,13 @@ function buildChest(
       materials.metal,
     )
     const plateY =
-      fit.chestY + .055
-    const chestSurfaceZ =
-      sampleBodySurfaceZ(
-        bodyRoot,
-        plateY,
-        0,
-        'front',
-        .14,
-        .12,
-      ) ??
-      fit.chestFront
+      fit.chestY + .035
     plate.position.set(
       0,
       plateY,
-      chestSurfaceZ +
+      fit.garmentFront +
         shellOffset +
-        .008,
+        .004,
     )
     plate.rotation.x = -.045
     plate.castShadow = true
@@ -644,22 +647,12 @@ function buildChest(
       const lowerPlateY =
         fit.chestY -
         plateHeight * .55
-      const lowerChestSurfaceZ =
-        sampleBodySurfaceZ(
-          bodyRoot,
-          lowerPlateY,
-          0,
-          'front',
-          .14,
-          .12,
-        ) ??
-        fit.chestFront
       lowerPlate.position.set(
         0,
         lowerPlateY,
-        lowerChestSurfaceZ +
+        fit.garmentFront +
           shellOffset +
-          .006,
+          .003,
       )
       lowerPlate.castShadow = true
       lowerPlate.name =
@@ -675,13 +668,6 @@ function buildChest(
       )
     }
   }
-
-  buildShoulderYoke(
-    bodyRoot,
-    materials,
-    fit,
-    chest.width,
-  )
 
   if (chest.collarHeight > .02) {
     buildCollarBand(
@@ -750,9 +736,9 @@ function buildChest(
       spread,
       fit.chestY + .018 -
         Math.abs(spread) * .05,
-      fit.chestFront +
+      fit.garmentFront +
         shellOffset +
-        .008,
+        .006,
     )
     strap.rotation.z =
       (index % 2 === 0 ? 1 : -1) *
@@ -1190,23 +1176,13 @@ function buildCape(
     materials.accentDouble,
   )
   const capeY =
-    fit.capeY - .018
-  const upperBackSurfaceZ =
-    sampleBodySurfaceZ(
-      bodyRoot,
-      capeY,
-      0,
-      'back',
-      .18,
-      .12,
-    ) ??
-    -fit.capeBack
+    fit.shoulderY - .035
   mesh.position.set(
     0,
     capeY,
-    upperBackSurfaceZ - .008,
+    -fit.garmentBack - .014,
   )
-  mesh.rotation.x = .008
+  mesh.rotation.x = -.018
   mesh.castShadow = true
   mesh.name = 'Procedural_Cape'
   attachPreservingWorld(
@@ -1231,23 +1207,13 @@ function buildCape(
     )
     clasp.scale.z = .55
     const claspY =
-      fit.capeY - .004
+      fit.shoulderY - .012
     const claspX =
-      sign * .145
-    const claspSurfaceZ =
-      sampleBodySurfaceZ(
-        bodyRoot,
-        claspY,
-        claspX,
-        'front',
-        .08,
-        .1,
-      ) ??
-      fit.capeFront
+      sign * .135
     clasp.position.set(
       claspX,
       claspY,
-      claspSurfaceZ + .006,
+      fit.garmentFront + .008,
     )
     clasp.castShadow = true
     attachPreservingWorld(
@@ -1260,100 +1226,6 @@ function buildCape(
       clasp,
     )
   }
-}
-
-function buildVestPanels(
-  bodyRoot: THREE.Object3D,
-  materials: MaterialSet,
-  fit: ReturnType<typeof bodyFit>,
-  widthScale: number,
-  depthScale: number,
-  topY: number,
-  bottomY: number,
-  offset: number,
-) {
-  const spine =
-    findBone(
-      bodyRoot,
-      'spine_03',
-      'spine_02',
-    )
-  const height =
-    Math.max(
-      .22,
-      (topY - bottomY) * .72,
-    )
-  const panelWidth =
-    .115 * widthScale
-  const sampledFrontZ =
-    sampleBodySurfaceZ(
-      bodyRoot,
-      fit.chestY,
-      0,
-      'front',
-      .16,
-      .18,
-    ) ??
-    fit.chestFront
-  const frontZ =
-    sampledFrontZ *
-      depthScale +
-    offset +
-    .004
-
-  for (const sign of [-1, 1]) {
-    const panel = new THREE.Mesh(
-      curvedPanelGeometry(
-        panelWidth,
-        height,
-        .016,
-        .28,
-      ),
-      materials.leather,
-    )
-    panel.position.set(
-      sign * .085 * widthScale,
-      fit.chestY - .015,
-      frontZ,
-    )
-    panel.rotation.set(
-      -.025,
-      sign * -.025,
-      sign * -.08,
-    )
-    panel.castShadow = true
-    panel.name =
-      sign < 0
-        ? 'Procedural_VestLeft'
-        : 'Procedural_VestRight'
-    attachPreservingWorld(
-      bodyRoot,
-      spine,
-      panel,
-    )
-  }
-
-  const lower = new THREE.Mesh(
-    curvedPanelGeometry(
-      .245 * widthScale,
-      .075,
-      .01,
-      .18,
-    ),
-    materials.leatherDark,
-  )
-  lower.position.set(
-    0,
-    bottomY + .055,
-    fit.waistDepth + .018,
-  )
-  lower.castShadow = true
-  lower.name = 'Procedural_VestLower'
-  attachPreservingWorld(
-    bodyRoot,
-    spine,
-    lower,
-  )
 }
 
 function ovalArmorPanelGeometry(
@@ -1459,71 +1331,6 @@ function ovalArmorPanelGeometry(
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
-}
-
-function buildShoulderYoke(
-  bodyRoot: THREE.Object3D,
-  materials: MaterialSet,
-  fit: ReturnType<typeof bodyFit>,
-  widthScale: number,
-) {
-  const front = new THREE.Mesh(
-    curvedPanelGeometry(
-      .41 * widthScale,
-      .072,
-      .016,
-      .18,
-    ),
-    materials.cloth,
-  )
-  front.position.set(
-    0,
-    fit.shoulderY - .015,
-    fit.chestFront + .006,
-  )
-  front.rotation.x = -.13
-  front.castShadow = true
-  front.name = 'Procedural_ShoulderYokeFront'
-  attachPreservingWorld(
-    bodyRoot,
-    findBone(
-      bodyRoot,
-      'spine_03',
-      'spine_02',
-    ),
-    front,
-  )
-
-  const back = new THREE.Mesh(
-    curvedPanelGeometry(
-      .39 * widthScale,
-      .062,
-      .013,
-      .16,
-    ),
-    materials.cloth,
-  )
-  back.position.set(
-    0,
-    fit.shoulderY - .012,
-    -fit.upperBack,
-  )
-  back.rotation.set(
-    .13,
-    Math.PI,
-    0,
-  )
-  back.castShadow = true
-  back.name = 'Procedural_ShoulderYokeBack'
-  attachPreservingWorld(
-    bodyRoot,
-    findBone(
-      bodyRoot,
-      'spine_03',
-      'spine_02',
-    ),
-    back,
-  )
 }
 
 function buildCollarBand(
@@ -2125,14 +1932,14 @@ function fittedGarmentTorsoGeometry(
     const frontBase =
       THREE.MathUtils.lerp(
         fit.waistDepth * .94,
-        fit.chestFront * .9,
+        fit.garmentFront * .94,
         waistBlend,
       )
     const frontRadius =
       THREE.MathUtils.lerp(
         frontBase +
           bustBlend * fit.bustDepth,
-        fit.chestFront * .72,
+        fit.garmentFront * .82,
         upperBlend,
       ) *
       depthScale *
@@ -2141,13 +1948,13 @@ function fittedGarmentTorsoGeometry(
     const backBase =
       THREE.MathUtils.lerp(
         fit.waistDepth * .9,
-        fit.upperBack * 1.08,
+        fit.garmentBack * .96,
         waistBlend,
       )
     const backRadius =
       THREE.MathUtils.lerp(
         backBase,
-        fit.upperBack * .9,
+        fit.garmentBack * .84,
         upperBlend,
       ) *
       depthScale *
@@ -2234,249 +2041,6 @@ function fittedGarmentTorsoGeometry(
   return geometry
 }
 
-
-type BodyShellOptions = {
-  name: string
-  minY: number
-  maxY: number
-  maxAbsX: number
-  widthScale: number
-  depthScale: number
-  offset: number
-  frontOnly?: boolean
-  sideAllowance?: number
-}
-
-function createBodyDerivedShell(
-  bodyRoot: THREE.Object3D,
-  material: THREE.Material,
-  options: BodyShellOptions,
-) {
-  const source =
-    findPrimaryBodyMesh(bodyRoot)
-  if (!source) return undefined
-
-  const geometry = source.geometry
-  const position =
-    geometry.getAttribute('position')
-  const normal =
-    geometry.getAttribute('normal')
-  const skinIndex =
-    geometry.getAttribute('skinIndex')
-  const skinWeight =
-    geometry.getAttribute('skinWeight')
-  if (
-    !position ||
-    !normal ||
-    !skinIndex ||
-    !skinWeight
-  ) {
-    return undefined
-  }
-
-  bodyRoot.updateMatrixWorld(true)
-  source.updateMatrixWorld(true)
-  const inverseBody =
-    bodyRoot.matrixWorld
-      .clone()
-      .invert()
-  const sourceToBody =
-    inverseBody.multiply(
-      source.matrixWorld,
-    )
-
-  const outPosition: number[] = []
-  const outNormal: number[] = []
-  const outSkinIndex: number[] = []
-  const outSkinWeight: number[] = []
-  const outUv: number[] = []
-  const uv = geometry.getAttribute('uv')
-  const index = geometry.index
-  const triangleCount = index
-    ? index.count / 3
-    : position.count / 3
-  const a = new THREE.Vector3()
-  const b = new THREE.Vector3()
-  const d = new THREE.Vector3()
-  const center = new THREE.Vector3()
-  const local = new THREE.Vector3()
-  const localNormal =
-    new THREE.Vector3()
-
-  const vertexIndex = (
-    triangle: number,
-    corner: number,
-  ) =>
-    index
-      ? index.getX(
-          triangle * 3 + corner,
-        )
-      : triangle * 3 + corner
-
-  for (
-    let triangle = 0;
-    triangle < triangleCount;
-    triangle += 1
-  ) {
-    const ia = vertexIndex(triangle, 0)
-    const ib = vertexIndex(triangle, 1)
-    const ic = vertexIndex(triangle, 2)
-    a.fromBufferAttribute(
-      position as THREE.BufferAttribute,
-      ia,
-    ).applyMatrix4(sourceToBody)
-    b.fromBufferAttribute(
-      position as THREE.BufferAttribute,
-      ib,
-    ).applyMatrix4(sourceToBody)
-    d.fromBufferAttribute(
-      position as THREE.BufferAttribute,
-      ic,
-    ).applyMatrix4(sourceToBody)
-    center
-      .copy(a)
-      .add(b)
-      .add(d)
-      .multiplyScalar(1 / 3)
-
-    if (
-      center.y < options.minY ||
-      center.y > options.maxY ||
-      Math.abs(center.x) >
-        options.maxAbsX
-    ) {
-      continue
-    }
-    if (
-      options.frontOnly &&
-      center.z <
-        -(options.sideAllowance ?? .04)
-    ) {
-      continue
-    }
-
-    for (
-      const sourceIndex of [ia, ib, ic]
-    ) {
-      local.fromBufferAttribute(
-        position as THREE.BufferAttribute,
-        sourceIndex,
-      )
-      localNormal.fromBufferAttribute(
-        normal as THREE.BufferAttribute,
-        sourceIndex,
-      )
-      local.x *= options.widthScale
-      local.z *= options.depthScale
-      local.addScaledVector(
-        localNormal,
-        options.offset,
-      )
-      outPosition.push(
-        local.x,
-        local.y,
-        local.z,
-      )
-      outNormal.push(
-        localNormal.x,
-        localNormal.y,
-        localNormal.z,
-      )
-      for (
-        let component = 0;
-        component < 4;
-        component += 1
-      ) {
-        outSkinIndex.push(
-          skinIndex.getComponent(
-            sourceIndex,
-            component,
-          ),
-        )
-        outSkinWeight.push(
-          skinWeight.getComponent(
-            sourceIndex,
-            component,
-          ),
-        )
-      }
-      if (uv) {
-        outUv.push(
-          uv.getX(sourceIndex),
-          uv.getY(sourceIndex),
-        )
-      }
-    }
-  }
-
-  if (!outPosition.length) {
-    return undefined
-  }
-
-  const shellGeometry =
-    new THREE.BufferGeometry()
-  shellGeometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(
-      outPosition,
-      3,
-    ),
-  )
-  shellGeometry.setAttribute(
-    'normal',
-    new THREE.Float32BufferAttribute(
-      outNormal,
-      3,
-    ),
-  )
-  shellGeometry.setAttribute(
-    'skinIndex',
-    new THREE.Uint16BufferAttribute(
-      outSkinIndex,
-      4,
-    ),
-  )
-  shellGeometry.setAttribute(
-    'skinWeight',
-    new THREE.Float32BufferAttribute(
-      outSkinWeight,
-      4,
-    ),
-  )
-  if (outUv.length) {
-    shellGeometry.setAttribute(
-      'uv',
-      new THREE.Float32BufferAttribute(
-        outUv,
-        2,
-      ),
-    )
-  }
-  shellGeometry.computeBoundingSphere()
-
-  const shell = new THREE.SkinnedMesh(
-    shellGeometry,
-    material,
-  )
-  shell.name = options.name
-  shell.bindMode = source.bindMode
-  shell.position.copy(source.position)
-  shell.quaternion.copy(
-    source.quaternion,
-  )
-  shell.scale.copy(source.scale)
-  shell.bind(
-    source.skeleton,
-    source.bindMatrix.clone(),
-  )
-  shell.castShadow = true
-  shell.receiveShadow = false
-  shell.frustumCulled = false
-  shell.userData.proceduralEquipment =
-    true
-  source.parent?.add(shell)
-  return shell
-}
 
 function findPrimaryBodyMesh(
   root: THREE.Object3D,
@@ -2611,9 +2175,11 @@ function bodyFit(
         shoulderY: 1.46,
         shoulderX: .285,
         torsoX: .305,
-        chestFront: .17,
-        bustDepth: .026,
-        upperBack: .115,
+        chestFront: .215,
+        garmentFront: .225,
+        bustDepth: .032,
+        upperBack: .145,
+        garmentBack: .153,
         neckFront: .122,
         neckBack: .105,
         armRadius: .066,
@@ -2630,9 +2196,11 @@ function bodyFit(
         shoulderY: 1.48,
         shoulderX: .315,
         torsoX: .335,
-        chestFront: .185,
-        bustDepth: .008,
-        upperBack: .125,
+        chestFront: .2,
+        garmentFront: .21,
+        bustDepth: .012,
+        upperBack: .15,
+        garmentBack: .158,
         neckFront: .13,
         neckBack: .112,
         armRadius: .073,
@@ -2643,100 +2211,6 @@ function bodyFit(
         capeBack: .135,
         capeFront: .16,
       }
-}
-
-function sampleBodySurfaceZ(
-  bodyRoot: THREE.Object3D,
-  targetY: number,
-  targetX: number,
-  side: 'front' | 'back',
-  xRadius = .12,
-  yRadius = .1,
-) {
-  const source =
-    findPrimaryBodyMesh(bodyRoot)
-  if (!source) return undefined
-
-  const position =
-    source.geometry.getAttribute(
-      'position',
-    )
-  if (!position) return undefined
-
-  bodyRoot.updateMatrixWorld(true)
-  source.updateMatrixWorld(true)
-
-  const sourceToBody =
-    bodyRoot.matrixWorld
-      .clone()
-      .invert()
-      .multiply(
-        source.matrixWorld,
-      )
-
-  const point =
-    new THREE.Vector3()
-  let best:
-    | number
-    | undefined
-  let bestDistance =
-    Number.POSITIVE_INFINITY
-
-  for (
-    let index = 0;
-    index < position.count;
-    index += 1
-  ) {
-    point
-      .fromBufferAttribute(
-        position as THREE.BufferAttribute,
-        index,
-      )
-      .applyMatrix4(sourceToBody)
-
-    const dx =
-      Math.abs(point.x - targetX)
-    const dy =
-      Math.abs(point.y - targetY)
-    if (
-      dx > xRadius ||
-      dy > yRadius
-    ) {
-      continue
-    }
-
-    const distance =
-      (dx / xRadius) ** 2 +
-      (dy / yRadius) ** 2
-
-    if (
-      best === undefined ||
-      distance <
-        bestDistance * .72
-    ) {
-      best = point.z
-      bestDistance = distance
-      continue
-    }
-
-    if (
-      distance <=
-      bestDistance * 1.28
-    ) {
-      best =
-        side === 'front'
-          ? Math.max(
-              best,
-              point.z,
-            )
-          : Math.min(
-              best,
-              point.z,
-            )
-    }
-  }
-
-  return best
 }
 
 function objectPositionInBody(
