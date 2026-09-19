@@ -173,6 +173,7 @@ export default function SkillForge() {
             <header><Gauge size={16}/><div><strong>Gameplay</strong><small>These values are consumed directly by the runtime.</small></div></header>
             <div className="skill-form-grid">
               <label><span>Behavior</span><select value={ability.kind} onChange={(event) => patchAbility({ kind: event.target.value as ForgeAbilityDefinition['kind'] })}><option value="melee">Melee arc</option><option value="area">Targeted area</option></select></label>
+              <label><span>Delivery</span><select value={ability.delivery ?? 'standard'} onChange={(event) => patchAbility({ delivery: event.target.value as ForgeAbilityDefinition['delivery'] })}><option value="standard">Standard hit / area</option><option value="chain">Chain / bouncing</option></select></label>
               <NumberField label="Damage" value={ability.damage} min={0} step={1} onChange={(damage) => patchAbility({ damage })}/>
               <NumberField label="Mana cost" value={manaCost(ability, player.basicAbility)} min={0} step={1} onChange={(manaCost) => patchAbility({ manaCost })}/>
               <NumberField label="Cooldown" value={ability.cooldown} min={0} step={0.05} suffix="s" onChange={(cooldown) => patchAbility({ cooldown })}/>
@@ -184,6 +185,23 @@ export default function SkillForge() {
               }}><option value="skill">Hotbar skill</option><option value="primary">Primary · LMB</option></select></label>
             </div>
           </section>
+
+          {ability.delivery === 'chain' && <section className="skill-forge-section">
+            <header><Zap size={16}/><div><strong>Chain delivery</strong><small>Target-to-target bounce behavior and the built-in deterministic lightning presentation.</small></div></header>
+            <div className="skill-form-grid">
+              <NumberField label="Max jumps" value={ability.chain?.maxJumps ?? 5} min={1} step={1} onChange={(maxJumps) => patchAbility({ chain: { ...ability.chain, maxJumps } })}/>
+              <NumberField label="Jump radius" value={ability.chain?.jumpRadius ?? 5.8} min={0.5} step={0.1} suffix="m" onChange={(jumpRadius) => patchAbility({ chain: { ...ability.chain, jumpRadius } })}/>
+              <NumberField label="Jump delay" value={ability.chain?.jumpDelay ?? 0.075} min={0.015} step={0.005} suffix="s" onChange={(jumpDelay) => patchAbility({ chain: { ...ability.chain, jumpDelay } })}/>
+              <NumberField label="Damage falloff" value={ability.chain?.damageFalloff ?? 0.86} min={0} step={0.01} onChange={(damageFalloff) => patchAbility({ chain: { ...ability.chain, damageFalloff } })}/>
+              <NumberField label="Bolt lifetime" value={ability.chain?.boltLifetime ?? 0.155} min={0.05} step={0.005} suffix="s" onChange={(boltLifetime) => patchAbility({ chain: { ...ability.chain, boltLifetime } })}/>
+              <NumberField label="Arc jitter" value={ability.chain?.arcAmplitude ?? 0.32} min={0} step={0.01} onChange={(arcAmplitude) => patchAbility({ chain: { ...ability.chain, arcAmplitude } })}/>
+              <NumberField label="Side branches" value={ability.chain?.branchCount ?? 2} min={0} step={1} onChange={(branchCount) => patchAbility({ chain: { ...ability.chain, branchCount } })}/>
+              <NumberField label="Glow width" value={ability.chain?.glowWidth ?? 0.075} min={0.01} step={0.005} onChange={(glowWidth) => patchAbility({ chain: { ...ability.chain, glowWidth } })}/>
+              <NumberField label="Light flash" value={ability.chain?.lightFlashIntensity ?? 7.5} min={0} step={0.5} onChange={(lightFlashIntensity) => patchAbility({ chain: { ...ability.chain, lightFlashIntensity } })}/>
+              <label><span>Target selection</span><select value={ability.chain?.selectionMode ?? 'nearest'} onChange={() => patchAbility({ chain: { ...ability.chain, selectionMode: 'nearest' } })}><option value="nearest">Nearest unused target</option></select></label>
+              <label><span>Repeat targets</span><select value={ability.chain?.allowRepeatTargets ? 'yes' : 'no'} onChange={(event) => patchAbility({ chain: { ...ability.chain, allowRepeatTargets: event.target.value === 'yes' } })}><option value="no">No · each target once</option><option value="yes">Yes</option></select></label>
+            </div>
+          </section>}
 
           <section className="skill-forge-section">
             <header><Sparkles size={16}/><div><strong>Presentation</strong><small>Link the authored assets that make this skill feel complete.</small></div></header>
@@ -216,7 +234,7 @@ export default function SkillForge() {
         <section className="skill-runtime-summary">
           <span className="property-label">RUNTIME CONTRACT</span>
           <div><Zap size={14}/><span>Mana spends on successful casts and regenerates continuously.</span></div>
-          <div><WandSparkles size={14}/><span>Ability VFX still uses the existing Forge runtime path.</span></div>
+          <div><WandSparkles size={14}/><span>Standard skills use linked VFX; chain skills add deterministic endpoint-aware arcs and can layer linked VFX on impacts.</span></div>
           <div><Volume2 size={14}/><span>SFX plays from the selected Library audio asset.</span></div>
         </section>
       </aside>
