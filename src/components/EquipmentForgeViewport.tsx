@@ -440,13 +440,13 @@ function bindEquipmentScene(
     }
   })
 
-  const inverseBody =
-    bodyRoot.matrixWorld.clone().invert()
+  const inverseSourceRoot =
+    sourceRoot.matrixWorld.clone().invert()
 
   sourceRoot.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return
 
-    const localMatrix = inverseBody
+    const localMatrix = inverseSourceRoot
       .clone()
       .multiply(object.matrixWorld)
 
