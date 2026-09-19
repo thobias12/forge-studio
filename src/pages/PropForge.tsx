@@ -70,11 +70,12 @@ export default function PropForge() {
     initialRef.current = loadPropPrefabs()
   }
 
+  const initialPrefabs = initialRef.current ?? []
   const [prefabs, setPrefabs] = useState<PropPrefab[]>(
-    initialRef.current,
+    initialPrefabs,
   )
   const [activeId, setActiveId] = useState(
-    initialRef.current[0]?.id ?? '',
+    initialPrefabs[0]?.id ?? '',
   )
   const [selectedPartId, setSelectedPartId] = useState<string>()
   const [mode, setMode] =
