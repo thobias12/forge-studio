@@ -150,13 +150,23 @@ try {
 
   await waitForServer(baseUrl)
 
+  const headless =
+    process.env.FORGE_QA_HEADLESS !==
+    '0'
+
+  console.log(
+    `Launching Equipment QA Chromium (headless=${headless})…`,
+  )
+
   browser =
     await chromium.launch({
-      headless: true,
+      headless,
       args: [
         '--enable-webgl',
         '--ignore-gpu-blocklist',
+        '--use-gl=angle',
         '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
       ],
     })
 
@@ -168,6 +178,23 @@ try {
       },
       deviceScaleFactor: 1,
     })
+
+  page.on(
+    'console',
+    (message) => {
+      console.log(
+        `[browser:${message.type()}] ${message.text()}`,
+      )
+    },
+  )
+  page.on(
+    'pageerror',
+    (error) => {
+      console.error(
+        `[browser:error] ${error.message}`,
+      )
+    },
+  )
 
   const recipePath =
     process.env
@@ -200,12 +227,18 @@ try {
     `Opening ${url}`,
   )
 
+  console.log(
+    'Navigating to Equipment QA page…',
+  )
   await page.goto(url, {
     waitUntil:
       'networkidle',
     timeout: 60_000,
   })
 
+  console.log(
+    'Waiting for Equipment QA renderer…',
+  )
   await page.waitForFunction(
     () =>
       window
@@ -215,6 +248,10 @@ try {
     {
       timeout: 60_000,
     },
+  )
+
+  console.log(
+    'Equipment QA renderer is ready.',
   )
 
   const metadata =
