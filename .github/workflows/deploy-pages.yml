@@ -29,22 +29,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install Equipment QA browser
-        run: |
-          npm install --no-save playwright
-          npx playwright install --with-deps chromium
-
-      - name: Prepare Equipment QA fixture
+      - name: Prepare deployed Equipment QA fixture
+        env:
+          FORGE_QA_FIXTURE_OUTPUT: public/qa-foundation/__qa-base.glb
         run: node scripts/prepare-equipment-qa-fixture.mjs
 
-      - name: Build and capture Equipment QA
+      - name: Build Forge Studio
         env:
           VITE_FORGE_BUILD: ${{ github.sha }}
-          FORGE_QA_MODEL: artifacts/qa-foundation/Skillbound-Female-Base-v1.qa.glb
-          FORGE_QA_BODY: female
-          FORGE_QA_OUTPUT: dist/qa/equipment-v3/female
-          FORGE_QA_KEEP_MODEL: '1'
-        run: npm run qa:equipment
+        run: npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -53,6 +46,47 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: ./dist
+
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Equipment QA browser
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Prepare Equipment QA fixture
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
+      - name: Capture Equipment QA
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
+          FORGE_QA_MODEL: artifacts/qa-foundation/Skillbound-Female-Base-v1.qa.glb
+          FORGE_QA_BODY: female
+          FORGE_QA_OUTPUT: artifacts/equipment-qa
+          FORGE_QA_HEADLESS: '0'
+        run: xvfb-run -a npm run qa:equipment
+
+      - name: Upload Equipment QA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: equipment-qa-female
+          path: artifacts/equipment-qa
+          if-no-files-found: warn
+          retention-days: 7
 
   deploy:
     environment:
