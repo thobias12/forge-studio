@@ -1663,16 +1663,16 @@ function createCapeLayer(
       ),
     )
 
-  const columns = 8
-  const rows = 12
+  const columns = 10
+  const rows = 14
   const topWidth =
     frame.height *
     recipe.cape.width *
-    .5
+    .42
   const bottomWidth =
     topWidth *
     (1 +
-      recipe.cape.flare)
+      recipe.cape.flare * 2.15)
   const length =
     frame.height *
     recipe.cape.length *
@@ -1719,13 +1719,6 @@ function createCapeLayer(
     row += 1
   ) {
     const v = row / rows
-    const rowWidth =
-      THREE.MathUtils.lerp(
-        topWidth,
-        bottomWidth,
-        v,
-      )
-
     for (
       let column = 0;
       column <= columns;
@@ -1742,19 +1735,43 @@ function createCapeLayer(
       const chestWeight =
         1 - hipWeight
 
+      const widthT =
+        v * v *
+        (3 - 2 * v)
+      const shapedWidth =
+        THREE.MathUtils.lerp(
+          topWidth,
+          bottomWidth,
+          widthT,
+        )
+      const shoulderLift =
+        (1 - v) *
+        edge *
+        .014
+      const hemDrop =
+        Math.pow(v, 4) *
+        .045 *
+        (1 - edge * edge)
+      const fold =
+        Math.sin(
+          u * Math.PI * 6,
+        ) *
+        (.004 +
+          v * .009)
+
       const point =
         new THREE.Vector3(
-          centered * rowWidth,
-          back.y -
-            .01 -
+          centered * shapedWidth,
+          frame.shoulderY -
+            frame.height * .024 +
+            shoulderLift -
             v * length -
-            Math.pow(v, 4) *
-              .025 *
-              (1 - edge * edge),
+            hemDrop,
           back.z -
-            .01 -
-            v * .045 -
-            v * v * .045,
+            .008 -
+            v * .035 -
+            v * v * .055 +
+            fold,
         )
 
       positions.push(
