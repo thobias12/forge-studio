@@ -99,16 +99,17 @@ export class ForgeCharacterVisualBinding {
     this.mixer?.update(delta)
     this.updateSecondaryMotion(delta)
     if (this.oneShot && this.active && !this.active.isRunning()) {
-      // LoopOnce actions use clampWhenFinished so they hold their final pose.
-      // Stop that action before restoring locomotion; otherwise its final arm/
-      // torso transforms keep contributing to the mixer and pull authored Idle
-      // back toward the attack/dodge end pose.
-      const completed = this.active
+      // One-shot combat actions must leave no residual mixer weight behind.
+      // Clear the mixer completely, restore the exact current fallback cue and
+      // evaluate it immediately so the bind/rest T-pose cannot appear for even
+      // one frame after Attack/Dodge/Hit finishes.
       this.oneShot = false
       this.active = undefined
       this.activeKey = ''
-      completed.stop()
-      this.play(this.fallbackCue, true)
+      this.mixer?.stopAllAction()
+      if (this.play(this.fallbackCue, true)) {
+        this.mixer?.update(0)
+      }
     }
   }
 
@@ -119,9 +120,20 @@ export class ForgeCharacterVisualBinding {
       if (this.oneShot && this.active?.isRunning()) return false
     }
     const authored = resolveRuntimeBinding(this.animationSet, cue)
-    const clip = authored?.clip ? findClipByName(this.clips, authored.clip) ?? findCueClip(this.clips, cue) : findCueClip(this.clips, cue)
+    const clip = authored?.clip
+      ? findClipByName(this.clips, authored.clip)
+      : findCueClip(this.clips, cue)
+
+    // Published bindings are authoritative. If an authored Idle/Walk/etc. is
+    // configured, never silently substitute a generic embedded animation with
+    // a different arm/rest pose.
     if (!clip) return false
-    return this.playClip(clip, `cue:${cue}:${clip.name}`, authored?.loop ?? loop, authored?.speed ?? 1)
+    return this.playClip(
+      clip,
+      `cue:${cue}:${clip.name}`,
+      authored?.loop ?? loop,
+      authored?.speed ?? 1,
+    )
   }
 
   playClipName(name: string, loop = false, speed = 1) {
@@ -294,7 +306,7 @@ export class ForgeCharacterVisualBinding {
     next.enabled = true
     next.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed)))
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
-    next.clampWhenFinished = !loop
+    next.clampWhenFinished = false
 
     if (previous && previous !== next && previous.isRunning()) {
       next.fadeIn(0.08).play()
