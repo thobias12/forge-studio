@@ -41,6 +41,13 @@ import {
   type WorldWeather,
   type WorldWeatherVisuals,
 } from '../engine/worldEnvironment'
+import {
+  buildPoiPrefabVisual,
+  poiPrefabApproxHeight,
+  resolvePoiPrefab,
+  type AuthoredPoiSettings,
+} from '../engine/poiPrefabWorld'
+import type { PoiPrefab } from '../lib/poiPrefab'
 
 type Props = {
   region: GeneratedRegion
@@ -50,6 +57,10 @@ type Props = {
   showBiome: boolean
   showBoundary: boolean
   showRiverDebug: boolean
+  poiPrefabs: PoiPrefab[]
+  authoredPoiSettings: AuthoredPoiSettings
+  selectedPoiId?: string
+  onSelectPoi?: (poiId?: string) => void
 }
 
 type ViewState = {
@@ -71,9 +82,23 @@ type ViewState = {
   raf?: number
 }
 
-export default function WorldForgeViewport({ region, showRoute, showBranches, showLandmarks, showBiome, showBoundary, showRiverDebug }: Props) {
+export default function WorldForgeViewport({
+  region,
+  showRoute,
+  showBranches,
+  showLandmarks,
+  showBiome,
+  showBoundary,
+  showRiverDebug,
+  poiPrefabs,
+  authoredPoiSettings,
+  selectedPoiId,
+  onSelectPoi,
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ViewState>({})
+  const onSelectPoiRef = useRef(onSelectPoi)
+  onSelectPoiRef.current = onSelectPoi
   const environmentRef = useRef({
     ...DEFAULT_WORLD_ENVIRONMENT,
   })
@@ -156,6 +181,41 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
 
     stateRef.current = { renderer, scene, camera, controls }
 
+    const raycaster = new THREE.Raycaster()
+    const pointer = new THREE.Vector2()
+    let pointerStart: { x: number; y: number } | undefined
+    const onPointerDown = (event: PointerEvent) => {
+      pointerStart = { x: event.clientX, y: event.clientY }
+    }
+    const onPointerUp = (event: PointerEvent) => {
+      const start = pointerStart
+      pointerStart = undefined
+      if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return
+      const landmarks = stateRef.current.landmarks
+      const activeCamera = stateRef.current.camera
+      if (!landmarks || !activeCamera || !onSelectPoiRef.current) return
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      )
+      raycaster.setFromCamera(pointer, activeCamera)
+      const hits = raycaster.intersectObjects(landmarks.children, true)
+      for (const hit of hits) {
+        let object: THREE.Object3D | null = hit.object
+        while (object && object !== landmarks) {
+          const poiId = object.userData.forgePoiId as string | undefined
+          if (poiId) {
+            onSelectPoiRef.current(poiId)
+            return
+          }
+          object = object.parent
+        }
+      }
+    }
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    renderer.domElement.addEventListener('pointerup', onPointerUp)
+
     const resize = () => {
       const rect = host.getBoundingClientRect()
       const width = Math.max(1, rect.width)
@@ -237,6 +297,8 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     return () => {
       if (stateRef.current.raf) cancelAnimationFrame(stateRef.current.raf)
       observer.disconnect()
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+      renderer.domElement.removeEventListener('pointerup', onPointerUp)
       controls.dispose()
       disposeGroup(stateRef.current.root)
       renderer.dispose()
@@ -256,7 +318,11 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
       disposeGroup(state.root)
     }
 
-    const built = buildRegionScene(region)
+    const built = buildRegionScene(
+      region,
+      poiPrefabs,
+      authoredPoiSettings,
+    )
     state.root = built.root
     state.route = built.route
     state.branches = built.branches
@@ -288,7 +354,14 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
     built.biome.visible = showBiome
     built.boundary.visible = showBoundary
     built.riverDebug.visible = showRiverDebug
-  }, [region])
+  }, [region, poiPrefabs, authoredPoiSettings])
+
+  useEffect(() => {
+    updatePoiSelectionHighlight(
+      stateRef.current.landmarks,
+      selectedPoiId,
+    )
+  }, [selectedPoiId])
 
   useEffect(() => {
     if (stateRef.current.route) stateRef.current.route.visible = showRoute
@@ -379,7 +452,11 @@ export default function WorldForgeViewport({ region, showRoute, showBranches, sh
   </div>
 }
 
-function buildRegionScene(region: GeneratedRegion) {
+function buildRegionScene(
+  region: GeneratedRegion,
+  poiPrefabs: PoiPrefab[],
+  authoredPoiSettings: AuthoredPoiSettings,
+) {
   const root = new THREE.Group()
   root.name = 'WorldForge2Region'
 
@@ -428,7 +505,11 @@ function buildRegionScene(region: GeneratedRegion) {
 
   const landmarks = new THREE.Group()
   landmarks.name = 'Landmarks'
-  for (const poi of region.pois) landmarks.add(makePoi(region, poi))
+  for (const poi of region.pois) {
+    landmarks.add(
+      makePoi(region, poi, poiPrefabs, authoredPoiSettings),
+    )
+  }
   addEntryExitMarkers(region, landmarks)
   root.add(landmarks)
 
@@ -1971,22 +2052,44 @@ function makeCrossing(region: GeneratedRegion, crossing: GeneratedRegion['crossi
   return group
 }
 
-function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
+function makePoi(
+  region: GeneratedRegion,
+  poi: GeneratedWorldPoi,
+  poiPrefabs: PoiPrefab[],
+  authoredPoiSettings: AuthoredPoiSettings,
+) {
   const group = new THREE.Group()
   group.name = `POI_${poi.type}`
+  group.userData.forgePoiId = poi.id
+  group.userData.forgePoiType = poi.type
   const y = sampleTerrainHeight(region, poi.x, poi.z)
-  const poiVisualScale = forgePoiVisualScale(poi.type)
-  const poiRotation = forgePoiPresentationRotation(region.nodes, poi)
+  const resolvedPrefab = resolvePoiPrefab(
+    poiPrefabs,
+    region,
+    poi,
+    authoredPoiSettings,
+  )
+  const poiVisualScale =
+    resolvedPrefab?.worldScale ?? forgePoiVisualScale(poi.type)
+  const poiRotation =
+    resolvedPrefab?.worldRotation ??
+    forgePoiPresentationRotation(region.nodes, poi)
   group.position.set(poi.x, y, poi.z)
   group.rotation.y = poiRotation
   group.scale.setScalar(poiVisualScale)
+  if (resolvedPrefab) {
+    group.userData.forgePoiPrefabId = resolvedPrefab.prefab.id
+    group.userData.forgePoiPrefabName = resolvedPrefab.prefab.name
+  }
 
   const stone = new THREE.MeshStandardMaterial({ color: 0x656b61, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x454a43, roughness: 1 })
   const cloth = new THREE.MeshStandardMaterial({ color: 0x5d5842, roughness: 1 })
   const wood = new THREE.MeshStandardMaterial({ color: 0x513c2c, roughness: 1 })
   const green = new THREE.MeshStandardMaterial({ color: 0x2f4b34, roughness: 1 })
-  if (poi.type === 'ruins') {
+  if (resolvedPrefab) {
+    group.add(buildPoiPrefabVisual(resolvedPrefab.prefab))
+  } else if (poi.type === 'ruins') {
     // Broken perimeter and gateway make the ruins read as a location from the ARPG camera.
     addBox(group, [-3.15, .9, .4], [.6, 1.8, 4.8], stone, [0, .08, 0])
     addBox(group, [3, .65, -.9], [.6, 1.3, 3.4], darkStone, [0, -.12, 0])
@@ -2319,8 +2422,12 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
 
   const label = makeLabelSprite(poi.label)
   const labelScaleCompensation = 1 / poiVisualScale
-  const landmarkLabelHeight =
-    poi.type === 'watchtower' ? 7.75 :
+  const landmarkLabelHeight = resolvedPrefab
+    ? Math.max(
+        3.5,
+        poiPrefabApproxHeight(resolvedPrefab.prefab) + 1.15,
+      )
+    : poi.type === 'watchtower' ? 7.75 :
       poi.type === 'standing-stones' ? 4.55 :
         poi.type === 'shrine' ? 3.75 :
           Math.max(3.5, poi.radius * .58)
@@ -2338,6 +2445,37 @@ function makePoi(region: GeneratedRegion, poi: GeneratedWorldPoi) {
     }
   })
   return group
+}
+
+function updatePoiSelectionHighlight(
+  landmarks: THREE.Group | undefined,
+  selectedPoiId?: string,
+) {
+  if (!landmarks) return
+
+  for (const child of [...landmarks.children]) {
+    if (child.name !== 'PoiSelectionHighlight') continue
+    landmarks.remove(child)
+    if (child instanceof THREE.Box3Helper) {
+      child.geometry.dispose()
+      ;(child.material as THREE.Material).dispose()
+    }
+  }
+
+  if (!selectedPoiId) return
+  const target = landmarks.children.find(
+    (child) => child.userData.forgePoiId === selectedPoiId,
+  )
+  if (!target) return
+  const box = new THREE.Box3().setFromObject(target)
+  if (box.isEmpty()) return
+  const helper = new THREE.Box3Helper(box, 0x8fd7a7)
+  helper.name = 'PoiSelectionHighlight'
+  helper.renderOrder = 98
+  ;(helper.material as THREE.LineBasicMaterial).transparent = true
+  ;(helper.material as THREE.LineBasicMaterial).opacity = .82
+  ;(helper.material as THREE.LineBasicMaterial).depthTest = false
+  landmarks.add(helper)
 }
 
 function addEntryExitMarkers(region: GeneratedRegion, group: THREE.Group) {
