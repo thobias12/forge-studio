@@ -222,6 +222,104 @@ export default function EquipmentCreatorV3Panel({
 
       <section className="ef-inspector-block">
         <div className="ef-section-title">
+          Layers
+        </div>
+        <div className="ef-v3-layer-grid">
+          {(
+            [
+              ['vest', 'Split vest'],
+              ['belt', 'Belt'],
+              ['tabard', 'Tabard'],
+              ['cape', 'Cape'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              className={
+                recipe.layers?.[key]
+                  ? 'active'
+                  : ''
+              }
+              onClick={() =>
+                patch('layers', {
+                  vest:
+                    recipe.layers?.vest ??
+                    false,
+                  belt:
+                    recipe.layers?.belt ??
+                    false,
+                  tabard:
+                    recipe.layers?.tabard ??
+                    false,
+                  cape:
+                    recipe.layers?.cape ??
+                    false,
+                  [key]:
+                    !recipe.layers?.[key],
+                })
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {recipe.layers?.cape && (
+          <>
+            <V3Range
+              label="Cape length"
+              value={recipe.cape?.length ?? .62}
+              min={.25}
+              max={.95}
+              step={.01}
+              onChange={(value) =>
+                patch('cape', {
+                  ...(recipe.cape ?? {
+                    width: .3,
+                    flare: .16,
+                  }),
+                  length: value,
+                })
+              }
+            />
+            <V3Range
+              label="Cape width"
+              value={recipe.cape?.width ?? .3}
+              min={.18}
+              max={.5}
+              step={.01}
+              onChange={(value) =>
+                patch('cape', {
+                  ...(recipe.cape ?? {
+                    length: .62,
+                    flare: .16,
+                  }),
+                  width: value,
+                })
+              }
+            />
+            <V3Range
+              label="Cape flare"
+              value={recipe.cape?.flare ?? .16}
+              min={0}
+              max={.5}
+              step={.01}
+              onChange={(value) =>
+                patch('cape', {
+                  ...(recipe.cape ?? {
+                    length: .62,
+                    width: .3,
+                  }),
+                  flare: value,
+                })
+              }
+            />
+          </>
+        )}
+      </section>
+
+      <section className="ef-inspector-block">
+        <div className="ef-section-title">
           Materials
         </div>
         <V3Color
@@ -240,6 +338,32 @@ export default function EquipmentCreatorV3Panel({
           onChange={(value) =>
             patchMaterial(
               'trim',
+              value,
+            )
+          }
+        />
+        <V3Color
+          label="Leather"
+          value={
+            recipe.materials.leather ??
+            '#3b281d'
+          }
+          onChange={(value) =>
+            patchMaterial(
+              'leather',
+              value,
+            )
+          }
+        />
+        <V3Color
+          label="Accent / cape"
+          value={
+            recipe.materials.accent ??
+            '#5a1625'
+          }
+          onChange={(value) =>
+            patchMaterial(
+              'accent',
               value,
             )
           }
