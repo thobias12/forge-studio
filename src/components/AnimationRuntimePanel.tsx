@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Clock3, RefreshCw, Save as SaveIcon, Swords, Zap } from 'lucide-react'
+import { CheckCircle2, Clock3, RefreshCw, Save as SaveIcon, Swords } from 'lucide-react'
 import {
   FORGE_ANIMATION_ACTIONS,
   actionDefinition,
-  animationBindingAssetId,
-  animationSetBlob,
-  createAnimationSet,
-  normalizeAnimationSet,
-  parseAnimationSet,
   type ForgeAnimationActionId,
   type ForgeAnimationEventKind,
-  type ForgeAnimationSet,
 } from '../engine/animationBindings'
+import {
+  forgeAnimationV3Blob,
+  parseForgeAnimationProfileV3,
+  parseForgeAnimationV3,
+  type ForgeAnimationClipV3,
+  type ForgeAnimationProfileV3,
+} from '../engine/animationV3'
 import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
-import AnimationCombatTestArena from './AnimationCombatTestArena'
+import AnimationCombatTestArenaV3 from './AnimationCombatTestArenaV3'
 
 const EVENT_KINDS: Array<{ id: ForgeAnimationEventKind; label: string; defaultTime: number }> = [
   { id: 'hit', label: 'Hit', defaultTime: .42 },
@@ -24,101 +25,142 @@ const EVENT_KINDS: Array<{ id: ForgeAnimationEventKind; label: string; defaultTi
 
 export default function AnimationRuntimePanel() {
   const [assets, setAssets] = useState<LibraryAsset[]>([])
-  const [targets, setTargets] = useState<LibraryAsset[]>([])
-  const [targetId, setTargetId] = useState('')
-  const [set, setSet] = useState<ForgeAnimationSet>()
+  const [profileAssets, setProfileAssets] = useState<LibraryAsset[]>([])
+  const [profileAssetId, setProfileAssetId] = useState('')
+  const [profile, setProfile] = useState<ForgeAnimationProfileV3>()
   const [selectedAction, setSelectedAction] = useState<ForgeAnimationActionId>('attackPrimary')
-  const [status, setStatus] = useState('Loading animation targets…')
+  const [animation, setAnimation] = useState<ForgeAnimationClipV3>()
+  const [status, setStatus] = useState('Loading Runtime 3 animation profiles…')
   const [saving, setSaving] = useState(false)
 
-  const selectedTarget = useMemo(() => targets.find((asset) => asset.id === targetId), [targets, targetId])
-  const binding = set?.actions[selectedAction]
+  const selectedProfileAsset = useMemo(
+    () => profileAssets.find((asset) => asset.id === profileAssetId),
+    [profileAssets, profileAssetId],
+  )
+  const bodyTarget = useMemo(
+    () => profile?.sourceBodyAssetId
+      ? assets.find((asset) => asset.id === profile.sourceBodyAssetId)
+      : undefined,
+    [assets, profile?.sourceBodyAssetId],
+  )
+  const actionBinding = profile?.actions[selectedAction]
   const vfxAssets = useMemo(() => assets.filter((asset) => asset.category === 'vfx'), [assets])
   const audioAssets = useMemo(() => assets.filter((asset) => asset.category === 'audio'), [assets])
-  const timelineMax = useMemo(() => Math.max(1.25, ...(binding?.events ?? []).map((event) => event.time + .12)), [binding?.events])
+  const timelineMax = useMemo(
+    () => Math.max(1.25, ...(animation?.events ?? []).map((event) => event.time + .12)),
+    [animation?.events],
+  )
 
   const refreshTargets = async () => {
     const library = await listAssets()
+    const nextProfiles = library.filter((asset) =>
+      asset.category === 'animations' && (
+        asset.tags.includes('forge-animation-profile-v3') ||
+        asset.mime === 'application/x-forge-animation-profile+json'
+      ),
+    )
     setAssets(library)
-    const next = library.filter((asset) => asset.category === 'characters' && asset.kind === 'glb' && (
-      asset.tags.includes('ForgeHumanoidV1') ||
-      asset.tags.includes('animation-target') ||
-      asset.tags.includes('concept-forge-2') ||
-      asset.tags.includes('rigged')
-    ))
-    setTargets(next)
-    setTargetId((current) => current && next.some((asset) => asset.id === current) ? current : next[0]?.id ?? '')
-    setStatus(next.length ? 'Select an action to inspect its gameplay binding and timing.' : 'No ForgeHumanoidV1 animation targets found yet.')
+    setProfileAssets(nextProfiles)
+    setProfileAssetId((current) =>
+      current && nextProfiles.some((asset) => asset.id === current)
+        ? current
+        : nextProfiles[0]?.id ?? '',
+    )
+    setStatus(
+      nextProfiles.length
+        ? 'Select a Runtime 3 profile and authored action.'
+        : 'No Runtime 3 animation profiles yet. Publish an action above first.',
+    )
   }
 
   useEffect(() => { void refreshTargets() }, [])
 
   useEffect(() => {
-    if (!targetId) { setSet(undefined); return }
+    if (!profileAssetId) {
+      setProfile(undefined)
+      return
+    }
     let cancelled = false
     void (async () => {
-      const asset = await getAsset(animationBindingAssetId(targetId)).catch(() => undefined)
-      const parsed = asset ? await parseAnimationSet(asset.blob, targetId) : undefined
-      if (!cancelled) setSet(parsed ?? createAnimationSet(targetId, []))
+      const asset = await getAsset(profileAssetId).catch(() => undefined)
+      const parsed = asset ? await parseForgeAnimationProfileV3(asset.blob) : undefined
+      if (!cancelled) setProfile(parsed)
     })()
     return () => { cancelled = true }
-  }, [targetId])
+  }, [profileAssetId])
+
+  useEffect(() => {
+    const assetId = profile?.actions[selectedAction]?.assetId
+    if (!assetId) {
+      setAnimation(undefined)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const asset = await getAsset(assetId).catch(() => undefined)
+      const parsed = asset ? await parseForgeAnimationV3(asset.blob) : undefined
+      if (!cancelled) setAnimation(parsed)
+    })()
+    return () => { cancelled = true }
+  }, [profile, selectedAction])
 
   const updateEvent = (kind: ForgeAnimationEventKind, time: number | undefined) => {
-    setSet((current) => {
+    setAnimation((current) => {
       if (!current) return current
-      const currentBinding = current.actions[selectedAction] ?? {
-        clip: undefined,
-        loop: actionDefinition(selectedAction)?.loop ?? false,
-        speed: 1,
-      }
-      const existing = currentBinding.events ?? []
+      const existing = current.events ?? []
       const previous = existing.find((event) => event.kind === kind)
       const events = time === undefined
         ? existing.filter((event) => event.kind !== kind)
-        : [...existing.filter((event) => event.kind !== kind), {
-          id: `${selectedAction}-${kind}`,
-          kind,
-          time: Math.max(0, time),
-          assetId: previous?.assetId,
-        }].sort((a, b) => a.time - b.time)
-      return {
-        ...current,
-        actions: {
-          ...current.actions,
-          [selectedAction]: { ...currentBinding, events: events.length ? events : undefined },
-        },
-      }
+        : [
+            ...existing.filter((event) => event.kind !== kind),
+            {
+              id: `${selectedAction}-${kind}`,
+              kind,
+              time: Math.max(0, time),
+              assetId: previous?.assetId,
+            },
+          ].sort((a, b) => a.time - b.time)
+      return { ...current, events: events.length ? events : undefined }
     })
   }
 
   const updateEventAsset = (kind: ForgeAnimationEventKind, assetId: string | undefined) => {
-    setSet((current) => {
+    setAnimation((current) => {
       if (!current) return current
-      const currentBinding = current.actions[selectedAction]
-      if (!currentBinding) return current
-      const events = (currentBinding.events ?? []).map((event) => event.kind === kind ? { ...event, assetId: assetId || undefined } : event)
-      return { ...current, actions: { ...current.actions, [selectedAction]: { ...currentBinding, events } } }
+      return {
+        ...current,
+        events: (current.events ?? []).map((event) =>
+          event.kind === kind
+            ? { ...event, assetId: assetId || undefined }
+            : event,
+        ),
+      }
     })
   }
 
   const saveSequence = async () => {
-    if (!set || !selectedTarget) return
+    if (!animation || !profile || !actionBinding) return
     setSaving(true)
     try {
-      const normalized = normalizeAnimationSet(set, selectedTarget.id)
       await saveAsset({
-        id: animationBindingAssetId(selectedTarget.id),
-        name: `${selectedTarget.name} Action Bindings`,
+        id: actionBinding.assetId,
+        name: `${profile.name} · ${actionDefinition(selectedAction)?.label ?? selectedAction}`,
         category: 'animations',
         kind: 'file',
-        mime: 'application/x-forge-animation-set+json',
-        tags: ['animation-bindings', 'ForgeHumanoidV1', selectedTarget.id],
-        source: 'Forge Animation Studio · Runtime 2.0',
-        blob: animationSetBlob(normalized),
+        mime: 'application/x-forge-animation+json',
+        tags: [
+          'forge-animation-v3',
+          'ForgeHumanoidV2',
+          profile.targetId,
+          `action:${selectedAction}`,
+          ...(profile.sourceBodyAssetId ? [`source-character:${profile.sourceBodyAssetId}`] : []),
+        ],
+        source: 'Forge Animation Studio Runtime 3',
+        blob: forgeAnimationV3Blob(animation),
       })
-      setSet(normalized)
-      setStatus(`Saved ${actionDefinition(selectedAction)?.label} timing + presentation events for ${selectedTarget.name}.`)
+      setStatus(
+        `Saved ${actionDefinition(selectedAction)?.label} timing + presentation events to the Runtime 3 action asset.`,
+      )
     } finally {
       setSaving(false)
     }
@@ -126,58 +168,97 @@ export default function AnimationRuntimePanel() {
 
   return <section className="animation-runtime-panel">
     <header>
-      <div><span className="eyebrow">ANIMATION RUNTIME 2.0</span><strong>Gameplay bindings, timing & effects</strong><small>Hit timing, VFX and SFX live on the same authored action.</small></div>
+      <div>
+        <span className="eyebrow">ANIMATION RUNTIME 3.0</span>
+        <strong>Semantic actions, timing & effects</strong>
+        <small>Events live directly on each .forgeanim action used by Studio and gameplay.</small>
+      </div>
       <button className="secondary-button" onClick={() => void refreshTargets()}><RefreshCw size={14}/> Refresh</button>
     </header>
 
     <div className="animation-runtime-target-row">
-      <label><span>Character / runtime target</span><select value={targetId} onChange={(event) => setTargetId(event.target.value)}>{targets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
-      {selectedTarget?.tags.includes('skillbound-player-profile') && <div className="animation-player-target-badge"><Zap size={13}/> Skillbound Player</div>}
+      <label>
+        <span>Animation profile</span>
+        <select value={profileAssetId} onChange={(event) => setProfileAssetId(event.target.value)}>
+          {profileAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+        </select>
+      </label>
+      {profile && <div className="animation-player-target-badge">Runtime 3 · {profile.targetId}</div>}
     </div>
 
     <div className="animation-binding-grid">
       {FORGE_ANIMATION_ACTIONS.map((action) => {
-        const item = set?.actions[action.id]
-        return <button key={action.id} className={`${selectedAction === action.id ? 'active ' : ''}${item?.clip ? 'bound' : 'missing'}`} onClick={() => setSelectedAction(action.id)}>
-          <span>{item?.clip ? <CheckCircle2 size={14}/> : <Clock3 size={14}/>}<strong>{action.label}</strong></span>
-          <small>{item?.clip ?? 'Not authored yet'}</small>
+        const item = profile?.actions[action.id]
+        return <button
+          key={action.id}
+          className={`${selectedAction === action.id ? 'active ' : ''}${item?.assetId ? 'bound' : 'missing'}`}
+          onClick={() => setSelectedAction(action.id)}
+        >
+          <span>{item?.assetId ? <CheckCircle2 size={14}/> : <Clock3 size={14}/>}<strong>{action.label}</strong></span>
+          <small>{item?.assetId ? 'Authored .forgeanim' : 'Not authored yet'}</small>
         </button>
       })}
     </div>
 
     <div className="animation-event-editor">
-      <div className="animation-event-heading"><Swords size={15}/><div><strong>{actionDefinition(selectedAction)?.label}</strong><small>{binding?.clip ? `Clip · ${binding.clip}` : 'Record and publish this action in Animation Studio first.'}</small></div></div>
+      <div className="animation-event-heading">
+        <Swords size={15}/>
+        <div>
+          <strong>{actionDefinition(selectedAction)?.label}</strong>
+          <small>{animation ? `Action · ${animation.name}` : 'Record and publish this action in Animation Studio first.'}</small>
+        </div>
+      </div>
 
       <div className="animation-event-timeline">
         <div className="animation-event-ruler"><span>0.00s</span><span>{timelineMax.toFixed(2)}s</span></div>
         <div className="animation-event-track">
           <div className="animation-event-clip-fill"/>
-          {(binding?.events ?? []).map((event) => <div key={event.id} className={`animation-event-marker marker-${event.kind}`} style={{ left: `${Math.min(100, event.time / timelineMax * 100)}%` }} title={`${event.kind.toUpperCase()} · ${event.time.toFixed(2)}s`}><i/><b>{event.kind.toUpperCase()}</b></div>)}
+          {(animation?.events ?? []).map((event) => <div
+            key={event.id}
+            className={`animation-event-marker marker-${event.kind}`}
+            style={{ left: `${Math.min(100, event.time / timelineMax * 100)}%` }}
+            title={`${event.kind.toUpperCase()} · ${event.time.toFixed(2)}s`}
+          ><i/><b>{event.kind.toUpperCase()}</b></div>)}
         </div>
       </div>
 
       <div className="animation-event-list">
         {EVENT_KINDS.map((event) => {
-          const current = binding?.events?.find((item) => item.kind === event.id)
+          const current = animation?.events?.find((item) => item.kind === event.id)
           const enabled = current !== undefined
           const choices = event.id === 'vfx' ? vfxAssets : event.id === 'sfx' ? audioAssets : []
           return <div className={`animation-event-row event-row-${event.id}`} key={event.id}>
-            <label className="event-enable"><input type="checkbox" checked={enabled} onChange={(change) => updateEvent(event.id, change.target.checked ? event.defaultTime : undefined)}/><span>{event.label}</span></label>
+            <label className="event-enable">
+              <input type="checkbox" disabled={!animation} checked={enabled} onChange={(change) => updateEvent(event.id, change.target.checked ? event.defaultTime : undefined)}/>
+              <span>{event.label}</span>
+            </label>
             <input type="range" min="0" max="2.5" step="0.01" disabled={!enabled} value={current?.time ?? event.defaultTime} onChange={(change) => updateEvent(event.id, Number(change.target.value))}/>
             <input className="event-time-input" type="number" min="0" max="10" step="0.01" disabled={!enabled} value={(current?.time ?? event.defaultTime).toFixed(2)} onChange={(change) => updateEvent(event.id, Number(change.target.value))}/>
             <em>s</em>
-            {(event.id === 'vfx' || event.id === 'sfx') ? <select className="animation-event-asset" disabled={!enabled} value={current?.assetId ?? ''} onChange={(change) => updateEventAsset(event.id, change.target.value || undefined)}>
+            {(event.id === 'vfx' || event.id === 'sfx') ? <select
+              className="animation-event-asset"
+              disabled={!enabled}
+              value={current?.assetId ?? ''}
+              onChange={(change) => updateEventAsset(event.id, change.target.value || undefined)}
+            >
               <option value="">{event.id === 'vfx' ? 'Choose VFX…' : 'Choose sound…'}</option>
               {choices.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
             </select> : <span className="animation-event-gameplay-label">{event.id === 'hit' ? 'Damage lands here' : 'Action can recover here'}</span>}
           </div>
         })}
       </div>
-      <p><b>Hit</b> delays gameplay damage until the authored contact frame. <b>VFX</b> and <b>SFX</b> now fire from the same timeline in both the test arena and Skillbound runtime.</p>
-      <button className="primary-button" disabled={!set || !selectedTarget || saving} onClick={() => void saveSequence()}><SaveIcon size={15}/>{saving ? 'Saving…' : 'Save Gameplay Sequence'}</button>
+
+      <p><b>Hit</b>, <b>VFX</b>, <b>SFX</b> and <b>Recovery</b> are stored on the same semantic action that Runtime 3 plays.</p>
+      <button className="primary-button" disabled={!animation || !profile || !actionBinding || saving} onClick={() => void saveSequence()}>
+        <SaveIcon size={15}/>{saving ? 'Saving…' : 'Save Runtime 3 Sequence'}
+      </button>
     </div>
 
-    <AnimationCombatTestArena target={selectedTarget} animationSet={set} action={selectedAction}/>
-    <footer>{status}</footer>
+    <AnimationCombatTestArenaV3
+      target={bodyTarget}
+      animationProfile={profile}
+      action={selectedAction}
+    />
+    <footer>{selectedProfileAsset ? status : 'Publish an action above to create a Runtime 3 profile.'}</footer>
   </section>
 }
