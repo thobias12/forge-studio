@@ -4,14 +4,65 @@
   "id": "road-wretch-drops",
   "name": "Road Wretch Drops",
   "entries": [
-    { "itemId": "rusted-sword", "chance": 0.18 },
-    { "itemId": "worn-buckler", "chance": 0.12 },
-    { "itemId": "road-worn-chest", "chance": 0.08 },
-    { "itemId": "marsh-hood", "chance": 0.07 },
-    { "itemId": "gripwrap-gloves", "chance": 0.09 },
-    { "itemId": "drowned-greaves", "chance": 0.07 },
-    { "itemId": "trail-boots", "chance": 0.09 },
-    { "itemId": "hunter-bow", "chance": 0.06 },
-    { "itemId": "ash-staff", "chance": 0.06 }
-  ]
+    {
+      "itemId": "rusted-sword",
+      "chance": 0.18,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "worn-buckler",
+      "chance": 0.12,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "road-worn-chest",
+      "chance": 0.08,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "marsh-hood",
+      "chance": 0.07,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "gripwrap-gloves",
+      "chance": 0.09,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "drowned-greaves",
+      "chance": 0.07,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "trail-boots",
+      "chance": 0.09,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "hunter-bow",
+      "chance": 0.06,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    },
+    {
+      "itemId": "ash-staff",
+      "chance": 0.06,
+      "minQuantity": 1,
+      "maxQuantity": 1
+    }
+  ],
+  "rollMode": "independent",
+  "rolls": [
+    1,
+    1
+  ],
+  "scatterRadius": 0.85
 }
