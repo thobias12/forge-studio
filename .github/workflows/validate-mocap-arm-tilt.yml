@@ -1,0 +1,20 @@
+name: Validate mocap arm binding and tilt fix
+
+on:
+  push:
+    branches: [fix-mocap-arm-binding-and-tilt]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
