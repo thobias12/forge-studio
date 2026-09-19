@@ -600,12 +600,24 @@ function buildChest(
       ),
       materials.metal,
     )
+    const plateY =
+      fit.chestY + .055
+    const chestSurfaceZ =
+      sampleBodySurfaceZ(
+        bodyRoot,
+        plateY,
+        0,
+        'front',
+        .14,
+        .12,
+      ) ??
+      fit.chestFront
     plate.position.set(
       0,
-      fit.chestY + .055,
-      fit.chestFront +
+      plateY,
+      chestSurfaceZ +
         shellOffset +
-        .018,
+        .008,
     )
     plate.rotation.x = -.045
     plate.castShadow = true
@@ -629,13 +641,25 @@ function buildChest(
         ),
         materials.metalDark,
       )
+      const lowerPlateY =
+        fit.chestY -
+        plateHeight * .55
+      const lowerChestSurfaceZ =
+        sampleBodySurfaceZ(
+          bodyRoot,
+          lowerPlateY,
+          0,
+          'front',
+          .14,
+          .12,
+        ) ??
+        fit.chestFront
       lowerPlate.position.set(
         0,
-        fit.chestY -
-          plateHeight * .55,
-        fit.chestFront +
+        lowerPlateY,
+        lowerChestSurfaceZ +
           shellOffset +
-          .014,
+          .006,
       )
       lowerPlate.castShadow = true
       lowerPlate.name =
@@ -1165,12 +1189,24 @@ function buildCape(
     geometry,
     materials.accentDouble,
   )
+  const capeY =
+    fit.capeY - .018
+  const upperBackSurfaceZ =
+    sampleBodySurfaceZ(
+      bodyRoot,
+      capeY,
+      0,
+      'back',
+      .18,
+      .12,
+    ) ??
+    -fit.capeBack
   mesh.position.set(
     0,
-    fit.capeY - .018,
-    -fit.capeBack,
+    capeY,
+    upperBackSurfaceZ - .008,
   )
-  mesh.rotation.x = .015
+  mesh.rotation.x = .008
   mesh.castShadow = true
   mesh.name = 'Procedural_Cape'
   attachPreservingWorld(
@@ -1194,10 +1230,24 @@ function buildCape(
       materials.metal,
     )
     clasp.scale.z = .55
+    const claspY =
+      fit.capeY - .004
+    const claspX =
+      sign * .145
+    const claspSurfaceZ =
+      sampleBodySurfaceZ(
+        bodyRoot,
+        claspY,
+        claspX,
+        'front',
+        .08,
+        .1,
+      ) ??
+      fit.capeFront
     clasp.position.set(
-      sign * .145,
-      fit.capeY - .004,
-      fit.capeFront,
+      claspX,
+      claspY,
+      claspSurfaceZ + .006,
     )
     clasp.castShadow = true
     attachPreservingWorld(
@@ -1235,11 +1285,21 @@ function buildVestPanels(
     )
   const panelWidth =
     .115 * widthScale
+  const sampledFrontZ =
+    sampleBodySurfaceZ(
+      bodyRoot,
+      fit.chestY,
+      0,
+      'front',
+      .16,
+      .18,
+    ) ??
+    fit.chestFront
   const frontZ =
-    fit.chestFront *
+    sampledFrontZ *
       depthScale +
     offset +
-    .006
+    .004
 
   for (const sign of [-1, 1]) {
     const panel = new THREE.Mesh(
@@ -2583,6 +2643,100 @@ function bodyFit(
         capeBack: .135,
         capeFront: .16,
       }
+}
+
+function sampleBodySurfaceZ(
+  bodyRoot: THREE.Object3D,
+  targetY: number,
+  targetX: number,
+  side: 'front' | 'back',
+  xRadius = .12,
+  yRadius = .1,
+) {
+  const source =
+    findPrimaryBodyMesh(bodyRoot)
+  if (!source) return undefined
+
+  const position =
+    source.geometry.getAttribute(
+      'position',
+    )
+  if (!position) return undefined
+
+  bodyRoot.updateMatrixWorld(true)
+  source.updateMatrixWorld(true)
+
+  const sourceToBody =
+    bodyRoot.matrixWorld
+      .clone()
+      .invert()
+      .multiply(
+        source.matrixWorld,
+      )
+
+  const point =
+    new THREE.Vector3()
+  let best:
+    | number
+    | undefined
+  let bestDistance =
+    Number.POSITIVE_INFINITY
+
+  for (
+    let index = 0;
+    index < position.count;
+    index += 1
+  ) {
+    point
+      .fromBufferAttribute(
+        position as THREE.BufferAttribute,
+        index,
+      )
+      .applyMatrix4(sourceToBody)
+
+    const dx =
+      Math.abs(point.x - targetX)
+    const dy =
+      Math.abs(point.y - targetY)
+    if (
+      dx > xRadius ||
+      dy > yRadius
+    ) {
+      continue
+    }
+
+    const distance =
+      (dx / xRadius) ** 2 +
+      (dy / yRadius) ** 2
+
+    if (
+      best === undefined ||
+      distance <
+        bestDistance * .72
+    ) {
+      best = point.z
+      bestDistance = distance
+      continue
+    }
+
+    if (
+      distance <=
+      bestDistance * 1.28
+    ) {
+      best =
+        side === 'front'
+          ? Math.max(
+              best,
+              point.z,
+            )
+          : Math.min(
+              best,
+              point.z,
+            )
+    }
+  }
+
+  return best
 }
 
 function objectPositionInBody(
