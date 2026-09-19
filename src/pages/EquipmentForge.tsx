@@ -295,7 +295,7 @@ export default function EquipmentForge() {
         imported
           .map(equipmentAssetBodyType)
           .find(Boolean)
-      if (inferred) setBodyType(inferred)
+      if (inferred) changeBodyType(inferred)
       await refresh()
       setStatus(
         `Imported ${imported.length} equipment slots from ${file.name} and equipped them.`,
@@ -587,7 +587,7 @@ export default function EquipmentForge() {
   }
 
   return (
-    <div className="equipment-forge">
+    <div className="equipment-forge" data-mode={workspaceMode}>
       <aside className="equipment-forge-library">
         <header>
           <span className="eyebrow">
