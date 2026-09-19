@@ -124,6 +124,8 @@ declare global {
       errors: string[]
     }
     __FORGE_EQUIPMENT_QA_RECIPE__?: Partial<EquipmentForgeV3Recipe>
+    __FORGE_EQUIPMENT_QA_MODEL_URL__?: string
+    __FORGE_EQUIPMENT_QA_BODY__?: SkillboundBodyType
   }
 }
 
@@ -138,9 +140,13 @@ export default function EquipmentQaCapture() {
   const bodyType: SkillboundBodyType =
     params.get('body') === 'male'
       ? 'male'
-      : 'female'
+      : params.get('body') === 'female'
+        ? 'female'
+        : window.__FORGE_EQUIPMENT_QA_BODY__ ??
+          'female'
   const modelUrl =
     params.get('model') ??
+    window.__FORGE_EQUIPMENT_QA_MODEL_URL__ ??
     './qa-foundation/__qa-base.glb'
 
   const recipe = useMemo(() => {
