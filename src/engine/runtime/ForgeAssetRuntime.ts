@@ -38,7 +38,6 @@ export class ForgeCharacterVisualBinding {
   private animationSet?: ForgeAnimationSet
   private active?: THREE.AnimationAction
   private activeKey = 'idle'
-  private fallbackCue: 'idle' | 'move' = 'idle'
   private fallbackState?: {
     cue: 'idle' | 'move'
     clip: THREE.AnimationClip
@@ -149,7 +148,6 @@ export class ForgeCharacterVisualBinding {
     const resolvedSpeed = authored?.speed ?? 1
 
     if (cue === 'idle' || cue === 'move') {
-      this.fallbackCue = cue
       this.fallbackState = {
         cue,
         clip,
