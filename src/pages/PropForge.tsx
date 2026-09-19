@@ -31,6 +31,16 @@ import PropForgeViewport, {
   type PropForgePreviewMode,
   type PropForgeTransformMode,
 } from '../components/PropForgeViewport'
+import GameplaySocketInspector from '../components/GameplaySocketInspector'
+import {
+  GAMEPLAY_SOCKET_TYPES,
+  cloneGameplaySocket,
+  createGameplaySocket,
+  gameplaySocketColor,
+  gameplaySocketKindLabel,
+  type GameplaySocket,
+  type GameplaySocketKind,
+} from '../engine/gameplaySockets'
 import {
   PROP_CATEGORIES,
   PROP_MATERIALS,
@@ -78,6 +88,8 @@ export default function PropForge() {
     initialPrefabs[0]?.id ?? '',
   )
   const [selectedPartId, setSelectedPartId] = useState<string>()
+  const [selectedSocketId, setSelectedSocketId] = useState<string>()
+  const [newSocketKind, setNewSocketKind] = useState<GameplaySocketKind>('interaction')
   const [mode, setMode] =
     useState<PropForgeTransformMode>('translate')
   const [previewMode, setPreviewMode] =
@@ -100,6 +112,9 @@ export default function PropForge() {
     prefabs[0]
   const selectedPart = active?.parts.find(
     (part) => part.id === selectedPartId,
+  )
+  const selectedSocket = active?.sockets.find(
+    (socket) => socket.id === selectedSocketId,
   )
   const validation = active
     ? validatePropPrefab(active)
@@ -155,17 +170,26 @@ export default function PropForge() {
     const onKey = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return
 
-      if (event.key === 'Delete' && selectedPartId) {
-        deleteSelectedPart()
-        event.preventDefault()
+      if (event.key === 'Delete') {
+        if (selectedSocketId) {
+          deleteSelectedSocket()
+          event.preventDefault()
+        } else if (selectedPartId) {
+          deleteSelectedPart()
+          event.preventDefault()
+        }
       }
       if (
         (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'd' &&
-        selectedPartId
+        event.key.toLowerCase() === 'd'
       ) {
-        duplicateSelectedPart()
-        event.preventDefault()
+        if (selectedSocketId) {
+          duplicateSelectedSocket()
+          event.preventDefault()
+        } else if (selectedPartId) {
+          duplicateSelectedPart()
+          event.preventDefault()
+        }
       }
       if (event.key.toLowerCase() === 'w') {
         setMode('translate')
@@ -179,7 +203,7 @@ export default function PropForge() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedPartId, activeId, prefabs])
+  }, [selectedPartId, selectedSocketId, activeId, prefabs])
 
   if (!active) {
     return (
@@ -242,6 +266,70 @@ export default function PropForge() {
     if (message) setStatus(message)
   }
 
+  const commitSocket = (socket: GameplaySocket) => {
+    mutateActive((prefab) => ({
+      ...prefab,
+      sockets: prefab.sockets.map((candidate) =>
+        candidate.id === socket.id ? socket : candidate,
+      ),
+    }))
+  }
+
+  const patchSelectedSocket = (
+    patch: Partial<GameplaySocket>,
+    message?: string,
+  ) => {
+    if (!selectedSocket) return
+    commitSocket({ ...selectedSocket, ...patch })
+    if (message) setStatus(message)
+  }
+
+  const addSocket = () => {
+    const socket = createGameplaySocket(newSocketKind)
+    mutateActive(
+      (prefab) => ({
+        ...prefab,
+        sockets: [...prefab.sockets, socket],
+      }),
+      `${gameplaySocketKindLabel(socket.kind)} added. Move and rotate it directly in the viewport.`,
+    )
+    setSelectedPartId(undefined)
+    setSelectedSocketId(socket.id)
+    setPreviewMode('full')
+    setMode('translate')
+  }
+
+  const deleteSelectedSocket = () => {
+    if (!selectedSocketId) return
+    mutateActive(
+      (prefab) => ({
+        ...prefab,
+        sockets: prefab.sockets.filter(
+          (socket) => socket.id !== selectedSocketId,
+        ),
+      }),
+      'Gameplay socket removed.',
+    )
+    setSelectedSocketId(undefined)
+  }
+
+  const duplicateSelectedSocket = () => {
+    if (!selectedSocket) return
+    const duplicate = cloneGameplaySocket(
+      selectedSocket,
+      [active.gridSize, 0, active.gridSize],
+    )
+    mutateActive(
+      (prefab) => ({
+        ...prefab,
+        sockets: [...prefab.sockets, duplicate],
+      }),
+      'Gameplay socket duplicated.',
+    )
+    setSelectedPartId(undefined)
+    setSelectedSocketId(duplicate.id)
+  }
+
   const addPart = (kind: PropPartKind) => {
     const part = createPropPart(kind, {
       group: selectedPart?.group ?? 'Main',
@@ -253,6 +341,7 @@ export default function PropForge() {
       }),
       `${part.name} added. W/E/R switches Move, Rotate and Scale.`,
     )
+    setSelectedSocketId(undefined)
     setSelectedPartId(part.id)
     setPreviewMode('full')
     setMode('translate')
@@ -324,6 +413,7 @@ export default function PropForge() {
       }),
       `${groupName} duplicated as ${newGroup}.`,
     )
+    setSelectedSocketId(undefined)
     setSelectedPartId(copies[0]?.id)
   }
 
@@ -331,6 +421,7 @@ export default function PropForge() {
     const next = createBlankPropPrefab()
     setPrefabs((current) => [...current, next])
     setActiveId(next.id)
+    setSelectedSocketId(undefined)
     setSelectedPartId(next.parts[0]?.id)
     setPreviewMode('full')
     setStatus('Blank modular prop created.')
@@ -341,6 +432,7 @@ export default function PropForge() {
     setPrefabs((current) => [...current, next])
     setActiveId(next.id)
     setSelectedPartId(undefined)
+    setSelectedSocketId(undefined)
     setPreviewMode('full')
     setStatus('Prop duplicated as an independent asset.')
   }
@@ -366,6 +458,7 @@ export default function PropForge() {
       setActiveId(next[0].id)
     }
     setSelectedPartId(undefined)
+    setSelectedSocketId(undefined)
     setStatus('Prop deleted.')
   }
 
@@ -381,6 +474,7 @@ export default function PropForge() {
     setPrefabs(next)
     setActiveId(next[0]?.id ?? '')
     setSelectedPartId(undefined)
+    setSelectedSocketId(undefined)
     setPreviewMode('full')
     setStatus('Starter prop library restored.')
   }
@@ -408,6 +502,7 @@ export default function PropForge() {
       setPrefabs((current) => [...current, imported])
       setActiveId(imported.id)
       setSelectedPartId(undefined)
+      setSelectedSocketId(undefined)
       setPreviewMode('full')
       setStatus('Prop imported into the local asset library.')
     } catch (error) {
@@ -680,6 +775,7 @@ export default function PropForge() {
           <PropForgeViewport
             prefab={active}
             selectedPartId={selectedPartId}
+            selectedSocketId={selectedSocketId}
             mode={mode}
             topDown={topDown}
             showCollision={showCollision}
@@ -687,8 +783,16 @@ export default function PropForge() {
             previewMode={previewMode}
             focusNonce={focusNonce}
             captureNonce={captureNonce}
-            onSelectPart={setSelectedPartId}
+            onSelectPart={(partId) => {
+              setSelectedPartId(partId)
+              if (partId) setSelectedSocketId(undefined)
+            }}
+            onSelectSocket={(socketId) => {
+              setSelectedSocketId(socketId)
+              if (socketId) setSelectedPartId(undefined)
+            }}
             onCommitPart={commitPart}
+            onCommitSocket={commitSocket}
             onCaptureThumbnail={captureThumbnail}
           />
 
@@ -718,6 +822,8 @@ export default function PropForge() {
               {' · '}
               {active.parts.length} parts
               {' · '}
+              {active.sockets.length} sockets
+              {' · '}
               {validation?.collisionCount ?? 0} collision
             </strong>
           </div>
@@ -728,7 +834,7 @@ export default function PropForge() {
         <header>
           <span>ASSET INSPECTOR</span>
           <strong>
-            {selectedPart?.name ?? active.name}
+            {selectedSocket?.name ?? selectedPart?.name ?? active.name}
           </strong>
         </header>
 
@@ -764,6 +870,7 @@ export default function PropForge() {
                         : ''
                     }
                     onClick={() => {
+                      setSelectedSocketId(undefined)
                       setSelectedPartId(part.id)
                       setPreviewMode('full')
                     }}
@@ -780,7 +887,59 @@ export default function PropForge() {
           </div>
         </section>
 
-        {selectedPart ? (
+        <section className="prop-gameplay-sockets">
+          <div className="prop-inspector-heading">
+            <span>GAMEPLAY SOCKETS</span>
+            <small>{active.sockets.length} authored</small>
+          </div>
+          <div className="gameplay-socket-list">
+            {active.sockets.map((socket) => (
+              <button
+                key={socket.id}
+                className={selectedSocketId === socket.id ? 'active' : ''}
+                style={{
+                  ['--socket-color' as string]: `#${gameplaySocketColor(socket.kind).toString(16).padStart(6, '0')}`,
+                }}
+                onClick={() => {
+                  setSelectedPartId(undefined)
+                  setSelectedSocketId(socket.id)
+                  setPreviewMode('full')
+                  if (mode === 'scale') setMode('translate')
+                }}
+              >
+                <i/>
+                <span>{socket.name}</span>
+                <em>{gameplaySocketKindLabel(socket.kind)}</em>
+              </button>
+            ))}
+          </div>
+          <div className="gameplay-socket-add">
+            <select
+              value={newSocketKind}
+              onChange={(event) =>
+                setNewSocketKind(event.target.value as GameplaySocketKind)
+              }
+            >
+              {GAMEPLAY_SOCKET_TYPES.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            <button onClick={addSocket}>
+              <Plus size={12}/> Add
+            </button>
+          </div>
+        </section>
+
+        {selectedSocket ? (
+          <GameplaySocketInspector
+            socket={selectedSocket}
+            onChange={patchSelectedSocket}
+            onDuplicate={duplicateSelectedSocket}
+            onDelete={deleteSelectedSocket}
+          />
+        ) : selectedPart ? (
           <>
             <section>
               <div className="prop-inspector-heading">
