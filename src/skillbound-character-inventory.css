@@ -261,7 +261,7 @@
 }
 .skillbound-tetris-pack{
   --pack-gap:3px;
-  --pack-cell:min(38px,max(0px,calc((100cqw - 10px - 11 * var(--pack-gap)) / 12)));
+  --pack-cell:min(38px,max(0px,calc((100cqw - 43px) / 12)));
   container-type:inline-size;
   position:relative;
   display:grid;
@@ -627,14 +627,14 @@
 }
 
 @media(min-width:1550px){
-  .skillbound-tetris-pack{--pack-cell:min(43px,max(0px,calc((100cqw - 10px - 11 * var(--pack-gap)) / 12)))}
+  .skillbound-tetris-pack{--pack-cell:min(43px,max(0px,calc((100cqw - 43px) / 12)))}
 }
 @media(max-width:1180px){
   .skillbound-character-window{
     width:calc(100vw - 30px);
     height:calc(100dvh - 30px);
   }
-  .skillbound-tetris-pack{--pack-cell:min(32px,max(0px,calc((100cqw - 10px - 11 * var(--pack-gap)) / 12)))}
+  .skillbound-tetris-pack{--pack-cell:min(32px,max(0px,calc((100cqw - 43px) / 12)))}
   .skillbound-character-header-actions>button span{display:none}
   .skillbound-character-footer{grid-template-columns:1fr 1.6fr}
   .skillbound-character-footer>small{display:none}
