@@ -3,7 +3,6 @@ import { RotateCcw, Swords, Volume2, WandSparkles } from 'lucide-react'
 import * as THREE from 'three'
 import { actionDefinition, type ForgeAnimationActionId } from '../engine/animationBindings'
 import {
-  createAnimationControllerV3,
   parseForgeAnimationV3,
   type ForgeAnimationClipV3,
   type ForgeAnimationProfileV3,
@@ -126,27 +125,21 @@ export default function AnimationCombatTestArenaV3({ target, animationProfile, a
     dummyBase.receiveShadow = true
     scene.add(dummyBase)
 
-    void bindCharacterAsset(player, target.id, undefined, 1.9)
-      .then(async (visual) => {
-        if (!visual) return
-        if (disposed) {
-          visual.dispose()
-          return
-        }
-        const controller = await createAnimationControllerV3({
-          targetRoot: visual.root,
-          targetId: animationProfile.targetId,
-        })
-        if (disposed) {
-          controller.dispose()
-          visual.dispose()
-          return
-        }
-        visual.setAnimationRuntimeV3(controller)
-        bindingRef.current = visual
-        visual.play('idle', true)
-        setReady(true)
-      })
+    void bindCharacterAsset(
+      player,
+      target.id,
+      animationProfile.targetId,
+      1.9,
+    ).then((visual) => {
+      if (!visual) return
+      if (disposed) {
+        visual.dispose()
+        return
+      }
+      bindingRef.current = visual
+      visual.play('idle', true)
+      setReady(true)
+    })
       .catch(() => setReady(false))
 
     const resize = () => {
