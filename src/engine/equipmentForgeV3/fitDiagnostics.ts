@@ -81,9 +81,9 @@ export function analyzeEquipmentForgeV3Fit(
         : 1,
     )
   const idealGap =
-    bodyHeight * .014
+    bodyHeight * .006
   const floatingThreshold =
-    bodyHeight * .03
+    bodyHeight * .015
   const clippingTolerance =
     bodyHeight * .0015
 
