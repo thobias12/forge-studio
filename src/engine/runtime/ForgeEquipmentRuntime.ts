@@ -4,12 +4,14 @@ import { itemVisual } from '../itemPresentation'
 import { itemClassification } from '../itemTaxonomy'
 import {
   FORGE_EQUIPMENT_SLOTS,
+  bestEquipmentState,
   equipItemIntoState,
   equipmentStats,
   itemEquipmentSlot,
   itemRuntimeDescription,
   mitigateEquipmentDamage,
   normalizeEquipment,
+  unequipItemFromState,
   type ForgeEquipmentSlot,
   type ForgeEquipmentState,
 } from '../equipment'
@@ -49,6 +51,53 @@ export function installForgeEquipmentRuntime(RuntimeClass: { prototype: any }) {
     void this.refreshEquippedModel?.()
     if (typeof this.saveGame === 'function') this.saveGame(false)
     else this.emitState?.()
+  }
+
+  proto.unequipItem = function (slot: ForgeEquipmentSlot) {
+    const current = ensureEquipment(this)
+    if (!current[slot]) return false
+    const previousId = current[slot]
+    this.__forgeEquipment = unequipItemFromState(current, slot)
+    this.equippedWeaponId = this.__forgeEquipment.MainHand
+    const item = this.gameplay?.items?.find(
+      (candidate: any) => candidate.id === previousId,
+    )
+    this.setMessage?.(
+      `${item?.name ?? slotLabel(slot)} unequipped.`,
+      2.2,
+    )
+    void this.refreshEquippedModel?.()
+    if (typeof this.saveGame === 'function') this.saveGame(false)
+    else this.emitState?.()
+    return true
+  }
+
+  proto.equipBest = function () {
+    const current = ensureEquipment(this)
+    const next = bestEquipmentState(
+      this.gameplay,
+      current,
+      this.inventory ?? [],
+    )
+    const before = equipmentStats(this.gameplay, current)
+    const after = equipmentStats(this.gameplay, next)
+    const changed = FORGE_EQUIPMENT_SLOTS.some(
+      (slot) => current[slot] !== next[slot],
+    )
+    if (!changed) {
+      this.setMessage?.('Your best available gear is already equipped.', 2.4)
+      return false
+    }
+    this.__forgeEquipment = next
+    this.equippedWeaponId = next.MainHand
+    this.setMessage?.(
+      `Best gear equipped · ${after.damageBonus} gear attack · ${after.defense} defense (${signedDelta(after.damageBonus - before.damageBonus)} ATK, ${signedDelta(after.defense - before.defense)} DEF).`,
+      3.2,
+    )
+    void this.refreshEquippedModel?.()
+    if (typeof this.saveGame === 'function') this.saveGame(false)
+    else this.emitState?.()
+    return true
   }
 
   const originalRefresh = proto.refreshEquippedModel
@@ -313,6 +362,10 @@ function createFallbackEquipmentModel(item: any, slot: ForgeEquipmentSlot) {
     add(new THREE.BoxGeometry(.24, .18, .42), [.16, -.72, -.08])
   }
   return group
+}
+
+function signedDelta(value: number) {
+  return value > 0 ? `+${value}` : String(value)
 }
 
 function slotLabel(slot: ForgeEquipmentSlot) {
