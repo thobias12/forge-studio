@@ -245,14 +245,14 @@ export function normalizeUiScreens(value?: Partial<SkillboundUiScreens>): Skillb
         (element) => element.id === 'details',
       )
       const legacyDefaultLayout =
-        legacyEquipment?.placement.col === 1 &&
+        legacyEquipment?.placement.column === 1 &&
         legacyEquipment.placement.row === 2 &&
-        legacyEquipment.placement.colSpan === 4 &&
-        legacyBag?.placement.col === 5 &&
+        legacyEquipment.placement.columnSpan === 4 &&
+        legacyBag?.placement.column === 5 &&
         legacyBag.placement.row === 2 &&
-        legacyBag.placement.colSpan === 5 &&
-        legacyDetails?.placement.col === 10 &&
-        legacyDetails.placement.colSpan === 3
+        legacyBag.placement.columnSpan === 5 &&
+        legacyDetails?.placement.column === 10 &&
+        legacyDetails.placement.columnSpan === 3
 
       if (legacyDefaultLayout) {
         elements = defaults.inventory.elements.map(
