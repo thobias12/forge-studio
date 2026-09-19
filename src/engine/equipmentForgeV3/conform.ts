@@ -511,9 +511,32 @@ function createTorsoTemplate(
             sideEase * .00055) +
         hemFlare
 
+      const lateralShoulderT =
+        THREE.MathUtils.clamp(
+          (v - .86) / .14,
+          0,
+          1,
+        )
+      const sideAmount =
+        Math.abs(
+          Math.sin(angle),
+        )
+      const lateralShoulder =
+        lateralShoulderT *
+        THREE.MathUtils.smoothstep(
+          sideAmount,
+          .68,
+          1,
+        )
+      const lateralClearance =
+        frame.height *
+        .0022 *
+        lateralShoulder
+
       position.addScaledVector(
         radialNormal,
-        extra,
+        extra +
+          lateralClearance,
       )
 
       ringPositions.push(position)
@@ -812,44 +835,6 @@ function createSleeveTemplate(
         (sleeve === 'short'
           ? .008
           : .012)
-      const rootMask =
-        Math.pow(
-          1 - v,
-          4,
-        )
-      const inwardness =
-        THREE.MathUtils.clamp(
-          -radialDirection.x *
-            sideSign,
-          0,
-          1,
-        )
-      const outwardness =
-        THREE.MathUtils.clamp(
-          radialDirection.x *
-            sideSign,
-          0,
-          1,
-        )
-      const upwardness =
-        THREE.MathUtils.clamp(
-          radialDirection.y,
-          0,
-          1,
-        )
-      const directionalCoverage =
-        sleeve === 'short'
-          ? armLength *
-            rootMask *
-            (.0022 *
-              outwardness +
-              .0032 *
-                upwardness *
-                (1 -
-                  inwardness *
-                    .82))
-          : 0
-
       const extra =
         armLength *
         ((sleeve === 'short'
@@ -858,8 +843,7 @@ function createSleeveTemplate(
           recipe.looseness *
             .008) *
         shoulderEase +
-        rootCoverage +
-        directionalCoverage
+        rootCoverage
       const position =
         center
           .clone()
