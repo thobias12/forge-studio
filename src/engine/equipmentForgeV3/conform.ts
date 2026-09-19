@@ -2431,12 +2431,15 @@ function createCapeLayer(
         Math.pow(v, 4) *
         .035 *
         (1 - edge * edge)
+      // Keep the shoulder attachment calm and let folds develop lower
+      // down the cape. A non-zero top-row fold made the yoke look kinked
+      // from above even when back clearance was technically valid.
       const fold =
         Math.sin(
           u * Math.PI * 6,
         ) *
-        (.0015 +
-          v * .0035)
+        Math.pow(v, 1.65) *
+        .0048
 
       const x =
         top.x * widthScale
@@ -2479,25 +2482,38 @@ function createCapeLayer(
           drapeZ,
           safeZ,
         )
-      const maxUpperGap =
-        frame.height *
-        THREE.MathUtils.lerp(
-          .007,
-          .016,
-          THREE.MathUtils.clamp(
-            v / .5,
-            0,
-            1,
-          ),
+
+      // Only keep the cape tightly coupled to the body at the shoulder
+      // attachment. v1.77.5 constrained half the cape which could create
+      // visible kinks from top/three-quarter views. Fade the anti-float
+      // guard out smoothly by the upper quarter and let normal drape take
+      // over below it.
+      const upperT =
+        THREE.MathUtils.clamp(
+          v / .28,
+          0,
+          1,
+        )
+      const upperSmooth =
+        upperT *
+        upperT *
+        (3 - 2 * upperT)
+      const guardStrength =
+        1 - upperSmooth
+      const maxShoulderGap =
+        frame.height * .0085
+      const shoulderGuardZ =
+        Math.max(
+          collisionSafeZ,
+          safeZ -
+            maxShoulderGap,
         )
       const guardedZ =
-        v <= .5
-          ? Math.max(
-              collisionSafeZ,
-              safeZ -
-                maxUpperGap,
-            )
-          : collisionSafeZ
+        THREE.MathUtils.lerp(
+          collisionSafeZ,
+          shoulderGuardZ,
+          guardStrength,
+        )
 
       const point =
         new THREE.Vector3(
@@ -2706,23 +2722,33 @@ function createVestPanelDetails(
       'radial',
       .0073,
     ),
-    createGridPathStrip(
+    // Broad fitted reinforcement instead of the narrow diagonal strip
+    // from v1.77.5, which read visually as a floating rope/cord.
+    createGridAreaPatch(
       source,
       vestGeometry,
       48,
-      [
-        { row: 2, column: 6 },
-        { row: 3, column: 7 },
-        { row: 4, column: 7 },
-        { row: 5, column: 8 },
-        { row: 6, column: 9 },
-        { row: 7, column: 9 },
-        { row: 8, column: 10 },
-      ],
-      trim,
-      'EFV3_VestDiagonalReinforcement_L',
+      6,
+      9,
+      5,
+      12,
+      leather,
+      'EFV3_VestShoulderReinforcement_L',
       'radial',
-      .0092,
+      .0075,
+    ),
+    createGridRowStrip(
+      source,
+      vestGeometry,
+      48,
+      6,
+      7,
+      5,
+      12,
+      trim,
+      'EFV3_VestShoulderReinforcementSeam_L',
+      'radial',
+      .0082,
     ),
   ]
 }
