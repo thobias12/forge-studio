@@ -512,12 +512,16 @@ export class ForgeLibraryVfxInstance {
 
   constructor(private readonly scene: THREE.Scene, pkg: ForgeVfxPackage, position: THREE.Vector3) {
     const random = seededRandom(hashSeed(`${pkg.name}:${position.x.toFixed(2)}:${position.z.toFixed(2)}`))
-    for (const emitter of pkg.emitters.filter((item) => item.enabled)) this.spawnEmitter(emitter, position, random)
+    for (const emitter of pkg.emitters) {
+      if (!emitter.enabled) continue
+      this.spawnEmitter(emitter, position, random)
+    }
   }
 
   update(delta: number) {
     if (this.disposed) return false
-    for (const particle of [...this.particles]) {
+    for (let index = this.particles.length - 1; index >= 0; index -= 1) {
+      const particle = this.particles[index]
       particle.age += delta
       const t = Math.min(1, particle.age / Math.max(0.01, particle.lifetime))
       particle.velocity.addScaledVector(particle.gravity, delta)
@@ -530,9 +534,8 @@ export class ForgeLibraryVfxInstance {
       material.opacity = THREE.MathUtils.lerp(particle.startAlpha, particle.endAlpha, t)
       if (t < 1) continue
       particle.mesh.parent?.remove(particle.mesh)
-      particle.mesh.geometry.dispose()
       material.dispose()
-      this.particles.splice(this.particles.indexOf(particle), 1)
+      this.particles.splice(index, 1)
     }
     if (!this.particles.length) this.disposed = true
     return !this.disposed
@@ -543,7 +546,6 @@ export class ForgeLibraryVfxInstance {
     this.disposed = true
     for (const particle of this.particles) {
       particle.mesh.parent?.remove(particle.mesh)
-      particle.mesh.geometry.dispose()
       const material = particle.mesh.material as THREE.Material
       material.dispose()
     }
@@ -551,39 +553,75 @@ export class ForgeLibraryVfxInstance {
   }
 
   private spawnEmitter(emitter: ForgeVfxEmitter, position: THREE.Vector3, random: () => number) {
-    const count = Math.min(90, Math.max(1, Math.round(emitter.burst || Math.min(24, emitter.spawnRate * Math.min(0.25, emitter.duration)) || 8)))
+    const count = Math.min(
+      90,
+      Math.max(
+        1,
+        Math.round(
+          emitter.burst ||
+          Math.min(24, emitter.spawnRate * Math.min(0.25, emitter.duration)) ||
+          8,
+        ),
+      ),
+    )
     const baseDirection = new THREE.Vector3(...emitter.direction)
     if (baseDirection.lengthSq() < 0.001) baseDirection.set(0, 1, 0)
     baseDirection.normalize()
+    const geometry = geometryForStyle(emitter.style)
+    const gravity = new THREE.Vector3(...emitter.gravity)
+    const startColor = new THREE.Color(emitter.startColor)
+    const endColor = new THREE.Color(emitter.endColor)
+
     for (let index = 0; index < count; index += 1) {
       const direction = randomDirection(baseDirection, emitter.spreadDeg, random)
-      const speed = Math.max(0, emitter.speed * (1 + (random() * 2 - 1) * emitter.speedRandom))
-      const lifetime = Math.max(0.05, emitter.lifetime * (1 + (random() * 2 - 1) * emitter.lifetimeRandom))
-      const geometry = geometryForStyle(emitter.style)
+      const speed = Math.max(
+        0,
+        emitter.speed *
+          (1 + (random() * 2 - 1) * emitter.speedRandom),
+      )
+      const lifetime = Math.max(
+        0.05,
+        emitter.lifetime *
+          (1 + (random() * 2 - 1) * emitter.lifetimeRandom),
+      )
       const material = new THREE.MeshBasicMaterial({
         color: emitter.startColor,
         transparent: true,
         opacity: emitter.startAlpha,
         depthWrite: false,
-        blending: emitter.blendMode === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
+        blending:
+          emitter.blendMode === 'additive'
+            ? THREE.AdditiveBlending
+            : THREE.NormalBlending,
         side: THREE.DoubleSide,
       })
       const mesh = new THREE.Mesh(geometry, material)
       const local = randomEmitterOffset(emitter, random)
-      mesh.position.set(position.x + emitter.position[0] + local.x, Math.max(0.08, position.y + emitter.position[1] + local.y), position.z + emitter.position[2] + local.z)
-      mesh.rotation.set(random() * Math.PI, random() * Math.PI, random() * Math.PI)
+      mesh.position.set(
+        position.x + emitter.position[0] + local.x,
+        Math.max(
+          0.08,
+          position.y + emitter.position[1] + local.y,
+        ),
+        position.z + emitter.position[2] + local.z,
+      )
+      mesh.rotation.set(
+        random() * Math.PI,
+        random() * Math.PI,
+        random() * Math.PI,
+      )
       this.scene.add(mesh)
       this.particles.push({
         mesh,
         velocity: direction.multiplyScalar(speed),
-        gravity: new THREE.Vector3(...emitter.gravity),
+        gravity,
         drag: emitter.drag,
         age: 0,
         lifetime,
         startSize: Math.max(0.02, emitter.startSize),
         endSize: Math.max(0.005, emitter.endSize),
-        startColor: new THREE.Color(emitter.startColor),
-        endColor: new THREE.Color(emitter.endColor),
+        startColor,
+        endColor,
         startAlpha: emitter.startAlpha,
         endAlpha: emitter.endAlpha,
       })
@@ -591,13 +629,36 @@ export class ForgeLibraryVfxInstance {
   }
 }
 
+export async function preloadLibraryVfx(
+  assetIds: Iterable<string | undefined>,
+) {
+  const ids = [
+    ...new Set(
+      [...assetIds].filter(
+        (id): id is string => Boolean(id),
+      ),
+    ),
+  ]
+
+  await Promise.all(
+    ids.map(async (assetId) => {
+      if (vfxPackageCache.has(assetId)) return
+      const asset = await getAsset(assetId)
+      const pkg =
+        asset
+          ? (await parseVfxPackage(asset.blob)) ?? null
+          : null
+      vfxPackageCache.set(assetId, pkg)
+    }),
+  )
+}
+
 export async function spawnLibraryVfx(scene: THREE.Scene, assetId: string | undefined, position: THREE.Vector3) {
   if (!assetId) return undefined
   let pkg = vfxPackageCache.get(assetId)
   if (pkg === undefined) {
-    const asset = await getAsset(assetId)
-    pkg = asset ? await parseVfxPackage(asset.blob) ?? null : null
-    vfxPackageCache.set(assetId, pkg)
+    await preloadLibraryVfx([assetId])
+    pkg = vfxPackageCache.get(assetId)
   }
   if (!pkg) return undefined
   return new ForgeLibraryVfxInstance(scene, pkg, position)
@@ -681,12 +742,28 @@ function uniqueClips(clips: THREE.AnimationClip[]) {
   return [...map.values()]
 }
 
+const vfxGeometryCache = new Map<
+  ForgeVfxEmitter['style'],
+  THREE.BufferGeometry
+>()
+
 function geometryForStyle(style: ForgeVfxEmitter['style']) {
-  if (style === 'ring') return new THREE.RingGeometry(0.45, 0.7, 16)
-  if (style === 'square' || style === 'diamond') return new THREE.BoxGeometry(0.65, 0.65, 0.12)
-  if (style === 'spark') return new THREE.BoxGeometry(0.12, 0.12, 0.95)
-  if (style === 'star') return new THREE.OctahedronGeometry(0.5, 0)
-  return new THREE.SphereGeometry(0.45, 7, 5)
+  const cached = vfxGeometryCache.get(style)
+  if (cached) return cached
+
+  const geometry =
+    style === 'ring'
+      ? new THREE.RingGeometry(0.45, 0.7, 16)
+      : style === 'square' || style === 'diamond'
+        ? new THREE.BoxGeometry(0.65, 0.65, 0.12)
+        : style === 'spark'
+          ? new THREE.BoxGeometry(0.12, 0.12, 0.95)
+          : style === 'star'
+            ? new THREE.OctahedronGeometry(0.5, 0)
+            : new THREE.SphereGeometry(0.45, 7, 5)
+
+  vfxGeometryCache.set(style, geometry)
+  return geometry
 }
 
 function randomEmitterOffset(emitter: ForgeVfxEmitter, random: () => number) {

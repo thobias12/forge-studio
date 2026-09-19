@@ -14,6 +14,7 @@ import {
   ForgeCharacterVisualBinding,
   ForgeLibraryVfxInstance,
   loadLibraryAnimationClips,
+  preloadLibraryVfx,
   spawnLibraryVfx,
 } from './ForgeAssetRuntime'
 import {
@@ -159,6 +160,7 @@ type RuntimeEnemy = {
   transient: boolean
   respawn: boolean
   respawnSeconds: number
+  visualAccumulator: number
 }
 
 type RuntimeLoot = {
@@ -224,6 +226,8 @@ export class ForgePlayRuntime {
   private readonly interactions: RuntimeInteraction[] = []
   private readonly cooldowns = new Map<string, number>()
   private readonly respawnTimers = new Set<number>()
+  private readonly pulseGeometry = new THREE.RingGeometry(0.6, 1, 32)
+  private readonly damageTextureCache = new Map<string, THREE.CanvasTexture>()
   private readonly abilityAnimationClipNames = new Map<string, string>()
   private readonly playerDefinition: ForgePlayerDefinition
   private readonly saveKey: string
@@ -232,6 +236,11 @@ export class ForgePlayRuntime {
   private readonly tempMove = new THREE.Vector3()
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
+  private readonly tempAim = new THREE.Vector3()
+  private readonly tempCamera = new THREE.Vector3()
+  private readonly tempActorNext = new THREE.Vector3()
+  private readonly tempEnemyDirection = new THREE.Vector3()
+  private readonly tempEnemySeparation = new THREE.Vector3()
   private navigation!: ForgeNavigationGrid
   private playerVisual?: ForgeCharacterVisualBinding
   private ambientVisuals?: WorldAmbientVisuals
@@ -267,6 +276,7 @@ export class ForgePlayRuntime {
   private activeInteractionId: string | undefined
   private interactionHeld = false
   private interactionHoldProgress = 0
+  private pendingSaveTimer: number | undefined
 
   constructor(host: HTMLElement, region: GeneratedRegion, gameplay: ForgeGameplayContent, options: ForgePlayRuntimeOptions) {
     this.host = host
@@ -311,6 +321,18 @@ export class ForgePlayRuntime {
     this.buildPlayer(save?.player)
     this.buildEnemies()
     save?.lootDrops.forEach((drop) => this.spawnLoot(drop, false))
+    void preloadLibraryVfx([
+      ...this.gameplay.abilities.map(
+        (ability) => ability.vfxAssetId,
+      ),
+      ...this.gameplay.enemies.flatMap(
+        (enemy) => [
+          enemy.attackVfxAssetId,
+          enemy.hitVfxAssetId,
+          enemy.deathVfxAssetId,
+        ],
+      ),
+    ]).catch(() => undefined)
     void this.bindPlayerVisual()
     void this.refreshEquippedModel()
 
@@ -331,8 +353,12 @@ export class ForgePlayRuntime {
 
   dispose() {
     if (this.disposed) return
+    if (this.pendingSaveTimer !== undefined) {
+      window.clearTimeout(this.pendingSaveTimer)
+      this.pendingSaveTimer = undefined
+    }
+    if (!this.skipFinalSave) this.writeRuntimeSaveNow(false)
     this.disposed = true
-    if (!this.skipFinalSave) this.saveGame(false)
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver.disconnect()
     window.removeEventListener('keydown', this.onKeyDown)
@@ -373,6 +399,8 @@ export class ForgePlayRuntime {
         entry.dispose()
       })
     })
+    this.damageTextureCache.forEach((texture) => texture.dispose())
+    this.damageTextureCache.clear()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
@@ -445,6 +473,22 @@ export class ForgePlayRuntime {
   }
 
   saveGame(manual = true) {
+    if (!manual) {
+      this.queueRuntimeSave()
+      return
+    }
+    this.writeRuntimeSaveNow(true)
+  }
+
+  private queueRuntimeSave() {
+    if (this.pendingSaveTimer !== undefined || this.disposed) return
+    this.pendingSaveTimer = window.setTimeout(() => {
+      this.pendingSaveTimer = undefined
+      if (!this.disposed) this.writeRuntimeSaveNow(false)
+    }, 320)
+  }
+
+  private writeRuntimeSaveNow(manual: boolean) {
     const savedAt = new Date().toISOString()
     writeRuntimeSave(this.saveKey, {
       format: 'forge-runtime-save',
@@ -453,7 +497,11 @@ export class ForgePlayRuntime {
       regionId: this.region.regionId,
       worldSeed: this.region.seed,
       generationVersion: this.region.generationVersion,
-      player: { x: this.player.position.x, z: this.player.position.z, health: this.playerHealth },
+      player: {
+        x: this.player.position.x,
+        z: this.player.position.z,
+        health: this.playerHealth,
+      },
       inventory: [...this.inventory],
       equippedWeaponId: this.equippedWeaponId,
       defeatedEnemyIds: [...this.defeatedEnemyIds],
@@ -462,8 +510,13 @@ export class ForgePlayRuntime {
       savedAt,
     })
     this.savedAt = savedAt
-    if (manual) this.setMessage('Game saved. Reloading this seed will restore the same combat state.', 3.2)
-    this.emitState()
+    if (manual) {
+      this.setMessage(
+        'Game saved. Reloading this seed will restore the same combat state.',
+        3.2,
+      )
+      this.emitState()
+    }
   }
 
   resetProgress() {
@@ -808,6 +861,7 @@ export class ForgePlayRuntime {
         3,
         300,
       ),
+      visualAccumulator: hashUnit(id) * .08,
     }
     this.enemies.push(enemy)
     void this.bindEnemyVisual(enemy)
@@ -1075,23 +1129,53 @@ export class ForgePlayRuntime {
   private updatePlayer(delta: number) {
     let moving = false
     if (this.dodgeRemaining > 0) {
-      const speed = this.playerDefinition.dodgeDistance / DODGE_DURATION
-      this.moveActor(this.player, this.dodgeDirection.clone().multiplyScalar(speed * delta), PLAYER_RADIUS)
-      this.dodgeRemaining = Math.max(0, this.dodgeRemaining - delta)
+      const speed =
+        this.playerDefinition.dodgeDistance /
+        DODGE_DURATION
+      this.tempMove
+        .copy(this.dodgeDirection)
+        .multiplyScalar(speed * delta)
+      this.moveActor(
+        this.player,
+        this.tempMove,
+        PLAYER_RADIUS,
+      )
+      this.dodgeRemaining = Math.max(
+        0,
+        this.dodgeRemaining - delta,
+      )
       moving = true
     } else {
       const move = this.getMoveDirection()
       if (move.lengthSq() > 0) {
-        this.moveActor(this.player, move.multiplyScalar(this.playerDefinition.moveSpeed * delta), PLAYER_RADIUS)
+        move.multiplyScalar(
+          this.playerDefinition.moveSpeed * delta,
+        )
+        this.moveActor(
+          this.player,
+          move,
+          PLAYER_RADIUS,
+        )
         moving = true
       }
     }
-    const aim = this.mouseWorld.clone().sub(this.player.position)
-    aim.y = 0
-    if (aim.lengthSq() > 0.01) this.player.rotation.y = Math.atan2(aim.x, aim.z)
+
+    this.tempAim
+      .copy(this.mouseWorld)
+      .sub(this.player.position)
+      .setY(0)
+    if (this.tempAim.lengthSq() > .01) {
+      this.player.rotation.y = Math.atan2(
+        this.tempAim.x,
+        this.tempAim.z,
+      )
+    }
+
     if (moving !== this.playerMoving) {
       this.playerMoving = moving
-      this.playerVisual?.play(moving ? 'move' : 'idle')
+      this.playerVisual?.play(
+        moving ? 'move' : 'idle',
+      )
     }
     this.playerVisual?.update(delta)
   }
@@ -1106,7 +1190,7 @@ export class ForgePlayRuntime {
     const rightInput = (this.keys.has('d') ? 1 : 0) - (this.keys.has('a') ? 1 : 0)
     this.tempMove.copy(this.tempForward).multiplyScalar(forwardInput).addScaledVector(this.tempRight, rightInput)
     if (this.tempMove.lengthSq() > 1) this.tempMove.normalize()
-    return this.tempMove.clone()
+    return this.tempMove
   }
 
   private startDodge() {
@@ -1387,7 +1471,12 @@ export class ForgePlayRuntime {
       presentation === 'chain' ? .68 : 1.15,
       presentation === 'chain' ? .1 : .18,
     )
-    void this.spawnBoundVfx(enemy.definition.hitVfxAssetId, enemy.group.position)
+    if (enemy.health > 0) {
+      void this.spawnBoundVfx(
+        enemy.definition.hitVfxAssetId,
+        enemy.group.position,
+      )
+    }
     this.hitStopRemaining = Math.max(
       this.hitStopRemaining,
       presentation === 'chain' ? .012 : .035,
@@ -1471,15 +1560,29 @@ export class ForgePlayRuntime {
   }
 
   private updateCorpses(delta: number) {
-    for (const corpse of [...this.corpses]) {
+    for (
+      let index = this.corpses.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const corpse = this.corpses[index]
       corpse.age += delta
       corpse.visual?.update(delta)
       if (corpse.age < corpse.duration) continue
-      const index = this.corpses.indexOf(corpse)
-      if (index >= 0) this.corpses.splice(index, 1)
+
+      this.corpses.splice(index, 1)
       this.scene.remove(corpse.group)
-      corpse.visual?.dispose()
-      this.disposeObject(corpse.group)
+
+      const visual = corpse.visual
+      const group = corpse.group
+      this.runWhenIdle(() => {
+        if (visual) {
+          const visualRoot = visual.root
+          visual.dispose()
+          visualRoot.removeFromParent()
+        }
+        this.disposeObject(group)
+      })
     }
   }
 
@@ -1582,8 +1685,33 @@ export class ForgePlayRuntime {
     this.scene.add(group)
     const drop: RuntimeLoot = { save: { ...save }, group, fallback, age: 0 }
     this.loot.push(drop)
-    void this.bindLootPresentation(drop, item)
+    this.runWhenIdle(() => {
+      if (this.disposed || !this.loot.includes(drop)) return
+      void this.bindLootPresentation(drop, item)
+    }, 700)
     if (persist) this.saveGame(false)
+  }
+
+  private runWhenIdle(
+    task: () => void,
+    timeout = 450,
+  ) {
+    const runtimeWindow = window as typeof window & {
+      requestIdleCallback?: (
+        callback: () => void,
+        options?: { timeout: number },
+      ) => number
+    }
+
+    if (runtimeWindow.requestIdleCallback) {
+      runtimeWindow.requestIdleCallback(
+        task,
+        { timeout },
+      )
+      return
+    }
+
+    window.setTimeout(task, 16)
   }
 
   private async bindLootPresentation(drop: RuntimeLoot, item: ForgeItemDefinition) {
@@ -1603,32 +1731,118 @@ export class ForgePlayRuntime {
   }
 
   private updateEnemies(delta: number) {
-    for (const enemy of [...this.enemies]) {
-      enemy.attackCooldown = Math.max(0, enemy.attackCooldown - delta)
-      enemy.repathRemaining = Math.max(0, enemy.repathRemaining - delta)
-      enemy.bodyMaterial.emissive.lerp(new THREE.Color(0x000000), Math.min(1, delta * 22))
-      enemy.visual?.update(delta)
-      if (enemy.knockback.lengthSq() > 0.02) {
-        this.moveActor(enemy.group, enemy.knockback.clone().multiplyScalar(delta), ENEMY_RADIUS)
-        enemy.knockback.multiplyScalar(Math.max(0, 1 - delta * 8.5))
-      }
-      const distance = this.player.position.distanceTo(enemy.group.position)
-      if (enemy.windupRemaining > 0) {
-        enemy.moving = false
-        enemy.windupRemaining = Math.max(0, enemy.windupRemaining - delta)
-        const progress = 1 - enemy.windupRemaining / Math.max(0.01, enemy.windupDuration)
-        enemy.telegraph.visible = true
-        const material = enemy.telegraph.material as THREE.MeshBasicMaterial
-        material.opacity = 0.18 + progress * 0.62
-        enemy.telegraph.scale.setScalar(0.85 + progress * 0.2)
-        if (enemy.windupRemaining <= 0) this.resolveEnemyAttack(enemy)
+    const playerX = this.player.position.x
+    const playerZ = this.player.position.z
+
+    for (const enemy of this.enemies) {
+      enemy.attackCooldown = Math.max(
+        0,
+        enemy.attackCooldown - delta,
+      )
+      enemy.repathRemaining = Math.max(
+        0,
+        enemy.repathRemaining - delta,
+      )
+
+      // Avoid allocating a new Color for every enemy every frame.
+      enemy.bodyMaterial.emissive.multiplyScalar(
+        Math.max(0, 1 - delta * 22),
+      )
+
+      const dx = playerX - enemy.group.position.x
+      const dz = playerZ - enemy.group.position.z
+      const distanceSq = dx * dx + dz * dz
+      const activeRange = Math.max(
+        12,
+        enemy.definition.aggroRange + 3,
+      )
+      const needsFullSimulation =
+        distanceSq <= activeRange * activeRange ||
+        enemy.windupRemaining > 0 ||
+        enemy.knockback.lengthSq() > .02
+
+      if (!needsFullSimulation) {
+        if (enemy.moving) this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+
+        // Distant actors still animate, just at a much cheaper 8–10 Hz.
+        enemy.visualAccumulator += delta
+        if (enemy.visualAccumulator >= .11) {
+          enemy.visual?.update(enemy.visualAccumulator)
+          enemy.visualAccumulator = 0
+        }
         continue
       }
+
+      if (enemy.visualAccumulator > 0) {
+        enemy.visual?.update(
+          enemy.visualAccumulator + delta,
+        )
+        enemy.visualAccumulator = 0
+      } else {
+        enemy.visual?.update(delta)
+      }
+
+      if (enemy.knockback.lengthSq() > .02) {
+        this.tempMove
+          .copy(enemy.knockback)
+          .multiplyScalar(delta)
+        this.moveActor(
+          enemy.group,
+          this.tempMove,
+          ENEMY_RADIUS,
+        )
+        enemy.knockback.multiplyScalar(
+          Math.max(0, 1 - delta * 8.5),
+        )
+      }
+
+      const distance = Math.hypot(
+        playerX - enemy.group.position.x,
+        playerZ - enemy.group.position.z,
+      )
+
+      if (enemy.windupRemaining > 0) {
+        enemy.moving = false
+        enemy.windupRemaining = Math.max(
+          0,
+          enemy.windupRemaining - delta,
+        )
+        const progress =
+          1 -
+          enemy.windupRemaining /
+            Math.max(.01, enemy.windupDuration)
+        enemy.telegraph.visible = true
+        const material =
+          enemy.telegraph.material as THREE.MeshBasicMaterial
+        material.opacity = .18 + progress * .62
+        enemy.telegraph.scale.setScalar(
+          .85 + progress * .2,
+        )
+        if (enemy.windupRemaining <= 0) {
+          this.resolveEnemyAttack(enemy)
+        }
+        continue
+      }
+
       enemy.telegraph.visible = false
-      if (distance > enemy.definition.aggroRange) { this.setEnemyMoving(enemy, false); continue }
-      if (distance <= enemy.definition.attackRange && enemy.attackCooldown <= 0) { this.beginEnemyAttack(enemy); continue }
-      if (distance > enemy.definition.attackRange) { this.setEnemyMoving(enemy, true); this.updateEnemyPath(enemy, delta) }
-      else this.setEnemyMoving(enemy, false)
+      if (distance > enemy.definition.aggroRange) {
+        this.setEnemyMoving(enemy, false)
+        continue
+      }
+      if (
+        distance <= enemy.definition.attackRange &&
+        enemy.attackCooldown <= 0
+      ) {
+        this.beginEnemyAttack(enemy)
+        continue
+      }
+      if (distance > enemy.definition.attackRange) {
+        this.setEnemyMoving(enemy, true)
+        this.updateEnemyPath(enemy, delta)
+      } else {
+        this.setEnemyMoving(enemy, false)
+      }
     }
   }
 
@@ -1649,23 +1863,70 @@ export class ForgePlayRuntime {
       enemy.pathIndex += 1
       target = enemy.path[enemy.pathIndex] ?? this.player.position
     }
-    const direction = target.clone().sub(enemy.group.position).setY(0)
-    if (direction.lengthSq() < 0.001) return
+    const direction =
+      this.tempEnemyDirection
+        .copy(target)
+        .sub(enemy.group.position)
+        .setY(0)
+    if (direction.lengthSq() < .001) return
     direction.normalize()
-    direction.addScaledVector(this.enemySeparation(enemy), 0.7).normalize()
-    this.moveActor(enemy.group, direction.multiplyScalar(enemy.definition.moveSpeed * delta), ENEMY_RADIUS)
-    enemy.group.rotation.y = Math.atan2(direction.x, direction.z)
+    direction
+      .addScaledVector(
+        this.enemySeparation(
+          enemy,
+          this.tempEnemySeparation,
+        ),
+        .7,
+      )
+      .normalize()
+
+    enemy.group.rotation.y =
+      Math.atan2(
+        direction.x,
+        direction.z,
+      )
+    direction.multiplyScalar(
+      enemy.definition.moveSpeed * delta,
+    )
+    this.moveActor(
+      enemy.group,
+      direction,
+      ENEMY_RADIUS,
+    )
   }
 
-  private enemySeparation(enemy: RuntimeEnemy) {
-    const force = new THREE.Vector3()
+  private enemySeparation(
+    enemy: RuntimeEnemy,
+    force: THREE.Vector3,
+  ) {
+    force.set(0, 0, 0)
+    const x = enemy.group.position.x
+    const z = enemy.group.position.z
+
     for (const other of this.enemies) {
       if (other === enemy) continue
-      const away = enemy.group.position.clone().sub(other.group.position).setY(0)
-      const distance = away.length()
-      if (distance <= 0.001 || distance >= 1.8) continue
-      force.addScaledVector(away.normalize(), (1.8 - distance) / 1.8)
+      const dx =
+        x - other.group.position.x
+      const dz =
+        z - other.group.position.z
+      const distanceSq =
+        dx * dx + dz * dz
+      if (
+        distanceSq <= 1e-6 ||
+        distanceSq >= 3.24
+      ) {
+        continue
+      }
+
+      const distance =
+        Math.sqrt(distanceSq)
+      const weight =
+        (1.8 - distance) /
+        (1.8 * distance)
+      force.x += dx * weight
+      force.z += dz * weight
     }
+
     return force
   }
 
@@ -1722,22 +1983,53 @@ export class ForgePlayRuntime {
   }
 
   private updateLoot(delta: number) {
-    for (const drop of [...this.loot]) {
+    const playerX = this.player.position.x
+    const playerZ = this.player.position.z
+    const pickupRadiusSq = 1.35 * 1.35
+
+    for (
+      let index = this.loot.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const drop = this.loot[index]
       drop.age += delta
       drop.fallback.rotation.y += delta * 1.8
-      drop.group.position.y = Math.sin(drop.age * 3.2) * 0.08
-      if (drop.group.position.distanceTo(this.player.position) > 1.35) continue
-      const item = this.gameplay.items.find((candidate) => candidate.id === drop.save.itemId)
-      if (!item) continue
-      const inventoryRuntime = this as unknown as {
-        canPickupInventoryItem?: (itemId: string) => boolean
-        refreshInventoryLayout?: () => void
+      drop.group.position.y =
+        Math.sin(drop.age * 3.2) * .08
+
+      const dx =
+        drop.group.position.x - playerX
+      const dz =
+        drop.group.position.z - playerZ
+      if (
+        dx * dx + dz * dz >
+        pickupRadiusSq
+      ) {
+        continue
       }
+
+      const item = this.gameplay.items.find(
+        (candidate) =>
+          candidate.id === drop.save.itemId,
+      )
+      if (!item) continue
+
+      const inventoryRuntime =
+        this as unknown as {
+          canPickupInventoryItem?: (
+            itemId: string,
+          ) => boolean
+          refreshInventoryLayout?: () => void
+        }
+
       if (
         inventoryRuntime.canPickupInventoryItem &&
-        !inventoryRuntime.canPickupInventoryItem(drop.save.itemId)
+        !inventoryRuntime.canPickupInventoryItem(
+          drop.save.itemId,
+        )
       ) {
-        if (this.messageRemaining <= 0.35) {
+        if (this.messageRemaining <= .35) {
           this.setMessage(
             'Pack full. Make room or auto-sort the 12 × 6 inventory.',
             1.8,
@@ -1745,146 +2037,243 @@ export class ForgePlayRuntime {
         }
         continue
       }
+
       this.inventory.push(drop.save.itemId)
       inventoryRuntime.refreshInventoryLayout?.()
-      const index = this.loot.indexOf(drop)
-      if (index >= 0) this.loot.splice(index, 1)
+      this.loot.splice(index, 1)
       this.scene.remove(drop.group)
       this.disposeObject(drop.group)
-      this.setMessage(`${item.name} picked up. Press I to open the pack.`, 3.2)
+      this.setMessage(
+        `${item.name} picked up. Press I to open the pack.`,
+        3.2,
+      )
       this.saveGame(false)
       this.emitState()
     }
   }
 
   private updateEffects(delta: number) {
-    for (const effect of [...this.effects]) {
+    for (let index = this.effects.length - 1; index >= 0; index -= 1) {
+      const effect = this.effects[index]
       effect.age += delta
       const progress = Math.min(1, effect.age / effect.duration)
-      effect.mesh.scale.setScalar(0.25 + progress * effect.maxScale)
-      const material = effect.mesh.material as THREE.MeshBasicMaterial
+      effect.mesh.scale.setScalar(
+        0.25 + progress * effect.maxScale,
+      )
+      const material =
+        effect.mesh.material as THREE.MeshBasicMaterial
       material.opacity = (1 - progress) * 0.72
       if (progress < 1) continue
-      this.effects.splice(this.effects.indexOf(effect), 1)
+      this.effects.splice(index, 1)
       this.scene.remove(effect.mesh)
-      effect.mesh.geometry.dispose()
       material.dispose()
     }
   }
 
   private updateLibraryVfx(delta: number) {
-    for (const effect of [...this.libraryVfx]) {
+    for (
+      let index = this.libraryVfx.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const effect = this.libraryVfx[index]
       if (effect.update(delta)) continue
       effect.dispose()
-      this.libraryVfx.splice(this.libraryVfx.indexOf(effect), 1)
+      this.libraryVfx.splice(index, 1)
     }
   }
 
   private updateTextEffects(delta: number) {
-    for (const effect of [...this.textEffects]) {
+    for (
+      let index = this.textEffects.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const effect = this.textEffects[index]
       effect.age += delta
-      const progress = Math.min(1, effect.age / effect.duration)
-      effect.sprite.position.y += delta * (0.9 - progress * 0.35)
-      const material = effect.sprite.material as THREE.SpriteMaterial
+      const progress = Math.min(
+        1,
+        effect.age / effect.duration,
+      )
+      effect.sprite.position.y +=
+        delta * (0.9 - progress * 0.35)
+      const material =
+        effect.sprite.material as THREE.SpriteMaterial
       material.opacity = 1 - progress
       if (progress < 1) continue
       this.scene.remove(effect.sprite)
-      material.map?.dispose()
       material.dispose()
-      this.textEffects.splice(this.textEffects.indexOf(effect), 1)
+      this.textEffects.splice(index, 1)
     }
   }
 
   private updateCamera(delta: number) {
-    this.cameraShake = Math.max(0, this.cameraShake - delta * 2.7)
-    const desired = this.player.position.clone().add(this.cameraOffset())
+    this.cameraShake = Math.max(
+      0,
+      this.cameraShake - delta * 2.7,
+    )
+    const desired = this.cameraOffset(
+      this.tempCamera,
+    ).add(this.player.position)
+
     if (this.cameraShake > 0) {
-      const strength = this.cameraShake * 0.7
-      desired.x += Math.sin(performance.now() * 0.061) * strength
-      desired.y += Math.sin(performance.now() * 0.083) * strength * 0.45
-      desired.z += Math.cos(performance.now() * 0.073) * strength
+      const strength =
+        this.cameraShake * .7
+      const now = performance.now()
+      desired.x +=
+        Math.sin(now * .061) * strength
+      desired.y +=
+        Math.sin(now * .083) *
+        strength *
+        .45
+      desired.z +=
+        Math.cos(now * .073) * strength
     }
-    this.camera.position.lerp(desired, 1 - Math.pow(0.0008, delta))
+
+    this.camera.position.lerp(
+      desired,
+      1 - Math.pow(.0008, delta),
+    )
     this.camera.lookAt(
       this.player.position.x,
-      this.player.position.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
+      this.player.position.y +
+        FORGE_WORLD_SCALE.playCameraLookAtHeight,
       this.player.position.z,
     )
   }
 
   private snapCamera() {
-    this.camera.position.copy(this.player.position).add(this.cameraOffset())
+    this.camera.position
+      .copy(this.player.position)
+      .add(
+        this.cameraOffset(
+          this.tempCamera,
+        ),
+      )
     this.camera.lookAt(
       this.player.position.x,
-      this.player.position.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
+      this.player.position.y +
+        FORGE_WORLD_SCALE.playCameraLookAtHeight,
       this.player.position.z,
     )
   }
 
-  private cameraOffset() {
-    return new THREE.Vector3(
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraVerticalScale,
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
+  private cameraOffset(
+    target: THREE.Vector3,
+  ) {
+    return target.set(
+      this.cameraDistance *
+        FORGE_WORLD_SCALE.playCameraHorizontalScale,
+      this.cameraDistance *
+        FORGE_WORLD_SCALE.playCameraVerticalScale,
+      this.cameraDistance *
+        FORGE_WORLD_SCALE.playCameraHorizontalScale,
     )
   }
 
-  private moveActor(actor: THREE.Object3D, delta: THREE.Vector3, radius: number) {
-    const next = actor.position.clone().add(delta)
-    next.x = THREE.MathUtils.clamp(next.x, this.region.bounds.minX + radius, this.region.bounds.maxX - radius)
-    next.z = THREE.MathUtils.clamp(next.z, this.region.bounds.minZ + radius, this.region.bounds.maxZ - radius)
+  private moveActor(
+    actor: THREE.Object3D,
+    delta: THREE.Vector3,
+    radius: number,
+  ) {
+    const next = this.tempActorNext
+      .copy(actor.position)
+      .add(delta)
+
+    next.x = THREE.MathUtils.clamp(
+      next.x,
+      this.region.bounds.minX + radius,
+      this.region.bounds.maxX - radius,
+    )
+    next.z = THREE.MathUtils.clamp(
+      next.z,
+      this.region.bounds.minZ + radius,
+      this.region.bounds.maxZ - radius,
+    )
+
     for (const obstacle of this.obstacles) {
       let dx = next.x - obstacle.x
       let dz = next.z - obstacle.z
       let distance = Math.hypot(dx, dz)
-      const minimum = radius + obstacle.radius
+      const minimum =
+        radius + obstacle.radius
       if (distance >= minimum) continue
-      if (distance < 0.0001) { dx = 1; dz = 0; distance = 1 }
-      next.x = obstacle.x + dx / distance * minimum
-      next.z = obstacle.z + dz / distance * minimum
+      if (distance < .0001) {
+        dx = 1
+        dz = 0
+        distance = 1
+      }
+      next.x =
+        obstacle.x +
+        (dx / distance) * minimum
+      next.z =
+        obstacle.z +
+        (dz / distance) * minimum
     }
+
     actor.position.x = next.x
     actor.position.z = next.z
     if (this.region.version >= 2) {
-      actor.position.y = runtimeWalkSurfaceHeight(
-        this.region,
-        next.x,
-        next.z,
-      )
+      actor.position.y =
+        runtimeWalkSurfaceHeight(
+          this.region,
+          next.x,
+          next.z,
+        )
     }
   }
 
   private spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
     const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false })
-    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 32), material)
+    const mesh = new THREE.Mesh(this.pulseGeometry, material)
     mesh.rotation.x = -Math.PI / 2
     mesh.position.set(position.x, 0.055, position.z)
     this.scene.add(mesh)
     this.effects.push({ mesh, age: 0, duration, maxScale: Math.max(1, radius) })
   }
 
-  private spawnDamageNumber(position: THREE.Vector3, damage: number, color: string) {
-    const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 64
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.font = '700 34px Inter, Arial, sans-serif'
-    context.textAlign = 'center'
-    context.textBaseline = 'middle'
-    context.lineWidth = 7
-    context.strokeStyle = '#100b09'
-    context.strokeText(String(Math.round(damage)), 64, 32)
-    context.fillStyle = color
-    context.fillText(String(Math.round(damage)), 64, 32)
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.colorSpace = THREE.SRGBColorSpace
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
+  private spawnDamageNumber(
+    position: THREE.Vector3,
+    damage: number,
+    color: string,
+  ) {
+    const label = String(Math.round(damage))
+    const cacheKey = `${label}:${color}`
+    let texture = this.damageTextureCache.get(cacheKey)
+
+    if (!texture) {
+      const canvas = document.createElement('canvas')
+      canvas.width = 128
+      canvas.height = 64
+      const context = canvas.getContext('2d')
+      if (!context) return
+      context.font = '700 34px Inter, Arial, sans-serif'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.lineWidth = 7
+      context.strokeStyle = '#100b09'
+      context.strokeText(label, 64, 32)
+      context.fillStyle = color
+      context.fillText(label, 64, 32)
+      texture = new THREE.CanvasTexture(canvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      this.damageTextureCache.set(cacheKey, texture)
+    }
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    })
     const sprite = new THREE.Sprite(material)
     sprite.position.set(position.x, 2.4, position.z)
     sprite.scale.set(2.1, 1.05, 1)
     this.scene.add(sprite)
-    this.textEffects.push({ sprite, age: 0, duration: 0.68 })
+    this.textEffects.push({
+      sprite,
+      age: 0,
+      duration: 0.68,
+    })
   }
 
   private async spawnBoundVfx(assetId: string | undefined, position: THREE.Vector3) {
