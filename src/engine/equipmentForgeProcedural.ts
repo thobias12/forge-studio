@@ -145,22 +145,22 @@ export function applyProceduralStyle(
     next.name = 'Deadwood Ranger'
     next.chest.width =
       next.bodyType === 'female' ? .98 : 1.03
-    next.chest.depth = 1
+    next.chest.depth = .94
     next.chest.length = 1.02
-    next.chest.looseness = .08
+    next.chest.looseness = .04
     next.chest.leatherVest = true
-    next.chest.plateCoverage = .06
-    next.chest.collarHeight = .06
-    next.chest.shoulderSize = .04
+    next.chest.plateCoverage = 0
+    next.chest.collarHeight = 0
+    next.chest.shoulderSize = 0
     next.chest.shoulderAsymmetry = .22
-    next.chest.strapCount = 2
+    next.chest.strapCount = 0
     next.waist.beltWidth = .08
     next.waist.pouchCount = 2
     next.waist.tabardLength = .34
-    next.waist.tabardWidth = .46
-    next.cape.length = .46
-    next.cape.width = .4
-    next.cape.flare = .08
+    next.waist.tabardWidth = .34
+    next.cape.length = .52
+    next.cape.width = .34
+    next.cape.flare = .05
     next.materials = {
       cloth: '#384737',
       leather: '#3f2b20',
@@ -381,6 +381,30 @@ export function randomizeProceduralEquipmentRecipe(
     0,
     .34,
   )
+
+  if (next.style === 'ranger') {
+    next.chest.plateCoverage = Math.min(
+      next.chest.plateCoverage,
+      .08,
+    )
+    next.chest.collarHeight = Math.min(
+      next.chest.collarHeight,
+      .05,
+    )
+    next.chest.shoulderSize = Math.min(
+      next.chest.shoulderSize,
+      .06,
+    )
+    next.chest.strapCount = Math.min(
+      next.chest.strapCount,
+      1,
+    )
+    next.cape.width = Math.min(
+      next.cape.width,
+      .5,
+    )
+  }
+
   return next
 }
 
@@ -529,31 +553,22 @@ function buildChest(
     fit.waistY + .11,
   )
   const shellOffset =
-    .012 + chest.looseness * .03
+    .004 + chest.looseness * .012
 
-  const shell = new THREE.Mesh(
-    fittedGarmentTorsoGeometry(
-      fit,
-      bottomY,
-      topY,
-      chest.width,
-      chest.depth,
-      chest.looseness,
-    ),
-    materials.clothDouble,
-  )
-  shell.castShadow = true
-  shell.receiveShadow = false
-  shell.name = 'Procedural_Tunic'
-  attachPreservingWorld(
+  const tunic = buildLayeredTunic(
     bodyRoot,
-    findBone(bodyRoot, 'spine_02', 'spine_03'),
-    shell,
+    materials,
+    fit,
+    chest.width,
+    chest.depth,
+    chest.looseness,
+    topY,
+    bottomY,
   )
-  root.userData.chestShell = shell
+  root.userData.chestShell = tunic
 
   if (chest.leatherVest) {
-    buildLeatherVest(
+    buildLeatherVestPanels(
       bodyRoot,
       materials,
       fit,
@@ -1144,73 +1159,96 @@ function buildCape(
   const cape = recipe.cape
   if (cape.length <= .02) return
 
-  const length =
-    .2 + cape.length * .66
-  const topWidth =
-    .24 + cape.width * .14
-  const bottomWidth =
-    topWidth *
-    (.76 + cape.flare * .32)
-  const geometry = capeGeometry(
-    length,
-    topWidth,
-    bottomWidth,
-    cape.flare,
-  )
-  const mesh = new THREE.Mesh(
-    geometry,
-    materials.accentDouble,
+  const spine = findBone(
+    bodyRoot,
+    'spine_03',
+    'spine_02',
   )
   const capeY =
-    fit.shoulderY - .035
+    fit.shoulderY - .07
+
+  const mount = new THREE.Mesh(
+    garmentPanelGeometry(
+      .23,
+      .2,
+      .048,
+      0,
+      .004,
+      0,
+    ),
+    materials.leatherDark,
+  )
+  mount.position.set(
+    0,
+    capeY + .012,
+    -fit.garmentBack - .004,
+  )
+  mount.rotation.y = Math.PI
+  mount.castShadow = true
+  mount.name = 'Procedural_CapeMount'
+  attachPreservingWorld(
+    bodyRoot,
+    spine,
+    mount,
+  )
+
+  const length =
+    .22 + cape.length * .66
+  const topWidth =
+    .18 + cape.width * .13
+  const bottomWidth =
+    topWidth *
+    (.68 + cape.flare * .28)
+
+  const mesh = new THREE.Mesh(
+    capeGeometry(
+      length,
+      topWidth,
+      bottomWidth,
+      cape.flare,
+    ),
+    materials.accentDouble,
+  )
   mesh.position.set(
     0,
     capeY,
-    -fit.garmentBack - .014,
+    -fit.garmentBack - .008,
   )
-  mesh.rotation.x = -.018
+  mesh.rotation.x = -.025
   mesh.castShadow = true
   mesh.name = 'Procedural_Cape'
   attachPreservingWorld(
     bodyRoot,
-    findBone(
-      bodyRoot,
-      'spine_03',
-      'spine_02',
-    ),
+    spine,
     mesh,
   )
   root.userData.cape = mesh
 
-  for (const sign of [-1, 1]) {
-    const clasp = new THREE.Mesh(
-      new THREE.SphereGeometry(
-        .022,
-        10,
-        7,
-      ),
-      materials.metal,
-    )
-    clasp.scale.z = .55
-    const claspY =
-      fit.shoulderY - .012
-    const claspX =
-      sign * .135
-    clasp.position.set(
-      claspX,
-      claspY,
-      fit.garmentFront + .008,
-    )
-    clasp.castShadow = true
-    attachPreservingWorld(
-      bodyRoot,
-      findBone(
+  if (recipe.style !== 'ranger') {
+    for (const sign of [-1, 1]) {
+      const clasp = new THREE.Mesh(
+        new THREE.SphereGeometry(
+          .018,
+          10,
+          7,
+        ),
+        materials.metal,
+      )
+      clasp.scale.z = .5
+      clasp.position.set(
+        sign * .11,
+        fit.shoulderY - .018,
+        fit.garmentFront + .004,
+      )
+      clasp.castShadow = true
+      clasp.name =
+        `Procedural_CapeClasp_${sign > 0 ? 'R' : 'L'}`
+      attachPreservingWorld(
         bodyRoot,
-        'spine_03',
-        'spine_02',
-      ),
-      clasp,
-    )
+        spine,
+        clasp,
+      )
+    }
   }
 }
 
@@ -1851,172 +1889,241 @@ function curvedPanelGeometry(
   return geometry
 }
 
-function fittedGarmentTorsoGeometry(
+function buildLayeredTunic(
+  bodyRoot: THREE.Object3D,
+  materials: MaterialSet,
   fit: ReturnType<typeof bodyFit>,
-  bottomY: number,
-  topY: number,
   widthScale: number,
   depthScale: number,
   looseness: number,
+  topY: number,
+  bottomY: number,
 ) {
-  const rings = 16
-  const segments = 36
+  const group = new THREE.Group()
+  group.name = 'Procedural_Tunic'
+  group.userData.proceduralEquipment = true
+  bodyRoot.add(group)
+
+  const spine = findBone(
+    bodyRoot,
+    'spine_02',
+    'spine_03',
+  )
+  const height =
+    Math.max(.28, topY - bottomY)
+  const centerY =
+    bottomY + height * .5
+
+  const frontTopWidth =
+    fit.torsoX *
+    1.34 *
+    widthScale
+  const frontBottomWidth =
+    fit.waistRadius *
+    1.58 *
+    widthScale
+  const frontBulge =
+    .008 +
+    fit.bustDepth * .5 +
+    looseness * .025
+
+  const front = new THREE.Mesh(
+    garmentPanelGeometry(
+      frontTopWidth,
+      frontBottomWidth,
+      height,
+      fit.frontNeckDrop,
+      frontBulge,
+      .035,
+    ),
+    materials.clothDouble,
+  )
+  front.position.set(
+    0,
+    centerY,
+    fit.garmentFront *
+      depthScale +
+      .002,
+  )
+  front.castShadow = true
+  front.name = 'Procedural_TunicFront'
+  attachPreservingWorld(
+    bodyRoot,
+    spine,
+    front,
+  )
+
+  const backTopWidth =
+    fit.torsoX *
+    1.38 *
+    widthScale
+  const backBottomWidth =
+    fit.waistRadius *
+    1.55 *
+    widthScale
+  const back = new THREE.Mesh(
+    garmentPanelGeometry(
+      backTopWidth,
+      backBottomWidth,
+      height,
+      fit.backNeckDrop,
+      .006 + looseness * .012,
+      .02,
+    ),
+    materials.clothDouble,
+  )
+  back.position.set(
+    0,
+    centerY,
+    -fit.garmentBack *
+      depthScale -
+      .002,
+  )
+  back.rotation.y = Math.PI
+  back.castShadow = true
+  back.name = 'Procedural_TunicBack'
+  attachPreservingWorld(
+    bodyRoot,
+    spine,
+    back,
+  )
+
+  const sideTopY =
+    topY - .075
+  const sideHeight =
+    Math.max(
+      .2,
+      sideTopY - bottomY,
+    )
+  const sideDepth =
+    (fit.garmentFront +
+      fit.garmentBack) *
+    depthScale *
+    .84
+
+  for (const sign of [-1, 1]) {
+    const side = new THREE.Mesh(
+      sideGarmentGeometry(
+        sideDepth,
+        sideHeight,
+        .012 + looseness * .015,
+      ),
+      materials.clothDouble,
+    )
+    side.position.set(
+      sign *
+        fit.torsoX *
+        .72 *
+        widthScale,
+      bottomY +
+        sideHeight * .5,
+      0,
+    )
+    side.rotation.y =
+      sign > 0
+        ? Math.PI / 2
+        : -Math.PI / 2
+    side.castShadow = true
+    side.name =
+      sign > 0
+        ? 'Procedural_TunicSideR'
+        : 'Procedural_TunicSideL'
+    attachPreservingWorld(
+      bodyRoot,
+      spine,
+      side,
+    )
+  }
+
+  return group
+}
+
+function garmentPanelGeometry(
+  topWidth: number,
+  bottomWidth: number,
+  height: number,
+  neckDrop: number,
+  bulge: number,
+  hemCurve: number,
+) {
+  const columns = 14
+  const rows = 10
   const positions: number[] = []
   const indices: number[] = []
   const uvs: number[] = []
 
-  for (
-    let ring = 0;
-    ring <= rings;
-    ring += 1
-  ) {
-    const t = ring / rings
-    const waistBlend =
-      THREE.MathUtils.smoothstep(
-        t,
-        0,
-        .58,
+  for (let row = 0; row <= rows; row += 1) {
+    const v = row / rows
+    const width =
+      THREE.MathUtils.lerp(
+        bottomWidth,
+        topWidth,
+        v,
       )
-    const shoulderBlend =
-      THREE.MathUtils.smoothstep(
-        t,
-        .68,
-        1,
-      )
-    const bustBlend =
-      Math.exp(
-        -Math.pow(
-          (t - .68) / .2,
-          2,
-        ),
-      )
-
-    const midX =
-      THREE.MathUtils.lerp(
-        fit.waistRadius * 1.015,
-        fit.torsoX * .83,
-        waistBlend,
-      )
-    const ringX =
-      THREE.MathUtils.lerp(
-        midX,
-        fit.torsoX * .68,
-        shoulderBlend,
-      ) *
-      widthScale *
-      (1 + looseness * .34)
-
-    const midFront =
-      THREE.MathUtils.lerp(
-        fit.waistDepth * 1.015,
-        fit.garmentFront,
-        waistBlend,
-      ) +
-      bustBlend * fit.bustDepth
-    const ringFront =
-      THREE.MathUtils.lerp(
-        midFront,
-        fit.upperFront,
-        shoulderBlend,
-      ) *
-      depthScale *
-      (1 + looseness * .28)
-
-    const midBack =
-      THREE.MathUtils.lerp(
-        fit.waistDepth * .97,
-        fit.garmentBack,
-        waistBlend,
-      )
-    const ringBack =
-      THREE.MathUtils.lerp(
-        midBack,
-        fit.upperBack,
-        shoulderBlend,
-      ) *
-      depthScale *
-      (1 + looseness * .22)
 
     for (
-      let segment = 0;
-      segment < segments;
-      segment += 1
+      let column = 0;
+      column <= columns;
+      column += 1
     ) {
-      const u = segment / segments
-      const angle =
-        u * Math.PI * 2
-      const sx = Math.sin(angle)
-      const cz = Math.cos(angle)
+      const u = column / columns
+      const centered = u - .5
+      const edge =
+        Math.abs(centered) * 2
 
-      const frontness =
-        Math.max(0, cz)
-      const backness =
-        Math.max(0, -cz)
-      const necklineDrop =
-        ring === rings
-          ? frontness ** 2.4 *
-              fit.frontNeckDrop +
-            backness ** 2.2 *
-              fit.backNeckDrop
+      const neckline =
+        v === 1
+          ? neckDrop *
+            Math.pow(
+              Math.max(0, 1 - edge),
+              1.7,
+            )
           : 0
+      const hem =
+        v === 0
+          ? hemCurve *
+            Math.pow(edge, 2)
+          : 0
+
+      const x = centered * width
       const y =
-        THREE.MathUtils.lerp(
-          bottomY,
-          topY,
-          t,
-        ) -
-        necklineDrop
+        (v - .5) * height -
+        neckline +
+        hem
+      const centerBulge =
+        Math.max(
+          0,
+          1 - edge * edge,
+        )
+      const verticalShape =
+        .35 +
+        .65 *
+          Math.sin(
+            v * Math.PI,
+          )
+      const z =
+        bulge *
+        centerBulge *
+        verticalShape
 
-      const zRadius =
-        cz >= 0
-          ? ringFront
-          : ringBack
-
-      const sideShape =
-        1 -
-        Math.pow(
-          Math.abs(sx),
-          4,
-        ) *
-          .025
-
-      positions.push(
-        sx * ringX,
-        y,
-        cz * zRadius * sideShape,
-      )
-      uvs.push(u, t)
+      positions.push(x, y, z)
+      uvs.push(u, v)
     }
   }
 
-  for (
-    let ring = 0;
-    ring < rings;
-    ring += 1
-  ) {
+  for (let row = 0; row < rows; row += 1) {
     for (
-      let segment = 0;
-      segment < segments;
-      segment += 1
+      let column = 0;
+      column < columns;
+      column += 1
     ) {
-      const next =
-        (segment + 1) % segments
       const a =
-        ring * segments + segment
-      const b =
-        ring * segments + next
+        row * (columns + 1) + column
+      const b = a + 1
       const c0 =
-        (ring + 1) * segments + segment
-      const d =
-        (ring + 1) * segments + next
-      indices.push(
-        a,
-        c0,
-        b,
-        b,
-        c0,
-        d,
-      )
+        a + columns + 1
+      const d = c0 + 1
+      indices.push(a, c0, b, b, c0, d)
     }
   }
 
@@ -2041,8 +2148,81 @@ function fittedGarmentTorsoGeometry(
   return geometry
 }
 
+function sideGarmentGeometry(
+  depth: number,
+  height: number,
+  bulge: number,
+) {
+  const columns = 8
+  const rows = 8
+  const positions: number[] = []
+  const indices: number[] = []
+  const uvs: number[] = []
 
-function buildLeatherVest(
+  for (let row = 0; row <= rows; row += 1) {
+    const v = row / rows
+    const verticalInset =
+      Math.sin(v * Math.PI) *
+      .012
+
+    for (
+      let column = 0;
+      column <= columns;
+      column += 1
+    ) {
+      const u = column / columns
+      const centered = u - .5
+      const x = centered * depth
+      const y =
+        (v - .5) * height
+      const z =
+        bulge *
+        Math.sin(u * Math.PI) +
+        verticalInset
+
+      positions.push(x, y, z)
+      uvs.push(u, v)
+    }
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    for (
+      let column = 0;
+      column < columns;
+      column += 1
+    ) {
+      const a =
+        row * (columns + 1) + column
+      const b = a + 1
+      const c0 =
+        a + columns + 1
+      const d = c0 + 1
+      indices.push(a, c0, b, b, c0, d)
+    }
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function buildLeatherVestPanels(
   bodyRoot: THREE.Object3D,
   materials: MaterialSet,
   fit: ReturnType<typeof bodyFit>,
@@ -2051,47 +2231,45 @@ function buildLeatherVest(
   bottomY: number,
   shellOffset: number,
 ) {
-  const spine =
-    findBone(
-      bodyRoot,
-      'spine_03',
-      'spine_02',
-    )
+  const spine = findBone(
+    bodyRoot,
+    'spine_03',
+    'spine_02',
+  )
   const height =
     Math.max(
-      .2,
-      (topY - bottomY) * .66,
+      .18,
+      (topY - bottomY) * .58,
     )
-  const panelWidth =
-    .105 * widthScale
   const centerY =
     bottomY +
     (topY - bottomY) * .49
+  const panelWidth =
+    .09 * widthScale
   const frontZ =
     fit.garmentFront +
     shellOffset +
-    .004
+    .003
 
   for (const sign of [-1, 1]) {
     const panel = new THREE.Mesh(
-      curvedPanelGeometry(
+      garmentPanelGeometry(
+        panelWidth * .92,
         panelWidth,
         height,
-        .009,
-        .18,
+        .018,
+        .006,
+        .012,
       ),
       materials.leather,
     )
     panel.position.set(
-      sign * .065 * widthScale,
+      sign * .057 * widthScale,
       centerY,
       frontZ,
     )
-    panel.rotation.set(
-      -.025,
-      sign * -.035,
-      sign * -.045,
-    )
+    panel.rotation.z =
+      sign * -.035
     panel.castShadow = true
     panel.name =
       sign < 0
@@ -2104,28 +2282,32 @@ function buildLeatherVest(
     )
   }
 
-  const lower = new THREE.Mesh(
-    curvedPanelGeometry(
-      .23 * widthScale,
+  const waistPanel = new THREE.Mesh(
+    garmentPanelGeometry(
+      .19 * widthScale,
+      .21 * widthScale,
       .055,
-      .006,
-      .12,
+      0,
+      .003,
+      0,
     ),
     materials.leatherDark,
   )
-  lower.position.set(
+  waistPanel.position.set(
     0,
-    bottomY + .048,
-    fit.waistDepth + .012,
+    bottomY + .05,
+    fit.waistDepth + .008,
   )
-  lower.castShadow = true
-  lower.name = 'Procedural_VestWaist'
+  waistPanel.castShadow = true
+  waistPanel.name =
+    'Procedural_VestWaist'
   attachPreservingWorld(
     bodyRoot,
     spine,
-    lower,
+    waistPanel,
   )
 }
+
 
 function findPrimaryBodyMesh(
   root: THREE.Object3D,
