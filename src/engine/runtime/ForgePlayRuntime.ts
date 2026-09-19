@@ -114,6 +114,14 @@ export type ForgeRuntimeSnapshot = {
   interaction?: ForgeRuntimeInteractionSnapshot
   message: string
   savedAt?: string
+  animation?: {
+    runtime: string
+    base: string
+    baseClip?: string
+    action?: string
+    actionClip?: string
+    available: string[]
+  }
 }
 
 export type ForgePlayRuntimeOptions = {
@@ -428,7 +436,9 @@ export class ForgePlayRuntime {
       const binding = await bindCharacterAsset(this.player, this.playerDefinition.characterAssetId, this.playerDefinition.animationAssetId, FORGE_WORLD_SCALE.characterHeight)
       if (this.disposed) { binding?.dispose(); return }
       this.playerVisual = binding
-      if (binding) await this.preloadAbilityAnimations(binding)
+      if (binding && !binding.getAnimationRuntimeV3()) {
+        await this.preloadAbilityAnimations(binding)
+      }
       if (!this.disposed) void this.refreshEquippedModel()
     } catch {
       // Asset bindings are optional; placeholders remain a valid development fallback.
@@ -1784,6 +1794,9 @@ export class ForgePlayRuntime {
       } : undefined,
       message: this.message,
       savedAt: this.savedAt,
+      animation: this.playerVisual
+        ?.getAnimationRuntimeV3()
+        ?.getDebugState(),
     }
   }
 
