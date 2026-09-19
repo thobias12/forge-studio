@@ -112,11 +112,11 @@ const screen = (id: SkillboundUiScreenId, name: string, elements: UiScreenElemen
 
 export function createDefaultUiScreens(): SkillboundUiScreens {
   return {
-    inventory: screen('inventory', 'Inventory', [
-      e('title', 'Inventory Header', 'title', p(1, 1, 12, 1), true),
-      e('equipment', 'Equipment', 'equipment', p(1, 2, 4, 6)),
-      e('bag', 'Backpack Grid', 'item-grid', p(5, 2, 5, 6)),
-      e('details', 'Item Details', 'panel', p(10, 2, 3, 6)),
+    inventory: screen('inventory', 'Character & Inventory', [
+      e('title', 'Character Header', 'title', p(1, 1, 12, 1), true),
+      e('equipment', 'Character & Equipment', 'equipment', p(1, 2, 3, 6)),
+      e('bag', '12 × 6 Spatial Pack', 'item-grid', p(4, 2, 6, 6)),
+      e('stats', 'Attributes & Combat Stats', 'stats', p(10, 2, 3, 6)),
     ]),
     character: screen('character', 'Character', [
       e('title', 'Character Header', 'title', p(1, 1, 12, 1), true),
@@ -226,12 +226,37 @@ export function normalizeUiScreens(value?: Partial<SkillboundUiScreens>): Skillb
     const stored = value?.[meta.id]
     if (!stored || stored.format !== 'forge-ui-screen' || stored.version !== 1) continue
     const grid = normalizeGrid(stored.grid)
-    const elements = stored.elements?.map((element) => ({
+    let elements = stored.elements?.map((element) => ({
       ...element,
       visible: element.visible !== false,
       locked: element.locked === true,
       placement: clampPlacement(element.placement, grid),
     })) ?? defaults[meta.id].elements
+
+    if (meta.id === 'inventory') {
+      const hasStats = elements.some(
+        (element) => element.id === 'stats',
+      )
+      if (!hasStats) {
+        const legacyDetails = elements.find(
+          (element) => element.id === 'details',
+        )
+        elements = [
+          ...elements.filter(
+            (element) => element.id !== 'details',
+          ),
+          {
+            ...(legacyDetails ?? defaults.inventory.elements.find(
+              (element) => element.id === 'stats',
+            )!),
+            id: 'stats',
+            label: 'Attributes & Combat Stats',
+            kind: 'stats',
+          },
+        ]
+      }
+    }
+
     next[meta.id] = { ...stored, id: meta.id, grid, elements }
   }
   return next
