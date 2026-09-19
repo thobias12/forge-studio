@@ -15,6 +15,7 @@ import {
 import { mergeAdventurePlayerState, type ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
 import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
+import '../engine/runtime/ForgeInventoryRuntime'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import { installForgeRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'

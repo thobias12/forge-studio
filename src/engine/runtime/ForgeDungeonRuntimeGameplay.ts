@@ -235,7 +235,19 @@ export const dungeonGameplayMethods = {
       drop.group.rotation.y += delta * 0.85
       drop.group.position.y = this.floorHeightAt(drop.group.position.x, drop.group.position.z) + Math.sin(drop.age * 3.2) * 0.08
       if (planarDistance(drop.group.position, this.player.position) > 1.0) continue
+      const inventoryRuntime = this as unknown as {
+        canPickupInventoryItem?: (itemId: string) => boolean
+        refreshInventoryLayout?: () => void
+      }
+      if (
+        inventoryRuntime.canPickupInventoryItem &&
+        !inventoryRuntime.canPickupInventoryItem(drop.itemId)
+      ) {
+        this.setMessage('Pack full. Make room or auto-sort the 12 × 6 inventory.', 1.8)
+        continue
+      }
       this.inventory.push(drop.itemId)
+      inventoryRuntime.refreshInventoryLayout?.()
       const item = this.gameplay.items.find((candidate) => candidate.id === drop.itemId)
       if (!this.equippedWeaponId && item?.slot === 'weapon') { this.equippedWeaponId = item.id; void this.refreshEquippedModel() }
       this.setMessage(`${item?.name ?? 'Item'} collected${this.equippedWeaponId === drop.itemId ? ' and equipped' : ''}.`, 2.8)

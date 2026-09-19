@@ -1,4 +1,5 @@
 import type { ForgeEquipmentState } from '../equipment'
+import type { ForgeInventoryPackLayout } from '../inventoryPack'
 
 export type ForgeRuntimeLootSave = {
   id: string
@@ -16,6 +17,7 @@ export type ForgeRuntimeSave = {
   generationVersion: number
   player: { x: number; z: number; health: number }
   inventory: string[]
+  inventoryLayout?: ForgeInventoryPackLayout
   equippedWeaponId?: string
   equipment?: ForgeEquipmentState
   defeatedEnemyIds: string[]

@@ -122,9 +122,10 @@ function ElementMock({ screenId, element }: { screenId: SkillboundUiScreenLayout
   const kind = element.kind
   if (kind === 'title') return <div className="ui-mock-title"><small>SKILLBOUND</small><strong>{titleFor(screenId, element.label)}</strong></div>
   if (kind === 'character-model') return <CharacterMock screenId={screenId}/>
+  if (kind === 'item-grid' && screenId === 'inventory') return <TetrisPackMock/>
   if (kind === 'item-grid' || kind === 'stash-grid') return <div className="ui-mock-item-grid">{Array.from({ length: kind === 'stash-grid' ? 30 : 20 }).map((_, index) => <i className={index % 7 === 2 || index % 11 === 4 ? 'filled' : ''} key={index}/>)}</div>
   if (kind === 'equipment') return <EquipmentMock/>
-  if (kind === 'stats') return <StatsMock element={element}/>
+  if (kind === 'stats') return <StatsMock screenId={screenId} element={element}/>
   if (kind === 'skills') return <div className="ui-mock-skills">{Array.from({ length: 9 }).map((_, index) => <i key={index} style={{ left: `${12 + (index % 3) * 34}%`, top: `${12 + Math.floor(index / 3) * 34}%` }}>{index + 1}</i>)}</div>
   if (kind === 'map') return <div className="ui-mock-map"><i/><i/><i/><b>THE DROWNED MARCH</b></div>
   if (kind === 'quest-list') return <div className="ui-mock-list">{['Break the Bone Seal','The Hollow Vault','Ash on the Road','A Stranger in Grey'].map((item, index) => <span className={index === 0 ? 'active' : ''} key={item}>{item}</span>)}</div>
@@ -144,6 +145,41 @@ function ElementMock({ screenId, element }: { screenId: SkillboundUiScreenLayout
   return <PanelMock screenId={screenId} element={element}/>
 }
 
+function TetrisPackMock() {
+  const items = [
+    { id: 'sword', column: 1, row: 1, width: 1, height: 3 },
+    { id: 'chest', column: 3, row: 1, width: 2, height: 3 },
+    { id: 'bow', column: 6, row: 1, width: 2, height: 4 },
+    { id: 'helm', column: 9, row: 1, width: 2, height: 2 },
+    { id: 'boots', column: 9, row: 4, width: 2, height: 2 },
+    { id: 'ring', column: 12, row: 1, width: 1, height: 1 },
+  ]
+  return <div className="ui-mock-tetris-pack">
+    {Array.from({ length: 72 }).map((_, index) =>
+      <i
+        className="pack-cell"
+        key={index}
+        style={{
+          gridColumn: index % 12 + 1,
+          gridRow: Math.floor(index / 12) + 1,
+        }}
+      />,
+    )}
+    {items.map((item) =>
+      <b
+        className={`pack-item ${item.id}`}
+        key={item.id}
+        style={{
+          gridColumn: `${item.column} / span ${item.width}`,
+          gridRow: `${item.row} / span ${item.height}`,
+        }}
+      >
+        <span/>
+      </b>,
+    )}
+  </div>
+}
+
 function CharacterMock({ screenId }: { screenId: SkillboundUiScreenLayout['id'] }) {
   const creator = screenId === 'character-creator'
   return <div className={`ui-mock-character ${creator ? 'creator' : ''}`}>
@@ -159,12 +195,15 @@ function EquipmentMock() {
   return <div className="ui-mock-equipment"><div className="equipment-paperdoll"><i className="head"/><i className="torso"/><i className="legs"/></div>{slots.map(([slot,label]) => <span className={`equip-${slot}`} key={slot}><b>{label}</b><small>{slot === 'weapon' ? 'Rusted Sword' : 'Empty'}</small></span>)}</div>
 }
 
-function StatsMock({ element }: { element: UiScreenElement }) {
+function StatsMock({ screenId, element }: { screenId: SkillboundUiScreenLayout['id']; element: UiScreenElement }) {
+  const inventory = screenId === 'inventory'
   const defense = /defense|resist/i.test(`${element.id} ${element.label}`)
-  const rows = defense
-    ? [['Armor','642'],['Block','12%'],['Dodge','9%'],['Fire','62%'],['Cold','48%'],['Shadow','36%']]
-    : [['Damage','1,284'],['Attack Speed','1.42/s'],['Critical Chance','18.5%'],['Strength','46'],['Dexterity','22'],['Vitality','51']]
-  return <div className="ui-mock-stats"><header>{defense ? 'DEFENSE & RESISTANCES' : 'OFFENSE & ATTRIBUTES'}</header>{rows.map(([label,value]) => <span key={label}><b>{label}</b><em>{value}</em></span>)}</div>
+  const rows = inventory
+    ? [['Primary Attack','24'],['Gear Attack','7'],['Defense','18'],['Health','120 / 120'],['Skill Power','34'],['Move Speed','6.0'],['Gear Power','39']]
+    : defense
+      ? [['Armor','642'],['Block','12%'],['Dodge','9%'],['Fire','62%'],['Cold','48%'],['Shadow','36%']]
+      : [['Damage','1,284'],['Attack Speed','1.42/s'],['Critical Chance','18.5%'],['Strength','46'],['Dexterity','22'],['Vitality','51']]
+  return <div className="ui-mock-stats"><header>{inventory ? 'CHARACTER STATS' : defense ? 'DEFENSE & RESISTANCES' : 'OFFENSE & ATTRIBUTES'}</header>{rows.map(([label,value]) => <span key={label}><b>{label}</b><em>{value}</em></span>)}</div>
 }
 
 function CreatorOptionsMock() {
@@ -208,7 +247,7 @@ function PanelMock({ screenId, element }: { screenId: SkillboundUiScreenLayout['
 
 function titleFor(screenId: SkillboundUiScreenLayout['id'], label: string) {
   const titles: Partial<Record<SkillboundUiScreenLayout['id'], string>> = {
-    inventory: 'Inventory', character: 'Character', skills: 'Skills', map: 'World Map', quests: 'Quest Log', pause: 'Paused', settings: 'Settings',
+    inventory: 'Character', character: 'Character', skills: 'Skills', map: 'World Map', quests: 'Quest Log', pause: 'Paused', settings: 'Settings',
     'main-menu': 'SKILLBOUND', 'load-game': 'Continue', 'character-select': 'Select Character', 'character-creator': 'Create Character', stash: 'Stash', vendor: 'Vendor', crafting: 'Crafting', dialogue: 'Dialogue', death: 'You Have Fallen',
     'item-compare': 'Compare Items', 'level-up': 'Level Up', waypoint: 'Waypoints',
   }

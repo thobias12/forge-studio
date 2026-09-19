@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   ArrowLeft,
   Backpack,
@@ -18,8 +18,8 @@ import {
   X,
 } from 'lucide-react'
 import CharacterForgePreview from './CharacterForgePreview'
+import SkillboundCharacterInventoryPanel from './SkillboundCharacterInventoryPanel'
 import SkillboundPlayViewport from './SkillboundPlayViewport'
-import { SkillboundCharacterRuntimePanel, SkillboundInventoryRuntimePanel } from './SkillboundRuntimePanels'
 import type { ForgeProjectWorkspace } from '../engine/forgeProject'
 import type { ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
 import type { GeneratedRegion } from '../engine/guidedWorld'
@@ -32,6 +32,7 @@ import {
 import { OFFICIAL_SKILLBOUND_BASE_IDS } from '../lib/characterAssetRegistry'
 import { getAsset, type LibraryAsset } from '../lib/library'
 import { archetypeLabel } from '../engine/playerLoadout'
+import { skillboundUiCssVariables } from '../lib/uiForge'
 import {
   createDefaultPlayerBlueprint,
   createPlayerProfile,
@@ -73,6 +74,11 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
   const selected = profiles.find((profile) => profile.id === selectedId) ?? profiles[0]
   const selectedConfig = selected ? blueprintToConfig(selected.blueprint) : undefined
   const draftConfig = useMemo(() => blueprintToConfig(draft), [draft])
+  const runtimeUiStyle = useMemo(
+    () => skillboundUiCssVariables(workspace.ui.theme) as CSSProperties,
+    [workspace.ui.theme],
+  )
+  const runtimeUiClasses = `panel-${workspace.ui.theme.panelStyle} ornament-${workspace.ui.theme.ornamentLevel} corner-${workspace.ui.theme.cornerStyle} slots-${workspace.ui.theme.slotStyle} buttons-${workspace.ui.theme.buttonStyle} density-${workspace.ui.theme.density}`
 
   useEffect(() => {
     if (!selectedId && profiles[0]) setSelectedId(profiles[0].id)
@@ -155,7 +161,10 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
   }
 
   if (screen === 'play' && selected) {
-    return <div className="skillbound-game-shell">
+    return <div
+      className={`skillbound-game-shell ${runtimeUiClasses}`}
+      style={runtimeUiStyle}
+    >
       <SkillboundPlayViewport
         region={region}
         profile={selected}
@@ -500,7 +509,6 @@ function PauseMenu({
 
 function GameMenuOverlay({
   panel,
-  setPanel,
   profile,
   snapshot,
   workspace,
@@ -515,94 +523,57 @@ function GameMenuOverlay({
   region: GeneratedRegion
   onClose: () => void
 }) {
-  const tabs: Array<{
-    id: GameOverlay
-    label: string
-    shortcut?: string
-    icon: typeof UserRound
-  }> = [
-    { id: 'character', label: 'Character', shortcut: 'C', icon: UserRound },
-    { id: 'inventory', label: 'Inventory', shortcut: 'I', icon: Backpack },
-    { id: 'skills', label: 'Skills', shortcut: 'K', icon: Swords },
-    { id: 'map', label: 'Map', shortcut: 'M', icon: Map },
-    { id: 'quests', label: 'Quests', shortcut: 'J', icon: BookOpen },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ]
+  const combinedCharacter =
+    panel === 'character' || panel === 'inventory'
 
   return <div className="skillbound-game-menu-layer">
-    <div className="skillbound-game-menu-backdrop"/>
-    <section className="skillbound-game-menu-window">
-      <header className="skillbound-game-menu-header">
-        <div>
-          <span>SKILLBOUND</span>
-          <strong>{profile.name}</strong>
-          <small>
-            Level {snapshot?.level ?? profile.blueprint.level} · {region.regionName}
-          </small>
-        </div>
-        <nav aria-label="Game menus">
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            return <button
-              type="button"
-              key={tab.id}
-              className={panel === tab.id ? 'active' : ''}
-              onClick={() => setPanel(tab.id)}
-            >
-              <Icon size={15}/>
-              <span>{tab.label}</span>
-              {tab.shortcut && <kbd>{tab.shortcut}</kbd>}
-            </button>
-          })}
-        </nav>
-        <button
-          type="button"
-          className="skillbound-game-menu-close"
-          onClick={onClose}
-          aria-label="Close menu"
-        >
-          <X size={17}/>
-          <span>Close</span>
-          <kbd>Esc</kbd>
-        </button>
-      </header>
-
-      <main className="skillbound-game-menu-content">
-        {renderGameOverlayPanel(
-          panel,
-          profile,
-          snapshot,
-          workspace,
-          region,
-        )}
-      </main>
-    </section>
+    <div
+      className="skillbound-game-menu-backdrop"
+      onClick={onClose}
+    />
+    <div
+      className={`skillbound-game-menu-content ${combinedCharacter ? 'combined-character' : 'compact-game-window'}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {combinedCharacter
+        ? <SkillboundCharacterInventoryPanel
+            profile={profile}
+            snapshot={snapshot}
+            workspace={workspace}
+            onClose={onClose}
+          />
+        : renderGameOverlayPanel(
+            panel,
+            profile,
+            snapshot,
+            workspace,
+            region,
+            onClose,
+          )}
+    </div>
   </div>
 }
 
 function renderGameOverlayPanel(
-  panel: GameOverlay,
+  panel: Exclude<GameOverlay, 'character' | 'inventory'>,
   profile: SkillboundPlayerProfile,
   snapshot: ExtendedSnapshot | undefined,
   workspace: ForgeProjectWorkspace,
   region: GeneratedRegion,
+  onClose: () => void,
 ) {
-  if (panel === 'character') {
-    return <SkillboundCharacterRuntimePanel
-      profile={profile}
-      snapshot={snapshot}
-      workspace={workspace}
-    />
-  }
-  if (panel === 'inventory') {
-    return <SkillboundInventoryRuntimePanel
-      profile={profile}
-      snapshot={snapshot}
-      workspace={workspace}
-    />
-  }
+  const close = <button
+    type="button"
+    className="game-screen-close"
+    onClick={onClose}
+    aria-label="Close"
+  >
+    <X size={16}/>
+  </button>
+
   if (panel === 'skills') {
     return <section className="game-screen-sheet">
+      {close}
       <header>
         <span>SKILLS</span>
         <h2>Current abilities</h2>
@@ -624,6 +595,7 @@ function renderGameOverlayPanel(
   }
   if (panel === 'map') {
     return <section className="game-screen-sheet">
+      {close}
       <header>
         <span>MAP</span>
         <h2>{region.regionName}</h2>
@@ -648,6 +620,7 @@ function renderGameOverlayPanel(
   }
   if (panel === 'quests') {
     return <section className="game-screen-sheet">
+      {close}
       <header>
         <span>QUEST LOG</span>
         <h2>Tracked objectives</h2>
@@ -666,7 +639,10 @@ function renderGameOverlayPanel(
       </div>
     </section>
   }
-  return <FrontSettings embedded/>
+  return <div className="game-settings-shell">
+    {close}
+    <FrontSettings embedded/>
+  </div>
 }
 
 function gameOverlayShortcut(key: string): GameOverlay | undefined {
