@@ -12,8 +12,9 @@ import {
   type PoiPrefabCategory,
   type PoiPrefabPart,
 } from '../lib/poiPrefab'
-import { loadPropPrefabs } from '../lib/propPrefab'
+import { loadPropPrefabs, type PropPrefab } from '../lib/propPrefab'
 import { buildPropVisual } from './propPrefabVisual'
+import type { GameplaySocket } from './gameplaySockets'
 
 export type AuthoredPoiOverride = {
   prefabId?: string
@@ -34,6 +35,15 @@ export type ResolvedPoiPrefab = {
   override: AuthoredPoiOverride
   worldRotation: number
   worldScale: number
+}
+
+export type PoiGameplaySocketPlacement = {
+  id: string
+  socket: GameplaySocket
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: number
+  sourceName: string
 }
 
 export const AUTHORED_POI_SETTINGS_KEY = 'forge-authored-poi-settings-v1'
@@ -210,6 +220,100 @@ export function poiPrefabApproxHeight(prefab: PoiPrefab) {
     )
   }
   return highest
+}
+
+export function collectPoiGameplaySockets(
+  prefab: PoiPrefab,
+  propPrefabs: PropPrefab[] = loadPropPrefabs(),
+): PoiGameplaySocketPlacement[] {
+  const placements: PoiGameplaySocketPlacement[] = []
+
+  for (const socket of prefab.sockets) {
+    placements.push({
+      id: socket.id,
+      socket,
+      position: [...socket.position],
+      rotation: [...socket.rotation],
+      scale: 1,
+      sourceName: prefab.name,
+    })
+  }
+
+  const propById = new Map(
+    propPrefabs.map((prop) => [prop.id, prop]),
+  )
+  const position = new THREE.Vector3()
+  const quaternion = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  const partQuaternion = new THREE.Quaternion()
+  const socketQuaternion = new THREE.Quaternion()
+  const matrix = new THREE.Matrix4()
+  const contentOffset = new THREE.Matrix4()
+  const socketMatrix = new THREE.Matrix4()
+
+  for (const part of prefab.parts) {
+    if (part.kind !== 'prop' || !part.assetRef) continue
+    const prop = propById.get(part.assetRef)
+    if (!prop?.sockets.length) continue
+
+    partQuaternion.setFromEuler(
+      new THREE.Euler(...part.rotation),
+    )
+    matrix.compose(
+      new THREE.Vector3(...part.position),
+      partQuaternion,
+      new THREE.Vector3(...part.scale),
+    )
+    contentOffset.makeTranslation(
+      -prop.pivot[0],
+      -prop.pivot[1],
+      -prop.pivot[2],
+    )
+    matrix.multiply(contentOffset)
+
+    for (const socket of prop.sockets) {
+      socketQuaternion.setFromEuler(
+        new THREE.Euler(...socket.rotation),
+      )
+      socketMatrix.compose(
+        new THREE.Vector3(...socket.position),
+        socketQuaternion,
+        new THREE.Vector3(1, 1, 1),
+      )
+      const combined = matrix.clone().multiply(socketMatrix)
+      combined.decompose(position, quaternion, scale)
+      const euler = new THREE.Euler().setFromQuaternion(
+        quaternion,
+        'XYZ',
+      )
+      placements.push({
+        id: `${part.id}:${socket.id}`,
+        socket: {
+          ...socket,
+          id: `${part.id}:${socket.id}`,
+        },
+        position: [
+          position.x,
+          position.y,
+          position.z,
+        ],
+        rotation: [
+          euler.x,
+          euler.y,
+          euler.z,
+        ],
+        scale: Math.max(
+          .001,
+          Math.abs(scale.x),
+          Math.abs(scale.y),
+          Math.abs(scale.z),
+        ),
+        sourceName: `${prefab.name} · ${prop.name}`,
+      })
+    }
+  }
+
+  return placements
 }
 
 export function buildPoiPrefabVisual(prefab: PoiPrefab) {

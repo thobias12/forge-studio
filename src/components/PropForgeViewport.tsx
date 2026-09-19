@@ -13,6 +13,10 @@ import {
   type PropPart,
   type PropPrefab,
 } from '../lib/propPrefab'
+import {
+  buildGameplaySocketMarker,
+  type GameplaySocket,
+} from '../engine/gameplaySockets'
 
 export type PropForgeTransformMode = 'translate' | 'rotate' | 'scale'
 export type PropForgePreviewMode = 'full' | 'far'
@@ -20,6 +24,7 @@ export type PropForgePreviewMode = 'full' | 'far'
 type Props = {
   prefab: PropPrefab
   selectedPartId?: string
+  selectedSocketId?: string
   mode: PropForgeTransformMode
   topDown: boolean
   showCollision: boolean
@@ -28,7 +33,9 @@ type Props = {
   focusNonce: number
   captureNonce: number
   onSelectPart: (partId?: string) => void
+  onSelectSocket: (socketId?: string) => void
   onCommitPart: (part: PropPart) => void
+  onCommitSocket: (socket: GameplaySocket) => void
   onCaptureThumbnail: (dataUrl: string) => void
 }
 
@@ -42,6 +49,7 @@ type ViewState = {
   root?: THREE.Group
   selection?: THREE.BoxHelper
   parts: Map<string, THREE.Group>
+  sockets: Map<string, THREE.Group>
   collisionHelpers: THREE.BoxHelper[]
   pivotMarker?: THREE.Group
   framingKey?: string
@@ -52,6 +60,7 @@ type ViewState = {
 export default function PropForgeViewport({
   prefab,
   selectedPartId,
+  selectedSocketId,
   mode,
   topDown,
   showCollision,
@@ -60,22 +69,29 @@ export default function PropForgeViewport({
   focusNonce,
   captureNonce,
   onSelectPart,
+  onSelectSocket,
   onCommitPart,
+  onCommitSocket,
   onCaptureThumbnail,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const stateRef = useRef<ViewState>({
     parts: new Map(),
+    sockets: new Map(),
     collisionHelpers: [],
   })
   const prefabRef = useRef(prefab)
   const selectRef = useRef(onSelectPart)
+  const selectSocketRef = useRef(onSelectSocket)
   const commitRef = useRef(onCommitPart)
+  const commitSocketRef = useRef(onCommitSocket)
   const captureRef = useRef(onCaptureThumbnail)
 
   prefabRef.current = prefab
   selectRef.current = onSelectPart
+  selectSocketRef.current = onSelectSocket
   commitRef.current = onCommitPart
+  commitSocketRef.current = onCommitSocket
   captureRef.current = onCaptureThumbnail
 
   useEffect(() => {
@@ -172,6 +188,7 @@ export default function PropForgeViewport({
       transform,
       transformHelper,
       parts: new Map(),
+      sockets: new Map(),
       collisionHelpers: [],
     }
     stateRef.current = state
@@ -184,6 +201,28 @@ export default function PropForgeViewport({
 
         const object = transform.object
         if (!(object instanceof THREE.Group)) return
+        const socketId = object.userData.gameplaySocketId as string | undefined
+        if (socketId) {
+          const socket = prefabRef.current.sockets.find(
+            (candidate) => candidate.id === socketId,
+          )
+          if (!socket) return
+          commitSocketRef.current({
+            ...socket,
+            position: [
+              round(object.position.x),
+              round(object.position.y),
+              round(object.position.z),
+            ],
+            rotation: [
+              round(object.rotation.x, 4),
+              round(object.rotation.y, 4),
+              round(object.rotation.z, 4),
+            ],
+          })
+          return
+        }
+
         const partId = object.userData.propPartId as string | undefined
         if (!partId) return
         const source = prefabRef.current.parts.find(
@@ -248,17 +287,27 @@ export default function PropForgeViewport({
       for (const hit of hits) {
         let current: THREE.Object3D | null = hit.object
         while (current && current !== root) {
+          const socketId = current.userData.gameplaySocketId as
+            | string
+            | undefined
+          if (socketId) {
+            selectSocketRef.current(socketId)
+            selectRef.current(undefined)
+            return
+          }
           const partId = current.userData.propPartId as
             | string
             | undefined
           if (partId) {
             selectRef.current(partId)
+            selectSocketRef.current(undefined)
             return
           }
           current = current.parent
         }
       }
       selectRef.current(undefined)
+      selectSocketRef.current(undefined)
     }
 
     renderer.domElement.addEventListener(
@@ -320,6 +369,7 @@ export default function PropForgeViewport({
       renderer.domElement.remove()
       stateRef.current = {
         parts: new Map(),
+        sockets: new Map(),
         collisionHelpers: [],
       }
     }
@@ -340,6 +390,7 @@ export default function PropForgeViewport({
     clearSelection(state)
     clearCollisionHelpers(state)
     state.parts.clear()
+    state.sockets.clear()
 
     if (state.root) {
       state.scene.remove(state.root)
@@ -371,6 +422,13 @@ export default function PropForgeViewport({
         state.parts.set(part.id, object)
         content.add(object)
       }
+      for (const socket of prefab.sockets) {
+        const marker = buildGameplaySocketMarker(socket, {
+          selected: socket.id === selectedSocketId,
+        })
+        state.sockets.set(socket.id, marker)
+        content.add(marker)
+      }
     }
 
     state.root = root
@@ -389,6 +447,7 @@ export default function PropForgeViewport({
     attachSelection(
       state,
       previewMode === 'full' ? selectedPartId : undefined,
+      previewMode === 'full' ? selectedSocketId : undefined,
     )
 
     const framingKey = prefab.id
@@ -406,7 +465,11 @@ export default function PropForgeViewport({
   useEffect(() => {
     const state = stateRef.current
     if (!state.transform) return
-    state.transform.setMode(mode)
+    state.transform.setMode(
+      selectedSocketId && mode === 'scale'
+        ? 'translate'
+        : mode,
+    )
     state.transform.setTranslationSnap(
       prefab.snap ? prefab.gridSize : null,
     )
@@ -416,14 +479,15 @@ export default function PropForgeViewport({
     state.transform.setScaleSnap(
       prefab.snap ? .05 : null,
     )
-  }, [mode, prefab.snap, prefab.gridSize])
+  }, [mode, prefab.snap, prefab.gridSize, selectedSocketId])
 
   useEffect(() => {
     attachSelection(
       stateRef.current,
       previewMode === 'full' ? selectedPartId : undefined,
+      previewMode === 'full' ? selectedSocketId : undefined,
     )
-  }, [selectedPartId, previewMode])
+  }, [selectedPartId, selectedSocketId, previewMode])
 
   useEffect(() => {
     const state = stateRef.current
@@ -431,7 +495,9 @@ export default function PropForgeViewport({
 
     const part = selectedPartId
       ? state.parts.get(selectedPartId)
-      : undefined
+      : selectedSocketId
+        ? state.sockets.get(selectedSocketId)
+        : undefined
 
     if (topDown) {
       const x = part?.position.x ?? 0
@@ -485,6 +551,9 @@ export default function PropForgeViewport({
   const selected = selectedPartId
     ? prefab.parts.find((part) => part.id === selectedPartId)
     : undefined
+  const selectedSocket = selectedSocketId
+    ? prefab.sockets.find((socket) => socket.id === selectedSocketId)
+    : undefined
 
   return (
     <div className="prop-forge-viewport" ref={hostRef}>
@@ -495,7 +564,7 @@ export default function PropForgeViewport({
         <strong>
           {previewMode === 'far'
             ? `LOD proxy · ${prefab.lod.farDistance}m`
-            : selected?.name ?? 'Click a part to select'}
+            : selectedSocket?.name ?? selected?.name ?? 'Click a part or socket to select'}
         </strong>
       </div>
       <div className="prop-viewport-axis">
@@ -549,19 +618,23 @@ function clearCollisionHelpers(state: ViewState) {
 function attachSelection(
   state: ViewState,
   selectedPartId?: string,
+  selectedSocketId?: string,
 ) {
   if (!state.scene || !state.transform) return
   state.transform.detach()
   clearSelection(state)
 
-  if (!selectedPartId) return
-  const selected = state.parts.get(selectedPartId)
+  const selected = selectedSocketId
+    ? state.sockets.get(selectedSocketId)
+    : selectedPartId
+      ? state.parts.get(selectedPartId)
+      : undefined
   if (!selected) return
 
   state.transform.attach(selected)
   const helper = new THREE.BoxHelper(
     selected,
-    0x8fd7a7,
+    selectedSocketId ? 0xf0d870 : 0x8fd7a7,
   )
   const material = helper.material as THREE.LineBasicMaterial
   material.transparent = true

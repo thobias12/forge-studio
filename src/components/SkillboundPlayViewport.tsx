@@ -298,7 +298,33 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     <HudPickupFlights events={snapshot.pickupEvents} layout={hudLayout}/>
     {hudModuleVisible(hudLayout, 'objective') && <div className="skillbound-objective" style={moduleStyle('objective')}>{objective}</div>}
     {snapshot.target && hudModuleVisible(hudLayout, 'target') && <TargetBar target={snapshot.target} style={moduleStyle('target')}/>} 
-    {nearDungeon && dungeonAnchor && hudModuleVisible(hudLayout, 'interaction') && <div className="skillbound-interaction-prompt ready" style={moduleStyle('interaction')}><kbd>E</kbd><strong>Enter {dungeonAnchor.label}</strong></div>}
+    {snapshot.interaction && hudModuleVisible(hudLayout, 'interaction') && (
+      <button
+        className={`skillbound-interaction-prompt gameplay-socket-prompt ${snapshot.interaction.locked ? 'locked' : 'ready'} ${snapshot.interaction.trigger === 'hold' ? 'hold' : 'tap'}`}
+        style={moduleStyle('interaction')}
+        onClick={() => runtimeRef.current?.interact()}
+      >
+        <kbd>E</kbd>
+        <span>
+          <strong>
+            {snapshot.interaction.locked
+              ? snapshot.interaction.lockedText ?? 'Locked'
+              : snapshot.interaction.prompt}
+          </strong>
+          <small>
+            {snapshot.interaction.trigger === 'hold'
+              ? `Hold E · ${snapshot.interaction.holdSeconds.toFixed(1)}s`
+              : snapshot.interaction.sourceName}
+          </small>
+        </span>
+        {snapshot.interaction.trigger === 'hold' && (
+          <i>
+            <b style={{ width: `${Math.round(snapshot.interaction.progress * 100)}%` }}/>
+          </i>
+        )}
+      </button>
+    )}
+    {!snapshot.interaction && nearDungeon && dungeonAnchor && hudModuleVisible(hudLayout, 'interaction') && <div className="skillbound-interaction-prompt ready" style={moduleStyle('interaction')}><kbd>E</kbd><strong>Enter {dungeonAnchor.label}</strong></div>}
 
     <div className="skillbound-runtime-actions">
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
