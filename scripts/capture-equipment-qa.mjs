@@ -82,19 +82,38 @@ await rm(outputDir, {
   force: true,
 })
 
-console.log(
-  'Building Forge Studio for Equipment QA…',
-)
-await run(
-  npmCommand(),
-  ['run', 'build'],
-  {
-    ...process.env,
-    VITE_FORGE_BUILD:
-      process.env.VITE_FORGE_BUILD ??
-      'qa-local',
-  },
-)
+const skipBuild =
+  process.env.FORGE_QA_SKIP_BUILD ===
+  '1'
+
+if (!skipBuild) {
+  console.log(
+    'Building Forge Studio for Equipment QA…',
+  )
+  await run(
+    npmCommand(),
+    ['run', 'build'],
+    {
+      ...process.env,
+      VITE_FORGE_BUILD:
+        process.env.VITE_FORGE_BUILD ??
+        'qa-local',
+    },
+  )
+} else {
+  console.log(
+    'Reusing existing dist build for Equipment QA…',
+  )
+  if (
+    !existsSync(
+      resolve(root, 'dist/index.html'),
+    )
+  ) {
+    throw new Error(
+      'FORGE_QA_SKIP_BUILD=1 but dist/index.html does not exist.',
+    )
+  }
+}
 
 // Vite clears dist during build, so create QA output only after the build.
 await mkdir(outputDir, {
@@ -104,10 +123,18 @@ await mkdir(outputDir, {
 await mkdir(qaModelDir, {
   recursive: true,
 })
-await copyFile(
-  resolve(modelPath),
-  qaModelPath,
-)
+const resolvedModelPath =
+  resolve(modelPath)
+
+if (
+  resolvedModelPath !==
+  qaModelPath
+) {
+  await copyFile(
+    resolvedModelPath,
+    qaModelPath,
+  )
+}
 
 let preview
 let browser
@@ -160,17 +187,49 @@ try {
     `Launching Equipment QA Chromium (headless=${headless})…`,
   )
 
-  browser =
-    await chromium.launch({
-      headless,
-      args: [
-        '--enable-webgl',
-        '--ignore-gpu-blocklist',
-        '--use-gl=angle',
-        '--use-angle=swiftshader',
-        '--enable-unsafe-swiftshader',
-      ],
-    })
+  const launchOptions = {
+    headless,
+    args: [
+      '--enable-webgl',
+      '--ignore-gpu-blocklist',
+      '--use-gl=angle',
+      '--use-angle=swiftshader',
+      '--enable-unsafe-swiftshader',
+    ],
+  }
+  const browserChannel =
+    process.env
+      .FORGE_QA_BROWSER_CHANNEL
+      ?.trim()
+
+  if (browserChannel) {
+    try {
+      browser =
+        await chromium.launch({
+          ...launchOptions,
+          channel:
+            browserChannel,
+        })
+    } catch (cause) {
+      console.warn(
+        'Could not launch Playwright channel "' +
+          browserChannel +
+          '", falling back to bundled Chromium: ' +
+          (cause instanceof Error
+            ? cause.message
+            : String(cause)),
+      )
+      browser =
+        await chromium.launch(
+          launchOptions,
+        )
+    }
+  } else {
+    browser =
+      await chromium.launch(
+        launchOptions,
+      )
+  }
 
   const page =
     await browser.newPage({
@@ -222,8 +281,23 @@ try {
     )
   }
 
+  const requestedViews =
+    process.env.FORGE_QA_VIEWS
+      ?.split(',')
+      .map((value) =>
+        value.trim(),
+      )
+      .filter(Boolean) ??
+    []
+  const viewQuery =
+    requestedViews.length
+      ? `&views=${encodeURIComponent(
+          requestedViews.join(','),
+        )}`
+      : ''
+
   const url =
-    `${baseUrl}/?equipmentQa=1&body=${bodyType}&model=./qa-foundation/${qaModelName}&fit=0`
+    `${baseUrl}/?equipmentQa=1&body=${bodyType}&model=./qa-foundation/${qaModelName}&fit=0${viewQuery}`
 
   console.log(
     `Opening ${url}`,
