@@ -122,6 +122,7 @@ function ElementMock({ screenId, element }: { screenId: SkillboundUiScreenLayout
   const kind = element.kind
   if (kind === 'title') return <div className="ui-mock-title"><small>SKILLBOUND</small><strong>{titleFor(screenId, element.label)}</strong></div>
   if (kind === 'character-model') return <CharacterMock screenId={screenId}/>
+  if (kind === 'item-grid' && screenId === 'inventory') return <TetrisPackMock/>
   if (kind === 'item-grid' || kind === 'stash-grid') return <div className="ui-mock-item-grid">{Array.from({ length: kind === 'stash-grid' ? 30 : 20 }).map((_, index) => <i className={index % 7 === 2 || index % 11 === 4 ? 'filled' : ''} key={index}/>)}</div>
   if (kind === 'equipment') return <EquipmentMock/>
   if (kind === 'stats') return <StatsMock element={element}/>
@@ -142,6 +143,41 @@ function ElementMock({ screenId, element }: { screenId: SkillboundUiScreenLayout
   if (kind === 'death-summary') return <div className="ui-mock-death"><strong>YOU HAVE FALLEN</strong><span>Level 18 · The Hollow Vault</span><small>3 enemies defeated · 2 items recovered</small></div>
   if (kind === 'tabs') return <TabsMock screenId={screenId}/>
   return <PanelMock screenId={screenId} element={element}/>
+}
+
+function TetrisPackMock() {
+  const items = [
+    { id: 'sword', column: 1, row: 1, width: 1, height: 3 },
+    { id: 'chest', column: 3, row: 1, width: 2, height: 3 },
+    { id: 'bow', column: 6, row: 1, width: 2, height: 4 },
+    { id: 'helm', column: 9, row: 1, width: 2, height: 2 },
+    { id: 'boots', column: 9, row: 4, width: 2, height: 2 },
+    { id: 'ring', column: 12, row: 1, width: 1, height: 1 },
+  ]
+  return <div className="ui-mock-tetris-pack">
+    {Array.from({ length: 72 }).map((_, index) =>
+      <i
+        className="pack-cell"
+        key={index}
+        style={{
+          gridColumn: index % 12 + 1,
+          gridRow: Math.floor(index / 12) + 1,
+        }}
+      />,
+    )}
+    {items.map((item) =>
+      <b
+        className={`pack-item ${item.id}`}
+        key={item.id}
+        style={{
+          gridColumn: `${item.column} / span ${item.width}`,
+          gridRow: `${item.row} / span ${item.height}`,
+        }}
+      >
+        <span/>
+      </b>,
+    )}
+  </div>
 }
 
 function CharacterMock({ screenId }: { screenId: SkillboundUiScreenLayout['id'] }) {
