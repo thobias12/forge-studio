@@ -93,7 +93,7 @@ export default function AnimationStudioV3() {
   const [trimEndMs, setTrimEndMs] = useState(1)
   const [speed, setSpeed] = useState(1)
   const [closeLoop, setCloseLoop] = useState(false)
-  const [rootMotion, setRootMotion] = useState<RootMotionMode>('keep')
+  const [rootMotion, setRootMotion] = useState<RootMotionMode>('all')
   const [loop, setLoop] = useState(false)
 
   const [smoothing, setSmoothing] = useState(0.42)
@@ -221,7 +221,13 @@ export default function AnimationStudioV3() {
     setTrimEndMs(Math.max(1, draft.settings.edit.trimEndMs))
     setSpeed(draft.settings.edit.speed)
     setCloseLoop(draft.settings.edit.closeLoop)
-    setRootMotion(draft.settings.edit.rootMotion)
+    setRootMotion(
+      draft.settings.edit.rootMotion === 'keep' &&
+      draft.settings.purpose !== 'walk' &&
+      draft.settings.purpose !== 'run'
+        ? 'all'
+        : draft.settings.edit.rootMotion,
+    )
     setLoop(draft.settings.edit.loop)
     setSmoothing(draft.settings.smoothing)
     setMirrorX(draft.settings.mirrorX ?? true)
@@ -296,7 +302,7 @@ export default function AnimationStudioV3() {
         trimEndMs: Math.max(1, next.durationMs),
         speed: 1,
         closeLoop: definition?.loop ?? false,
-        rootMotion: action === 'walk' || action === 'run' ? 'horizontal' : 'keep',
+        rootMotion: action === 'walk' || action === 'run' ? 'horizontal' : 'all',
         loop: definition?.loop ?? false,
       }
       const settings: AnimationDraftSettings = {
@@ -455,7 +461,7 @@ export default function AnimationStudioV3() {
       setClipName(definition.label)
       setLoop(definition.loop)
       setCloseLoop(definition.loop)
-      setRootMotion(next === 'walk' || next === 'run' ? 'horizontal' : 'keep')
+      setRootMotion(next === 'walk' || next === 'run' ? 'horizontal' : 'all')
     }
     setPublished(undefined)
   }
@@ -473,7 +479,7 @@ export default function AnimationStudioV3() {
       const definition = actionDefinition(purpose)
       const settings: AnimationDraftSettings = {
         purpose,
-        edit: { name: next.name || definition?.label || 'Imported Motion', trimStartMs: 0, trimEndMs: Math.max(1, next.durationMs), speed: 1, closeLoop: definition?.loop ?? false, rootMotion: purpose === 'walk' || purpose === 'run' ? 'horizontal' : 'keep', loop: definition?.loop ?? false },
+        edit: { name: next.name || definition?.label || 'Imported Motion', trimStartMs: 0, trimEndMs: Math.max(1, next.durationMs), speed: 1, closeLoop: definition?.loop ?? false, rootMotion: purpose === 'walk' || purpose === 'run' ? 'horizontal' : 'all', loop: definition?.loop ?? false },
         smoothing,
         mirrorX: true,
         cleanup: cleanupOptions,
