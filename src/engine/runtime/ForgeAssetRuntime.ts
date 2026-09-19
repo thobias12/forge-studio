@@ -39,6 +39,12 @@ export class ForgeCharacterVisualBinding {
   private active?: THREE.AnimationAction
   private activeKey = 'idle'
   private fallbackCue: 'idle' | 'move' = 'idle'
+  private fallbackState?: {
+    cue: 'idle' | 'move'
+    clip: THREE.AnimationClip
+    loop: boolean
+    speed: number
+  }
   private oneShot = false
   private disposed = false
   private secondaryMotion?: SecondaryMotionState
@@ -86,6 +92,7 @@ export class ForgeCharacterVisualBinding {
     this.mixer = this.clips.length ? new THREE.AnimationMixer(this.root) : undefined
     this.active = undefined
     this.activeKey = ''
+    this.fallbackState = undefined
     this.play('idle', true)
   }
 
@@ -100,14 +107,24 @@ export class ForgeCharacterVisualBinding {
     this.updateSecondaryMotion(delta)
     if (this.oneShot && this.active && !this.active.isRunning()) {
       // One-shot combat actions must leave no residual mixer weight behind.
-      // Clear the mixer completely, restore the exact current fallback cue and
-      // evaluate it immediately so the bind/rest T-pose cannot appear for even
-      // one frame after Attack/Dodge/Hit finishes.
+      // Resume the exact locomotion clip object that was active/selected before
+      // the action. Do not re-resolve by cue/name here: generated and authored
+      // clips can intentionally share Idle/Walk-style names.
       this.oneShot = false
       this.active = undefined
       this.activeKey = ''
       this.mixer?.stopAllAction()
-      if (this.play(this.fallbackCue, true)) {
+
+      const fallback = this.fallbackState
+      if (
+        fallback &&
+        this.playClip(
+          fallback.clip,
+          `cue:${fallback.cue}:${fallback.clip.uuid}`,
+          fallback.loop,
+          fallback.speed,
+        )
+      ) {
         this.mixer?.update(0)
       }
     }
@@ -115,10 +132,7 @@ export class ForgeCharacterVisualBinding {
 
   play(cue: ForgeAnimationCue, loop = cue === 'idle' || cue === 'move') {
     if (!this.mixer || !this.clips.length) return false
-    if (cue === 'idle' || cue === 'move') {
-      this.fallbackCue = cue
-      if (this.oneShot && this.active?.isRunning()) return false
-    }
+
     const authored = resolveRuntimeBinding(this.animationSet, cue)
     const clip = authored?.clip
       ? findClipByName(this.clips, authored.clip)
@@ -128,11 +142,28 @@ export class ForgeCharacterVisualBinding {
     // configured, never silently substitute a generic embedded animation with
     // a different arm/rest pose.
     if (!clip) return false
+
+    const resolvedLoop = cue === 'idle' || cue === 'move'
+      ? true
+      : authored?.loop ?? loop
+    const resolvedSpeed = authored?.speed ?? 1
+
+    if (cue === 'idle' || cue === 'move') {
+      this.fallbackCue = cue
+      this.fallbackState = {
+        cue,
+        clip,
+        loop: resolvedLoop,
+        speed: resolvedSpeed,
+      }
+      if (this.oneShot && this.active?.isRunning()) return false
+    }
+
     return this.playClip(
       clip,
-      `cue:${cue}:${clip.name}`,
-      authored?.loop ?? loop,
-      authored?.speed ?? 1,
+      `cue:${cue}:${clip.uuid}`,
+      resolvedLoop,
+      resolvedSpeed,
     )
   }
 
