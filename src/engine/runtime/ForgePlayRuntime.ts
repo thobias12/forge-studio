@@ -14,6 +14,7 @@ import {
   ForgeCharacterVisualBinding,
   ForgeLibraryVfxInstance,
   loadLibraryAnimationClips,
+  preloadLibraryVfx,
   spawnLibraryVfx,
 } from './ForgeAssetRuntime'
 import {
@@ -315,6 +316,18 @@ export class ForgePlayRuntime {
     this.buildPlayer(save?.player)
     this.buildEnemies()
     save?.lootDrops.forEach((drop) => this.spawnLoot(drop, false))
+    void preloadLibraryVfx([
+      ...this.gameplay.abilities.map(
+        (ability) => ability.vfxAssetId,
+      ),
+      ...this.gameplay.enemies.flatMap(
+        (enemy) => [
+          enemy.attackVfxAssetId,
+          enemy.hitVfxAssetId,
+          enemy.deathVfxAssetId,
+        ],
+      ),
+    ]).catch(() => undefined)
     void this.bindPlayerVisual()
     void this.refreshEquippedModel()
 
