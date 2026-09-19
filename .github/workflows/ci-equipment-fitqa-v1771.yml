@@ -1,0 +1,22 @@
+name: Equipment Fit QA v1.77.1 CI
+
+on:
+  push:
+    branches:
+      - forge-equipment-fitqa-v1771
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
