@@ -19,6 +19,7 @@ export type ForgeRuntimeSave = {
   equippedWeaponId?: string
   equipment?: ForgeEquipmentState
   defeatedEnemyIds: string[]
+  usedInteractionIds?: string[]
   lootDrops: ForgeRuntimeLootSave[]
   gold?: number
   xp?: number
