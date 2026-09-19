@@ -124,7 +124,8 @@ export function buildConformedTunic(
       48,
       trim,
       'EFV3_NecklineTrim',
-      .34,
+      .5,
+      .0022,
     )
   meshes.push(necklineTrim)
   meshes.push(
@@ -1788,18 +1789,18 @@ function createShoulderBridge(
       radial.normalize()
       torsoPoint.addScaledVector(
         radial,
-        .0012,
+        .0006,
       )
       sleevePoint.addScaledVector(
         radial,
-        .0012,
+        .0006,
       )
       middlePoint.addScaledVector(
         radial,
-        .0038,
+        .0014,
       )
     }
-    middlePoint.y += .0012
+    middlePoint.y += .00035
 
     const torsoInfluence =
       readSkinInfluence(
@@ -2381,6 +2382,94 @@ function createCapeLayer(
       },
     )
 
+  // Build a dedicated cape attachment curve instead of copying the
+  // tunic neckline. The old attachment inherited the neckline's varying
+  // Y contour and produced the angular/W-shaped cape root visible from
+  // above and behind.
+  let topAnchors =
+    topIndices.map(
+      (topIndex, column) => {
+        const u =
+          column / columns
+        const edge =
+          Math.abs(u - .5) * 2
+        const sourcePoint =
+          new THREE.Vector3(
+            sourcePosition.getX(
+              topIndex,
+            ),
+            sourcePosition.getY(
+              topIndex,
+            ),
+            sourcePosition.getZ(
+              topIndex,
+            ),
+          )
+        const y =
+          frame.shoulderY -
+          frame.height *
+            (.028 +
+              .026 *
+                Math.pow(
+                  edge,
+                  1.65,
+                ))
+        const backZ =
+          sampleBackSurfaceZ(
+            sourceVertices,
+            sourcePoint.x,
+            y,
+            frame.height,
+          )
+        const attachmentClearance =
+          frame.height *
+          recipe.cape.clearance *
+          .78
+
+        return new THREE.Vector3(
+          sourcePoint.x,
+          y,
+          backZ -
+            attachmentClearance,
+        )
+      },
+    )
+
+  for (
+    let pass = 0;
+    pass < 2;
+    pass += 1
+  ) {
+    topAnchors =
+      topAnchors.map(
+        (point, index) => {
+          if (
+            index === 0 ||
+            index ===
+              topAnchors.length - 1
+          ) {
+            return point.clone()
+          }
+
+          return topAnchors[
+            index - 1
+          ]
+            .clone()
+            .multiplyScalar(.18)
+            .addScaledVector(
+              point,
+              .64,
+            )
+            .addScaledVector(
+              topAnchors[
+                index + 1
+              ],
+              .18,
+            )
+        },
+      )
+  }
+
   for (
     let row = 0;
     row <= rows;
@@ -2646,31 +2735,34 @@ function createVestPanelDetails(
   trim: THREE.Material,
 ) {
   return [
+    // Narrow, mirrored side reinforcements. Keep the center chest clean
+    // so the leather reads as garment construction rather than two
+    // blocky plates stuck onto the front.
     createGridAreaPatch(
       source,
       vestGeometry,
       48,
       2,
       8,
-      5,
-      11,
+      7,
+      10,
       leather,
       'EFV3_VestPanel_L',
       'radial',
-      .0065,
+      .0052,
     ),
     createGridAreaPatch(
       source,
       vestGeometry,
       48,
-      3,
+      2,
       8,
-      37,
-      43,
+      38,
+      41,
       leather,
       'EFV3_VestPanel_R',
       'radial',
-      .0065,
+      .0052,
     ),
     createGridColumnStrip(
       source,
@@ -2682,7 +2774,7 @@ function createVestPanelDetails(
       trim,
       'EFV3_VestPanelSeam_L',
       'radial',
-      .0073,
+      .0059,
     ),
     createGridColumnStrip(
       source,
@@ -2694,7 +2786,7 @@ function createVestPanelDetails(
       trim,
       'EFV3_VestPanelSeam_R',
       'radial',
-      .0073,
+      .0059,
     ),
     createGridRowStrip(
       source,
@@ -2702,53 +2794,25 @@ function createVestPanelDetails(
       48,
       2,
       3,
-      5,
-      11,
+      7,
+      10,
       trim,
       'EFV3_VestPanelBase_L',
       'radial',
-      .0073,
+      .0059,
     ),
     createGridRowStrip(
       source,
       vestGeometry,
       48,
+      2,
       3,
-      4,
-      37,
-      43,
+      38,
+      41,
       trim,
       'EFV3_VestPanelBase_R',
       'radial',
-      .0073,
-    ),
-    // Broad fitted reinforcement instead of the narrow diagonal strip
-    // from v1.77.5, which read visually as a floating rope/cord.
-    createGridAreaPatch(
-      source,
-      vestGeometry,
-      48,
-      6,
-      9,
-      5,
-      12,
-      leather,
-      'EFV3_VestShoulderReinforcement_L',
-      'radial',
-      .0075,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      48,
-      6,
-      7,
-      5,
-      12,
-      trim,
-      'EFV3_VestShoulderReinforcementSeam_L',
-      'radial',
-      .0082,
+      .0059,
     ),
   ]
 }
@@ -3501,7 +3565,7 @@ function createCapeDetails(
       trim,
       'EFV3_CapeBorder_L',
       'back',
-      .0018,
+      .0016,
     ),
     createGridColumnStrip(
       source,
@@ -3513,7 +3577,7 @@ function createCapeDetails(
       trim,
       'EFV3_CapeBorder_R',
       'back',
-      .0018,
+      .0016,
     ),
     createGridRowStrip(
       source,
@@ -3526,50 +3590,36 @@ function createCapeDetails(
       trim,
       'EFV3_CapeHem',
       'back',
-      .0018,
+      .0016,
     ),
-    createGridAreaPatch(
+    // A narrow shoulder yoke follows the smooth attachment curve. The
+    // previous rows 0..2 leather slab + diagonal strips dominated the
+    // back/neck silhouette and looked like rigid polygons.
+    createGridRowStrip(
       source,
       capeGeometry,
       columns,
       0,
-      2,
+      1,
       1,
       9,
       leather,
       'EFV3_CapeYoke',
       'back',
-      .0024,
+      .0018,
     ),
-    createGridPathStrip(
+    createGridRowStrip(
       source,
       capeGeometry,
       columns,
-      [
-        { row: 0, column: 2 },
-        { row: 1, column: 3 },
-        { row: 2, column: 4 },
-        { row: 3, column: 4 },
-      ],
+      1,
+      2,
+      2,
+      8,
       trim,
-      'EFV3_CapeYokeSeam_L',
+      'EFV3_CapeYokeLowerSeam',
       'back',
-      .003,
-    ),
-    createGridPathStrip(
-      source,
-      capeGeometry,
-      columns,
-      [
-        { row: 0, column: 8 },
-        { row: 1, column: 7 },
-        { row: 2, column: 6 },
-        { row: 3, column: 6 },
-      ],
-      trim,
-      'EFV3_CapeYokeSeam_R',
-      'back',
-      .003,
+      .0021,
     ),
     createGridColumnStrip(
       source,
@@ -3581,33 +3631,33 @@ function createCapeDetails(
       trim,
       'EFV3_CapeCenterSeam',
       'back',
-      .0018,
+      .0016,
     ),
     createGridPatch(
       source,
       capeGeometry,
       columns,
       0,
-      2,
+      1,
       2,
       3,
       metal,
       'EFV3_CapeFastener_L',
       'back',
-      .003,
+      .0023,
     ),
     createGridPatch(
       source,
       capeGeometry,
       columns,
       0,
-      2,
+      1,
       7,
       8,
       metal,
       'EFV3_CapeFastener_R',
       'back',
-      .003,
+      .0023,
     ),
   ]
 }

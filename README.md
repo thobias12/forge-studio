@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.7`  
+> **Current Forge version:** `v1.77.8`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -446,6 +446,21 @@ Useful deployed inspection URLs:
 - individual PNGs such as `front.png`, `top-down-shoulders.png`, `top-back-cape.png`, and `cape-profile-tight.png`
 
 This removes the previous dependence on one browser's IndexedDB for visual review and lets future equipment refinement use the exact same QA body and fixed angles on every build.
+
+### v1.77.8 Ranger geometry rebuild
+
+This release is the first Equipment Forge pass driven by the autonomous 28-angle visual QA output rather than code-only inspection.
+
+Ranger changes:
+
+- rebuilt the cape root as a dedicated smooth shoulder/back attachment curve instead of inheriting the tunic neckline contour
+- simplified the oversized cape yoke into a narrow shoulder yoke with smaller fasteners and a cleaner lower seam
+- removed the diagonal cape yoke strips that read as rigid polygonal braces
+- replaced the chunky asymmetric vest reinforcement with narrower mirrored fitted side leather panels
+- softened the shoulder bridge profile to reduce triangular humps and underarm pinching
+- widened and lifted the neckline trim for a cleaner intentional edge
+
+The goal of this pass is silhouette and construction cleanup first. Subsequent passes should continue from visual QA renders, not revert to the older patch-heavy construction.
 
 ### Current visual status / important handoff
 
