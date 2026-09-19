@@ -25,9 +25,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Prepare deployed Equipment QA fixture
         env:
@@ -38,6 +39,13 @@ jobs:
         env:
           VITE_FORGE_BUILD: ${{ github.sha }}
         run: npm run build
+
+      - name: Upload reusable Forge build
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-dist-${{ github.sha }}
+          path: ./dist
+          retention-days: 1
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -50,7 +58,7 @@ jobs:
   qa:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 4
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -59,26 +67,34 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Install Equipment QA browser
+      - name: Download Forge build
+        uses: actions/download-artifact@v4
+        with:
+          name: forge-dist-${{ github.sha }}
+          path: dist
+
+      - name: Install Equipment QA runtime
         run: |
-          npm install --no-save playwright
-          npx playwright install --with-deps chromium
+          npm install --no-save --package-lock=false playwright
+          if ! command -v google-chrome >/dev/null 2>&1 && ! command -v google-chrome-stable >/dev/null 2>&1; then
+            npx playwright install --with-deps chromium
+          fi
 
-      - name: Prepare Equipment QA fixture
-        run: node scripts/prepare-equipment-qa-fixture.mjs
-
-      - name: Capture Equipment QA
+      - name: Capture full Equipment QA
         env:
           VITE_FORGE_BUILD: ${{ github.sha }}
-          FORGE_QA_MODEL: artifacts/qa-foundation/Skillbound-Female-Base-v1.qa.glb
+          FORGE_QA_MODEL: dist/qa-foundation/__qa-base.glb
           FORGE_QA_BODY: female
           FORGE_QA_OUTPUT: artifacts/equipment-qa
-          FORGE_QA_HEADLESS: '0'
-        run: xvfb-run -a npm run qa:equipment
+          FORGE_QA_SKIP_BUILD: '1'
+          FORGE_QA_HEADLESS: '1'
+          FORGE_QA_BROWSER_CHANNEL: chrome
+        run: npm run qa:equipment
 
       - name: Upload Equipment QA artifact
         if: always()
