@@ -128,6 +128,28 @@ export function buildConformedTunic(
       .0019,
     )
   meshes.push(necklineTrim)
+
+  // Cover the low-resolution center-front neckline seam with a fitted
+  // cloth facing. This uses the same skinned torso vertices and only
+  // sits slightly above the surface, so the black center fracture reads
+  // as intentional garment construction instead of a mesh crack.
+  meshes.push(
+    createGridPatch(
+      source,
+      torso.geometry,
+      48,
+      16,
+      18,
+      47,
+      1,
+      cloth,
+      'EFV3_NecklineFacing_Front',
+      'radial',
+      .0026,
+      .04,
+    ),
+  )
+
   meshes.push(
     ...createTunicSeamDetails(
       source,
