@@ -25,6 +25,16 @@ import {
 import PoiForgeViewport, {
   type PoiForgeTransformMode,
 } from '../components/PoiForgeViewport'
+import GameplaySocketInspector from '../components/GameplaySocketInspector'
+import {
+  GAMEPLAY_SOCKET_TYPES,
+  cloneGameplaySocket,
+  createGameplaySocket,
+  gameplaySocketColor,
+  gameplaySocketKindLabel,
+  type GameplaySocket,
+  type GameplaySocketKind,
+} from '../engine/gameplaySockets'
 import {
   POI_MATERIALS,
   POI_PART_LIBRARY,
@@ -75,6 +85,8 @@ export default function PoiForge() {
   const [propAssets, setPropAssets] = useState<PropPrefab[]>(() => loadPropPrefabs())
   const [activeId, setActiveId] = useState(() => loadPoiPrefabs()[0]?.id ?? '')
   const [selectedPartId, setSelectedPartId] = useState<string>()
+  const [selectedSocketId, setSelectedSocketId] = useState<string>()
+  const [newSocketKind, setNewSocketKind] = useState<GameplaySocketKind>('interaction')
   const [mode, setMode] = useState<PoiForgeTransformMode>('translate')
   const [topDown, setTopDown] = useState(false)
   const [focusNonce, setFocusNonce] = useState(0)
@@ -84,6 +96,9 @@ export default function PoiForge() {
 
   const active = prefabs.find((prefab) => prefab.id === activeId) ?? prefabs[0]
   const selectedPart = active?.parts.find((part) => part.id === selectedPartId)
+  const selectedSocket = active?.sockets.find(
+    (socket) => socket.id === selectedSocketId,
+  )
   const validation = active ? validatePoiPrefab(active) : undefined
   const filteredPrefabs = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -120,13 +135,23 @@ export default function PoiForge() {
       ) {
         return
       }
-      if (event.key === 'Delete' && selectedPartId) {
-        deleteSelectedPart()
-        event.preventDefault()
+      if (event.key === 'Delete') {
+        if (selectedSocketId) {
+          deleteSelectedSocket()
+          event.preventDefault()
+        } else if (selectedPartId) {
+          deleteSelectedPart()
+          event.preventDefault()
+        }
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd' && selectedPartId) {
-        duplicateSelectedPart()
-        event.preventDefault()
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+        if (selectedSocketId) {
+          duplicateSelectedSocket()
+          event.preventDefault()
+        } else if (selectedPartId) {
+          duplicateSelectedPart()
+          event.preventDefault()
+        }
       }
       if (event.key.toLowerCase() === 'w') setMode('translate')
       if (event.key.toLowerCase() === 'e') setMode('rotate')
@@ -134,7 +159,7 @@ export default function PoiForge() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedPartId, activeId, prefabs])
+  }, [selectedPartId, selectedSocketId, activeId, prefabs])
 
   if (!active) {
     return (
@@ -189,6 +214,69 @@ export default function PoiForge() {
     if (message) setStatus(message)
   }
 
+  const commitSocket = (socket: GameplaySocket) => {
+    mutateActive((prefab) => ({
+      ...prefab,
+      sockets: prefab.sockets.map((candidate) =>
+        candidate.id === socket.id ? socket : candidate,
+      ),
+    }))
+  }
+
+  const patchSelectedSocket = (
+    patch: Partial<GameplaySocket>,
+    message?: string,
+  ) => {
+    if (!selectedSocket) return
+    commitSocket({ ...selectedSocket, ...patch })
+    if (message) setStatus(message)
+  }
+
+  const addSocket = () => {
+    const socket = createGameplaySocket(newSocketKind)
+    mutateActive(
+      (prefab) => ({
+        ...prefab,
+        sockets: [...prefab.sockets, socket],
+      }),
+      `${gameplaySocketKindLabel(socket.kind)} added to the POI.`,
+    )
+    setSelectedPartId(undefined)
+    setSelectedSocketId(socket.id)
+    setMode('translate')
+  }
+
+  const deleteSelectedSocket = () => {
+    if (!selectedSocketId) return
+    mutateActive(
+      (prefab) => ({
+        ...prefab,
+        sockets: prefab.sockets.filter(
+          (socket) => socket.id !== selectedSocketId,
+        ),
+      }),
+      'Gameplay socket removed from the POI.',
+    )
+    setSelectedSocketId(undefined)
+  }
+
+  const duplicateSelectedSocket = () => {
+    if (!selectedSocket) return
+    const duplicate = cloneGameplaySocket(
+      selectedSocket,
+      [active.gridSize, 0, active.gridSize],
+    )
+    mutateActive(
+      (prefab) => ({
+        ...prefab,
+        sockets: [...prefab.sockets, duplicate],
+      }),
+      'Gameplay socket duplicated.',
+    )
+    setSelectedPartId(undefined)
+    setSelectedSocketId(duplicate.id)
+  }
+
   const addPart = (kind: PoiPartKind) => {
     if (kind === 'entry') {
       const existing = active.parts.find((part) => part.kind === 'entry')
@@ -214,6 +302,7 @@ export default function PoiForge() {
         ? `${nestedProp.name} inserted from Prop Forge. Use W/E/R to place it.`
         : `${part.name} added. Use W/E/R or the toolbar to move, rotate and scale it.`,
     )
+    setSelectedSocketId(undefined)
     setSelectedPartId(part.id)
     setMode('translate')
   }
@@ -250,6 +339,7 @@ export default function PoiForge() {
       (prefab) => ({ ...prefab, parts: [...prefab.parts, duplicate] }),
       'Part duplicated.',
     )
+    setSelectedSocketId(undefined)
     setSelectedPartId(duplicate.id)
   }
 
@@ -257,6 +347,7 @@ export default function PoiForge() {
     const next = createBlankPoiPrefab()
     setPrefabs((current) => [...current, next])
     setActiveId(next.id)
+    setSelectedSocketId(undefined)
     setSelectedPartId(next.parts[0]?.id)
     setStatus('Blank prefab created.')
   }
@@ -266,6 +357,7 @@ export default function PoiForge() {
     setPrefabs((current) => [...current, next])
     setActiveId(next.id)
     setSelectedPartId(undefined)
+    setSelectedSocketId(undefined)
     setStatus('Prefab duplicated. This copy can be edited independently.')
   }
 
@@ -281,6 +373,7 @@ export default function PoiForge() {
       setActiveId(next[0].id)
     }
     setSelectedPartId(undefined)
+    setSelectedSocketId(undefined)
     setStatus('Prefab deleted.')
   }
 
@@ -290,6 +383,7 @@ export default function PoiForge() {
     setPrefabs(next)
     setActiveId(next[0].id)
     setSelectedPartId(undefined)
+    setSelectedSocketId(undefined)
     setStatus('Starter POI library restored.')
   }
 
@@ -313,6 +407,7 @@ export default function PoiForge() {
       setPrefabs((current) => [...current, imported])
       setActiveId(imported.id)
       setSelectedPartId(undefined)
+      setSelectedSocketId(undefined)
       setStatus('POI prefab imported into the local library.')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not import prefab.')
@@ -433,11 +528,20 @@ export default function PoiForge() {
           <PoiForgeViewport
             prefab={active}
             selectedPartId={selectedPartId}
+            selectedSocketId={selectedSocketId}
             mode={mode}
             topDown={topDown}
             focusNonce={focusNonce}
-            onSelectPart={setSelectedPartId}
+            onSelectPart={(partId) => {
+              setSelectedPartId(partId)
+              if (partId) setSelectedSocketId(undefined)
+            }}
+            onSelectSocket={(socketId) => {
+              setSelectedSocketId(socketId)
+              if (socketId) setSelectedPartId(undefined)
+            }}
             onCommitPart={commitPart}
+            onCommitSocket={commitSocket}
           />
 
           <div className="poi-part-palette">
@@ -463,6 +567,8 @@ export default function PoiForge() {
               {active.snap ? `Snap ${active.gridSize}m` : 'Free transform'}
               {' · '}
               {active.parts.length} parts
+              {' · '}
+              {active.sockets.length} sockets
             </strong>
           </div>
         </section>
@@ -471,10 +577,61 @@ export default function PoiForge() {
       <aside className="poi-forge-inspector">
         <header>
           <span>INSPECTOR</span>
-          <strong>{selectedPart?.name ?? active.name}</strong>
+          <strong>{selectedSocket?.name ?? selectedPart?.name ?? active.name}</strong>
         </header>
 
-        {selectedPart ? (
+        <section className="poi-gameplay-sockets">
+          <div className="poi-inspector-heading">
+            <span>GAMEPLAY SOCKETS</span>
+            <small>{active.sockets.length} authored</small>
+          </div>
+          <div className="gameplay-socket-list">
+            {active.sockets.map((socket) => (
+              <button
+                key={socket.id}
+                className={selectedSocketId === socket.id ? 'active' : ''}
+                style={{
+                  ['--socket-color' as string]: `#${gameplaySocketColor(socket.kind).toString(16).padStart(6, '0')}`,
+                }}
+                onClick={() => {
+                  setSelectedPartId(undefined)
+                  setSelectedSocketId(socket.id)
+                  if (mode === 'scale') setMode('translate')
+                }}
+              >
+                <i/>
+                <span>{socket.name}</span>
+                <em>{gameplaySocketKindLabel(socket.kind)}</em>
+              </button>
+            ))}
+          </div>
+          <div className="gameplay-socket-add">
+            <select
+              value={newSocketKind}
+              onChange={(event) =>
+                setNewSocketKind(event.target.value as GameplaySocketKind)
+              }
+            >
+              {GAMEPLAY_SOCKET_TYPES.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            <button onClick={addSocket}>
+              <Plus size={12}/> Add
+            </button>
+          </div>
+        </section>
+
+        {selectedSocket ? (
+          <GameplaySocketInspector
+            socket={selectedSocket}
+            onChange={patchSelectedSocket}
+            onDuplicate={duplicateSelectedSocket}
+            onDelete={deleteSelectedSocket}
+          />
+        ) : selectedPart ? (
           <>
             <section>
               <div className="poi-inspector-heading">
