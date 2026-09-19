@@ -155,10 +155,16 @@ export default function EquipmentForge() {
       const asset = id
         ? assets.find((entry) => entry.id === id)
         : undefined
-      if (asset) next[slot] = asset
+      if (asset) {
+        const target =
+          equipmentAssetBodyType(asset)
+        if (!target || target === bodyType) {
+          next[slot] = asset
+        }
+      }
     }
     return next
-  }, [assets, slots])
+  }, [assets, slots, bodyType])
 
   const selectedAssetId = slots[selectedSlot]
   const selectedAsset = selectedAssetId
@@ -803,12 +809,18 @@ export default function EquipmentForge() {
             <select
               value={selectedAssetId ?? ''}
               onChange={(event) =>
-                setSlots((current) => ({
-                  ...current,
-                  [selectedSlot]:
-                    event.target.value ||
-                    undefined,
-                }))
+                setSlots((current) => {
+                  const next = {
+                    ...current,
+                  }
+                  if (event.target.value) {
+                    next[selectedSlot] =
+                      event.target.value
+                  } else {
+                    delete next[selectedSlot]
+                  }
+                  return next
+                })
               }
             >
               <option value="">
