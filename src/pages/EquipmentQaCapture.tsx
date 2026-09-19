@@ -126,6 +126,7 @@ declare global {
     __FORGE_EQUIPMENT_QA_RECIPE__?: Partial<EquipmentForgeV3Recipe>
     __FORGE_EQUIPMENT_QA_MODEL_URL__?: string
     __FORGE_EQUIPMENT_QA_BODY__?: SkillboundBodyType
+    __FORGE_EQUIPMENT_QA_FORCE__?: boolean
   }
 }
 
