@@ -23,7 +23,6 @@ import {
 } from '../skillboundCharacterAnimation'
 import {
   ForgeCharacterVisualBinding,
-  loadLibraryAnimationClips,
 } from './ForgeAssetRuntime'
 
 export async function bindCharacterBlueprint(
@@ -73,6 +72,7 @@ async function bindSkillboundFoundation(
   const source = createConceptForgeCharacter(
     blueprintToConfig(blueprint),
   )
+  let authoredSource: THREE.Object3D | undefined
 
   try {
     let clips = retargetForgeHumanoidClips(
@@ -93,14 +93,20 @@ async function bindSkillboundFoundation(
           )
         : undefined
 
-      const authored = await loadLibraryAnimationClips(
+      const packAsset = await getAsset(
         animationPackAssetId(animationTargetId),
-      ).catch(() => [])
-      if (authored.length) {
+      ).catch(() => undefined)
+      const authoredLoaded = packAsset
+        ? await loadCharacterAssetScene(packAsset.blob).catch(() => undefined)
+        : undefined
+      const authored = authoredLoaded?.animations.map((clip) => clip.clone()) ?? []
+      authoredSource = authoredLoaded?.scene
+
+      if (authored.length && authoredSource) {
         clips = uniqueAnimationClips([
           ...clips,
           ...retargetForgeHumanoidClips(
-            source.root,
+            authoredSource,
             root,
             authored,
           ),
@@ -137,6 +143,7 @@ async function bindSkillboundFoundation(
     disposeObject(root)
     throw error
   } finally {
+    if (authoredSource) disposeObject(authoredSource)
     disposeForgeCharacter(source.root)
   }
 }
@@ -173,10 +180,24 @@ async function bindProceduralBlueprint(
       : undefined
     if (authoredSet) binding.setAnimationSet(authoredSet)
 
-    const authored = await loadLibraryAnimationClips(
+    const packAsset = await getAsset(
       animationPackAssetId(animationTargetId),
-    ).catch(() => [])
-    if (authored.length) clips = [...clips, ...authored]
+    ).catch(() => undefined)
+    const authoredLoaded = packAsset
+      ? await loadCharacterAssetScene(packAsset.blob).catch(() => undefined)
+      : undefined
+    const authored = authoredLoaded?.animations.map((clip) => clip.clone()) ?? []
+    if (authored.length && authoredLoaded?.scene) {
+      clips = uniqueAnimationClips([
+        ...clips,
+        ...retargetForgeHumanoidClips(
+          authoredLoaded.scene,
+          root,
+          authored,
+        ),
+      ])
+    }
+    if (authoredLoaded?.scene) disposeObject(authoredLoaded.scene)
   }
 
   ;(
