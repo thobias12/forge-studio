@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { normalizeEquipment } from '../equipment'
 import {
   moveInventoryPackItem,
   resolveInventoryPack,
@@ -30,7 +31,7 @@ export function installForgeInventoryRuntime(
     const current = ensureInventoryLayout(this)
     const next = moveInventoryPackItem(
       this.gameplay,
-      this.inventory ?? [],
+      runtimeBagInventory(this),
       current,
       index,
       cell,
@@ -52,7 +53,7 @@ export function installForgeInventoryRuntime(
     this.__forgeInventoryLayout =
       sortInventoryPack(
         this.gameplay,
-        this.inventory ?? [],
+        runtimeBagInventory(this),
         mode,
       )
     this.setMessage?.(
@@ -115,6 +116,32 @@ export function installForgeInventoryRuntime(
   }
 }
 
+function runtimeBagInventory(runtime: any) {
+  const inventory = [...(runtime.inventory ?? [])]
+  const save = runtime.saveKey
+    ? loadRuntimeSave(runtime.saveKey)
+    : undefined
+  const equipment = normalizeEquipment(
+    runtime.__forgeEquipment ?? save?.equipment,
+    runtime.equippedWeaponId ?? save?.equippedWeaponId,
+  )
+  const used = new Set<number>()
+
+  for (const itemId of Object.values(equipment)) {
+    if (!itemId) continue
+    const index = inventory.findIndex(
+      (candidate, candidateIndex) =>
+        candidate === itemId &&
+        !used.has(candidateIndex),
+    )
+    if (index < 0) continue
+    used.add(index)
+    inventory[index] =
+      `__equipped__:${index}:${itemId}`
+  }
+  return inventory
+}
+
 function ensureInventoryLayout(
   runtime: any,
 ): ForgeInventoryPackLayout {
@@ -127,7 +154,7 @@ function ensureInventoryLayout(
 
   const resolved = resolveInventoryPack(
     runtime.gameplay,
-    runtime.inventory ?? [],
+    runtimeBagInventory(runtime),
     saved,
   )
   runtime.__forgeInventoryLayout = resolved.layout
