@@ -44,7 +44,7 @@ import AnimationStudioRuntime2 from './pages/AnimationStudioRuntime2'
 import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
 import UIForge from './pages/UIForge'
-import CharacterStudio from './pages/CharacterStudio'
+import EquipmentForge from './pages/EquipmentForge'
 import CharacterForge from './pages/CharacterForge'
 import DestructionLab from './pages/DestructionLab'
 import AnimationBindings from './pages/AnimationBindings'
@@ -75,6 +75,7 @@ import './character.css'
 import './world-forge.css'
 import './gameplay-forge.css'
 import './item-forge.css'
+import './equipment-forge.css'
 import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
@@ -106,7 +107,7 @@ const navGroups: NavGroup[] = [
     items: [
       { id: 'conceptforge', label: 'Concept Forge', icon: Sparkles },
       { id: 'characterforge', label: 'Character Creator', icon: Skull },
-      { id: 'characters', label: 'Equipment Assembly', icon: UserRoundCog },
+      { id: 'characters', label: 'Equipment Forge', icon: UserRoundCog },
       { id: 'animations', label: 'Animation Studio', icon: Clapperboard },
     ],
   },
@@ -251,7 +252,7 @@ export default function App() {
           {page === 'conceptforge' && <ConceptForge />}
           {page === 'uiforge' && <UIForge />}
           {page === 'characterforge' && <CharacterForge />}
-          {page === 'characters' && <CharacterStudio />}
+          {page === 'characters' && <EquipmentForge />}
           {page === 'animations' && <AnimationStudioRuntime2 onTestGame={() => navigate('play')} />}
           {page === 'animationbindings' && <AnimationBindings />}
           {page === 'textures' && <TextureLab />}
