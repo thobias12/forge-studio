@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { normalizeEquipment } from '../equipment'
 import {
+  firstFreeInventoryCell,
   moveInventoryPackItem,
   resolveInventoryPack,
   sortInventoryPack,
@@ -23,6 +24,28 @@ export function installForgeInventoryRuntime(
   const proto = RuntimeClass.prototype
   if (installed.has(proto)) return
   installed.add(proto)
+
+  proto.canPickupInventoryItem = function (
+    itemId: string,
+  ) {
+    const current = ensureInventoryLayout(this)
+    return firstFreeInventoryCell(
+      this.gameplay,
+      runtimeBagInventory(this),
+      current,
+      itemId,
+    ) !== undefined
+  }
+
+  proto.refreshInventoryLayout = function () {
+    this.__forgeInventoryLayout =
+      resolveInventoryPack(
+        this.gameplay,
+        runtimeBagInventory(this),
+        this.__forgeInventoryLayout ?? {},
+      ).layout
+    return this.__forgeInventoryLayout
+  }
 
   proto.moveInventoryItem = function (
     index: number,
