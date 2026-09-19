@@ -196,6 +196,14 @@ const PLAYER_RADIUS = 0.58
 const ENEMY_RADIUS = 0.62
 const DODGE_DURATION = 0.19
 
+function chainLightningTravelDuration(distance: number) {
+  return THREE.MathUtils.clamp(
+    .045 + Math.max(0, distance) * .012,
+    .055,
+    .125,
+  )
+}
+
 export class ForgePlayRuntime {
   private readonly host: HTMLElement
   private readonly region: GeneratedRegion
@@ -1347,6 +1355,9 @@ export class ForgePlayRuntime {
           from: caster,
           to: aimedPoint,
           delay: 0,
+          travel: chainLightningTravelDuration(
+            caster.distanceTo(aimedPoint),
+          ),
         }],
         {
           color: ability.color,
@@ -1367,15 +1378,27 @@ export class ForgePlayRuntime {
       candidates,
       ability.chain,
     )
-    const hops = targets.map((target, index) => ({
-      index,
-      from:
+    let chainDelay = 0
+    const hops = targets.map((target, index) => {
+      const from =
         index === 0
           ? caster.clone()
-          : targets[index - 1].position.clone(),
-      to: target.position.clone(),
-      delay: index * config.jumpDelay,
-    }))
+          : targets[index - 1].position.clone()
+      const to = target.position.clone()
+      const travel = chainLightningTravelDuration(
+        from.distanceTo(to),
+      )
+      const hop = {
+        index,
+        from,
+        to,
+        delay: chainDelay,
+        travel,
+      }
+      chainDelay +=
+        travel + config.jumpDelay
+      return hop
+    })
 
     const effect = new ForgeChainLightningEffect(
       this.scene,
