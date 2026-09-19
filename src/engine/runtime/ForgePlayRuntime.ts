@@ -1310,12 +1310,29 @@ export class ForgePlayRuntime {
       if (drop.group.position.distanceTo(this.player.position) > 1.35) continue
       const item = this.gameplay.items.find((candidate) => candidate.id === drop.save.itemId)
       if (!item) continue
+      const inventoryRuntime = this as unknown as {
+        canPickupInventoryItem?: (itemId: string) => boolean
+        refreshInventoryLayout?: () => void
+      }
+      if (
+        inventoryRuntime.canPickupInventoryItem &&
+        !inventoryRuntime.canPickupInventoryItem(drop.save.itemId)
+      ) {
+        if (this.messageRemaining <= 0.35) {
+          this.setMessage(
+            'Pack full. Make room or auto-sort the 12 × 6 inventory.',
+            1.8,
+          )
+        }
+        continue
+      }
       this.inventory.push(drop.save.itemId)
+      inventoryRuntime.refreshInventoryLayout?.()
       const index = this.loot.indexOf(drop)
       if (index >= 0) this.loot.splice(index, 1)
       this.scene.remove(drop.group)
       this.disposeObject(drop.group)
-      this.setMessage(`${item.name} picked up. Click it in the inventory to equip.`, 3.2)
+      this.setMessage(`${item.name} picked up. Press I to open the pack.`, 3.2)
       this.saveGame(false)
       this.emitState()
     }
