@@ -1,0 +1,23 @@
+name: Validate runtime performance v1.73.4
+
+on:
+  push:
+    branches: [forge-runtime-performance-v1734]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Build Forge Studio
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
+        run: npm run build
