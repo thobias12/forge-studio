@@ -23,6 +23,7 @@ import EquipmentForgeViewport, {
   type EquipmentForgeMaterialInfo,
 } from '../components/EquipmentForgeViewport'
 import EquipmentCreatorPanel from '../components/EquipmentCreatorPanel'
+import EquipmentCreatorV3Panel from '../components/EquipmentCreatorV3Panel'
 import {
   EQUIPMENT_FORGE_SLOTS,
   EQUIPMENT_FORGE_SLOT_LABELS,
@@ -51,6 +52,10 @@ import {
   createProceduralEquipmentRecipe,
   type ProceduralEquipmentRecipe,
 } from '../engine/equipmentForgeProcedural'
+import {
+  createEquipmentForgeV3Recipe,
+  type EquipmentForgeV3Recipe,
+} from '../engine/equipmentForgeV3/types'
 import '../equipment-forge.css'
 
 type SlotState =
@@ -69,7 +74,9 @@ export default function EquipmentForge() {
   const [bodyType, setBodyType] =
     useState<SkillboundBodyType>('female')
   const [workspaceMode, setWorkspaceMode] =
-    useState<'assemble' | 'create'>('create')
+    useState<
+      'assemble' | 'create' | 'createV3'
+    >('createV3')
   const [
     showImportedEquipment,
     setShowImportedEquipment,
@@ -82,6 +89,16 @@ export default function EquipmentForge() {
       createProceduralEquipmentRecipe(
         'female',
         'ranger',
+      ),
+  )
+
+  const [
+    v3Recipe,
+    setV3Recipe,
+  ] = useState<EquipmentForgeV3Recipe>(
+    () =>
+      createEquipmentForgeV3Recipe(
+        'female',
       ),
   )
   const [slots, setSlots] =
@@ -386,12 +403,25 @@ export default function EquipmentForge() {
       ...current,
       bodyType: nextType,
     }))
+    setV3Recipe((current) => ({
+      ...current,
+      bodyType: nextType,
+    }))
   }
 
   const changeProceduralRecipe = (
     next: ProceduralEquipmentRecipe,
   ) => {
     setProceduralRecipe(next)
+    if (next.bodyType !== bodyType) {
+      setBodyType(next.bodyType)
+    }
+  }
+
+  const changeV3Recipe = (
+    next: EquipmentForgeV3Recipe,
+  ) => {
+    setV3Recipe(next)
     if (next.bodyType !== bodyType) {
       setBodyType(next.bodyType)
     }
@@ -454,6 +484,7 @@ export default function EquipmentForge() {
           slots,
           materialOverrides,
           proceduralRecipe,
+          v3Recipe,
         })
       setPresetId(result.asset.id)
       await refresh()
@@ -499,6 +530,11 @@ export default function EquipmentForge() {
           preset.proceduralRecipe,
         )
       }
+      if (preset.v3Recipe) {
+        changeV3Recipe(
+          preset.v3Recipe,
+        )
+      }
       setPresetName(preset.name)
       setStatus(
         `${preset.name} loaded from the Forge Library.`,
@@ -522,6 +558,7 @@ export default function EquipmentForge() {
       slots,
       materialOverrides,
       proceduralRecipe,
+      v3Recipe,
     }
     const text = JSON.stringify(
       recipe,
@@ -544,6 +581,7 @@ export default function EquipmentForge() {
         slots?: SlotState
         materialOverrides?: EquipmentMaterialOverrides
         proceduralRecipe?: ProceduralEquipmentRecipe
+        v3Recipe?: EquipmentForgeV3Recipe
       }
       if (
         recipe.bodyType === 'male' ||
@@ -574,6 +612,11 @@ export default function EquipmentForge() {
       if (recipe.proceduralRecipe) {
         changeProceduralRecipe(
           recipe.proceduralRecipe,
+        )
+      }
+      if (recipe.v3Recipe) {
+        changeV3Recipe(
+          recipe.v3Recipe,
         )
       }
       setStatus(
@@ -758,7 +801,11 @@ export default function EquipmentForge() {
         <header className="ef-toolbar">
           <div>
             <span className="eyebrow">
-              EQUIPMENT FORGE · CREATOR V2
+              {workspaceMode === 'createV3'
+                ? 'EQUIPMENT FORGE · V3'
+                : workspaceMode === 'create'
+                  ? 'EQUIPMENT FORGE · LEGACY CREATE'
+                  : 'EQUIPMENT FORGE · ASSEMBLE'}
             </span>
             <strong>
               {bodyAsset?.name ??
@@ -769,6 +816,18 @@ export default function EquipmentForge() {
             <div className="ef-mode-switch">
               <button
                 className={
+                  workspaceMode === 'createV3'
+                    ? 'active'
+                    : ''
+                }
+                onClick={() =>
+                  setWorkspaceMode('createV3')
+                }
+              >
+                V3
+              </button>
+              <button
+                className={
                   workspaceMode === 'create'
                     ? 'active'
                     : ''
@@ -777,7 +836,7 @@ export default function EquipmentForge() {
                   setWorkspaceMode('create')
                 }
               >
-                Create
+                Legacy
               </button>
               <button
                 className={
@@ -792,7 +851,8 @@ export default function EquipmentForge() {
                 Assemble
               </button>
             </div>
-            {workspaceMode === 'create' && (
+            {(workspaceMode === 'create' ||
+              workspaceMode === 'createV3') && (
               <button
                 className={
                   showImportedEquipment
@@ -851,6 +911,11 @@ export default function EquipmentForge() {
                 ? proceduralRecipe
                 : undefined
             }
+            v3Recipe={
+              workspaceMode === 'createV3'
+                ? v3Recipe
+                : undefined
+            }
             showImportedEquipment={
               showImportedEquipment
             }
@@ -898,7 +963,13 @@ export default function EquipmentForge() {
       </main>
 
       <aside className="equipment-forge-inspector">
-        {workspaceMode === 'create' ? (
+        {workspaceMode === 'createV3' ? (
+          <EquipmentCreatorV3Panel
+            recipe={v3Recipe}
+            onChange={changeV3Recipe}
+            onStatus={setStatus}
+          />
+        ) : workspaceMode === 'create' ? (
           <EquipmentCreatorPanel
             recipe={proceduralRecipe}
             onChange={changeProceduralRecipe}
