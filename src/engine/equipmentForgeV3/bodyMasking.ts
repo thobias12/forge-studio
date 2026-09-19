@@ -89,17 +89,21 @@ export function maskBodyUnderTunic(
         center.x,
         center.z,
       )
+    const topInset =
+      frame.height * .024
+    const bottomInset =
+      frame.height * .018
     const covered =
       center.y >=
-        bottomY - frame.height * .015 &&
+        bottomY + bottomInset &&
       center.y <=
         tunicTopY(
           frame,
           angle,
-        ) +
-          frame.height * .008 &&
+        ) -
+          topInset &&
       Math.abs(center.x) <=
-        frame.torsoLimit * 1.04
+        frame.torsoLimit * .92
 
     if (!covered) {
       kept.push(a, b, c)
