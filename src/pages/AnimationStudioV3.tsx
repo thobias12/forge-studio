@@ -36,12 +36,11 @@ import {
   type AnimationStudioDraft,
 } from '../lib/animationDrafts'
 import type { RootMotionMode } from '../lib/animationEdit'
-import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import { cleanupMotion, type MotionCleanupOptions } from '../lib/motionCleanup'
 import { averageVisibility, downloadJson, formatDuration } from '../lib/pose'
 import type { RigInfo } from '../lib/retarget'
 import {
-  ensurePlayerAnimationCharacter,
   getActivePlayerProfileId,
   listPlayerProfiles,
   playerAnimationTargetId,
@@ -170,19 +169,29 @@ export default function AnimationStudioV3() {
   const activePlayerTargetId = activePlayerProfile
     ? activePlayerProfile.blueprint.targetAssetId || playerAnimationTargetId(activePlayerProfile.id)
     : undefined
-  const activePlayerTarget = activePlayerTargetId
-    ? characters.find((asset) => asset.id === activePlayerTargetId)
-    : undefined
   const activeFoundationAssetId = activePlayerProfile?.blueprint.foundation?.bodyAssetId
-  const publishTarget = activePlayerTarget && characterAsset && (
-    characterAsset.id === activePlayerTarget.id ||
-    characterAsset.id === activeFoundationAssetId
+  const activeFoundationAsset = activeFoundationAssetId
+    ? characters.find((asset) => asset.id === activeFoundationAssetId)
+    : undefined
+  const selectedBelongsToActivePlayer = !!characterAsset && (
+    characterAsset.id === activeFoundationAssetId ||
+    characterAsset.id === activePlayerTargetId
   )
-    ? activePlayerTarget
+  const bakeTarget = selectedBelongsToActivePlayer && activeFoundationAsset
+    ? activeFoundationAsset
     : characterAsset
-  const publishingToActivePlayer = !!activePlayerTarget && publishTarget?.id === activePlayerTarget.id
+  const publishingToActivePlayer = !!activePlayerProfile &&
+    !!activePlayerTargetId &&
+    !!activeFoundationAsset &&
+    bakeTarget?.id === activeFoundationAsset.id
+  const gameBindingTargetId = publishingToActivePlayer
+    ? activePlayerTargetId
+    : bakeTarget?.id
+  const gameBindingTargetName = publishingToActivePlayer
+    ? `${activePlayerProfile?.name ?? 'Player'} · Skillbound Player`
+    : bakeTarget?.name
   const canBake = !!clip && !recording && !busy && !!rigInfo && rigInfo.coreMappedCount >= 8
-  const canPublish = canBake && !!publishTarget
+  const canPublish = canBake && !!bakeTarget && !!gameBindingTargetId
 
   const loadCharacterAsset = async (asset?: LibraryAsset) => {
     if (!asset) {
@@ -234,28 +243,36 @@ export default function AnimationStudioV3() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      if (activePlayerProfile) await ensurePlayerAnimationCharacter(activePlayerProfile)
       const [items, savedDrafts] = await Promise.all([listAssets(), listAnimationDrafts()])
       if (cancelled) return
-      const nextCharacters = items.filter((asset) => asset.category === 'characters' && (asset.kind === 'glb' || asset.mime.includes('forge-character')))
+      const nextCharacters = items.filter((asset) =>
+        asset.category === 'characters' &&
+        (asset.kind === 'glb' || asset.mime.includes('forge-character')) &&
+        !asset.tags.includes('animation-target')
+      )
+      const activeFoundationId = activePlayerProfile?.blueprint.foundation?.bodyAssetId
       const activeTargetId = activePlayerProfile
         ? activePlayerProfile.blueprint.targetAssetId || playerAnimationTargetId(activePlayerProfile.id)
         : undefined
-      const activeTarget = activeTargetId ? nextCharacters.find((asset) => asset.id === activeTargetId) : undefined
+      const activeFoundation = activeFoundationId
+        ? nextCharacters.find((asset) => asset.id === activeFoundationId)
+        : undefined
       setCharacters(nextCharacters)
       setDrafts(savedDrafts)
       if (savedDrafts[0]) {
         await applyDraft(savedDrafts[0], nextCharacters)
         const savedCharacterId = savedDrafts[0].settings.characterAssetId
-        const savedUsesFoundation = !!activePlayerProfile?.blueprint.foundation?.bodyAssetId &&
-          savedCharacterId === activePlayerProfile.blueprint.foundation.bodyAssetId
-        if (activeTarget && (!savedCharacterId || savedUsesFoundation)) {
-          await loadCharacterAsset(activeTarget)
-          setStatus(`${savedDrafts[0].settings.edit.name} restored. ${activeTarget.name} selected as the active gameplay animation target.`)
+        const savedBelongsToActivePlayer =
+          !savedCharacterId ||
+          savedCharacterId === activeTargetId ||
+          savedCharacterId === activeFoundationId
+        if (activeFoundation && savedBelongsToActivePlayer) {
+          await loadCharacterAsset(activeFoundation)
+          setStatus(`${savedDrafts[0].settings.edit.name} restored on ${activeFoundation.name}, the active Skillbound body rig.`)
         }
-      } else if (activeTarget) {
-        await loadCharacterAsset(activeTarget)
-        setStatus(`${activeTarget.name} loaded as the active gameplay animation target. Record a take; it will save automatically.`)
+      } else if (activeFoundation) {
+        await loadCharacterAsset(activeFoundation)
+        setStatus(`${activeFoundation.name} loaded as the active Skillbound body rig. Record a take; it will save automatically.`)
       } else if (nextCharacters[0]) {
         await loadCharacterAsset(nextCharacters[0])
         setStatus(`${nextCharacters[0].name} loaded. Record a take; it will save automatically.`)
