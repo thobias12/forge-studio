@@ -41,8 +41,18 @@ type QaView = {
   targetY: number
   distance: number
   cameraY: number
+  cameraPosition?: [
+    number,
+    number,
+    number,
+  ]
+  cameraUp?: [
+    number,
+    number,
+    number,
+  ]
   fov: number
-  kind: 'full' | 'fit'
+  kind: 'full' | 'fit' | 'top'
 }
 
 type QaShot = {
@@ -130,6 +140,71 @@ const QA_VIEWS: QaView[] = [
     cameraY: 1.04,
     fov: 30,
     kind: 'full',
+  },
+  {
+    id: 'top-down-shoulders',
+    label: 'Top-down · shoulders / neckline',
+    yaw: 0,
+    targetY: 1.16,
+    distance: 1.2,
+    cameraY: 2.48,
+    cameraPosition: [
+      0,
+      2.48,
+      -.08,
+    ],
+    cameraUp: [
+      0,
+      0,
+      -1,
+    ],
+    fov: 25,
+    kind: 'top',
+  },
+  {
+    id: 'top-front',
+    label: 'High front · chest / shoulders',
+    yaw: 0,
+    targetY: 1.2,
+    distance: 1.05,
+    cameraY: 2.12,
+    cameraPosition: [
+      0,
+      2.12,
+      -.64,
+    ],
+    fov: 23,
+    kind: 'top',
+  },
+  {
+    id: 'top-back-cape',
+    label: 'High back · cape / yoke',
+    yaw: Math.PI,
+    targetY: 1.22,
+    distance: 1.05,
+    cameraY: 2.14,
+    cameraPosition: [
+      0,
+      2.14,
+      -.62,
+    ],
+    fov: 23,
+    kind: 'top',
+  },
+  {
+    id: 'top-right-shoulder',
+    label: 'High right · shoulder / sleeve',
+    yaw: Math.PI / 2,
+    targetY: 1.2,
+    distance: 1,
+    cameraY: 2.08,
+    cameraPosition: [
+      0,
+      2.08,
+      -.58,
+    ],
+    fov: 22,
+    kind: 'top',
   },
   {
     id: 'right-side-close',
@@ -649,10 +724,29 @@ export default function EquipmentQaCapture() {
           bodyRoot.updateMatrixWorld(true)
 
           camera.fov = view.fov
+          const cameraPosition =
+            view.cameraPosition ??
+            [
+              0,
+              view.cameraY,
+              -view.distance,
+            ]
+          const cameraUp =
+            view.cameraUp ??
+            [
+              0,
+              1,
+              0,
+            ]
           camera.position.set(
-            0,
-            view.cameraY,
-            -view.distance,
+            cameraPosition[0],
+            cameraPosition[1],
+            cameraPosition[2],
+          )
+          camera.up.set(
+            cameraUp[0],
+            cameraUp[1],
+            cameraUp[2],
           )
           camera.lookAt(
             new THREE.Vector3(
@@ -789,6 +883,11 @@ export default function EquipmentQaCapture() {
       (view) =>
         view.kind === 'fit',
     )
+  const topViews =
+    QA_VIEWS.filter(
+      (view) =>
+        view.kind === 'top',
+    )
 
   return (
     <main className="equipment-qa-page">
@@ -798,7 +897,7 @@ export default function EquipmentQaCapture() {
             FORGE · EQUIPMENT QA
           </span>
           <h1>
-            V3 360° + fit inspection
+            V3 360° + fit + top inspection
           </h1>
           <p>
             {bodyType} · {recipe.name}
@@ -832,6 +931,13 @@ export default function EquipmentQaCapture() {
             title="360° full body"
             description="Eight fixed angles for silhouette, attachment and layer checks."
             views={fullViews}
+            shots={shotMap}
+          />
+
+          <QaSection
+            title="Top / shoulder construction"
+            description="Elevated and true top-down views for catching neckline, shoulder bridge, front-layer and cape-yoke problems hidden from normal 360° angles."
+            views={topViews}
             shots={shotMap}
           />
 
