@@ -1185,15 +1185,42 @@ export class ForgePlayRuntime {
     this.emitState()
   }
 
+  private getChainCastOrigin(aim: THREE.Vector3) {
+    const characterRoot =
+      this.playerVisual?.root ??
+      this.player.getObjectByName('__forge_bound_character')
+
+    if (characterRoot) {
+      const rightHand = findRuntimeItemSocket(
+        characterRoot,
+        'RightHand',
+      )
+      if (rightHand) {
+        rightHand.updateWorldMatrix(true, false)
+        const position = rightHand.getWorldPosition(
+          new THREE.Vector3(),
+        )
+        position.y += .035
+        position.addScaledVector(aim, .12)
+        return position
+      }
+    }
+
+    const fallback = new THREE.Vector3(
+      ...fallbackSocketPosition('RightHand'),
+    )
+    this.player.localToWorld(fallback)
+    fallback.addScaledVector(aim, .1)
+    return fallback
+  }
+
   private performChainAbility(
     ability: ForgeAbilityDefinition,
     aim: THREE.Vector3,
     damage: number,
   ) {
     const config = normalizeChainConfig(ability.chain)
-    const caster = this.player.position
-      .clone()
-      .add(new THREE.Vector3(0, 1.22, 0))
+    const caster = this.getChainCastOrigin(aim)
     const mouseDistance = this.mouseWorld.distanceTo(this.player.position)
     const targetDistance = Math.min(
       ability.range,
@@ -1301,6 +1328,7 @@ export class ForgePlayRuntime {
           Math.max(1, damage * target.damageMultiplier),
           direction,
           ability.color,
+          'chain',
         )
       },
     )
@@ -1327,7 +1355,13 @@ export class ForgePlayRuntime {
     }
   }
 
-  private damageEnemy(enemy: RuntimeEnemy, damage: number, direction: THREE.Vector3, color: string) {
+  private damageEnemy(
+    enemy: RuntimeEnemy,
+    damage: number,
+    direction: THREE.Vector3,
+    color: string,
+    presentation: 'standard' | 'chain' = 'standard',
+  ) {
     this.focusEnemyId = enemy.id
     enemy.health = Math.max(0, enemy.health - damage)
     const normalized = direction.clone().setY(0)
@@ -1336,15 +1370,32 @@ export class ForgePlayRuntime {
     enemy.windupRemaining = 0
     enemy.telegraph.visible = false
     enemy.visual?.play('hit', false)
-    enemy.bodyMaterial.emissive.set(0xffffff)
+    enemy.bodyMaterial.emissive.set(
+      presentation === 'chain'
+        ? new THREE.Color(color)
+        : new THREE.Color(0xffffff),
+    )
+    enemy.bodyMaterial.emissiveIntensity =
+      presentation === 'chain' ? .72 : 1
     const ratio = Math.max(0.001, enemy.health / enemy.definition.maxHealth)
     enemy.healthFill.scale.x = ratio
     enemy.healthFill.position.x = -(1 - ratio) * 0.64
     this.spawnDamageNumber(enemy.group.position, damage, color)
-    this.spawnPulse(enemy.group.position, color, 1.15, 0.18)
+    this.spawnPulse(
+      enemy.group.position,
+      color,
+      presentation === 'chain' ? .68 : 1.15,
+      presentation === 'chain' ? .1 : .18,
+    )
     void this.spawnBoundVfx(enemy.definition.hitVfxAssetId, enemy.group.position)
-    this.hitStopRemaining = Math.max(this.hitStopRemaining, 0.035)
-    this.cameraShake = Math.max(this.cameraShake, 0.22)
+    this.hitStopRemaining = Math.max(
+      this.hitStopRemaining,
+      presentation === 'chain' ? .012 : .035,
+    )
+    this.cameraShake = Math.max(
+      this.cameraShake,
+      presentation === 'chain' ? .09 : .22,
+    )
     if (enemy.health <= 0) this.killEnemy(enemy)
   }
 
