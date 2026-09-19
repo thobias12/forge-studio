@@ -117,6 +117,7 @@ export function createDefaultUiScreens(): SkillboundUiScreens {
       e('equipment', 'Character & Equipment', 'equipment', p(1, 2, 3, 6)),
       e('bag', '12 × 6 Spatial Pack', 'item-grid', p(4, 2, 6, 6)),
       e('stats', 'Attributes & Combat Stats', 'stats', p(10, 2, 3, 6)),
+      e('footer', 'Experience Footer', 'panel', p(1, 8, 12, 1), true),
     ]),
     character: screen('character', 'Character', [
       e('title', 'Character Header', 'title', p(1, 1, 12, 1), true),
