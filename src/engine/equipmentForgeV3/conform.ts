@@ -124,8 +124,8 @@ export function buildConformedTunic(
       48,
       trim,
       'EFV3_NecklineTrim',
-      .22,
-      .0018,
+      .3,
+      .0019,
     )
   meshes.push(necklineTrim)
   meshes.push(
@@ -657,7 +657,7 @@ function createSleeveTemplate(
   const endFraction =
     sleeve === 'long' ? .86 : .4
   const startFraction =
-    sleeve === 'long' ? .025 : .035
+    sleeve === 'long' ? .015 : .018
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -1079,9 +1079,9 @@ function applyNeckline(
   }
 
   frame.frontNeckRaise =
-    frame.height * .024
+    frame.height * .013
   frame.backNeckRaise =
-    frame.height * .017
+    frame.height * .01
 }
 
 function collectSourceVertices(
@@ -1655,12 +1655,12 @@ function createShoulderBridge(
   const torsoSegments =
     side === 'L'
       ? Array.from(
-          { length: 9 },
-          (_, index) => 8 + index,
+          { length: 11 },
+          (_, index) => 7 + index,
         )
       : Array.from(
-          { length: 9 },
-          (_, index) => 32 + index,
+          { length: 11 },
+          (_, index) => 31 + index,
         )
 
   const torsoSamples =
@@ -2158,7 +2158,7 @@ function createFrontTabard(
           ),
           2,
         ) *
-        .018 *
+        .034 *
         (1 - tailDistance)
       const topIndex =
         topIndices[column]
@@ -2226,10 +2226,7 @@ function createFrontTabard(
       // reads like a constructed garment instead of a single rectangle.
       if (
         row >= 5 &&
-        (
-          column === 3 ||
-          column === 4
-        )
+        column === 3
       ) {
         continue
       }
@@ -2830,52 +2827,52 @@ function createBeltAccessories(
       torsoGeometry,
       48,
       0,
-      4,
-      8,
-      14,
+      3,
+      9,
+      13,
       leather,
       'EFV3_Pouch_L',
-      .009,
-      .006,
+      .008,
+      .0045,
     ),
     createRaisedGridAreaPatch(
       source,
       torsoGeometry,
       48,
-      1,
-      4,
+      0,
+      3,
       35,
       39,
       leather,
       'EFV3_Pouch_R',
-      .0085,
-      .005,
+      .008,
+      .0045,
     ),
     createGridAreaPatch(
       source,
       torsoGeometry,
       48,
+      2,
       3,
-      4,
-      8,
-      14,
+      9,
+      13,
       trim,
       'EFV3_PouchFlap_L',
       'radial',
-      .013,
+      .011,
     ),
     createGridAreaPatch(
       source,
       torsoGeometry,
       48,
+      2,
       3,
-      4,
       35,
       39,
       trim,
       'EFV3_PouchFlap_R',
       'radial',
-      .012,
+      .011,
     ),
     createGridPatch(
       source,
@@ -2949,7 +2946,8 @@ function createTabardDetails(
       material,
       'EFV3_TabardEdge_L',
       'radial',
-      .0018,
+      .0017,
+      .24,
     ),
     createGridColumnStrip(
       source,
@@ -2961,98 +2959,23 @@ function createTabardDetails(
       material,
       'EFV3_TabardEdge_R',
       'radial',
-      .0018,
+      .0017,
+      .24,
     ),
-    createGridRowStrip(
-      source,
-      tabardGeometry,
-      9,
-      0,
-      1,
-      0,
-      8,
-      material,
-      'EFV3_TabardTop',
-      'radial',
-      .0018,
-    ),
-    createGridRowStrip(
-      source,
-      tabardGeometry,
-      9,
-      10,
-      9,
-      0,
-      3,
-      material,
-      'EFV3_TabardHem_L',
-      'radial',
-      .0018,
-    ),
-    createGridRowStrip(
-      source,
-      tabardGeometry,
-      9,
-      10,
-      9,
-      4,
-      8,
-      material,
-      'EFV3_TabardHem_R',
-      'radial',
-      .0018,
-    ),
-    createGridAreaPatch(
-      source,
-      tabardGeometry,
-      9,
-      0,
-      4,
-      3,
-      5,
-      material,
-      'EFV3_TabardCenterSeam',
-      'radial',
-      .0022,
-    ),
-    createGridAreaPatch(
+    // Small fitted leather hanger instead of the old full-width top slab.
+    createGridPatch(
       source,
       tabardGeometry,
       9,
       0,
       2,
-      1,
-      7,
+      3,
+      5,
       leather,
       'EFV3_TabardTopReinforcement',
       'radial',
-      .0035,
-    ),
-    createGridAreaPatch(
-      source,
-      tabardGeometry,
-      9,
-      5,
-      10,
-      2,
-      3,
-      material,
-      'EFV3_TabardSplitEdge_L',
-      'radial',
-      .0022,
-    ),
-    createGridAreaPatch(
-      source,
-      tabardGeometry,
-      9,
-      5,
-      10,
-      5,
-      6,
-      material,
-      'EFV3_TabardSplitEdge_R',
-      'radial',
-      .0022,
+      .0028,
+      .42,
     ),
   ]
 }

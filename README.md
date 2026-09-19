@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.9`  
+> **Current Forge version:** `v1.77.10`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -472,6 +472,17 @@ Follow-up driven by the v1.77.8 28-angle renders:
 - broadened and lengthened the Ranger cape for a proper cape silhouette rather than a narrow sash
 - added variable-width fitted detail strips so cape borders and center seam can be much slimmer than one full grid cell
 - reduced cape hardware footprint with inset fitted patches
+
+### v1.77.10 Ranger finishing pass
+
+Third visual pass after reviewing the v1.77.9 QA artifact:
+
+- moved short/long sleeve roots closer to the upper-arm joint and expanded shoulder-bridge coverage to close the remaining underarm slit
+- tightened the Ranger round neckline into a much smaller opening and adjusted the collar trim
+- rebuilt tabard details to remove the oversized H-shaped leather/trim overlays
+- narrowed the tabard center slit and strengthened the two pointed tails
+- retained only thin tabard edge trim plus a small fitted leather top hanger
+- reduced and balanced the hip pouch footprint so the waist is less blocky
 
 ### Current visual status / important handoff
 
