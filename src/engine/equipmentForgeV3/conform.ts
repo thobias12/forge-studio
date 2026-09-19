@@ -97,6 +97,10 @@ export function buildConformedTunic(
     collectSourceVertices(source)
   const frame =
     createTunicFrame(source)
+  applyNeckline(
+    frame,
+    recipe.neckline,
+  )
 
   const torso = createTorsoTemplate(
     source,
@@ -565,9 +569,10 @@ function createSleeveTemplate(
 function createTunicFrame(
   source: THREE.SkinnedMesh,
 ): TunicTemplateFrame {
+  if (!source.geometry.boundingBox) {
+    source.geometry.computeBoundingBox()
+  }
   const box =
-    source.geometry.boundingBox ??
-    source.geometry.computeBoundingBox() ??
     source.geometry.boundingBox
   if (!box) {
     throw new Error(
@@ -699,6 +704,32 @@ function createTunicFrame(
     shoulderRaise:
       height * .105,
   }
+}
+
+function applyNeckline(
+  frame: TunicTemplateFrame,
+  neckline: EquipmentForgeV3Neckline,
+) {
+  if (neckline === 'high') {
+    frame.frontNeckRaise =
+      frame.height * .075
+    frame.backNeckRaise =
+      frame.height * .08
+    return
+  }
+
+  if (neckline === 'scoop') {
+    frame.frontNeckRaise =
+      frame.height * .032
+    frame.backNeckRaise =
+      frame.height * .067
+    return
+  }
+
+  frame.frontNeckRaise =
+    frame.height * .05
+  frame.backNeckRaise =
+    frame.height * .071
 }
 
 function collectSourceVertices(
