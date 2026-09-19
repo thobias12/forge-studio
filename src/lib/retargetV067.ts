@@ -234,29 +234,33 @@ function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
     )
     .normalize()
 
-  // Phone/world landmark depth can introduce a few degrees of artificial body
-  // pitch/roll even when the performer is standing upright. Preserve deliberate
-  // lean, but cap the torso away from world-up so small tracking bias does not
-  // make the entire character look tilted.
-  const maxLean = THREE.MathUtils.degToRad(
-    THREE.MathUtils.lerp(
-      5,
-      10,
-      THREE.MathUtils.clamp(leanAmount, 0, 1),
-    ),
-  )
-  const angle = Math.acos(
+  // Treat a few degrees of torso pitch/roll as tracking bias rather than body
+  // motion. Once the performer leans beyond that dead-zone, preserve the extra
+  // motion so attacks/dodges can still have intentional body weight.
+  const measuredAngle = Math.acos(
     THREE.MathUtils.clamp(
       worldUp.dot(requested),
       -1,
       1,
     ),
   )
-  if (angle <= maxLean || angle < 1e-5) return requested
+  if (measuredAngle < 1e-5) return worldUp
+
+  const deadZone = THREE.MathUtils.degToRad(4.5)
+  const maxLean = THREE.MathUtils.degToRad(16)
+  const correctedAngle = THREE.MathUtils.clamp(
+    measuredAngle - deadZone,
+    0,
+    maxLean,
+  )
+  if (correctedAngle < THREE.MathUtils.degToRad(.35)) return worldUp
 
   return worldUp
     .clone()
-    .lerp(requested, maxLean / angle)
+    .lerp(
+      requested,
+      correctedAngle / measuredAngle,
+    )
     .normalize()
 }
 function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
@@ -267,13 +271,24 @@ function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
 
   const horizontal = Math.hypot(direction.x, direction.z)
   if (horizontal > 1e-6) {
-    const maxVertical =
-      horizontal * Math.tan(THREE.MathUtils.degToRad(15))
-    direction.y = THREE.MathUtils.clamp(
-      direction.y,
-      -maxVertical,
-      maxVertical,
-    )
+    const slope = Math.atan2(direction.y, horizontal)
+    const deadZone = THREE.MathUtils.degToRad(10)
+    const maxSlope = THREE.MathUtils.degToRad(24)
+    const magnitude = Math.abs(slope)
+
+    if (magnitude <= deadZone) {
+      direction.y = 0
+    } else {
+      const corrected = THREE.MathUtils.clamp(
+        magnitude - deadZone,
+        0,
+        maxSlope,
+      )
+      direction.y =
+        Math.sign(slope) *
+        horizontal *
+        Math.tan(corrected)
+    }
   }
   return direction.normalize()
 }
