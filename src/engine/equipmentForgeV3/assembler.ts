@@ -29,6 +29,9 @@ type V3RootData = {
 export function buildEquipmentForgeV3Visual(
   bodyRoot: THREE.Object3D,
   input: EquipmentForgeV3Recipe,
+  options: {
+    analyzeFit?: boolean
+  } = {},
 ) {
   disposeEquipmentForgeV3Visual(
     bodyRoot,
@@ -121,11 +124,13 @@ export function buildEquipmentForgeV3Visual(
       ...result.meshes,
     )
 
-    data.fitDiagnostics =
-      analyzeEquipmentForgeV3Fit(
-        source,
-        result.meshes,
-      )
+    if (options.analyzeFit) {
+      data.fitDiagnostics =
+        analyzeEquipmentForgeV3Fit(
+          source,
+          result.meshes,
+        )
+    }
 
     if (template.maskBody) {
       data.restoreMask =
