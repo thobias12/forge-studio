@@ -57,16 +57,45 @@ import {
 import {
   authoredPoiRuntimeObstacleRadius,
   buildPoiPrefabVisual,
+  collectPoiGameplaySockets,
   loadAuthoredPoiSettings,
   resolvePoiPrefab,
 } from '../poiPrefabWorld'
+import {
+  buildGameplaySocketMarker,
+  isRuntimeInteractableSocket,
+  socketActionLabel,
+  socketPrompt,
+  type GameplaySocket,
+} from '../gameplaySockets'
 import { loadPoiPrefabs } from '../../lib/poiPrefab'
+import { loadPropPrefabs } from '../../lib/propPrefab'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
   name: string
   health: number
   maxHealth: number
+}
+
+export type ForgeRuntimeInteractionSnapshot = {
+  id: string
+  name: string
+  kind: GameplaySocket['kind']
+  action: string
+  prompt: string
+  trigger: 'tap' | 'hold'
+  progress: number
+  holdSeconds: number
+  locked: boolean
+  lockedText?: string
+  sourceName: string
+}
+
+export type ForgeRuntimeInteractionEvent = {
+  id: string
+  socket: GameplaySocket
+  sourceName: string
 }
 
 export type ForgeRuntimeSnapshot = {
@@ -80,6 +109,7 @@ export type ForgeRuntimeSnapshot = {
   inventory: string[]
   equippedWeaponId?: string
   target?: ForgeRuntimeTargetSnapshot
+  interaction?: ForgeRuntimeInteractionSnapshot
   message: string
   savedAt?: string
 }
@@ -87,6 +117,7 @@ export type ForgeRuntimeSnapshot = {
 export type ForgePlayRuntimeOptions = {
   projectId: string
   onState?: (state: ForgeRuntimeSnapshot) => void
+  onInteraction?: (event: ForgeRuntimeInteractionEvent) => void
 }
 
 type CircleObstacle = ForgeNavigationObstacle
@@ -125,6 +156,16 @@ type RuntimeCorpse = {
   duration: number
 }
 
+type RuntimeInteraction = {
+  id: string
+  socket: GameplaySocket
+  anchor: THREE.Group
+  sourceName: string
+  radiusScale: number
+  cooldownRemaining: number
+  used: boolean
+}
+
 type RuntimeEffect = { mesh: THREE.Mesh; age: number; duration: number; maxScale: number }
 type RuntimeTextEffect = { sprite: THREE.Sprite; age: number; duration: number }
 
@@ -157,6 +198,8 @@ export class ForgePlayRuntime {
   private readonly libraryVfx: ForgeLibraryVfxInstance[] = []
   private readonly textEffects: RuntimeTextEffect[] = []
   private readonly defeatedEnemyIds = new Set<string>()
+  private readonly usedInteractionIds = new Set<string>()
+  private readonly interactions: RuntimeInteraction[] = []
   private readonly cooldowns = new Map<string, number>()
   private readonly abilityAnimationClipNames = new Map<string, string>()
   private readonly playerDefinition: ForgePlayerDefinition
@@ -196,6 +239,9 @@ export class ForgePlayRuntime {
   private hitStopRemaining = 0
   private cameraShake = 0
   private playerMoving = false
+  private activeInteractionId: string | undefined
+  private interactionHeld = false
+  private interactionHoldProgress = 0
 
   constructor(host: HTMLElement, region: GeneratedRegion, gameplay: ForgeGameplayContent, options: ForgePlayRuntimeOptions) {
     this.host = host
@@ -211,6 +257,7 @@ export class ForgePlayRuntime {
       this.inventory = [...save.inventory]
       this.equippedWeaponId = save.equippedWeaponId
       save.defeatedEnemyIds.forEach((id) => this.defeatedEnemyIds.add(id))
+      save.usedInteractionIds?.forEach((id) => this.usedInteractionIds.add(id))
       this.playerHealth = THREE.MathUtils.clamp(save.player.health, 1, this.playerDefinition.maxHealth)
       this.savedAt = save.savedAt
     } else {
@@ -312,6 +359,7 @@ export class ForgePlayRuntime {
       inventory: [...this.inventory],
       equippedWeaponId: this.equippedWeaponId,
       defeatedEnemyIds: [...this.defeatedEnemyIds],
+      usedInteractionIds: [...this.usedInteractionIds],
       lootDrops: this.loot.map((drop) => ({ ...drop.save })),
       savedAt,
     })
@@ -467,7 +515,13 @@ export class ForgePlayRuntime {
         this.obstacles,
         this.cameraOccluders,
       )
-      addGeneratedPois(this.scene, this.region, this.obstacles)
+      this.interactions.push(
+        ...addGeneratedPois(
+          this.scene,
+          this.region,
+          this.obstacles,
+        ),
+      )
       this.ambientVisuals = buildWorldAmbientVisuals(this.region)
       this.scene.add(this.ambientVisuals.group)
       this.weatherVisuals = createWorldWeatherVisuals(this.region)
