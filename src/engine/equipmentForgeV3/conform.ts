@@ -124,8 +124,8 @@ export function buildConformedTunic(
       48,
       trim,
       'EFV3_NecklineTrim',
-      .3,
-      .0019,
+      .44,
+      .0024,
     )
   meshes.push(necklineTrim)
   meshes.push(
@@ -708,7 +708,7 @@ function createSleeveTemplate(
   const startFraction =
     sleeve === 'long'
       ? -.012
-      : -.028
+      : -.045
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -845,7 +845,9 @@ function createSleeveTemplate(
 
       const shoulderEase =
         THREE.MathUtils.lerp(
-          1.2,
+          sleeve === 'short'
+            ? 1.24
+            : 1.2,
           .96,
           v,
         )
@@ -855,10 +857,14 @@ function createSleeveTemplate(
           4,
         ) *
         armLength *
-        .012
+        (sleeve === 'short'
+          ? .014
+          : .012)
       const extra =
         armLength *
-        (.011 +
+        ((sleeve === 'short'
+          ? .0125
+          : .011) +
           recipe.looseness *
             .008) *
         shoulderEase +
@@ -881,9 +887,10 @@ function createSleeveTemplate(
     }
 
     const smoothed =
-      smoothCircularRing3D(
+      smoothCircularRingAroundCenter(
         ringPositions,
-        ring === 0 ? 3 : 2,
+        center,
+        ring === 0 ? 2 : 1,
       )
 
     for (
@@ -1286,6 +1293,97 @@ function smoothCircularRing3D(
             .2,
           )
       })
+  }
+
+  return current
+}
+
+function smoothCircularRingAroundCenter(
+  input: THREE.Vector3[],
+  center: THREE.Vector3,
+  passes: number,
+) {
+  let current =
+    input.map((point) =>
+      point.clone(),
+    )
+
+  const radii =
+    input.map((point) =>
+      point.distanceTo(center),
+    )
+
+  for (
+    let pass = 0;
+    pass < passes;
+    pass += 1
+  ) {
+    const next =
+      current.map((point, index) => {
+        const previous =
+          current[
+            (index -
+              1 +
+              current.length) %
+              current.length
+          ]
+        const following =
+          current[
+            (index + 1) %
+              current.length
+          ]
+
+        const averaged =
+          previous
+            .clone()
+            .multiplyScalar(.2)
+            .addScaledVector(
+              point,
+              .6,
+            )
+            .addScaledVector(
+              following,
+              .2,
+            )
+
+        const direction =
+          averaged
+            .clone()
+            .sub(center)
+
+        if (
+          direction.lengthSq() <
+          1e-8
+        ) {
+          return point.clone()
+        }
+
+        const previousRadius =
+          radii[
+            (index -
+              1 +
+              radii.length) %
+              radii.length
+          ]
+        const followingRadius =
+          radii[
+            (index + 1) %
+              radii.length
+          ]
+        const targetRadius =
+          previousRadius * .2 +
+          radii[index] * .6 +
+          followingRadius * .2
+
+        return center
+          .clone()
+          .addScaledVector(
+            direction.normalize(),
+            targetRadius,
+          )
+      })
+
+    current = next
   }
 
   return current
