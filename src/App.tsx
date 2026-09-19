@@ -53,6 +53,7 @@ import AudioStudioWorkspace from './pages/AudioStudioWorkspace'
 import VfxStudio from './pages/VfxStudio'
 import MapStudio from './pages/MapStudio'
 import PoiForge from './pages/PoiForge'
+import PropForge from './pages/PropForge'
 import Capture from './pages/Capture'
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
@@ -76,7 +77,7 @@ import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge'
+type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge' | 'propforge'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -123,6 +124,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'ASSETS',
     items: [
+      { id: 'propforge', label: 'Prop Forge', icon: PackagePlus },
       { id: 'models', label: 'Models', icon: Box },
       { id: 'textures', label: 'Textures', icon: Layers3 },
       { id: 'assets', label: 'Asset Library', icon: Boxes },
@@ -252,6 +254,7 @@ export default function App() {
           {page === 'audio' && <AudioStudioWorkspace />}
           {page === 'vfx' && <VfxStudio />}
           {page === 'poiforge' && <PoiForge />}
+          {page === 'propforge' && <PropForge />}
           {page === 'maps' && <MapStudio />}
           {page === 'preview' && <GamePreview />}
           {page === 'assets' && <AssetLibrary />}

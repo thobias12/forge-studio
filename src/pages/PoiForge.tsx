@@ -43,6 +43,10 @@ import {
   type PoiPrefabCategory,
   type PoiPrefabPart,
 } from '../lib/poiPrefab'
+import {
+  loadPropPrefabs,
+  type PropPrefab,
+} from '../lib/propPrefab'
 import '../poi-forge.css'
 
 const partIcons: Record<PoiPartKind, typeof Box> = {
@@ -52,6 +56,7 @@ const partIcons: Record<PoiPartKind, typeof Box> = {
   tent: Triangle,
   log: Minus,
   torch: Flame,
+  prop: PackagePlus,
   entry: MapPin,
 }
 
@@ -67,6 +72,7 @@ const categories: Array<{ id: PoiPrefabCategory; label: string }> = [
 
 export default function PoiForge() {
   const [prefabs, setPrefabs] = useState<PoiPrefab[]>(() => loadPoiPrefabs())
+  const [propAssets, setPropAssets] = useState<PropPrefab[]>(() => loadPropPrefabs())
   const [activeId, setActiveId] = useState(() => loadPoiPrefabs()[0]?.id ?? '')
   const [selectedPartId, setSelectedPartId] = useState<string>()
   const [mode, setMode] = useState<PoiForgeTransformMode>('translate')
@@ -96,6 +102,12 @@ export default function PoiForge() {
   useEffect(() => {
     if (!active && prefabs[0]) setActiveId(prefabs[0].id)
   }, [active, prefabs])
+
+  useEffect(() => {
+    const refreshPropAssets = () => setPropAssets(loadPropPrefabs())
+    window.addEventListener('focus', refreshPropAssets)
+    return () => window.removeEventListener('focus', refreshPropAssets)
+  }, [])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -186,10 +198,21 @@ export default function PoiForge() {
         return
       }
     }
-    const part = createPoiPart(kind)
+    if (kind === 'prop' && !propAssets.length) {
+      setStatus('No Prop Forge assets are available yet. Create a prop in Prop Forge first.')
+      return
+    }
+    const nestedProp = kind === 'prop' ? propAssets[0] : undefined
+    const part = createPoiPart(kind, nestedProp ? {
+      name: nestedProp.name,
+      assetRef: nestedProp.id,
+      solid: true,
+    } : undefined)
     mutateActive(
       (prefab) => ({ ...prefab, parts: [...prefab.parts, part] }),
-      `${part.name} added. Use W/E/R or the toolbar to move, rotate and scale it.`,
+      nestedProp
+        ? `${nestedProp.name} inserted from Prop Forge. Use W/E/R to place it.`
+        : `${part.name} added. Use W/E/R or the toolbar to move, rotate and scale it.`,
     )
     setSelectedPartId(part.id)
     setMode('translate')
@@ -472,7 +495,31 @@ export default function PoiForge() {
                 <span>Type</span>
                 <strong>{selectedPart.kind}</strong>
               </div>
-              {selectedPart.kind !== 'entry' && (
+              {selectedPart.kind === 'prop' && (
+                <label className="poi-field">
+                  <span>Prop asset</span>
+                  <select
+                    value={selectedPart.assetRef ?? ''}
+                    onChange={(event) => {
+                      const asset = propAssets.find(
+                        (candidate) => candidate.id === event.target.value,
+                      )
+                      patchSelectedPart({
+                        assetRef: event.target.value || undefined,
+                        name: asset?.name ?? selectedPart.name,
+                      })
+                    }}
+                  >
+                    <option value="">Missing asset…</option>
+                    {propAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name} · {asset.category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {selectedPart.kind !== 'entry' && selectedPart.kind !== 'prop' && (
                 <label className="poi-field">
                   <span>Material</span>
                   <select
@@ -488,7 +535,7 @@ export default function PoiForge() {
                   </select>
                 </label>
               )}
-              {selectedPart.kind !== 'entry' && (
+              {selectedPart.kind !== 'entry' && selectedPart.kind !== 'prop' && (
                 <div className="poi-field poi-color-field">
                   <span>Color override</span>
                   <input
@@ -508,7 +555,14 @@ export default function PoiForge() {
                   disabled={selectedPart.kind === 'entry'}
                   onChange={(event) => patchSelectedPart({ solid: event.target.checked })}
                 />
-                <span><strong>Solid landmark piece</strong><small>Reserved for future collision/navigation baking.</small></span>
+                <span>
+                  <strong>Solid landmark piece</strong>
+                  <small>
+                    {selectedPart.kind === 'prop'
+                      ? 'Nested Prop Forge asset participates in future collision/navigation baking.'
+                      : 'Reserved for future collision/navigation baking.'}
+                  </small>
+                </span>
               </label>
             </section>
 
