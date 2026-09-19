@@ -384,6 +384,24 @@ async function inflateZipEntry(
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
+export function setSkillboundBaseClothingVisible(
+  root: THREE.Object3D,
+  visible: boolean,
+) {
+  const optionalNames = new Set([
+    'Female_Optional_Top',
+    'Female_Optional_Shorts',
+    'Male_Optional_Shorts',
+  ])
+  root.traverse((object) => {
+    if (optionalNames.has(object.name)) object.visible = visible
+  })
+}
+
+export function isOfficialSkillboundBaseAsset(asset?: LibraryAsset) {
+  return Boolean(asset && skillboundBodyTypeFromAsset(asset))
+}
+
 export function skillboundBodyTypeFromAsset(
   asset?: LibraryAsset,
 ): SkillboundBodyType | undefined {

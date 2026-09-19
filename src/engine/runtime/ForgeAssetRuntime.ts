@@ -19,8 +19,31 @@ export class ForgeCharacterVisualBinding {
   private fallbackCue: 'idle' | 'move' = 'idle'
   private oneShot = false
   private disposed = false
+  private secondaryMotion?: {
+    left: THREE.Bone
+    right: THREE.Bone
+    leftRest: THREE.Quaternion
+    rightRest: THREE.Quaternion
+    phase: number
+    amplitude: number
+  }
 
   constructor(private readonly root: THREE.Object3D) {}
+
+  enableSubtleChestSecondaryMotion() {
+    const left = this.root.getObjectByName('breast_L')
+    const right = this.root.getObjectByName('breast_R')
+    if (!(left instanceof THREE.Bone) || !(right instanceof THREE.Bone)) return false
+    this.secondaryMotion = {
+      left,
+      right,
+      leftRest: left.quaternion.clone(),
+      rightRest: right.quaternion.clone(),
+      phase: 0,
+      amplitude: 0,
+    }
+    return true
+  }
 
   setAnimationSet(set: ForgeAnimationSet | undefined) {
     this.animationSet = set
@@ -43,6 +66,7 @@ export class ForgeCharacterVisualBinding {
 
   update(delta: number) {
     this.mixer?.update(delta)
+    this.updateSecondaryMotion(delta)
     if (this.oneShot && this.active && !this.active.isRunning()) {
       this.oneShot = false
       this.active = undefined
@@ -68,6 +92,53 @@ export class ForgeCharacterVisualBinding {
     const clip = findClipByName(this.clips, name)
     if (!clip) return false
     return this.playClip(clip, `clip:${name}`, loop, speed)
+  }
+
+  private updateSecondaryMotion(delta: number) {
+    const motion = this.secondaryMotion
+    if (!motion) return
+
+    const moving = this.activeKey.includes('cue:move:')
+    const attacking = this.activeKey.includes('cue:attack:')
+    const dodging = this.activeKey.includes('cue:dodge:')
+    const targetAmplitude = dodging
+      ? .024
+      : attacking
+        ? .018
+        : moving
+          ? .012
+          : .0035
+    const response = 1 - Math.exp(-7.5 * delta)
+    motion.amplitude = THREE.MathUtils.lerp(
+      motion.amplitude,
+      targetAmplitude,
+      response,
+    )
+    const frequency = moving
+      ? 10.2
+      : attacking || dodging
+        ? 12.4
+        : 2.4
+    motion.phase += delta * frequency
+
+    const vertical =
+      Math.sin(motion.phase) * motion.amplitude
+    const settle =
+      Math.sin(motion.phase * .53 + .8) *
+      motion.amplitude *
+      .22
+    const leftOffset = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(vertical, 0, settle),
+    )
+    const rightOffset = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(vertical, 0, -settle),
+    )
+    motion.left.quaternion
+      .copy(motion.leftRest)
+      .multiply(leftOffset)
+    motion.right.quaternion
+      .copy(motion.rightRest)
+      .multiply(rightOffset)
   }
 
   dispose() {

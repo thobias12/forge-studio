@@ -26,7 +26,10 @@ import {
   blueprintToConfig,
   cloneBlueprint,
   type ForgeCharacterBlueprint,
+  type SkillboundPlayerBodyType,
 } from '../engine/characterBlueprint'
+import { OFFICIAL_SKILLBOUND_BASE_IDS } from '../lib/characterAssetRegistry'
+import { getAsset, type LibraryAsset } from '../lib/library'
 import { archetypeLabel } from '../engine/playerLoadout'
 import {
   createDefaultPlayerBlueprint,
@@ -230,7 +233,13 @@ function CharacterSelect({ profiles, selected, selectedConfig, onSelect, onPlay,
       </aside>
       <section className="character-select-preview">
         {selected && selectedConfig ? <>
-          <div className="character-preview-3d"><CharacterForgePreview conceptMode config={selectedConfig} animation="Idle" playing showRig={false} showHitbox={false} cameraMode="studio"/></div>
+          <div className="character-preview-3d">
+            <SkillboundBlueprintPreview
+              blueprint={selected.blueprint}
+              config={selectedConfig}
+              cameraMode="studio"
+            />
+          </div>
           <div className="character-select-info"><span>{archetypeLabel(selected.blueprint.role).toUpperCase()} · {selected.blueprint.combat.weaponProfile.replaceAll('-', ' ').toUpperCase()}</span><h2>{selected.name}</h2><p>{selected.blueprint.tags.join(' · ')}</p><div><button className="play" onClick={() => onPlay(selected)}><Play size={15}/> Enter World</button><button className="delete" onClick={() => onDelete(selected.id)}><Trash2 size={14}/></button></div></div>
         </> : <div className="character-empty-preview"><Sparkles size={32}/><strong>Create your first hero</strong><button onClick={onCreate}>Open Character Creator</button></div>}
       </section>
@@ -247,6 +256,30 @@ function CharacterCreator({ blueprint, config, onChange, onCreate, onBack }: {
 }) {
   const patchBody = (key: keyof ForgeCharacterBlueprint['body'], value: number) => onChange({ ...blueprint, body: { ...blueprint.body, [key]: value } })
   const patchAppearance = (key: keyof ForgeCharacterBlueprint['appearance'], value: string) => onChange({ ...blueprint, appearance: { ...blueprint.appearance, [key]: value } })
+  const foundation = blueprint.foundation ?? {
+    bodyType: 'male' as SkillboundPlayerBodyType,
+    bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+    baseClothingVisible: true,
+  }
+  const selectBodyType = (bodyType: SkillboundPlayerBodyType) => {
+    onChange({
+      ...blueprint,
+      foundation: {
+        ...foundation,
+        bodyType,
+        bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS[bodyType],
+      },
+    })
+  }
+  const setBaseClothingVisible = (baseClothingVisible: boolean) => {
+    onChange({
+      ...blueprint,
+      foundation: {
+        ...foundation,
+        baseClothingVisible,
+      },
+    })
+  }
   const archetype = (role: 'melee' | 'ranged' | 'caster') => {
     const next = cloneBlueprint(blueprint)
     next.role = role
@@ -272,14 +305,98 @@ function CharacterCreator({ blueprint, config, onChange, onCreate, onBack }: {
     <div className="creator-body">
       <aside className="creator-controls">
         <section><label>Character name<input value={blueprint.name} maxLength={24} onChange={(event) => onChange({ ...blueprint, name: event.target.value })}/></label></section>
+        <section>
+          <span className="section-title">BODY FOUNDATION</span>
+          <div className="creator-body-types">
+            <button
+              className={foundation.bodyType === 'male' ? 'active' : ''}
+              onClick={() => selectBodyType('male')}
+            >
+              <UserRound size={15}/>
+              <span><strong>Male</strong><small>Skillbound Male Base v1</small></span>
+            </button>
+            <button
+              className={foundation.bodyType === 'female' ? 'active' : ''}
+              onClick={() => selectBodyType('female')}
+            >
+              <UserRound size={15}/>
+              <span><strong>Female</strong><small>Skillbound Female Base v1</small></span>
+            </button>
+          </div>
+          <label className="creator-base-clothing">
+            <span>
+              <strong>Base clothing</strong>
+              <small>Optional underwear layer. The complete authored body remains underneath.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={foundation.baseClothingVisible}
+              onChange={(event) => setBaseClothingVisible(event.target.checked)}
+            />
+          </label>
+        </section>
         <section><span className="section-title">STARTING CLASS</span><div className="creator-archetypes"><button className={blueprint.role === 'melee' ? 'active' : ''} onClick={() => archetype('melee')}><Shield size={15}/><strong>Duskstrider</strong><small>Blade · relics · mobility</small></button><button className={blueprint.role === 'ranged' ? 'active' : ''} onClick={() => archetype('ranged')}><Swords size={15}/><strong>Thornwarden</strong><small>Bow · tracking · agility</small></button><button className={blueprint.role === 'caster' ? 'active' : ''} onClick={() => archetype('caster')}><Sparkles size={15}/><strong>Voidweaver</strong><small>Staff · forbidden arcana</small></button></div></section>
-        <section><span className="section-title">BODY</span><CreatorRange label="Height" value={blueprint.body.height} min={.85} max={1.2} onChange={(value) => patchBody('height', value)}/><CreatorRange label="Build" value={blueprint.body.bulk} min={.78} max={1.38} onChange={(value) => patchBody('bulk', value)}/><CreatorRange label="Shoulders" value={blueprint.body.shoulders} min={.82} max={1.3} onChange={(value) => patchBody('shoulders', value)}/><CreatorRange label="Head" value={blueprint.body.headScale} min={.88} max={1.14} onChange={(value) => patchBody('headScale', value)}/></section>
+        <section><span className="section-title">BODY</span><CreatorRange label="Height" value={blueprint.body.height} min={.85} max={1.2} onChange={(value) => patchBody('height', value)}/><CreatorRange label="Build" value={blueprint.body.bulk} min={.78} max={1.38} onChange={(value) => patchBody('bulk', value)}/><CreatorRange label="Shoulders" value={blueprint.body.shoulders} min={.82} max={1.3} onChange={(value) => patchBody('shoulders', value)}/><CreatorRange label="Head" value={blueprint.body.headScale} min={.88} max={1.14} onChange={(value) => patchBody('headScale', value)}/><p className="creator-foundation-hint">The authored foundation preserves Astra's body shape. Height applies now; Build, Shoulders and Head remain saved as character DNA for future authored morph support.</p></section>
         <section><span className="section-title">APPEARANCE</span><div className="creator-colors"><label>Skin<input type="color" value={blueprint.appearance.primary} onChange={(event) => patchAppearance('primary', event.target.value)}/></label><label>Cloth<input type="color" value={blueprint.appearance.secondary} onChange={(event) => patchAppearance('secondary', event.target.value)}/></label><label>Accent<input type="color" value={blueprint.appearance.accent} onChange={(event) => patchAppearance('accent', event.target.value)}/></label></div><label>Headwear<select value={blueprint.appearance.headwear} onChange={(event) => patchAppearance('headwear', event.target.value)}><option value="none">None</option><option value="hood">Hood</option><option value="helmet">Helmet</option></select></label></section>
       </aside>
-      <section className="creator-preview"><CharacterForgePreview conceptMode config={config} animation="Idle" playing showRig={false} showHitbox={false} cameraMode="studio"/><div className="creator-preview-label"><span>FORGEHUMANOIDV1 · {archetypeLabel(blueprint.role).toUpperCase()}</span><strong>{blueprint.name || 'Wanderer'}</strong><small>Character Blueprint v2 · compatible with Skillbound runtime</small></div></section>
-      <aside className="creator-summary"><span>HERO SUMMARY</span><h3>{blueprint.name || 'Wanderer'}</h3><dl><div><dt>Class</dt><dd>{archetypeLabel(blueprint.role)}</dd></div><div><dt>Weapon style</dt><dd>{blueprint.combat.weaponProfile.replaceAll('-', ' ')}</dd></div><div><dt>Height</dt><dd>{Math.round(blueprint.body.height * 180)} cm</dd></div><div><dt>Build</dt><dd>{Math.round(blueprint.body.bulk * 100)}%</dd></div></dl><p>Your body and appearance are stored as editable Character Blueprint DNA. Equipment remains external and comes from Item Forge.</p><button onClick={onCreate}><Gamepad2 size={15}/> Create Character</button></aside>
+      <section className="creator-preview">
+        <SkillboundBlueprintPreview
+          blueprint={blueprint}
+          config={config}
+          cameraMode="studio"
+        />
+        <div className="creator-preview-label">
+          <span>SKILLBOUNDHUMANOIDV1 · {foundation.bodyType.toUpperCase()} · {archetypeLabel(blueprint.role).toUpperCase()}</span>
+          <strong>{blueprint.name || 'Wanderer'}</strong>
+          <small>Authored foundation when installed · procedural fallback remains available</small>
+        </div>
+      </section>
+      <aside className="creator-summary"><span>HERO SUMMARY</span><h3>{blueprint.name || 'Wanderer'}</h3><dl><div><dt>Class</dt><dd>{archetypeLabel(blueprint.role)}</dd></div><div><dt>Weapon style</dt><dd>{blueprint.combat.weaponProfile.replaceAll('-', ' ')}</dd></div><div><dt>Height</dt><dd>{Math.round(blueprint.body.height * 180)} cm</dd></div><div><dt>Build</dt><dd>{Math.round(blueprint.body.bulk * 100)}%</dd></div><div><dt>Body</dt><dd>{foundation.bodyType}</dd></div><div><dt>Base clothing</dt><dd>{foundation.baseClothingVisible ? 'Visible' : 'Hidden'}</dd></div></dl><p>Your body foundation and appearance are stored as editable Character Blueprint DNA. Equipment remains external and comes from Item Forge.</p><button onClick={onCreate}><Gamepad2 size={15}/> Create Character</button></aside>
     </div>
   </main>
+}
+
+function SkillboundBlueprintPreview({
+  blueprint,
+  config,
+  cameraMode = 'studio',
+}: {
+  blueprint: ForgeCharacterBlueprint
+  config: ReturnType<typeof blueprintToConfig>
+  cameraMode?: 'studio' | 'arpg'
+}) {
+  const assetId = blueprint.foundation?.bodyAssetId
+  const [bodyAsset, setBodyAsset] = useState<LibraryAsset>()
+
+  useEffect(() => {
+    let cancelled = false
+    if (!assetId) {
+      setBodyAsset(undefined)
+      return () => { cancelled = true }
+    }
+    void getAsset(assetId)
+      .then((asset) => {
+        if (!cancelled) setBodyAsset(asset)
+      })
+      .catch(() => {
+        if (!cancelled) setBodyAsset(undefined)
+      })
+    return () => { cancelled = true }
+  }, [assetId])
+
+  return <CharacterForgePreview
+    conceptMode
+    config={config}
+    animation="Idle"
+    playing
+    showRig={false}
+    showHitbox={false}
+    cameraMode={cameraMode}
+    bodyAsset={bodyAsset}
+    baseClothingVisible={
+      blueprint.foundation?.baseClothingVisible ?? true
+    }
+  />
 }
 
 function PauseMenu({ panel, setPanel, profile, snapshot, workspace, region, onResume, onCharacterSelect }: {

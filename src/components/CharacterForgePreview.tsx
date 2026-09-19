@@ -4,9 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { createProceduralCharacter, disposeForgeCharacter, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
 import { createConceptForgeCharacter } from '../engine/conceptCharacterV2'
 import { createProceduralBaseHumanoidV2 } from '../engine/proceduralHumanoidV2'
+import { retargetForgeHumanoidClips } from '../engine/skillboundCharacterAnimation'
 import { applyCharacterIdentityVisuals } from '../engine/characterIdentityVisuals'
 import {
   loadCharacterAssetScene,
+  setSkillboundBaseClothingVisible,
   skillboundBodyTypeFromAsset,
 } from '../lib/characterAssetRegistry'
 import type { CharacterIdentityRecipe } from '../lib/characterCreator'
@@ -26,6 +28,7 @@ type Props = {
   bodyAsset?: LibraryAsset
   headAsset?: LibraryAsset
   hairAsset?: LibraryAsset
+  baseClothingVisible?: boolean
   onStats?: (stats: PreviewStats) => void
 }
 
@@ -53,6 +56,7 @@ export default function CharacterForgePreview({
   bodyAsset,
   headAsset,
   hairAsset,
+  baseClothingVisible = true,
   onStats,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -155,7 +159,15 @@ export default function CharacterForgePreview({
 
     const rebuild = async () => {
       try {
-        const preview = await buildPreview(config, identity, conceptMode, bodyAsset, headAsset, hairAsset)
+        const preview = await buildPreview(
+          config,
+          identity,
+          conceptMode,
+          bodyAsset,
+          headAsset,
+          hairAsset,
+          baseClothingVisible,
+        )
         if (cancelled || !state.scene) {
           disposeRoot(preview.root)
           return
@@ -188,7 +200,16 @@ export default function CharacterForgePreview({
 
     void rebuild()
     return () => { cancelled = true }
-  }, [config, identity, conceptMode, bodyAsset, headAsset, hairAsset, cameraMode])
+  }, [
+    config,
+    identity,
+    conceptMode,
+    bodyAsset,
+    headAsset,
+    hairAsset,
+    baseClothingVisible,
+    cameraMode,
+  ])
 
   useEffect(() => {
     const state = stateRef.current
@@ -246,10 +267,17 @@ async function buildPreview(
   bodyAsset?: LibraryAsset,
   headAsset?: LibraryAsset,
   hairAsset?: LibraryAsset,
+  baseClothingVisible = true,
 ): Promise<{ root: THREE.Group; clips: THREE.AnimationClip[]; stats: PreviewStats }> {
-  if (!identity) {
-    const build = conceptMode ? createConceptForgeCharacter(config) : createProceduralCharacter(config)
-    return { root: build.root, clips: build.clips, stats: build.stats }
+  if (!identity && !bodyAsset) {
+    const build = conceptMode
+      ? createConceptForgeCharacter(config)
+      : createProceduralCharacter(config)
+    return {
+      root: build.root,
+      clips: build.clips,
+      stats: build.stats,
+    }
   }
 
   if (!bodyAsset) {
@@ -272,8 +300,10 @@ async function buildPreview(
   const loaded = await loadCharacterAssetScene(bodyAsset.blob)
   const root = loaded.scene
   root.name = 'CharacterCreator_CustomBody'
-  normalizeImportedBody(root, identity.body.height)
-  if (skillboundBodyTypeFromAsset(bodyAsset)) {
+  normalizeImportedBody(root, identity?.body.height ?? config.height)
+  const skillboundBodyType = skillboundBodyTypeFromAsset(bodyAsset)
+  if (skillboundBodyType) {
+    setSkillboundBaseClothingVisible(root, baseClothingVisible)
     // Astra's foundation GLBs face +Z. Character Forge's studio camera
     // looks toward +Z from negative Z, so rotate the official base once
     // to present its front consistently with Forge's procedural characters.
@@ -290,14 +320,38 @@ async function buildPreview(
 
   if (headAsset) {
     hideReplaceableHeadMeshes(root)
-    await attachHeadPart(root, headAsset, 'head', identity.body.headScale)
+    await attachHeadPart(
+      root,
+      headAsset,
+      'head',
+      identity?.body.headScale ?? config.headScale,
+    )
   }
-  if (hairAsset) await attachHeadPart(root, hairAsset, 'hair', identity.body.headScale)
+  if (hairAsset) {
+    await attachHeadPart(
+      root,
+      hairAsset,
+      'hair',
+      identity?.body.headScale ?? config.headScale,
+    )
+  }
 
-  const clips = loaded.animations
+  let clips = loaded.animations
+  if (skillboundBodyType) {
+    const animationSource = createConceptForgeCharacter(config)
+    try {
+      clips = retargetForgeHumanoidClips(
+        animationSource.root,
+        root,
+        animationSource.clips,
+      )
+    } finally {
+      disposeForgeCharacter(animationSource.root)
+    }
+  }
 
   root.userData.characterIdentity = {
-    ...identity,
+    ...(identity ?? {}),
     externalBodyAssetId: bodyAsset.id,
     externalHeadAssetId: headAsset?.id,
     externalHairAssetId: hairAsset?.id,
