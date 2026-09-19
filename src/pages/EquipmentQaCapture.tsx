@@ -441,6 +441,34 @@ export default function EquipmentQaCapture() {
   const analyzeFit =
     params.get('fit') !== '0'
 
+  const activeViews =
+    useMemo(() => {
+      const requested =
+        params
+          .get('views')
+          ?.split(',')
+          .map((value) =>
+            value.trim(),
+          )
+          .filter(Boolean)
+
+      if (!requested?.length) {
+        return QA_VIEWS
+      }
+
+      const allowed =
+        new Set(requested)
+      const selected =
+        QA_VIEWS.filter(
+          (view) =>
+            allowed.has(view.id),
+        )
+
+      return selected.length
+        ? selected
+        : QA_VIEWS
+    }, [params])
+
   const recipe = useMemo(() => {
     const base =
       createEquipmentForgeV3Recipe(
@@ -753,7 +781,7 @@ export default function EquipmentQaCapture() {
         const nextShots:
           QaShot[] = []
 
-        for (const view of QA_VIEWS) {
+        for (const view of activeViews) {
           if (cancelled) break
 
           bodyRoot.rotation.y =
@@ -869,11 +897,12 @@ export default function EquipmentQaCapture() {
     source,
     recipe,
     analyzeFit,
+    activeViews,
   ])
 
   const allReady =
     shots.length ===
-    QA_VIEWS.length
+    activeViews.length
   const readyViewIds =
     shots.map(
       (shot) => shot.id,
@@ -919,17 +948,17 @@ export default function EquipmentQaCapture() {
     )
 
   const fullViews =
-    QA_VIEWS.filter(
+    activeViews.filter(
       (view) =>
         view.kind === 'full',
     )
   const fitViews =
-    QA_VIEWS.filter(
+    activeViews.filter(
       (view) =>
         view.kind === 'fit',
     )
   const topViews =
-    QA_VIEWS.filter(
+    activeViews.filter(
       (view) =>
         view.kind === 'top',
     )
@@ -968,11 +997,13 @@ export default function EquipmentQaCapture() {
         </section>
       ) : (
         <>
-          <FitDiagnosticsPanel
-            diagnostics={
-              fitDiagnostics
-            }
-          />
+          {analyzeFit ? (
+            <FitDiagnosticsPanel
+              diagnostics={
+                fitDiagnostics
+              }
+            />
+          ) : null}
 
           <QaSection
             title="360° full body"
