@@ -1,8 +1,6 @@
 import {
-  useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 import * as THREE from 'three'
@@ -11,7 +9,13 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import {
   buildEquipmentForgeV3Visual,
   disposeEquipmentForgeV3Visual,
+  getEquipmentForgeV3FitDiagnostics,
 } from '../engine/equipmentForgeV3/assembler'
+import type {
+  EquipmentFitDiagnostics,
+  EquipmentFitStatus,
+  EquipmentFitZone,
+} from '../engine/equipmentForgeV3/fitDiagnostics'
 import {
   createEquipmentForgeV3Recipe,
   type EquipmentForgeV3Recipe,
@@ -37,7 +41,13 @@ type QaView = {
   targetY: number
   distance: number
   cameraY: number
-  kind: 'full' | 'detail'
+  fov: number
+  kind: 'full' | 'fit'
+}
+
+type QaShot = {
+  id: string
+  dataUrl: string
 }
 
 const QA_VIEWS: QaView[] = [
@@ -46,8 +56,9 @@ const QA_VIEWS: QaView[] = [
     label: 'Front',
     yaw: 0,
     targetY: .92,
-    distance: 3.35,
-    cameraY: 1.05,
+    distance: 3.2,
+    cameraY: 1.04,
+    fov: 30,
     kind: 'full',
   },
   {
@@ -55,8 +66,9 @@ const QA_VIEWS: QaView[] = [
     label: 'Front 45°',
     yaw: Math.PI / 4,
     targetY: .92,
-    distance: 3.35,
-    cameraY: 1.05,
+    distance: 3.2,
+    cameraY: 1.04,
+    fov: 30,
     kind: 'full',
   },
   {
@@ -64,8 +76,19 @@ const QA_VIEWS: QaView[] = [
     label: 'Right',
     yaw: Math.PI / 2,
     targetY: .92,
-    distance: 3.35,
-    cameraY: 1.05,
+    distance: 3.15,
+    cameraY: 1.04,
+    fov: 30,
+    kind: 'full',
+  },
+  {
+    id: 'back-right',
+    label: 'Back 45°',
+    yaw: Math.PI * .75,
+    targetY: .92,
+    distance: 3.2,
+    cameraY: 1.04,
+    fov: 30,
     kind: 'full',
   },
   {
@@ -73,8 +96,19 @@ const QA_VIEWS: QaView[] = [
     label: 'Back',
     yaw: Math.PI,
     targetY: .92,
-    distance: 3.35,
-    cameraY: 1.05,
+    distance: 3.2,
+    cameraY: 1.04,
+    fov: 30,
+    kind: 'full',
+  },
+  {
+    id: 'back-left',
+    label: 'Back -45°',
+    yaw: -Math.PI * .75,
+    targetY: .92,
+    distance: 3.2,
+    cameraY: 1.04,
+    fov: 30,
     kind: 'full',
   },
   {
@@ -82,8 +116,9 @@ const QA_VIEWS: QaView[] = [
     label: 'Left',
     yaw: -Math.PI / 2,
     targetY: .92,
-    distance: 3.35,
-    cameraY: 1.05,
+    distance: 3.15,
+    cameraY: 1.04,
+    fov: 30,
     kind: 'full',
   },
   {
@@ -91,27 +126,90 @@ const QA_VIEWS: QaView[] = [
     label: 'Front -45°',
     yaw: -Math.PI / 4,
     targetY: .92,
-    distance: 3.35,
-    cameraY: 1.05,
+    distance: 3.2,
+    cameraY: 1.04,
+    fov: 30,
     kind: 'full',
   },
   {
-    id: 'shoulders',
-    label: 'Neck / Shoulders',
-    yaw: .18,
-    targetY: 1.42,
-    distance: 1.25,
-    cameraY: 1.48,
-    kind: 'detail',
+    id: 'right-side-close',
+    label: 'Right side · torso gap',
+    yaw: Math.PI / 2,
+    targetY: 1.04,
+    distance: .92,
+    cameraY: 1.05,
+    fov: 25,
+    kind: 'fit',
   },
   {
-    id: 'hem',
-    label: 'Waist / Hem',
-    yaw: -.12,
-    targetY: .72,
-    distance: 1.28,
-    cameraY: .76,
-    kind: 'detail',
+    id: 'left-side-close',
+    label: 'Left side · torso gap',
+    yaw: -Math.PI / 2,
+    targetY: 1.04,
+    distance: .92,
+    cameraY: 1.05,
+    fov: 25,
+    kind: 'fit',
+  },
+  {
+    id: 'right-underarm',
+    label: 'Right underarm',
+    yaw: Math.PI / 2,
+    targetY: 1.27,
+    distance: .76,
+    cameraY: 1.3,
+    fov: 23,
+    kind: 'fit',
+  },
+  {
+    id: 'left-underarm',
+    label: 'Left underarm',
+    yaw: -Math.PI / 2,
+    targetY: 1.27,
+    distance: .76,
+    cameraY: 1.3,
+    fov: 23,
+    kind: 'fit',
+  },
+  {
+    id: 'chest-close',
+    label: 'Chest / neckline',
+    yaw: 0,
+    targetY: 1.28,
+    distance: .9,
+    cameraY: 1.3,
+    fov: 24,
+    kind: 'fit',
+  },
+  {
+    id: 'back-shoulders-close',
+    label: 'Back / shoulders',
+    yaw: Math.PI,
+    targetY: 1.27,
+    distance: .9,
+    cameraY: 1.3,
+    fov: 24,
+    kind: 'fit',
+  },
+  {
+    id: 'right-waist-close',
+    label: 'Right waist / hem',
+    yaw: Math.PI / 2,
+    targetY: .78,
+    distance: .78,
+    cameraY: .8,
+    fov: 22,
+    kind: 'fit',
+  },
+  {
+    id: 'left-waist-close',
+    label: 'Left waist / hem',
+    yaw: -Math.PI / 2,
+    targetY: .78,
+    distance: .78,
+    cameraY: .8,
+    fov: 22,
+    kind: 'fit',
   },
 ]
 
@@ -126,6 +224,7 @@ declare global {
       recipe: EquipmentForgeV3Recipe
       views: string[]
       errors: string[]
+      fitDiagnostics?: EquipmentFitDiagnostics
     }
     __FORGE_EQUIPMENT_QA_RECIPE__?: Partial<EquipmentForgeV3Recipe>
     __FORGE_EQUIPMENT_QA_MODEL_URL__?: string
@@ -166,6 +265,7 @@ export default function EquipmentQaCapture() {
     },
     [],
   )
+
   const bodyType: SkillboundBodyType =
     params.get('body') === 'male'
       ? 'male'
@@ -173,6 +273,7 @@ export default function EquipmentQaCapture() {
         ? 'female'
         : window.__FORGE_EQUIPMENT_QA_BODY__ ??
           'female'
+
   const modelUrl =
     params.get('model') ??
     window.__FORGE_EQUIPMENT_QA_MODEL_URL__ ??
@@ -208,6 +309,14 @@ export default function EquipmentQaCapture() {
       ...override,
       bodyType,
       enabled: true,
+      layers: {
+        ...base.layers,
+        ...(override?.layers ?? {}),
+      },
+      cape: {
+        ...base.cape,
+        ...(override?.cape ?? {}),
+      },
       materials: {
         ...base.materials,
         ...(override?.materials ?? {}),
@@ -217,12 +326,18 @@ export default function EquipmentQaCapture() {
 
   const [source, setSource] =
     useState<THREE.Group>()
+  const [shots, setShots] =
+    useState<QaShot[]>([])
+  const [
+    fitDiagnostics,
+    setFitDiagnostics,
+  ] =
+    useState<
+      EquipmentFitDiagnostics
+      | undefined
+    >()
   const [error, setError] =
     useState('')
-  const [readyViews, setReadyViews] =
-    useState<string[]>([])
-  const [viewErrors, setViewErrors] =
-    useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -232,8 +347,8 @@ export default function EquipmentQaCapture() {
 
     setError('')
     setSource(undefined)
-    setReadyViews([])
-    setViewErrors([])
+    setShots([])
+    setFitDiagnostics(undefined)
 
     const load = async () => {
       try {
@@ -278,15 +393,16 @@ export default function EquipmentQaCapture() {
         setSource(gltf.scene)
       } catch (cause) {
         if (cancelled) return
-        const message =
+        setError(
           cause instanceof Error
             ? cause.message
-            : String(cause)
-        setError(message)
+            : String(cause),
+        )
       }
     }
 
     void load()
+
     return () => {
       cancelled = true
       if (localObjectUrl) {
@@ -298,10 +414,253 @@ export default function EquipmentQaCapture() {
   }, [modelUrl, bodyType])
 
   useEffect(() => {
-    const allReady =
-      readyViews.length ===
-      QA_VIEWS.length
+    if (!source) return
 
+    let cancelled = false
+
+    const capture = async () => {
+      let bodyRoot:
+        | THREE.Group
+        | undefined
+      let renderer:
+        | THREE.WebGLRenderer
+        | undefined
+      let ground:
+        | THREE.Mesh
+        | undefined
+
+      try {
+        const scene =
+          new THREE.Scene()
+        scene.background =
+          new THREE.Color(0x090d12)
+
+        const camera =
+          new THREE.PerspectiveCamera(
+            30,
+            1,
+            .02,
+            30,
+          )
+
+        renderer =
+          new THREE.WebGLRenderer({
+            antialias: true,
+            preserveDrawingBuffer: true,
+            powerPreference:
+              'high-performance',
+          })
+        renderer.setPixelRatio(1)
+        renderer.setSize(
+          768,
+          768,
+          false,
+        )
+        renderer.outputColorSpace =
+          THREE.SRGBColorSpace
+        renderer.toneMapping =
+          THREE.ACESFilmicToneMapping
+        renderer.toneMappingExposure =
+          1.1
+        renderer.shadowMap.enabled =
+          true
+
+        scene.add(
+          new THREE.HemisphereLight(
+            0xe7eef7,
+            0x151a21,
+            2.15,
+          ),
+        )
+
+        const key =
+          new THREE.DirectionalLight(
+            0xfff1de,
+            3.7,
+          )
+        key.position.set(
+          3.6,
+          5,
+          -3,
+        )
+        key.castShadow = true
+        scene.add(key)
+
+        const rim =
+          new THREE.DirectionalLight(
+            0x6e8fc6,
+            2,
+          )
+        rim.position.set(
+          -4,
+          3.1,
+          3.2,
+        )
+        scene.add(rim)
+
+        ground =
+          new THREE.Mesh(
+            new THREE.CircleGeometry(
+              3,
+              48,
+            ),
+            new THREE.MeshStandardMaterial({
+              color: 0x111820,
+              roughness: .95,
+              metalness: 0,
+            }),
+          )
+        ground.rotation.x =
+          -Math.PI / 2
+        ground.receiveShadow = true
+        scene.add(ground)
+
+        bodyRoot =
+          cloneSkeleton(
+            source,
+          ) as THREE.Group
+        bodyRoot.name =
+          '__equipment_qa_body'
+        bodyRoot.traverse((object) => {
+          if (
+            object instanceof THREE.Mesh
+          ) {
+            object.castShadow = true
+            object.receiveShadow = false
+            object.frustumCulled = false
+          }
+        })
+
+        setSkillboundBaseClothingVisible(
+          bodyRoot,
+          false,
+        )
+        scene.add(bodyRoot)
+        bodyRoot.updateMatrixWorld(true)
+
+        buildEquipmentForgeV3Visual(
+          bodyRoot,
+          recipe,
+          {
+            analyzeFit: true,
+          },
+        )
+        bodyRoot.updateMatrixWorld(true)
+
+        const diagnostics =
+          getEquipmentForgeV3FitDiagnostics(
+            bodyRoot,
+          )
+
+        if (!cancelled) {
+          setFitDiagnostics(
+            diagnostics,
+          )
+        }
+
+        const nextShots:
+          QaShot[] = []
+
+        for (const view of QA_VIEWS) {
+          if (cancelled) break
+
+          bodyRoot.rotation.y =
+            Math.PI + view.yaw
+          bodyRoot.updateMatrixWorld(true)
+
+          camera.fov = view.fov
+          camera.position.set(
+            0,
+            view.cameraY,
+            -view.distance,
+          )
+          camera.lookAt(
+            new THREE.Vector3(
+              0,
+              view.targetY,
+              0,
+            ),
+          )
+          camera.updateProjectionMatrix()
+
+          renderer.render(
+            scene,
+            camera,
+          )
+          renderer.render(
+            scene,
+            camera,
+          )
+
+          nextShots.push({
+            id: view.id,
+            dataUrl:
+              renderer.domElement.toDataURL(
+                'image/png',
+              ),
+          })
+
+          await new Promise<void>(
+            (resolve) =>
+              requestAnimationFrame(
+                () => resolve(),
+              ),
+          )
+        }
+
+        if (!cancelled) {
+          setShots(nextShots)
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : String(cause),
+          )
+        }
+      } finally {
+        if (bodyRoot) {
+          disposeEquipmentForgeV3Visual(
+            bodyRoot,
+          )
+          bodyRoot.removeFromParent()
+        }
+        if (ground) {
+          ground.geometry.dispose()
+          const material =
+            ground.material
+          if (
+            Array.isArray(material)
+          ) {
+            material.forEach(
+              (entry) =>
+                entry.dispose(),
+            )
+          } else {
+            material.dispose()
+          }
+        }
+        renderer?.dispose()
+      }
+    }
+
+    void capture()
+
+    return () => {
+      cancelled = true
+    }
+  }, [source, recipe])
+
+  const allReady =
+    shots.length ===
+    QA_VIEWS.length
+  const readyViewIds =
+    shots.map(
+      (shot) => shot.id,
+    )
+
+  useEffect(() => {
     window.__FORGE_EQUIPMENT_QA_READY__ =
       allReady || Boolean(error)
     window.__FORGE_EQUIPMENT_QA__ = {
@@ -310,51 +669,46 @@ export default function EquipmentQaCapture() {
       bodyType,
       modelUrl,
       recipe,
-      views: [...readyViews],
-      errors: [
-        ...(error ? [error] : []),
-        ...viewErrors,
-      ],
+      views: readyViewIds,
+      errors: error
+        ? [error]
+        : [],
+      fitDiagnostics,
     }
   }, [
-    readyViews,
-    viewErrors,
+    allReady,
     error,
     bodyType,
     modelUrl,
     recipe,
+    readyViewIds,
+    fitDiagnostics,
   ])
 
-  const markReady = useCallback(
-    (id: string) => {
-      setReadyViews((current) =>
-        current.includes(id)
-          ? current
-          : [...current, id],
-      )
-    },
-    [],
-  )
-
-  const markError = useCallback(
-    (
-      id: string,
-      message: string,
-    ) => {
-      setViewErrors((current) =>
-        current.includes(
-          `${id}: ${message}`,
-        )
-          ? current
-          : [
-              ...current,
-              `${id}: ${message}`,
+  const shotMap =
+    useMemo(
+      () =>
+        new Map(
+          shots.map(
+            (shot) => [
+              shot.id,
+              shot.dataUrl,
             ],
-      )
-      markReady(id)
-    },
-    [markReady],
-  )
+          ),
+        ),
+      [shots],
+    )
+
+  const fullViews =
+    QA_VIEWS.filter(
+      (view) =>
+        view.kind === 'full',
+    )
+  const fitViews =
+    QA_VIEWS.filter(
+      (view) =>
+        view.kind === 'fit',
+    )
 
   return (
     <main className="equipment-qa-page">
@@ -364,7 +718,7 @@ export default function EquipmentQaCapture() {
             FORGE · EQUIPMENT QA
           </span>
           <h1>
-            V3 360° regression capture
+            V3 360° + fit inspection
           </h1>
           <p>
             {bodyType} · {recipe.name}
@@ -387,276 +741,295 @@ export default function EquipmentQaCapture() {
           <code>{modelUrl}</code>
         </section>
       ) : (
-        <section className="equipment-qa-grid">
-          {QA_VIEWS.map((view) => (
-            <EquipmentQaView
-              key={view.id}
-              view={view}
-              source={source}
-              recipe={recipe}
-              onReady={() =>
-                markReady(view.id)
-              }
-              onError={(message) =>
-                markError(
-                  view.id,
-                  message,
-                )
-              }
-            />
-          ))}
-        </section>
+        <>
+          <FitDiagnosticsPanel
+            diagnostics={
+              fitDiagnostics
+            }
+          />
+
+          <QaSection
+            title="360° full body"
+            description="Eight fixed angles for silhouette, attachment and layer checks."
+            views={fullViews}
+            shots={shotMap}
+          />
+
+          <QaSection
+            title="Close-up fit checks"
+            description="Tighter side, underarm, chest, shoulder and waist views for spotting body-to-clothing gaps and clipping."
+            views={fitViews}
+            shots={shotMap}
+          />
+        </>
       )}
     </main>
   )
 }
 
-function EquipmentQaView({
-  view,
-  source,
-  recipe,
-  onReady,
-  onError,
+function QaSection({
+  title,
+  description,
+  views,
+  shots,
 }: {
-  view: QaView
-  source?: THREE.Group
-  recipe: EquipmentForgeV3Recipe
-  onReady: () => void
-  onError: (message: string) => void
+  title: string
+  description: string
+  views: QaView[]
+  shots: Map<string, string>
 }) {
-  const hostRef =
-    useRef<HTMLDivElement>(null)
+  return (
+    <section className="equipment-qa-section">
+      <header className="equipment-qa-section-header">
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+        <span>
+          {views.length} views
+        </span>
+      </header>
 
-  useEffect(() => {
-    if (!source || !hostRef.current) {
-      return
-    }
+      <div className="equipment-qa-grid">
+        {views.map((view) => {
+          const dataUrl =
+            shots.get(view.id)
 
-    const host = hostRef.current
-    let bodyRoot:
-      | THREE.Group
-      | undefined
-    let renderer:
-      | THREE.WebGLRenderer
-      | undefined
-    let disposed = false
-    let raf = 0
+          return (
+            <article
+              className="equipment-qa-view"
+              data-qa-view={view.id}
+              key={view.id}
+            >
+              <header>
+                <strong>
+                  {view.label}
+                </strong>
+                <span>{view.id}</span>
+              </header>
 
-    try {
-      const scene =
-        new THREE.Scene()
-      scene.background =
-        new THREE.Color(0x090d12)
-
-      const camera =
-        new THREE.PerspectiveCamera(
-          view.kind === 'detail'
-            ? 30
-            : 31,
-          1,
-          .02,
-          30,
-        )
-
-      renderer =
-        new THREE.WebGLRenderer({
-          antialias: true,
-          preserveDrawingBuffer: true,
-          powerPreference:
-            'high-performance',
-        })
-      renderer.setPixelRatio(1)
-      renderer.setSize(640, 640, false)
-      renderer.outputColorSpace =
-        THREE.SRGBColorSpace
-      renderer.toneMapping =
-        THREE.ACESFilmicToneMapping
-      renderer.toneMappingExposure =
-        1.1
-      renderer.shadowMap.enabled = true
-      host.appendChild(
-        renderer.domElement,
-      )
-
-      scene.add(
-        new THREE.HemisphereLight(
-          0xe7eef7,
-          0x151a21,
-          2.15,
-        ),
-      )
-
-      const key =
-        new THREE.DirectionalLight(
-          0xfff1de,
-          3.7,
-        )
-      key.position.set(
-        3.6,
-        5,
-        -3,
-      )
-      key.castShadow = true
-      scene.add(key)
-
-      const rim =
-        new THREE.DirectionalLight(
-          0x6e8fc6,
-          2,
-        )
-      rim.position.set(
-        -4,
-        3.1,
-        3.2,
-      )
-      scene.add(rim)
-
-      const ground = new THREE.Mesh(
-        new THREE.CircleGeometry(
-          3,
-          48,
-        ),
-        new THREE.MeshStandardMaterial({
-          color: 0x111820,
-          roughness: .95,
-          metalness: 0,
-        }),
-      )
-      ground.rotation.x =
-        -Math.PI / 2
-      ground.receiveShadow = true
-      scene.add(ground)
-
-      bodyRoot =
-        cloneSkeleton(
-          source,
-        ) as THREE.Group
-      bodyRoot.name =
-        '__equipment_qa_body'
-      bodyRoot.rotation.y =
-        Math.PI + view.yaw
-      bodyRoot.traverse((object) => {
-        if (
-          object instanceof THREE.Mesh
-        ) {
-          object.castShadow = true
-          object.receiveShadow = false
-          object.frustumCulled = false
-        }
-      })
-      setSkillboundBaseClothingVisible(
-        bodyRoot,
-        false,
-      )
-      scene.add(bodyRoot)
-      bodyRoot.updateMatrixWorld(true)
-
-      buildEquipmentForgeV3Visual(
-        bodyRoot,
-        recipe,
-      )
-      bodyRoot.updateMatrixWorld(true)
-
-      const target =
-        new THREE.Vector3(
-          0,
-          view.targetY,
-          0,
-        )
-      camera.position.set(
-        0,
-        view.cameraY,
-        -view.distance,
-      )
-      camera.lookAt(target)
-
-      const renderStable = (
-        frame: number,
-      ) => {
-        if (
-          disposed ||
-          !renderer
-        ) {
-          return
-        }
-
-        renderer.render(
-          scene,
-          camera,
-        )
-
-        if (frame >= 4) {
-          onReady()
-          return
-        }
-
-        raf =
-          requestAnimationFrame(
-            () =>
-              renderStable(
-                frame + 1,
-              ),
+              <div className="equipment-qa-image">
+                {dataUrl ? (
+                  <img
+                    src={dataUrl}
+                    alt={view.label}
+                  />
+                ) : (
+                  <div className="equipment-qa-loading">
+                    Rendering…
+                  </div>
+                )}
+              </div>
+            </article>
           )
-      }
+        })}
+      </div>
+    </section>
+  )
+}
 
-      raf =
-        requestAnimationFrame(
-          () => renderStable(0),
-        )
-
-      return () => {
-        disposed = true
-        cancelAnimationFrame(raf)
-        if (bodyRoot) {
-          disposeEquipmentForgeV3Visual(
-            bodyRoot,
-          )
-          bodyRoot.removeFromParent()
-        }
-        ground.geometry.dispose()
-        ;(
-          ground.material as THREE.Material
-        ).dispose()
-        renderer?.dispose()
-        renderer?.domElement.remove()
-      }
-    } catch (cause) {
-      const message =
-        cause instanceof Error
-          ? cause.message
-          : String(cause)
-      onError(message)
-
-      return () => {
-        disposed = true
-        cancelAnimationFrame(raf)
-        renderer?.dispose()
-        renderer?.domElement.remove()
-      }
-    }
-  }, [
-    source,
-    recipe,
-    view,
-    onReady,
-    onError,
-  ])
+function FitDiagnosticsPanel({
+  diagnostics,
+}: {
+  diagnostics?: EquipmentFitDiagnostics
+}) {
+  if (!diagnostics) {
+    return (
+      <section className="equipment-fit-diagnostics">
+        <div className="equipment-fit-diagnostics-loading">
+          Measuring body-to-clothing clearance…
+        </div>
+      </section>
+    )
+  }
 
   return (
-    <article
-      className="equipment-qa-view"
-      data-qa-view={view.id}
-    >
+    <section className="equipment-fit-diagnostics">
       <header>
-        <strong>{view.label}</strong>
-        <span>{view.id}</span>
+        <div>
+          <span>
+            BODY ↔ GARMENT
+          </span>
+          <h2>Fit diagnostics</h2>
+          <p>
+            Signed nearest-surface sampling catches excessive clearance and likely clipping before visual polish.
+          </p>
+        </div>
+        <FitStatusPill
+          status={
+            diagnostics.overall.status
+          }
+        />
       </header>
-      <div
-        className="equipment-qa-canvas"
-        ref={hostRef}
-      />
-    </article>
+
+      <div className="equipment-fit-summary">
+        <FitMetric
+          label="Average clearance"
+          value={formatDistance(
+            diagnostics,
+            diagnostics.overall
+              .averageGap,
+          )}
+        />
+        <FitMetric
+          label="95th percentile"
+          value={formatDistance(
+            diagnostics,
+            diagnostics.overall.p95Gap,
+          )}
+        />
+        <FitMetric
+          label="Clipping samples"
+          value={formatPercent(
+            diagnostics.overall
+              .clippingPercent,
+          )}
+        />
+        <FitMetric
+          label="Floating samples"
+          value={formatPercent(
+            diagnostics.overall
+              .floatingPercent,
+          )}
+        />
+      </div>
+
+      <div className="equipment-fit-zones">
+        {diagnostics.zones.map(
+          (zone) => (
+            <FitZoneRow
+              key={zone.id}
+              diagnostics={
+                diagnostics
+              }
+              zone={zone}
+            />
+          ),
+        )}
+      </div>
+    </section>
   )
+}
+
+function FitZoneRow({
+  diagnostics,
+  zone,
+}: {
+  diagnostics: EquipmentFitDiagnostics
+  zone: EquipmentFitZone
+}) {
+  return (
+    <div className="equipment-fit-zone">
+      <div>
+        <strong>{zone.label}</strong>
+        <span>
+          {zone.samples.toLocaleString()}
+          {' '}samples
+        </span>
+      </div>
+      <div>
+        <span>avg</span>
+        <strong>
+          {formatDistance(
+            diagnostics,
+            zone.averageGap,
+          )}
+        </strong>
+      </div>
+      <div>
+        <span>p95</span>
+        <strong>
+          {formatDistance(
+            diagnostics,
+            zone.p95Gap,
+          )}
+        </strong>
+      </div>
+      <div>
+        <span>clip</span>
+        <strong>
+          {formatPercent(
+            zone.clippingPercent,
+          )}
+        </strong>
+      </div>
+      <div>
+        <span>float</span>
+        <strong>
+          {formatPercent(
+            zone.floatingPercent,
+          )}
+        </strong>
+      </div>
+      <FitStatusPill
+        status={zone.status}
+      />
+    </div>
+  )
+}
+
+function FitMetric({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="equipment-fit-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function FitStatusPill({
+  status,
+}: {
+  status: EquipmentFitStatus
+}) {
+  const label =
+    status === 'clean'
+      ? 'Clean'
+      : status === 'check'
+        ? 'Check'
+        : 'Problem'
+
+  return (
+    <span
+      className={
+        `equipment-fit-status ${status}`
+      }
+    >
+      {label}
+    </span>
+  )
+}
+
+function formatDistance(
+  diagnostics: EquipmentFitDiagnostics,
+  value: number,
+) {
+  if (
+    diagnostics.bodyHeight >= 1 &&
+    diagnostics.bodyHeight <= 3
+  ) {
+    return `${(
+      value * 100
+    ).toFixed(1)} cm`
+  }
+
+  return `${(
+    (value /
+      diagnostics.bodyHeight) *
+    100
+  ).toFixed(2)}% H`
+}
+
+function formatPercent(
+  value: number,
+) {
+  return `${value.toFixed(1)}%`
 }
 
 function disposeScene(
