@@ -20,10 +20,14 @@ import {
   type SkillboundClass,
 } from '../lib/characterCreator'
 import {
+  OFFICIAL_SKILLBOUND_BASE_IDS,
   characterAssetCompatibility,
   isCharacterCreatorAsset,
+  loadOfficialSkillboundBaseAssets,
   registerCharacterAsset,
+  skillboundBodyTypeFromAsset,
   type CharacterAssetRole,
+  type SkillboundBodyType,
 } from '../lib/characterAssetRegistry'
 import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import '../character-forge.css'
@@ -71,7 +75,36 @@ export default function CharacterForge() {
   const [library, setLibrary] = useState<LibraryAsset[]>([])
 
   useEffect(() => {
-    void listAssets().then(setLibrary).catch(() => setStatus('Could not read the Shared Asset Library.'))
+    let cancelled = false
+    void Promise.all([
+      listAssets(),
+      loadOfficialSkillboundBaseAssets(),
+    ]).then(([savedAssets, officialBases]) => {
+      if (cancelled) return
+      const officialIds = new Set(officialBases.map((asset) => asset.id))
+      setLibrary([
+        ...officialBases,
+        ...savedAssets.filter((asset) => !officialIds.has(asset.id)),
+      ])
+      setIdentity((current) => current.modelAssets.bodyAssetId
+        ? current
+        : {
+            ...current,
+            modelAssets: {
+              ...current.modelAssets,
+              bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+            },
+          })
+      setStatus('Skillbound Character Standard v1 loaded. Choose the official male or female foundation, then layer identity assets and equipment on top.')
+    }).catch(() => {
+      if (!cancelled) {
+        void listAssets()
+          .then(setLibrary)
+          .catch(() => setStatus('Could not read the Character Forge asset library.'))
+        setStatus('Official Skillbound base models could not be loaded. Local Character Forge assets are still available.')
+      }
+    })
+    return () => { cancelled = true }
   }, [])
 
   const config = useMemo(() => identityToForgeConfig(identity), [identity])
@@ -80,6 +113,7 @@ export default function CharacterForge() {
   const headAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'head')), [library])
   const hairAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'hair')), [library])
   const bodyAsset = bodyAssets.find((asset) => asset.id === identity.modelAssets.bodyAssetId)
+  const skillboundBodyType = skillboundBodyTypeFromAsset(bodyAsset)
   const headAsset = headAssets.find((asset) => asset.id === identity.modelAssets.headAssetId)
   const hairAsset = hairAssets.find((asset) => asset.id === identity.modelAssets.hairAssetId)
 
@@ -98,6 +132,29 @@ export default function CharacterForge() {
     ...current,
     body: { ...current.body, [key]: value },
   }))
+
+  const selectOfficialBody = (bodyType: SkillboundBodyType) => {
+    const assetId = OFFICIAL_SKILLBOUND_BASE_IDS[bodyType]
+    setIdentity((current) => ({
+      ...current,
+      modelAssets: {
+        ...current.modelAssets,
+        bodyAssetId: assetId,
+      },
+      appearance: bodyType === 'female'
+        ? {
+            ...current.appearance,
+            facialHairStyle: 'none',
+          }
+        : current.appearance,
+    }))
+    setAnimation('Idle')
+    setStatus(
+      bodyType === 'female'
+        ? 'Skillbound Female Base v1 selected · shared 62-bone rig with breast_L / breast_R secondary-motion support.'
+        : 'Skillbound Male Base v1 selected · shared 62-bone Skillbound foundation rig.',
+    )
+  }
 
   const patchModelAsset = (role: CharacterAssetRole, assetId?: string) => {
     const key = role === 'body' ? 'bodyAssetId' : role === 'head' ? 'headAssetId' : 'hairAssetId'
@@ -219,7 +276,31 @@ export default function CharacterForge() {
       </div>
 
       <div className="cf-section">
-        <span className="cf-label">MODEL ASSETS</span>
+        <span className="cf-label">CHARACTER FOUNDATION</span>
+        <div className="cf-foundation-picker">
+          <button
+            type="button"
+            className={skillboundBodyType === 'male' ? 'active' : ''}
+            onClick={() => selectOfficialBody('male')}
+          >
+            <UserRound size={15}/>
+            <span><strong>Male</strong><em>Skillbound Male Base v1</em></span>
+          </button>
+          <button
+            type="button"
+            className={skillboundBodyType === 'female' ? 'active' : ''}
+            onClick={() => selectOfficialBody('female')}
+          >
+            <UserRound size={15}/>
+            <span><strong>Female</strong><em>Skillbound Female Base v1</em></span>
+          </button>
+        </div>
+        <p className="cf-foundation-note">
+          Official 1.80 m bases · matching topology · shared 62-bone SkillboundHumanoidV1 rig · modular-equipment ready.
+          The female base includes weighted breast_L / breast_R bones for future subtle secondary motion.
+        </p>
+
+        <span className="cf-label cf-label-spaced">MODEL ASSETS</span>
         <CharacterAssetPicker
           label="Base body"
           role="body"
@@ -247,7 +328,7 @@ export default function CharacterForge() {
           onSelect={(value) => patchModelAsset('hair', value)}
           onImport={(file) => void importCharacterPart('hair', file)}
         />
-        <p className="cf-equipment-note">GLB only. Body assets are checked for skinning and ForgeHumanoidV1 bone names. Head and hair assets attach at the Head bone and never become equipment.</p>
+        <p className="cf-equipment-note">GLB only. Body assets are checked for ForgeHumanoidV1 or SkillboundHumanoidV1 skinning. The two official Skillbound bases are bundled with Forge and do not need to be imported manually.</p>
       </div>
 
       <div className="cf-section">
@@ -296,7 +377,11 @@ export default function CharacterForge() {
         <div className="cf-preview-badges">
           <span><Bone size={12}/>{stats.bones} bones</span>
           <span>{stats.triangles.toLocaleString()} tris</span>
-          <span>{bodyAsset ? 'custom body' : 'generated fallback'}</span>
+          <span>{skillboundBodyType
+            ? `official ${skillboundBodyType} base`
+            : bodyAsset
+              ? 'custom body'
+              : 'generated fallback'}</span>
         </div>
         <div className="cf-animation-bar">
           <button className="cf-play" onClick={() => setPlaying((value) => !value)}>{playing ? <Pause size={14}/> : <Play size={14}/>}</button>
@@ -344,7 +429,9 @@ export default function CharacterForge() {
 
       <div className="cf-inspector-section">
         <span className="cf-label">BODY FEATURES</span>
-        {bodyAsset && <div className="cf-asset-warning"><AlertTriangle size={12}/><span>Custom body selected. These values remain in the recipe; authored morph targets will be able to consume them later.</span></div>}
+        {bodyAsset && <div className="cf-asset-warning"><AlertTriangle size={12}/><span>{skillboundBodyType
+          ? 'Official authored base selected. Height normalization works now; the other body sliders remain recipe values until morph-target support is added.'
+          : 'Custom body selected. These values remain in the recipe; authored morph targets will be able to consume them later.'}</span></div>}
         <div className="cf-slider-group cf-slider-group-compact">
           <Slider label="Height" value={identity.body.height} min={.9} max={1.08} step={.01} onChange={(value) => patchBody('height', value)}/>
           <Slider label="Build" value={identity.body.build} min={.86} max={1.08} step={.01} onChange={(value) => patchBody('build', value)}/>
