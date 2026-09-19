@@ -483,6 +483,36 @@ export function buildProceduralEquipmentVisual(
   return root
 }
 
+export function disposeProceduralEquipmentVisual(
+  bodyRoot: THREE.Object3D,
+) {
+  const objects: THREE.Object3D[] = []
+  const materials = new Set<THREE.Material>()
+  bodyRoot.traverse((object) => {
+    if (!object.userData.proceduralEquipment) {
+      return
+    }
+    objects.push(object)
+    if (object instanceof THREE.Mesh) {
+      object.geometry?.dispose()
+      const list = Array.isArray(object.material)
+        ? object.material
+        : [object.material]
+      list.forEach((material) => {
+        if (material) materials.add(material)
+      })
+    }
+  })
+  objects
+    .sort((a, b) => depthOf(b) - depthOf(a))
+    .forEach((object) => object.removeFromParent())
+  materials.forEach((material) => material.dispose())
+  const marker = bodyRoot.getObjectByName(
+    '__forge_procedural_equipment',
+  )
+  marker?.removeFromParent()
+}
+
 function buildChest(
   bodyRoot: THREE.Object3D,
   root: THREE.Group,
@@ -1261,6 +1291,7 @@ function attachPreservingWorld(
   bone: THREE.Object3D | undefined,
   object: THREE.Object3D,
 ) {
+  object.userData.proceduralEquipment = true
   bodyRoot.add(object)
   bodyRoot.updateMatrixWorld(true)
   object.updateMatrixWorld(true)
@@ -1268,6 +1299,16 @@ function attachPreservingWorld(
     bone.updateMatrixWorld(true)
     bone.attach(object)
   }
+}
+
+function depthOf(object: THREE.Object3D) {
+  let depth = 0
+  let parent = object.parent
+  while (parent) {
+    depth += 1
+    parent = parent.parent
+  }
+  return depth
 }
 
 function hashSeed(value: string) {
