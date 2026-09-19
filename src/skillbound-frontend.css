@@ -139,6 +139,11 @@
   background:rgba(2,4,3,.72);
   backdrop-filter:blur(6px);
 }
+.skillbound-game-menu-backdrop.character-backdrop{
+  background:rgba(2,4,3,.46);
+  backdrop-filter:blur(7px);
+}
+
 .skillbound-game-menu-content{
   position:absolute;
   z-index:2;

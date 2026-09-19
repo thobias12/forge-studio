@@ -528,7 +528,7 @@ function GameMenuOverlay({
 
   return <div className="skillbound-game-menu-layer">
     <div
-      className="skillbound-game-menu-backdrop"
+      className={`skillbound-game-menu-backdrop${combinedCharacter ? ' character-backdrop' : ''}`}
       onClick={onClose}
     />
     <div

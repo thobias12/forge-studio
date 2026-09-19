@@ -1186,7 +1186,7 @@ function EquipmentSlot({
       type="button"
       draggable={Boolean(item && onDragStart)}
       className={`skillbound-equipment-slot slot-${slot.toLowerCase()} ${item ? 'filled' : ''}`}
-      disabled={!item}
+      aria-disabled={!item}
       onMouseEnter={(event) => {
         if (item)
           onInspect(item, event.currentTarget)
