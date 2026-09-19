@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { ForgeAnimationActionId } from '../engine/animationBindings'
 import type { ForgeAnimationProfileV3 } from '../engine/animationV3'
 import type { LibraryAsset } from '../lib/library'
-import AnimationCombatTestArena from './AnimationCombatTestArena'
+import AnimationCombatTestArenaV3 from './AnimationCombatTestArenaV3'
 
 type Props = {
   target?: LibraryAsset
@@ -32,6 +32,6 @@ export default function AnimationCombatTestArenaV2({ target, animationProfile, a
   }, [autoPlayToken, target?.id, action, animationProfile])
 
   return <div className="animation-combat-arena-v2" ref={hostRef}>
-    <AnimationCombatTestArena target={target} animationProfile={animationProfile} action={action}/>
+    <AnimationCombatTestArenaV3 target={target} animationProfile={animationProfile} action={action}/>
   </div>
 }
