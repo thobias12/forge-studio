@@ -7,17 +7,24 @@ import type {
   PoiPrefabPart,
 } from '../lib/poiPrefab'
 import { buildPoiPrefabPartObject } from '../engine/poiPrefabWorld'
+import {
+  buildGameplaySocketMarker,
+  type GameplaySocket,
+} from '../engine/gameplaySockets'
 
 export type PoiForgeTransformMode = 'translate' | 'rotate' | 'scale'
 
 type Props = {
   prefab: PoiPrefab
   selectedPartId?: string
+  selectedSocketId?: string
   mode: PoiForgeTransformMode
   topDown: boolean
   focusNonce: number
   onSelectPart: (partId?: string) => void
+  onSelectSocket: (socketId?: string) => void
   onCommitPart: (part: PoiPrefabPart) => void
+  onCommitSocket: (socket: GameplaySocket) => void
 }
 
 type ViewState = {
@@ -30,6 +37,7 @@ type ViewState = {
   root?: THREE.Group
   selection?: THREE.BoxHelper
   parts: Map<string, THREE.Group>
+  sockets: Map<string, THREE.Group>
   raf?: number
   observer?: ResizeObserver
 }
@@ -37,21 +45,31 @@ type ViewState = {
 export default function PoiForgeViewport({
   prefab,
   selectedPartId,
+  selectedSocketId,
   mode,
   topDown,
   focusNonce,
   onSelectPart,
+  onSelectSocket,
   onCommitPart,
+  onCommitSocket,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
-  const stateRef = useRef<ViewState>({ parts: new Map() })
+  const stateRef = useRef<ViewState>({
+    parts: new Map(),
+    sockets: new Map(),
+  })
   const prefabRef = useRef(prefab)
   const selectRef = useRef(onSelectPart)
+  const selectSocketRef = useRef(onSelectSocket)
   const commitRef = useRef(onCommitPart)
+  const commitSocketRef = useRef(onCommitSocket)
 
   prefabRef.current = prefab
   selectRef.current = onSelectPart
+  selectSocketRef.current = onSelectSocket
   commitRef.current = onCommitPart
+  commitSocketRef.current = onCommitSocket
 
   useEffect(() => {
     const host = hostRef.current
@@ -134,6 +152,7 @@ export default function PoiForgeViewport({
       transform,
       transformHelper,
       parts: new Map(),
+      sockets: new Map(),
     }
     stateRef.current = state
 
@@ -144,6 +163,27 @@ export default function PoiForgeViewport({
         if (event.value) return
         const object = transform.object
         if (!(object instanceof THREE.Group)) return
+        const socketId = object.userData.gameplaySocketId as string | undefined
+        if (socketId) {
+          const socket = prefabRef.current.sockets.find(
+            (candidate) => candidate.id === socketId,
+          )
+          if (!socket) return
+          commitSocketRef.current({
+            ...socket,
+            position: [
+              round(object.position.x),
+              round(object.position.y),
+              round(object.position.z),
+            ],
+            rotation: [
+              round(object.rotation.x, 4),
+              round(object.rotation.y, 4),
+              round(object.rotation.z, 4),
+            ],
+          })
+          return
+        }
         const partId = object.userData.poiPartId as string | undefined
         if (!partId) return
         const source = prefabRef.current.parts.find((part) => part.id === partId)
@@ -185,20 +225,33 @@ export default function PoiForgeViewport({
       const target = hits.find((hit) => {
         let current: THREE.Object3D | null = hit.object
         while (current && current !== root) {
-          if (current.userData.poiPartId) return true
+          if (
+            current.userData.gameplaySocketId ||
+            current.userData.poiPartId
+          ) return true
           current = current.parent
         }
         return false
       })
       if (!target) {
         selectRef.current(undefined)
+        selectSocketRef.current(undefined)
         return
       }
       let current: THREE.Object3D | null = target.object
       while (current && current !== root) {
+        const socketId = current.userData.gameplaySocketId as
+          | string
+          | undefined
+        if (socketId) {
+          selectSocketRef.current(socketId)
+          selectRef.current(undefined)
+          return
+        }
         const partId = current.userData.poiPartId as string | undefined
         if (partId) {
           selectRef.current(partId)
+          selectSocketRef.current(undefined)
           return
         }
         current = current.parent
@@ -242,7 +295,10 @@ export default function PoiForgeViewport({
       }
       renderer.dispose()
       renderer.domElement.remove()
-      stateRef.current = { parts: new Map() }
+      stateRef.current = {
+        parts: new Map(),
+        sockets: new Map(),
+      }
     }
   }, [])
 
@@ -255,6 +311,7 @@ export default function PoiForgeViewport({
       disposeObject(state.root)
     }
     state.parts.clear()
+    state.sockets.clear()
 
     const root = new THREE.Group()
     root.name = 'PoiForgePrefab'
@@ -265,29 +322,53 @@ export default function PoiForgeViewport({
       state.parts.set(part.id, object)
       root.add(object)
     }
+    for (const socket of prefab.sockets) {
+      const marker = buildGameplaySocketMarker(socket, {
+        selected: socket.id === selectedSocketId,
+      })
+      state.sockets.set(socket.id, marker)
+      root.add(marker)
+    }
 
     state.root = root
     state.scene.add(root)
-    attachSelection(state, selectedPartId)
+    attachSelection(state, selectedPartId, selectedSocketId)
   }, [prefab])
 
   useEffect(() => {
     const state = stateRef.current
     if (!state.transform) return
-    state.transform.setMode(mode)
+    state.transform.setMode(
+      selectedSocketId && mode === 'scale'
+        ? 'translate'
+        : mode,
+    )
     state.transform.setTranslationSnap(prefab.snap ? prefab.gridSize : null)
     state.transform.setRotationSnap(prefab.snap ? Math.PI / 12 : null)
     state.transform.setScaleSnap(prefab.snap ? .1 : null)
-  }, [mode, prefab.snap, prefab.gridSize])
+  }, [mode, prefab.snap, prefab.gridSize, selectedSocketId])
 
   useEffect(() => {
-    attachSelection(stateRef.current, selectedPartId)
-  }, [selectedPartId, prefab.parts.length])
+    attachSelection(
+      stateRef.current,
+      selectedPartId,
+      selectedSocketId,
+    )
+  }, [
+    selectedPartId,
+    selectedSocketId,
+    prefab.parts.length,
+    prefab.sockets.length,
+  ])
 
   useEffect(() => {
     const state = stateRef.current
     if (!state.camera || !state.orbit) return
-    const part = selectedPartId ? state.parts.get(selectedPartId) : undefined
+    const part = selectedPartId
+      ? state.parts.get(selectedPartId)
+      : selectedSocketId
+        ? state.sockets.get(selectedSocketId)
+        : undefined
 
     if (topDown) {
       state.orbit.target.set(
@@ -320,12 +401,15 @@ export default function PoiForgeViewport({
   const selected = selectedPartId
     ? prefab.parts.find((part) => part.id === selectedPartId)
     : undefined
+  const selectedSocket = selectedSocketId
+    ? prefab.sockets.find((socket) => socket.id === selectedSocketId)
+    : undefined
 
   return (
     <div className="poi-forge-viewport" ref={hostRef}>
       <div className="poi-viewport-badge">
         <span>{prefab.bounds.width.toFixed(0)} × {prefab.bounds.depth.toFixed(0)} m</span>
-        <strong>{selected ? selected.name : 'Click a part to select'}</strong>
+        <strong>{selectedSocket?.name ?? selected?.name ?? 'Click a part or socket to select'}</strong>
       </div>
       <div className="poi-viewport-axis">
         <span className="x">X</span><span className="y">Y</span><span className="z">Z</span>
@@ -334,9 +418,17 @@ export default function PoiForgeViewport({
   )
 }
 
-function attachSelection(state: ViewState, selectedPartId?: string) {
+function attachSelection(
+  state: ViewState,
+  selectedPartId?: string,
+  selectedSocketId?: string,
+) {
   if (!state.scene || !state.transform) return
-  const selected = selectedPartId ? state.parts.get(selectedPartId) : undefined
+  const selected = selectedSocketId
+    ? state.sockets.get(selectedSocketId)
+    : selectedPartId
+      ? state.parts.get(selectedPartId)
+      : undefined
   state.transform.detach()
 
   if (state.selection) {
@@ -348,7 +440,10 @@ function attachSelection(state: ViewState, selectedPartId?: string) {
 
   if (!selected) return
   state.transform.attach(selected)
-  const helper = new THREE.BoxHelper(selected, 0x8fd7a7)
+  const helper = new THREE.BoxHelper(
+    selected,
+    selectedSocketId ? 0xf0d870 : 0x8fd7a7,
+  )
   ;(helper.material as THREE.LineBasicMaterial).transparent = true
   ;(helper.material as THREE.LineBasicMaterial).opacity = .78
   state.scene.add(helper)
