@@ -120,6 +120,14 @@ export type WorldGenerationLayerSeeds = {
   dressing: number
 }
 
+export type GeneratedEncounterSettings = {
+  density: ForgeRegionDefinition['enemyDensity']
+  groupRange: [number, number]
+  minSpacing: number
+  respawn: boolean
+  respawnSeconds: number
+}
+
 export type GeneratedRegion = {
   format: 'forge-generated-region'
   version: 5
@@ -131,6 +139,7 @@ export type GeneratedRegion = {
   regionName: string
   biome: string
   mood: WorldMood
+  encounters: GeneratedEncounterSettings
   nodes: GeneratedRegionNode[]
   connections: GeneratedRegionConnection[]
   paths: GeneratedWorldPath[]
@@ -370,7 +379,15 @@ export function generateGuidedRegion(
   }
 
   const combatCandidates = nodes.filter((item) => item.kind === 'route' || item.kind === 'branch')
-  const encounterCount = region.enemyDensity === 'high' ? 3 : region.enemyDensity === 'low' ? 1 : 2
+  const encounterSettings = resolveEncounterSettings(region)
+  const encounterCount =
+    region.enemyDensity === 'horde'
+      ? 5
+      : region.enemyDensity === 'high'
+        ? 3
+        : region.enemyDensity === 'low'
+          ? 1
+          : 2
   for (let index = 0; index < encounterCount && combatCandidates.length; index += 1) {
     const targetIndex = Math.min(combatCandidates.length - 1, Math.floor((index + 1) / (encounterCount + 1) * combatCandidates.length))
     const target = combatCandidates[targetIndex]
@@ -513,6 +530,7 @@ export function generateGuidedRegion(
     regionName: region.name,
     biome: region.biome,
     mood,
+    encounters: encounterSettings,
     nodes,
     connections,
     paths,
@@ -522,6 +540,30 @@ export function generateGuidedRegion(
     terrain,
     bounds,
     validation,
+  }
+}
+
+export function resolveEncounterSettings(
+  region: ForgeRegionDefinition,
+): GeneratedEncounterSettings {
+  const defaults: Record<
+    ForgeRegionDefinition['enemyDensity'],
+    [number, number]
+  > = {
+    low: [2, 4],
+    medium: [4, 6],
+    high: [6, 9],
+    horde: [9, 12],
+  }
+  const configured = region.encounterGroupRange ?? defaults[region.enemyDensity]
+  const low = Math.max(1, Math.min(30, Math.round(configured[0] ?? defaults[region.enemyDensity][0])))
+  const high = Math.max(low, Math.min(30, Math.round(configured[1] ?? defaults[region.enemyDensity][1])))
+  return {
+    density: region.enemyDensity,
+    groupRange: [low, high],
+    minSpacing: Math.max(.8, Math.min(5, region.encounterMinSpacing ?? 1.65)),
+    respawn: region.enemyRespawn ?? false,
+    respawnSeconds: Math.max(3, Math.min(300, region.enemyRespawnSeconds ?? 30)),
   }
 }
 
