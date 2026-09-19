@@ -41,7 +41,37 @@ export type ForgeRegionWorldGeneration = { size: ForgeRegionSize; mood?: ForgeRe
 export type ForgeRegionDefinition = { format: 'forge-region'; version: 1; id: string; name: string; biome: string; chunkRange: [number, number]; mainPath: ForgePathStyle; branchRange: [number, number]; landmarkRange: [number, number]; enemyDensity: ForgeDensity; optionalDungeonChance: number; settlementChance: number; features: string[]; linkedDungeonId?: string; worldGen?: ForgeRegionWorldGeneration }
 export type ForgeAbilityKind = 'melee' | 'area'
 export type ForgeAbilityInput = 'primary' | 'skill-1'
-export type ForgeAbilityDefinition = { format: 'forge-ability'; version: 1; id: string; name: string; kind: ForgeAbilityKind; input: ForgeAbilityInput; damage: number; cooldown: number; range: number; radius: number; color: string; animationAssetId?: string; vfxAssetId?: string }
+export type ForgeAbilityDelivery = 'standard' | 'chain'
+export type ForgeChainAbilityDefinition = {
+  maxJumps?: number
+  jumpRadius?: number
+  jumpDelay?: number
+  damageFalloff?: number
+  allowRepeatTargets?: boolean
+  selectionMode?: 'nearest'
+  boltLifetime?: number
+  arcAmplitude?: number
+  branchCount?: number
+  glowWidth?: number
+  lightFlashIntensity?: number
+}
+export type ForgeAbilityDefinition = {
+  format: 'forge-ability'
+  version: 1
+  id: string
+  name: string
+  kind: ForgeAbilityKind
+  input: ForgeAbilityInput
+  damage: number
+  cooldown: number
+  range: number
+  radius: number
+  color: string
+  animationAssetId?: string
+  vfxAssetId?: string
+  delivery?: ForgeAbilityDelivery
+  chain?: ForgeChainAbilityDefinition
+}
 export type ForgeEnemyDefinition = { format: 'forge-enemy'; version: 1; id: string; name: string; maxHealth: number; moveSpeed: number; aggroRange: number; attackRange: number; attackDamage: number; attackCooldown: number; attackWindup?: number; lootTable: string; color: string; characterAssetId?: string; animationAssetId?: string; attackVfxAssetId?: string; hitVfxAssetId?: string; deathVfxAssetId?: string }
 export type ForgeItemSlot = 'weapon'
 export type ForgeItemRarity = 'common' | 'magic' | 'rare'
