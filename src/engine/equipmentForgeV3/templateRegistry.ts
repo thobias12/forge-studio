@@ -84,6 +84,11 @@ export function normalizeEquipmentForgeV3Recipe(
         0,
         .5,
       ),
+      clearance: clamp(
+        input.cape?.clearance ?? .009,
+        .004,
+        .025,
+      ),
     },
     materials: {
       cloth:
@@ -98,6 +103,9 @@ export function normalizeEquipmentForgeV3Recipe(
       accent:
         input.materials?.accent ??
         '#5a1625',
+      metal:
+        input.materials?.metal ??
+        '#6f7880',
     },
   }
 }
