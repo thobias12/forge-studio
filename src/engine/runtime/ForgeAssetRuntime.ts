@@ -4,7 +4,7 @@ import { characterPackageDataToBlob, parseCharacterPackage } from '../../lib/cha
 import { skillboundBodyTypeFromAsset } from '../../lib/characterAssetRegistry'
 import { getAsset, type LibraryAsset } from '../../lib/library'
 import { parseVfxPackage, type ForgeVfxEmitter, type ForgeVfxPackage } from '../../lib/vfxPackage'
-import { animationBindingAssetId, parseAnimationSet, resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
+import { resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
 import { createAnimationControllerV3, type ForgeAnimationControllerV3 } from '../animationV3'
 
 export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge'
@@ -601,11 +601,6 @@ export async function spawnLibraryVfx(scene: THREE.Scene, assetId: string | unde
   }
   if (!pkg) return undefined
   return new ForgeLibraryVfxInstance(scene, pkg, position)
-}
-
-async function loadAnimationSetForCharacter(characterAssetId: string) {
-  const asset = await getAsset(animationBindingAssetId(characterAssetId))
-  return asset ? await parseAnimationSet(asset.blob, characterAssetId) : undefined
 }
 
 async function loadCharacterLibraryAsset(asset: LibraryAsset): Promise<LoadedScene | undefined> {
