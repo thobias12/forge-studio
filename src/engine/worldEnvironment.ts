@@ -72,6 +72,7 @@ type MoodBase = {
   ground: number
   daySun: number
   duskSun: number
+  nightLight: number
   fill: number
 }
 
@@ -221,31 +222,40 @@ export function sampleWorldEnvironment(
 
   const daySky = mixHex(base.nightSky, base.daySky, daylight)
   const hemisphereIntensity =
-    (.34 + daylight * 1.46) *
+    (.62 + daylight * 1.18) *
     weatherStyle.hemi +
     lightning * 1.6
 
-  const sunColor = mixHex(
+  const daylightSunColor = mixHex(
     base.duskSun,
     base.daySun,
     smoothstep(.18, .72, daylight),
   )
+  const sunColor = mixHex(
+    base.nightLight,
+    daylightSunColor,
+    smoothstep(.04, .34, daylight),
+  )
   const sunIntensity =
-    (.04 + daylight * 2.7) *
+    (.14 + daylight * 2.6) *
       weatherStyle.sun +
     twilight * .34 +
     lightning * 4.5
 
   const azimuth = wrapped / 24 * Math.PI * 2 + .6
+  const nightLightHeight =
+    Math.max(16, -altitude * 44)
   const sunPosition: [number, number, number] = [
     Math.cos(azimuth) * 58,
-    Math.max(-12, altitude * 72),
+    daylight > .08
+      ? Math.max(10, altitude * 72)
+      : nightLightHeight,
     Math.sin(azimuth) * 58,
   ]
 
   const exposure =
     base.exposure *
-      (.68 + daylight * .32) *
+      (.86 + daylight * .14) *
       weatherStyle.exposure +
     lightning * .18
 
@@ -324,7 +334,7 @@ export function sampleWorldEnvironment(
     sunPosition,
     fillColor: base.fill,
     fillIntensity:
-      (.22 + daylight * .58) *
+      (.42 + daylight * .38) *
       weatherStyle.hemi +
       lightning * 1.4,
   }
@@ -753,63 +763,67 @@ function moodBase(mood: WorldMood): MoodBase {
   if (mood === 'dark') {
     return {
       dayBackground: 0x18231b,
-      nightBackground: 0x070b09,
+      nightBackground: 0x0d1410,
       dayFog: 0x17241b,
-      nightFog: 0x0b110d,
+      nightFog: 0x121a15,
       fogDensity: .0084,
       exposure: .98,
       daySky: 0xb8c9bd,
-      nightSky: 0x28352d,
-      ground: 0x18211b,
+      nightSky: 0x35483f,
+      ground: 0x202b24,
       daySun: 0xdfcaa8,
       duskSun: 0xe58d55,
+      nightLight: 0x8fa8b8,
       fill: 0x6f8c79,
     }
   }
   if (mood === 'deadwood') {
     return {
       dayBackground: 0x20231d,
-      nightBackground: 0x090a08,
+      nightBackground: 0x111610,
       dayFog: 0x25291f,
-      nightFog: 0x11120f,
+      nightFog: 0x181d16,
       fogDensity: .0082,
       exposure: 1,
       daySky: 0xc4c7b8,
-      nightSky: 0x37382f,
-      ground: 0x241f18,
+      nightSky: 0x474b40,
+      ground: 0x2d2a23,
       daySun: 0xd8c3a4,
       duskSun: 0xd77f49,
+      nightLight: 0xa4acb6,
       fill: 0x7b806c,
     }
   }
   if (mood === 'bleak') {
     return {
       dayBackground: 0x252c29,
-      nightBackground: 0x0b0e0d,
+      nightBackground: 0x121917,
       dayFog: 0x2b3430,
-      nightFog: 0x121816,
+      nightFog: 0x1b2421,
       fogDensity: .0078,
       exposure: 1.02,
       daySky: 0xc5ceca,
-      nightSky: 0x35413d,
-      ground: 0x262b28,
+      nightSky: 0x46554f,
+      ground: 0x303733,
       daySun: 0xd6d2c5,
       duskSun: 0xc49b7a,
+      nightLight: 0x9eb1bd,
       fill: 0x82908a,
     }
   }
   return {
     dayBackground: 0x1a291f,
-    nightBackground: 0x07100b,
+    nightBackground: 0x0d1812,
     dayFog: 0x1d2e22,
-    nightFog: 0x0b160f,
+    nightFog: 0x132219,
     fogDensity: .0073,
     exposure: 1.16,
     daySky: 0xc6d8c8,
-    nightSky: 0x2c4335,
-    ground: 0x202b22,
+    nightSky: 0x3b5748,
+    ground: 0x27362c,
     daySun: 0xffe3bd,
     duskSun: 0xff9d5f,
+    nightLight: 0x93b4c3,
     fill: 0x86a891,
   }
 }
