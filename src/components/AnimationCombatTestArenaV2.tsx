@@ -1,16 +1,17 @@
 import { useEffect, useRef } from 'react'
-import type { ForgeAnimationActionId, ForgeAnimationSet } from '../engine/animationBindings'
+import type { ForgeAnimationActionId } from '../engine/animationBindings'
+import type { ForgeAnimationProfileV3 } from '../engine/animationV3'
 import type { LibraryAsset } from '../lib/library'
 import AnimationCombatTestArena from './AnimationCombatTestArena'
 
 type Props = {
   target?: LibraryAsset
-  animationSet?: ForgeAnimationSet
+  animationProfile?: ForgeAnimationProfileV3
   action: ForgeAnimationActionId
   autoPlayToken?: number
 }
 
-export default function AnimationCombatTestArenaV2({ target, animationSet, action, autoPlayToken = 0 }: Props) {
+export default function AnimationCombatTestArenaV2({ target, animationProfile, action, autoPlayToken = 0 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const lastTokenRef = useRef(0)
 
@@ -28,9 +29,9 @@ export default function AnimationCombatTestArenaV2({ target, animationSet, actio
       if (attempts < 20) window.setTimeout(tryPlay, 120)
     }
     window.setTimeout(tryPlay, 80)
-  }, [autoPlayToken, target?.id, action, animationSet])
+  }, [autoPlayToken, target?.id, action, animationProfile])
 
   return <div className="animation-combat-arena-v2" ref={hostRef}>
-    <AnimationCombatTestArena target={target} animationSet={animationSet} action={action}/>
+    <AnimationCombatTestArena target={target} animationProfile={animationProfile} action={action}/>
   </div>
 }
