@@ -141,26 +141,58 @@ export function tunicTopY(
   frame: TunicTemplateFrame,
   angle: number,
 ) {
-  const frontness =
-    Math.max(0, Math.cos(angle))
-  const backness =
-    Math.max(0, -Math.cos(angle))
-  const shoulderPeak =
-    Math.pow(
-      Math.abs(Math.sin(angle * 2)),
-      .72,
+  const front =
+    Math.cos(angle) >= 0
+  const side =
+    Math.abs(Math.sin(angle))
+
+  // V3.2: shape the top edge as a broad neckline that rises over the
+  // shoulder crown, then falls into the arm opening. The old sin(angle*2)
+  // profile only lowered a single front vertex and read as a strapless
+  // tube with a tiny notch.
+  const neckY =
+    frame.shoulderY -
+    (front
+      ? frame.frontNeckRaise
+      : frame.backNeckRaise)
+
+  const shoulderCrown =
+    Math.exp(
+      -Math.pow(
+        (side - .68) / .22,
+        2,
+      ),
+    )
+
+  let result =
+    THREE.MathUtils.lerp(
+      neckY,
+      frame.shoulderY,
+      shoulderCrown,
+    )
+
+  const armT =
+    THREE.MathUtils.clamp(
+      (side - .84) / .16,
+      0,
+      1,
+    )
+  const armSmooth =
+    armT *
+    armT *
+    (3 - 2 * armT)
+
+  result =
+    THREE.MathUtils.lerp(
+      result,
+      frame.underarmY,
+      armSmooth,
     )
 
   return Math.min(
     frame.shoulderY +
-      frame.height * .008,
-    frame.underarmY +
-      shoulderPeak *
-        frame.shoulderRaise +
-      frontness *
-        frame.frontNeckRaise +
-      backness *
-        frame.backNeckRaise,
+      frame.height * .004,
+    result,
   )
 }
 
@@ -262,16 +294,23 @@ function createTorsoTemplate(
         recipe.waistTaper *
           (1 - v) *
           .7
+      const hemFlare =
+        frame.height *
+        recipe.hemFlare *
+        .024 *
+        Math.pow(1 - v, 2)
+
       const extra =
         frame.height *
-        (.004 +
-          recipe.looseness *
-            .018 *
-            THREE.MathUtils.lerp(
-              waistFactor,
-              1,
-              v,
-            ))
+          (.004 +
+            recipe.looseness *
+              .018 *
+              THREE.MathUtils.lerp(
+                waistFactor,
+                1,
+                v,
+              )) +
+        hemFlare
 
       position.addScaledVector(
         radialNormal,
@@ -418,9 +457,9 @@ function createSleeveTemplate(
   const direction =
     arm.clone().normalize()
   const endFraction =
-    sleeve === 'long' ? .84 : .4
+    sleeve === 'long' ? .86 : .42
   const startFraction =
-    sleeve === 'long' ? .07 : .1
+    sleeve === 'long' ? .025 : -.025
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -451,9 +490,9 @@ function createSleeveTemplate(
     Math.sign(start.x) ||
     (side === 'L' ? 1 : -1)
   const candidateStart =
-    sleeve === 'long' ? .025 : .055
+    sleeve === 'long' ? 0 : -.045
   const candidateEnd =
-    sleeve === 'long' ? .94 : .52
+    sleeve === 'long' ? .96 : .54
   const maxArmRadius =
     armLength * .235
 
@@ -815,7 +854,7 @@ function createTunicFrame(
     )
   const underarmY =
     shoulderY -
-    height * .071
+    height * .045
 
   return {
     bottomY,
@@ -836,26 +875,29 @@ function applyNeckline(
   frame: TunicTemplateFrame,
   neckline: EquipmentForgeV3Neckline,
 ) {
+  // These values are drops below the shoulder line. Keeping them in the
+  // frame avoids body-specific magic coordinates while letting every
+  // neckline share the same smooth shoulder/armhole contour.
   if (neckline === 'high') {
     frame.frontNeckRaise =
-      frame.height * .075
+      frame.height * .018
     frame.backNeckRaise =
-      frame.height * .08
+      frame.height * .014
     return
   }
 
   if (neckline === 'scoop') {
     frame.frontNeckRaise =
-      frame.height * .032
+      frame.height * .055
     frame.backNeckRaise =
-      frame.height * .067
+      frame.height * .028
     return
   }
 
   frame.frontNeckRaise =
-    frame.height * .05
+    frame.height * .035
   frame.backNeckRaise =
-    frame.height * .071
+    frame.height * .022
 }
 
 function collectSourceVertices(
