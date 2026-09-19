@@ -26,9 +26,22 @@ export type EquipmentForgeV3Recipe = {
   hemFlare: number
   neckline: EquipmentForgeV3Neckline
   sleeve: EquipmentForgeV3Sleeve
+  layers: {
+    vest: boolean
+    belt: boolean
+    tabard: boolean
+    cape: boolean
+  }
+  cape: {
+    length: number
+    width: number
+    flare: number
+  }
   materials: {
     cloth: string
     trim: string
+    leather: string
+    accent: string
   }
 }
 
@@ -48,9 +61,22 @@ export function createEquipmentForgeV3Recipe(
     hemFlare: .14,
     neckline: 'round',
     sleeve: 'short',
+    layers: {
+      vest: true,
+      belt: true,
+      tabard: true,
+      cape: true,
+    },
+    cape: {
+      length: .62,
+      width: .3,
+      flare: .16,
+    },
     materials: {
       cloth: '#344b35',
       trim: '#4b3528',
+      leather: '#3b281d',
+      accent: '#5a1625',
     },
   }
 }
@@ -75,9 +101,20 @@ export function applyEquipmentForgeV3StylePreset(
       hemFlare: .2,
       neckline: 'scoop',
       sleeve: 'short',
+      layers: {
+        vest: false,
+        belt: true,
+        tabard: false,
+        cape: false,
+      },
+      cape: {
+        ...recipe.cape,
+      },
       materials: {
+        ...recipe.materials,
         cloth: '#67563f',
         trim: '#352a22',
+        leather: '#443226',
       },
     }
   }
@@ -92,9 +129,23 @@ export function applyEquipmentForgeV3StylePreset(
       hemFlare: .24,
       neckline: 'high',
       sleeve: 'long',
+      layers: {
+        vest: false,
+        belt: true,
+        tabard: true,
+        cape: true,
+      },
+      cape: {
+        length: .72,
+        width: .34,
+        flare: .22,
+      },
       materials: {
+        ...recipe.materials,
         cloth: '#29344d',
         trim: '#7b6848',
+        leather: '#3b3028',
+        accent: '#261b3f',
       },
     }
   }
@@ -108,9 +159,23 @@ export function applyEquipmentForgeV3StylePreset(
     hemFlare: .14,
     neckline: 'round',
     sleeve: 'short',
+    layers: {
+      vest: true,
+      belt: true,
+      tabard: true,
+      cape: true,
+    },
+    cape: {
+      length: .62,
+      width: .3,
+      flare: .16,
+    },
     materials: {
+      ...recipe.materials,
       cloth: '#344b35',
       trim: '#4b3528',
+      leather: '#3b281d',
+      accent: '#5a1625',
     },
   }
 }
