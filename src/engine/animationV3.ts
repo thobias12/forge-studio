@@ -410,6 +410,14 @@ export class ForgeAnimationControllerV3 {
     return this.actions.has(action)
   }
 
+  getAnimation(action: ForgeAnimationActionId) {
+    return this.actions.get(action)?.definition
+  }
+
+  getEvents(action: ForgeAnimationActionId) {
+    return this.actions.get(action)?.definition.events ?? []
+  }
+
   setBase(action: 'idle' | 'walk' | 'run', immediate = false) {
     const resolved = this.actions.get(action)
       ?? (action === 'run' ? this.actions.get('walk') : undefined)
