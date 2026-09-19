@@ -18,6 +18,7 @@ import {
 } from '../characterBlueprint'
 import { createConceptForgeCharacter } from '../conceptCharacterV2'
 import {
+  remapSameRigHumanoidClips,
   retargetForgeHumanoidClips,
   uniqueAnimationClips,
 } from '../skillboundCharacterAnimation'
@@ -103,17 +104,24 @@ async function bindSkillboundFoundation(
       authoredSource = authoredLoaded?.scene
 
       if (authored.length && authoredSource) {
-        // Even when the authored pack came from the same library body asset,
-        // it is a separate GLTF instance with different runtime UUIDs. Always
-        // remap through the pack's source skeleton so every authored bone track
-        // (arms included) binds by humanoid bone identity onto the live body.
+        const authoredOnSameFoundation = packAsset?.tags?.includes(
+          `source-character:${asset.id}`,
+        )
+        const authoredClips = authoredOnSameFoundation
+          ? remapSameRigHumanoidClips(
+              authoredSource,
+              root,
+              authored,
+            )
+          : retargetForgeHumanoidClips(
+              authoredSource,
+              root,
+              authored,
+            )
+
         clips = uniqueAnimationClips([
           ...clips,
-          ...retargetForgeHumanoidClips(
-            authoredSource,
-            root,
-            authored,
-          ),
+          ...authoredClips,
         ])
       }
     }
