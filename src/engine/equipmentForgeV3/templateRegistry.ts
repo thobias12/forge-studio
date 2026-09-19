@@ -53,6 +53,11 @@ export function normalizeEquipmentForgeV3Recipe(
       0,
       .65,
     ),
+    hemFlare: clamp(
+      input.hemFlare ?? .14,
+      0,
+      .5,
+    ),
   }
 }
 
