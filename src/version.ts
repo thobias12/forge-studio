@@ -1,2 +1,1 @@
-export const FORGE_VERSION = '1.76.1'
-export const FORGE_BUILD = (import.meta.env.VITE_FORGE_BUILD ?? 'dev').slice(0, 7)
+export const FORGE_VERSION = '1.76.2'\nexport const FORGE_BUILD = (import.meta.env.VITE_FORGE_BUILD ?? 'dev').slice(0, 7)\n
