@@ -281,20 +281,50 @@ async function buildPreview(
   }
 
   if (!bodyAsset) {
-    const build = createProceduralBaseHumanoidV2(config, identity.classId)
+    if (!identity) {
+      throw new Error(
+        'Character preview requires an identity when no authored body is selected.',
+      )
+    }
+    const build = createProceduralBaseHumanoidV2(
+      config,
+      identity.classId,
+    )
     const appearanceIdentity: CharacterIdentityRecipe = hairAsset
-      ? { ...identity, appearance: { ...identity.appearance, hairStyle: 'none' } }
+      ? {
+          ...identity,
+          appearance: {
+            ...identity.appearance,
+            hairStyle: 'none',
+          },
+        }
       : identity
     applyCharacterIdentityVisuals(build, appearanceIdentity)
 
     if (headAsset) {
       hideReplaceableHeadMeshes(build.root)
-      await attachHeadPart(build.root, headAsset, 'head', identity.body.headScale)
+      await attachHeadPart(
+        build.root,
+        headAsset,
+        'head',
+        identity.body.headScale,
+      )
     }
-    if (hairAsset) await attachHeadPart(build.root, hairAsset, 'hair', identity.body.headScale)
+    if (hairAsset) {
+      await attachHeadPart(
+        build.root,
+        hairAsset,
+        'hair',
+        identity.body.headScale,
+      )
+    }
 
     build.root.updateMatrixWorld(true)
-    return { root: build.root, clips: build.clips, stats: recountRoot(build.root) }
+    return {
+      root: build.root,
+      clips: build.clips,
+      stats: recountRoot(build.root),
+    }
   }
 
   const loaded = await loadCharacterAssetScene(bodyAsset.blob)
