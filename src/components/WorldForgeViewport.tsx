@@ -335,6 +335,7 @@ export default function WorldForgeViewport({
     state.region = region
     state.scene.add(built.root)
     resetWorldEnvironmentSceneCache(state.scene)
+    updatePoiSelectionHighlight(built.landmarks, selectedPoiId)
 
     const width = region.bounds.maxX - region.bounds.minX
     const depth = region.bounds.maxZ - region.bounds.minZ
