@@ -1454,6 +1454,99 @@ function sampleArmSurface(
   }
 }
 
+function sampleBackSurfaceZ(
+  vertices: SourceVertex[],
+  targetX: number,
+  targetY: number,
+  height: number,
+) {
+  const ranked:
+    Array<{
+      z: number
+      score: number
+    }> = []
+
+  for (const vertex of vertices) {
+    if (
+      vertex.position.z > 0
+    ) {
+      continue
+    }
+
+    const dx =
+      Math.abs(
+        vertex.position.x -
+          targetX,
+      ) /
+      height
+    const dy =
+      Math.abs(
+        vertex.position.y -
+          targetY,
+      ) /
+      height
+
+    if (
+      dx > .16 ||
+      dy > .08
+    ) {
+      continue
+    }
+
+    const score =
+      dx * 2.4 +
+      dy * 6
+
+    let insertAt =
+      ranked.length
+
+    for (
+      let index = 0;
+      index < ranked.length;
+      index += 1
+    ) {
+      if (
+        score <
+        ranked[index].score
+      ) {
+        insertAt = index
+        break
+      }
+    }
+
+    if (insertAt < 10) {
+      ranked.splice(
+        insertAt,
+        0,
+        {
+          z: vertex.position.z,
+          score,
+        },
+      )
+      if (ranked.length > 10) {
+        ranked.pop()
+      }
+    } else if (
+      ranked.length < 10
+    ) {
+      ranked.push({
+        z: vertex.position.z,
+        score,
+      })
+    }
+  }
+
+  if (ranked.length === 0) {
+    return -height * .05
+  }
+
+  return Math.min(
+    ...ranked.map(
+      (sample) => sample.z,
+    ),
+  )
+}
+
 function nearestEuclideanVertex(
   vertices: SourceVertex[],
   target: THREE.Vector3,
@@ -2063,6 +2156,7 @@ function createFrontTabard(
 
 function createCapeLayer(
   source: THREE.SkinnedMesh,
+  sourceVertices: SourceVertex[],
   torsoGeometry: THREE.BufferGeometry,
   frame: TunicTemplateFrame,
   recipe: EquipmentForgeV3Recipe,
@@ -2214,17 +2308,45 @@ function createCapeLayer(
         (.0015 +
           v * .0035)
 
+      const x =
+        top.x * widthScale
+      const y =
+        top.y -
+        v * length -
+        hemDrop
+      const surfaceClearance =
+        frame.height *
+        recipe.cape.clearance *
+        THREE.MathUtils.lerp(
+          .65,
+          1.1,
+          v,
+        )
+      const sampledBackZ =
+        sampleBackSurfaceZ(
+          sourceVertices,
+          x,
+          y,
+          frame.height,
+        )
+      const drapeZ =
+        top.z -
+        surfaceClearance -
+        v * .008 -
+        v * v * .014 +
+        fold
+      const safeZ =
+        sampledBackZ -
+        surfaceClearance
+
       const point =
         new THREE.Vector3(
-          top.x * widthScale,
-          top.y -
-            v * length -
-            hemDrop,
-          top.z -
-            .004 -
-            v * .01 -
-            v * v * .014 +
-            fold,
+          x,
+          y,
+          Math.min(
+            drapeZ,
+            safeZ,
+          ),
         )
 
       positions.push(
