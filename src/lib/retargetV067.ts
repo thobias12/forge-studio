@@ -222,6 +222,7 @@ function aimBone(runtime: RetargetRuntime, key: HumanoidBoneKey, directionWorld:
 function stabilizedUp(source: THREE.Vector3, leanAmount: number, groundedNeutral = false) {
   const worldUp = new THREE.Vector3(0, 1, 0)
   if (source.lengthSq() < 1e-8) return worldUp
+  if (groundedNeutral) return worldUp
 
   const measuredUp = source.clone().normalize()
   if (measuredUp.y < 0) measuredUp.multiplyScalar(-1)
@@ -266,7 +267,11 @@ function stabilizedUp(source: THREE.Vector3, leanAmount: number, groundedNeutral
 function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3, groundedNeutral = false) {
   const direction = toe.clone().sub(heel)
   direction.x *= 0.72
-  direction.y *= groundedNeutral ? 0.06 : 0.12
+  if (groundedNeutral) {
+    direction.y = 0
+  } else {
+    direction.y *= 0.12
+  }
   if (direction.lengthSq() < 1e-8) return direction
 
   const horizontal = Math.hypot(direction.x, direction.z)
@@ -296,6 +301,11 @@ function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3, groundedNe
 function stableLegDirection(directionInput: THREE.Vector3, groundedNeutral = false) {
   const direction = directionInput.clone()
   if (direction.lengthSq() < 1e-8) return direction
+
+  if (groundedNeutral) {
+    direction.z = 0
+    return direction.normalize()
+  }
 
   // MediaPipe world depth is the noisiest axis for a standing performer. Keep
   // lateral stance (X) untouched, but remove a small fore/aft Z bias from
