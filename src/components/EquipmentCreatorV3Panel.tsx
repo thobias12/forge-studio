@@ -277,6 +277,7 @@ export default function EquipmentCreatorV3Panel({
                   ...(recipe.cape ?? {
                     width: .3,
                     flare: .16,
+                    clearance: .009,
                   }),
                   length: value,
                 })
@@ -293,6 +294,7 @@ export default function EquipmentCreatorV3Panel({
                   ...(recipe.cape ?? {
                     length: .62,
                     flare: .16,
+                    clearance: .009,
                   }),
                   width: value,
                 })
