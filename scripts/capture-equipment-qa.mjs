@@ -194,7 +194,7 @@ try {
   }
 
   const url =
-    `${baseUrl}/?equipmentQa=1&body=${bodyType}&model=./qa-foundation/${qaModelName}`
+    `${baseUrl}/?equipmentQa=1&body=${bodyType}&model=./qa-foundation/${qaModelName}&fit=0`
 
   console.log(
     `Opening ${url}`,
@@ -245,17 +245,60 @@ try {
   const viewIds =
     metadata?.views ?? []
 
+  const renderedShots =
+    await page.evaluate(() =>
+      Object.fromEntries(
+        Array.from(
+          document.querySelectorAll(
+            '[data-qa-view]',
+          ),
+        ).flatMap((card) => {
+          const viewId =
+            card.getAttribute(
+              'data-qa-view',
+            )
+          const image =
+            card.querySelector('img')
+          if (
+            !viewId ||
+            !image?.src?.startsWith(
+              'data:image/png;base64,',
+            )
+          ) {
+            return []
+          }
+          return [
+            [
+              viewId,
+              image.src,
+            ],
+          ]
+        }),
+      ),
+    )
+
   for (const viewId of viewIds) {
-    const card =
-      page.locator(
-        `[data-qa-view="${viewId}"]`,
+    const dataUrl =
+      renderedShots[viewId]
+    if (!dataUrl) {
+      throw new Error(
+        `Missing rendered QA PNG for ${viewId}`,
       )
-    await card.screenshot({
-      path: resolve(
+    }
+    const base64 =
+      dataUrl.slice(
+        dataUrl.indexOf(',') + 1,
+      )
+    await writeFile(
+      resolve(
         outputDir,
         `${viewId}.png`,
       ),
-    })
+      Buffer.from(
+        base64,
+        'base64',
+      ),
+    )
   }
 
   const manifest = {
