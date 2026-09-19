@@ -87,6 +87,14 @@ type Props = {
 type TypeFilter = 'weapons' | 'armor' | 'offhand' | 'other'
 type RarityFilter = ForgeItemDefinition['rarity']
 
+type DragSource =
+  | { kind: 'bag'; index: number }
+  | {
+      kind: 'equipment'
+      index: number
+      slot: ForgeEquipmentSlot
+    }
+
 type TooltipState = {
   item: ForgeItemDefinition
   index?: number
@@ -182,8 +190,8 @@ export default function SkillboundCharacterInventoryPanel({
     useState<Set<RarityFilter>>(() => new Set())
   const [tooltip, setTooltip] =
     useState<TooltipState>()
-  const [dragIndex, setDragIndex] =
-    useState<number>()
+  const [dragSource, setDragSource] =
+    useState<DragSource>()
 
   useEffect(() => {
     let cancelled = false
@@ -311,7 +319,7 @@ export default function SkillboundCharacterInventoryPanel({
   const placeDraggedItem = (
     event: ReactDragEvent<HTMLDivElement>,
   ) => {
-    if (dragIndex === undefined) return
+    if (!dragSource) return
     event.preventDefault()
     const bounds =
       event.currentTarget.getBoundingClientRect()
@@ -345,11 +353,16 @@ export default function SkillboundCharacterInventoryPanel({
     )
     const cell =
       row * SKILLBOUND_PACK_COLUMNS + column
+    if (dragSource.kind === 'equipment') {
+      unequipActiveSkillboundSlot(
+        dragSource.slot,
+      )
+    }
     moveActiveSkillboundInventoryItem(
-      dragIndex,
+      dragSource.index,
       cell,
     )
-    setDragIndex(undefined)
+    setDragSource(undefined)
   }
 
   return (
@@ -431,6 +444,13 @@ export default function SkillboundCharacterInventoryPanel({
                   equipment,
                   slot,
                 )
+                const itemIndex = item
+                  ? findEquippedInventoryIndex(
+                      snapshot?.inventory ?? [],
+                      equipment,
+                      slot,
+                    )
+                  : undefined
                 return (
                   <EquipmentSlot
                     key={slot}
@@ -449,6 +469,39 @@ export default function SkillboundCharacterInventoryPanel({
                     }
                     onUnequip={() =>
                       unequipActiveSkillboundSlot(slot)
+                    }
+                    onDropBagItem={(index) => {
+                      const itemId =
+                        snapshot?.inventory[index]
+                      const candidate = itemId
+                        ? gameplay.items.find(
+                            (entry) =>
+                              entry.id === itemId,
+                          )
+                        : undefined
+                      if (
+                        !candidate ||
+                        itemEquipmentSlot(candidate) !==
+                          slot
+                      ) {
+                        return
+                      }
+                      equipActiveSkillboundItem(
+                        candidate.id,
+                      )
+                    }}
+                    onDragStart={
+                      itemIndex === undefined
+                        ? undefined
+                        : () =>
+                            setDragSource({
+                              kind: 'equipment',
+                              index: itemIndex,
+                              slot,
+                            })
+                    }
+                    onDragEnd={() =>
+                      setDragSource(undefined)
                     }
                   />
                 )
@@ -634,10 +687,13 @@ export default function SkillboundCharacterInventoryPanel({
                       quickToggleItem(entry.item)
                     }
                     onDragStart={() =>
-                      setDragIndex(entry.index)
+                      setDragSource({
+                        kind: 'bag',
+                        index: entry.index,
+                      })
                     }
                     onDragEnd={() =>
-                      setDragIndex(undefined)
+                      setDragSource(undefined)
                     }
                   />
                 ))}
@@ -862,6 +918,9 @@ function EquipmentSlot({
   item,
   onInspect,
   onUnequip,
+  onDropBagItem,
+  onDragStart,
+  onDragEnd,
 }: {
   slot: ForgeEquipmentSlot
   item?: ForgeItemDefinition
@@ -870,6 +929,9 @@ function EquipmentSlot({
     target: HTMLElement,
   ) => void
   onUnequip: () => void
+  onDropBagItem: (index: number) => void
+  onDragStart?: () => void
+  onDragEnd: () => void
 }) {
   const handleKey = (
     event: ReactKeyboardEvent<HTMLButtonElement>,
@@ -888,6 +950,7 @@ function EquipmentSlot({
   return (
     <button
       type="button"
+      draggable={Boolean(item && onDragStart)}
       className={`skillbound-equipment-slot slot-${slot.toLowerCase()} ${item ? 'filled' : ''}`}
       disabled={!item}
       onMouseEnter={(event) => {
@@ -900,6 +963,28 @@ function EquipmentSlot({
           onInspect(item, event.currentTarget)
       }}
       onDoubleClick={() => item && onUnequip()}
+      onDragOver={(event) => {
+        if (!item) event.preventDefault()
+        else event.preventDefault()
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        const raw =
+          event.dataTransfer.getData('text/plain')
+        const index = Number(raw)
+        if (Number.isInteger(index)) {
+          onDropBagItem(index)
+        }
+      }}
+      onDragStart={(event) => {
+        if (!item || !onDragStart) {
+          event.preventDefault()
+          return
+        }
+        event.dataTransfer.effectAllowed = 'move'
+        onDragStart()
+      }}
+      onDragEnd={onDragEnd}
       onClick={(event) => {
         if (item && event.shiftKey) onUnequip()
       }}
@@ -1219,6 +1304,27 @@ function StatRow({
       <dd>{value}</dd>
     </div>
   )
+}
+
+function findEquippedInventoryIndex(
+  inventory: string[],
+  equipment: ForgeEquipmentState,
+  targetSlot: ForgeEquipmentSlot,
+) {
+  const used = new Set<number>()
+  for (const slot of FORGE_EQUIPMENT_SLOTS) {
+    const itemId = equipment[slot]
+    if (!itemId) continue
+    const index = inventory.findIndex(
+      (candidate, candidateIndex) =>
+        candidate === itemId &&
+        !used.has(candidateIndex),
+    )
+    if (index < 0) continue
+    used.add(index)
+    if (slot === targetSlot) return index
+  }
+  return undefined
 }
 
 function inventoryTypeFilter(
