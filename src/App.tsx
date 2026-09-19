@@ -13,6 +13,7 @@ import {
   Home,
   Layers3,
   LayoutGrid,
+  Landmark,
   MapPinned,
   PackagePlus,
   Play,
@@ -51,6 +52,7 @@ import GamePreview from './pages/GamePreview'
 import AudioStudioWorkspace from './pages/AudioStudioWorkspace'
 import VfxStudio from './pages/VfxStudio'
 import MapStudio from './pages/MapStudio'
+import PoiForge from './pages/PoiForge'
 import Capture from './pages/Capture'
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
@@ -74,7 +76,7 @@ import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings'
+type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -91,6 +93,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'WORLD',
     items: [
+      { id: 'poiforge', label: 'POI Forge', icon: Landmark },
       { id: 'maps', label: 'Dungeon Forge', icon: MapPinned },
       { id: 'destruction', label: 'Destruction Lab', icon: Hammer },
     ],
@@ -135,7 +138,7 @@ const navGroups: NavGroup[] = [
 ]
 
 const nav: NavItem[] = navGroups.flatMap((group) => group.items)
-const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'gameplay', 'skillforge', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'animations', 'play', 'validation'])
+const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'poiforge', 'gameplay', 'skillforge', 'encounterforge', 'bossforge', 'itemforge', 'uiforge', 'animations', 'play', 'validation'])
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -248,6 +251,7 @@ export default function App() {
           {page === 'textures' && <TextureLab />}
           {page === 'audio' && <AudioStudioWorkspace />}
           {page === 'vfx' && <VfxStudio />}
+          {page === 'poiforge' && <PoiForge />}
           {page === 'maps' && <MapStudio />}
           {page === 'preview' && <GamePreview />}
           {page === 'assets' && <AssetLibrary />}
