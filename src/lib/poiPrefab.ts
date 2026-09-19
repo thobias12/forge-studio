@@ -131,7 +131,7 @@ export function createPoiPart(
     rotation: patch.rotation ?? [0, 0, 0],
     scale: patch.scale ?? preset?.scale ?? [1, 1, 1],
     color: patch.color,
-    solid: patch.solid ?? kind !== 'entry' && kind !== 'torch',
+    solid: patch.solid ?? (kind !== 'entry' && kind !== 'torch'),
   }
 }
 
