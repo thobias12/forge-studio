@@ -454,7 +454,7 @@ export async function bindCharacterAsset(
   void animationAssetId
   const controller = await createAnimationControllerV3({
     targetRoot: loaded.root,
-    targetId: characterAssetId,
+    targetId: animationAssetId || characterAssetId,
     fallbackSource: {
       root: loaded.root,
       clips: loaded.animations,
