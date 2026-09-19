@@ -2,12 +2,26 @@
   "format": "forge-ability",
   "version": 1,
   "id": "arc-bolt",
-  "name": "Arc Bolt",
+  "name": "Chain Lightning",
   "kind": "area",
   "input": "primary",
-  "damage": 25,
-  "cooldown": 0.42,
-  "range": 9.5,
-  "radius": 0.72,
-  "color": "#718bd1"
+  "damage": 30,
+  "cooldown": 0.5,
+  "range": 10,
+  "radius": 1.4,
+  "color": "#78bfff",
+  "delivery": "chain",
+  "chain": {
+    "maxJumps": 5,
+    "jumpRadius": 5.8,
+    "jumpDelay": 0.075,
+    "damageFalloff": 0.86,
+    "allowRepeatTargets": false,
+    "selectionMode": "nearest",
+    "boltLifetime": 0.155,
+    "arcAmplitude": 0.32,
+    "branchCount": 2,
+    "glowWidth": 0.075,
+    "lightFlashIntensity": 7.5
+  }
 }
