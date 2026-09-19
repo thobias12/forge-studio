@@ -3,4 +3,8 @@ dist
 .DS_Store
 *.log
 .vercel
+/artifacts/world-qa/
+*.tsbuildinfo
+/vite.config.js
+/vite.config.d.ts
 \nartifacts/equipment-qa\n

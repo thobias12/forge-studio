@@ -50,6 +50,38 @@ function ambientRiverMask(region: GeneratedRegion) {
   return mask
 }
 
+function addShelteredMist(group: THREE.Group, actors: THREE.Object3D[], region: GeneratedRegion) {
+  // Small terrain-following patches; no full-screen veil over combat silhouettes.
+  const sites = region.terrain.microBiomes
+    .filter(p => p.type === 'moss' || p.type === 'forest-floor')
+    .filter(p => !region.terrain.clearings.some(c => Math.hypot(c.x-p.x,c.z-p.z) < c.radius + 5))
+    .sort((a,b) => sampleTerrainHeight(region,a.x,a.z)-sampleTerrainHeight(region,b.x,b.z))
+    .slice(0,12)
+  for (const site of sites) {
+    const radius = Math.min(8, site.radius * .5)
+    const geometry = new THREE.PlaneGeometry(radius*2,radius*2,6,6)
+    geometry.rotateX(-Math.PI/2)
+    const positions = geometry.attributes.position
+    for (let i=0;i<positions.count;i++) {
+      const x=positions.getX(i)+site.x,z=positions.getZ(i)+site.z
+      positions.setXYZ(i,x,sampleTerrainHeight(region,x,z)+.32,z)
+    }
+    geometry.computeBoundingSphere()
+    const material = new THREE.ShaderMaterial({
+      transparent:true,depthWrite:false,side:THREE.DoubleSide,
+      uniforms:{time:{value:0},strength:{value:.055}},
+      vertexShader:`varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+      fragmentShader:`varying vec2 vUv; uniform float time; uniform float strength;
+        void main(){vec2 p=vUv*2.0-1.0;float edge=1.0-smoothstep(.2,1.0,length(p));
+        float folds=.65+.2*sin(p.x*7.0+p.y*3.0+time*.12)+.15*sin(p.y*11.0-time*.09);
+        gl_FragColor=vec4(.48,.59,.55,edge*folds*strength);}`,
+    })
+    const patch=new THREE.Mesh(geometry,material)
+    patch.name='Sheltered ground mist';patch.userData.ambientKind='ground-mist'
+    group.add(patch);actors.push(patch)
+  }
+}
+
 export function buildWorldAmbientVisuals(
   region: GeneratedRegion,
 ): WorldAmbientVisuals {
@@ -57,6 +89,14 @@ export function buildWorldAmbientVisuals(
   group.name = 'WorldAmbientLife'
   const actors: THREE.Object3D[] = []
   const anchors = buildAmbientAnchors(region)
+  if (region.layout === 'journey-v1') {
+    const sanctuary = region.pois.find(p => p.type === 'ruins')
+    if (sanctuary) for (const side of [-1, 1]) anchors.push({
+      kind: 'lantern', x: sanctuary.x + side * 3, z: sanctuary.z + sanctuary.radius * .55,
+      scale: .85, rotation: 0, variant: 0,
+    })
+    addShelteredMist(group, actors, region)
+  }
 
   addGrass(group, region, anchors.filter((item) => item.kind === 'grass'))
   addFlowers(group, region, anchors.filter((item) => item.kind === 'flower'))
@@ -83,6 +123,12 @@ export function updateWorldAmbientVisuals(
   for (const actor of visuals.actors) {
     const kind = actor.userData.ambientKind as string | undefined
     const phase = Number(actor.userData.phase ?? 0)
+
+    if (kind === 'ground-mist' && actor instanceof THREE.Mesh && actor.material instanceof THREE.ShaderMaterial) {
+      actor.material.uniforms.time.value = time
+      actor.material.uniforms.strength.value = environment?.weather === 'mist' ? .16 : .055 + (environment?.night ?? 0) * .025
+      continue
+    }
 
     if (kind === 'firefly') {
       const activity = environment?.fireflyActivity ?? 1

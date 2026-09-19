@@ -133,6 +133,7 @@ export type GeneratedRegion = {
   version: 5
   seed: number
   masterSeed: number
+  layout?: 'journey-v1'
   layerSeeds: WorldGenerationLayerSeeds
   generationVersion: number
   regionId: string
@@ -176,6 +177,8 @@ export function generateGuidedRegion(
   const mood = resolveWorldMood(region.biome, region.worldGen?.mood ?? 'auto', layerSeeds.dressing)
   const sizeScale = settings.size === 'small' ? .82 : settings.size === 'large' ? 1.22 : 1
   const chunkCount = Math.max(4, Math.round(intRange(routeRandom, region.chunkRange[0], region.chunkRange[1]) * sizeScale))
+  const journey = region.worldGen?.layout === 'journey-v1'
+  const family = hashSeed(`${layerSeeds.routes}:layout`) % 3
   const spacing = FORGE_WORLD_SCALE.routeNodeSpacing * sizeScale
   const wanderBase = region.mainPath === 'direct' ? 4 : region.mainPath === 'winding' ? 9 : 14
   const wander =
@@ -200,9 +203,9 @@ export function generateGuidedRegion(
       id,
       kind,
       x: index * spacing,
-      z,
+      z: journey ? z * .35 + Math.sin(index / chunkCount * Math.PI * (family === 1 ? 2 : 1)) * spacing * (family === 2 ? 1.15 : .85) : z,
       radius:
-        (kind === 'route' ? 9 + settings.openSpace * 4 : 11) *
+        (kind === 'route' ? (9 + settings.openSpace * 4) * (journey ? [1.15, .55, .85][index % 3] : 1) : 11) *
         FORGE_WORLD_SCALE.clearingRadiusScale,
       label: kind === 'entry' ? 'Forest Edge' : kind === 'exit' ? 'Old Road' : `Clearing ${index}`,
     })
@@ -274,6 +277,16 @@ export function generateGuidedRegion(
     // are more predictable and keep the generated road network readable.
   }
 
+  if (journey) {
+    // Keep the destination and route IDs stable within this generation profile.
+    const angle = (hashSeed(`${layerSeeds.routes}:orientation`) % 8) * Math.PI / 4
+    for (const node of nodes) {
+      const x = node.x, z = node.z
+      node.x = x * Math.cos(angle) - z * Math.sin(angle)
+      node.z = x * Math.sin(angle) + z * Math.cos(angle)
+    }
+  }
+
   const landmarkCount = Math.max(3, Math.round(intRange(poiRandom, region.landmarkRange[0], region.landmarkRange[1]) * (.75 + settings.poiDensity * .6)))
   const branchEnds = nodes.filter((item) => item.kind === 'branch' && !connections.some((link) => link.kind === 'branch' && link.from === item.id))
   const landmarkTargets = [...branchEnds, ...shuffle(nodes.filter((item) => item.kind === 'route'), poiRandom)]
@@ -283,7 +296,7 @@ export function generateGuidedRegion(
   for (let index = 0; index < landmarkCount && landmarkTargets.length; index += 1) {
     const target = landmarkTargets.splice(Math.floor(poiRandom() * landmarkTargets.length), 1)[0]
     if (!poiCycle.length) poiCycle = shuffle([...new Set(poiTypes)], poiRandom)
-    const type = poiCycle.shift() ?? 'ruins'
+    const type = journey && index === 0 ? 'ruins' : poiCycle.shift() ?? 'ruins'
     const baseOffset = poiApproachDistance(type)
     let approachDirection: GeneratedWorldPoint
 
@@ -317,7 +330,7 @@ export function generateGuidedRegion(
       x: target.x + approachDirection.x * offsetDistance,
       z: target.z + approachDirection.z * offsetDistance,
       radius: poiRadius(type),
-      label: poiLabel(type),
+      label: journey && index === 0 ? 'The Fallen Sanctuary' : poiLabel(type),
       parentId: target.id,
       poiType: type,
     }
@@ -466,6 +479,8 @@ export function generateGuidedRegion(
   enforcePathsOutsideRiverMask(mainPaths, riverMask, crossings, bounds)
   repairResidualRiverPathIncursions(mainPaths, riverMask, crossings, bounds)
 
+  if (journey) addSafeExplorationLoops(nodes, connections, paths, riverMask, bounds, settings.loops, layerSeeds.routes)
+
   const clearings = nodes
     .filter((node) => ['entry', 'route', 'exit', 'landmark', 'encounter'].includes(node.kind))
     .map((node) => ({ x: node.x, z: node.z, radius: node.radius + (node.kind === 'landmark' ? 2 : 0) }))
@@ -517,13 +532,14 @@ export function generateGuidedRegion(
     riverMask,
     pois,
   )
-  const seed = composeWorldSeed(layerSeeds)
+  const seed = journey ? hashSeed(`${composeWorldSeed(layerSeeds)}:journey-v1`) : composeWorldSeed(layerSeeds)
 
   return {
     format: 'forge-generated-region',
     version: 5,
     seed,
     masterSeed: worldSeed,
+    ...(journey ? { layout: 'journey-v1' as const } : {}),
     layerSeeds,
     generationVersion,
     regionId: region.id,
@@ -540,6 +556,48 @@ export function generateGuidedRegion(
     terrain,
     bounds,
     validation,
+  }
+}
+
+function addSafeExplorationLoops(
+  nodes: GeneratedRegionNode[], connections: GeneratedRegionConnection[], paths: GeneratedWorldPath[],
+  mask: RiverOccupancyMask, bounds: GeneratedRegion['bounds'], amount: number, seed: number,
+) {
+  const target = Math.round(clamp(amount, 0, 1) * 2)
+  if (!target) return
+  const candidates = shuffle(paths.filter(p => p.kind === 'main'), seededRandom(hashSeed(`${seed}:loops`)))
+  let accepted = 0
+  for (const main of candidates) {
+    if (accepted >= target) break
+    const from = nodes.find(n => n.id === main.fromNodeId)!
+    const to = nodes.find(n => n.id === main.toNodeId)!
+    if (from.kind === 'entry' || to.kind === 'exit') continue
+    const dx = to.x - from.x, dz = to.z - from.z, length = Math.hypot(dx, dz)
+    if (length < 12 || length > 45) continue
+    for (const side of [1, -1]) {
+      const midpoint: GeneratedRegionNode = {
+        id: `exploration-${accepted}`, kind: 'branch', label: 'Woodland overlook', radius: 5,
+        x: (from.x + to.x) / 2 - dz / length * 17 * side,
+        z: (from.z + to.z) / 2 + dx / length * 17 * side,
+        parentId: from.id,
+      }
+      const links: GeneratedRegionConnection[] = [
+        { id: `exploration-${accepted}-a`, from: from.id, to: midpoint.id, kind: 'branch' },
+        { id: `exploration-${accepted}-b`, from: midpoint.id, to: to.id, kind: 'branch' },
+      ]
+      const trial = buildWorldPaths([...nodes, midpoint], links, seed)
+      smoothWorldJunctions(trial, [...nodes, midpoint])
+      const samples = trial.flatMap(p => pathClearanceSamples(p, .48))
+      const unsafe = samples.some(p =>
+        p.x < bounds.minX + 4 || p.x > bounds.maxX - 4 || p.z < bounds.minZ + 4 || p.z > bounds.maxZ - 4 ||
+        (mask.points.length > 1 && riverOccupancySample(mask, p.x, p.z).signedDistance < pathFootprintHalfWidth(p.width) + .9) ||
+        nodes.some(n => n.poiType && Math.hypot(n.x - p.x, n.z - p.z) < n.radius + 3) ||
+        (Math.min(Math.hypot(p.x-from.x,p.z-from.z),Math.hypot(p.x-to.x,p.z-to.z)) > 6 && distanceToPaths(p.x,p.z,paths) < 3.5)
+      )
+      if (unsafe) continue
+      nodes.push(midpoint); connections.push(...links); paths.push(...trial); accepted++
+      break
+    }
   }
 }
 
@@ -3994,6 +4052,10 @@ function buildDressing(
       0,
       1,
     )
+    if (region.worldGen?.layout === 'journey-v1') {
+      // Stronger grove/glade contrast without increasing the object budget.
+      density *= .35 + smoothstep(clamp((groveNoise - .3) / .4, 0, 1)) * 1.4
+    }
     if (gapNoise < .28) density *= .36 + gapNoise
     density *= 1 - micro.meadow * clamp(.42 * profile.meadowBias, .24, .94)
     density *= 1 - micro.rocky * clamp(.18 * profile.rockBias, .08, .62)
