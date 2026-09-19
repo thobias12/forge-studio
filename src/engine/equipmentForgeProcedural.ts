@@ -149,7 +149,7 @@ export function applyProceduralStyle(
     next.chest.length = 1.02
     next.chest.looseness = .08
     next.chest.leatherVest = true
-    next.chest.plateCoverage = .08
+    next.chest.plateCoverage = .06
     next.chest.collarHeight = .06
     next.chest.shoulderSize = .04
     next.chest.shoulderAsymmetry = .22
@@ -159,8 +159,8 @@ export function applyProceduralStyle(
     next.waist.tabardLength = .34
     next.waist.tabardWidth = .46
     next.cape.length = .46
-    next.cape.width = .43
-    next.cape.flare = .1
+    next.cape.width = .4
+    next.cape.flare = .08
     next.materials = {
       cloth: '#384737',
       leather: '#3f2b20',
@@ -553,28 +553,14 @@ function buildChest(
   root.userData.chestShell = shell
 
   if (chest.leatherVest) {
-    const vest = new THREE.Mesh(
-      fittedGarmentTorsoGeometry(
-        fit,
-        bottomY + .035,
-        topY - .025,
-        chest.width * 1.012,
-        chest.depth * 1.012,
-        chest.looseness + .018,
-      ),
-      materials.leather,
-    )
-    vest.castShadow = true
-    vest.receiveShadow = false
-    vest.name = 'Procedural_LeatherVest'
-    attachPreservingWorld(
+    buildLeatherVest(
       bodyRoot,
-      findBone(
-        bodyRoot,
-        'spine_02',
-        'spine_03',
-      ),
-      vest,
+      materials,
+      fit,
+      chest.width,
+      topY,
+      bottomY,
+      shellOffset,
     )
   }
 
@@ -599,7 +585,7 @@ function buildChest(
       0,
       1,
     )
-  if (plateCoverage > .025) {
+  if (plateCoverage > .15) {
     const plateWidth =
       (.18 + plateCoverage * .19) *
       chest.width
@@ -620,7 +606,7 @@ function buildChest(
       plateY,
       fit.garmentFront +
         shellOffset +
-        .004,
+        .002,
     )
     plate.rotation.x = -.045
     plate.castShadow = true
@@ -652,7 +638,7 @@ function buildChest(
         lowerPlateY,
         fit.garmentFront +
           shellOffset +
-          .003,
+          .001,
       )
       lowerPlate.castShadow = true
       lowerPlate.name =
@@ -738,7 +724,7 @@ function buildChest(
         Math.abs(spread) * .05,
       fit.garmentFront +
         shellOffset +
-        .006,
+        .003,
     )
     strap.rotation.z =
       (index % 2 === 0 ? 1 : -1) *
@@ -1161,10 +1147,10 @@ function buildCape(
   const length =
     .2 + cape.length * .66
   const topWidth =
-    .22 + cape.width * .15
+    .24 + cape.width * .14
   const bottomWidth =
     topWidth *
-    (1.06 + cape.flare * .38)
+    (.76 + cape.flare * .32)
   const geometry = capeGeometry(
     length,
     topWidth,
@@ -1571,13 +1557,13 @@ function capeGeometry(
         bottomWidth,
         eased,
       )
-    const hemLift =
-      v > .88
+    const hemShape =
+      v > .84
         ? Math.pow(
-            (v - .88) / .12,
+            (v - .84) / .16,
             2,
           ) *
-          .035
+          .065
         : 0
 
     for (
@@ -1594,9 +1580,9 @@ function capeGeometry(
         Math.sin(
           u * Math.PI * 5,
         ) *
-        (.008 +
+        (.006 +
           v *
-            (.018 + flare * .018))
+            (.012 + flare * .012))
       const shoulderCurve =
         Math.pow(edge, 1.55) *
         (.009 + v * .012)
@@ -1609,13 +1595,10 @@ function capeGeometry(
         (1 - v)
       const y =
         -v * length -
-        shoulderDrop +
-        hemLift *
+        shoulderDrop -
+        hemShape *
           (1 -
-            Math.cos(
-              centered * Math.PI * 2,
-            ) *
-              .18)
+            edge * .72)
       const z =
         (1 - v) * .018 -
         fold -
@@ -1876,8 +1859,8 @@ function fittedGarmentTorsoGeometry(
   depthScale: number,
   looseness: number,
 ) {
-  const rings = 14
-  const segments = 32
+  const rings = 16
+  const segments = 36
   const positions: number[] = []
   const indices: number[] = []
   const uvs: number[] = []
@@ -1888,77 +1871,71 @@ function fittedGarmentTorsoGeometry(
     ring += 1
   ) {
     const t = ring / rings
-    const y = THREE.MathUtils.lerp(
-      bottomY,
-      topY,
-      t,
-    )
-
     const waistBlend =
       THREE.MathUtils.smoothstep(
         t,
         0,
-        .55,
+        .58,
       )
-    const upperBlend =
+    const shoulderBlend =
       THREE.MathUtils.smoothstep(
         t,
-        .58,
+        .68,
         1,
       )
     const bustBlend =
       Math.exp(
         -Math.pow(
-          (t - .67) / .2,
+          (t - .68) / .2,
           2,
         ),
       )
 
-    const baseX =
+    const midX =
       THREE.MathUtils.lerp(
-        fit.waistRadius * .96,
-        fit.torsoX * .9,
+        fit.waistRadius * 1.015,
+        fit.torsoX * .83,
         waistBlend,
       )
-    const radiusX =
+    const ringX =
       THREE.MathUtils.lerp(
-        baseX,
-        fit.torsoX * .78,
-        upperBlend,
+        midX,
+        fit.torsoX * .68,
+        shoulderBlend,
       ) *
       widthScale *
-      (1 + looseness * .72)
+      (1 + looseness * .34)
 
-    const frontBase =
+    const midFront =
       THREE.MathUtils.lerp(
-        fit.waistDepth * .94,
-        fit.garmentFront * .94,
+        fit.waistDepth * 1.015,
+        fit.garmentFront,
         waistBlend,
-      )
-    const frontRadius =
+      ) +
+      bustBlend * fit.bustDepth
+    const ringFront =
       THREE.MathUtils.lerp(
-        frontBase +
-          bustBlend * fit.bustDepth,
-        fit.garmentFront * .82,
-        upperBlend,
+        midFront,
+        fit.upperFront,
+        shoulderBlend,
       ) *
       depthScale *
-      (1 + looseness * .58)
+      (1 + looseness * .28)
 
-    const backBase =
+    const midBack =
       THREE.MathUtils.lerp(
-        fit.waistDepth * .9,
-        fit.garmentBack * .96,
+        fit.waistDepth * .97,
+        fit.garmentBack,
         waistBlend,
       )
-    const backRadius =
+    const ringBack =
       THREE.MathUtils.lerp(
-        backBase,
-        fit.garmentBack * .84,
-        upperBlend,
+        midBack,
+        fit.upperBack,
+        shoulderBlend,
       ) *
       depthScale *
-      (1 + looseness * .45)
+      (1 + looseness * .22)
 
     for (
       let segment = 0;
@@ -1966,24 +1943,47 @@ function fittedGarmentTorsoGeometry(
       segment += 1
     ) {
       const u = segment / segments
-      const angle = u * Math.PI * 2
+      const angle =
+        u * Math.PI * 2
       const sx = Math.sin(angle)
       const cz = Math.cos(angle)
+
+      const frontness =
+        Math.max(0, cz)
+      const backness =
+        Math.max(0, -cz)
+      const necklineDrop =
+        ring === rings
+          ? frontness ** 2.4 *
+              fit.frontNeckDrop +
+            backness ** 2.2 *
+              fit.backNeckDrop
+          : 0
+      const y =
+        THREE.MathUtils.lerp(
+          bottomY,
+          topY,
+          t,
+        ) -
+        necklineDrop
+
       const zRadius =
         cz >= 0
-          ? frontRadius
-          : backRadius
-      const sideFlatten =
+          ? ringFront
+          : ringBack
+
+      const sideShape =
         1 -
         Math.pow(
           Math.abs(sx),
-          3,
+          4,
         ) *
-          .045
+          .025
+
       positions.push(
-        sx * radiusX,
+        sx * ringX,
         y,
-        cz * zRadius * sideFlatten,
+        cz * zRadius * sideShape,
       )
       uvs.push(u, t)
     }
@@ -2041,6 +2041,91 @@ function fittedGarmentTorsoGeometry(
   return geometry
 }
 
+
+function buildLeatherVest(
+  bodyRoot: THREE.Object3D,
+  materials: MaterialSet,
+  fit: ReturnType<typeof bodyFit>,
+  widthScale: number,
+  topY: number,
+  bottomY: number,
+  shellOffset: number,
+) {
+  const spine =
+    findBone(
+      bodyRoot,
+      'spine_03',
+      'spine_02',
+    )
+  const height =
+    Math.max(
+      .2,
+      (topY - bottomY) * .66,
+    )
+  const panelWidth =
+    .105 * widthScale
+  const centerY =
+    bottomY +
+    (topY - bottomY) * .49
+  const frontZ =
+    fit.garmentFront +
+    shellOffset +
+    .004
+
+  for (const sign of [-1, 1]) {
+    const panel = new THREE.Mesh(
+      curvedPanelGeometry(
+        panelWidth,
+        height,
+        .009,
+        .18,
+      ),
+      materials.leather,
+    )
+    panel.position.set(
+      sign * .065 * widthScale,
+      centerY,
+      frontZ,
+    )
+    panel.rotation.set(
+      -.025,
+      sign * -.035,
+      sign * -.045,
+    )
+    panel.castShadow = true
+    panel.name =
+      sign < 0
+        ? 'Procedural_VestLeft'
+        : 'Procedural_VestRight'
+    attachPreservingWorld(
+      bodyRoot,
+      spine,
+      panel,
+    )
+  }
+
+  const lower = new THREE.Mesh(
+    curvedPanelGeometry(
+      .23 * widthScale,
+      .055,
+      .006,
+      .12,
+    ),
+    materials.leatherDark,
+  )
+  lower.position.set(
+    0,
+    bottomY + .048,
+    fit.waistDepth + .012,
+  )
+  lower.castShadow = true
+  lower.name = 'Procedural_VestWaist'
+  attachPreservingWorld(
+    bodyRoot,
+    spine,
+    lower,
+  )
+}
 
 function findPrimaryBodyMesh(
   root: THREE.Object3D,
@@ -2174,14 +2259,17 @@ function bodyFit(
         neckY: 1.535,
         shoulderY: 1.46,
         shoulderX: .285,
-        torsoX: .305,
-        chestFront: .215,
-        garmentFront: .225,
-        bustDepth: .032,
-        upperBack: .145,
-        garmentBack: .153,
-        neckFront: .122,
-        neckBack: .105,
+        torsoX: .285,
+        chestFront: .18,
+        garmentFront: .184,
+        upperFront: .145,
+        bustDepth: .026,
+        upperBack: .13,
+        garmentBack: .136,
+        frontNeckDrop: .072,
+        backNeckDrop: .034,
+        neckFront: .118,
+        neckBack: .102,
         armRadius: .066,
         waistY: .985,
         waistRadius: .22,
@@ -2195,14 +2283,17 @@ function bodyFit(
         neckY: 1.545,
         shoulderY: 1.48,
         shoulderX: .315,
-        torsoX: .335,
-        chestFront: .2,
-        garmentFront: .21,
-        bustDepth: .012,
-        upperBack: .15,
-        garmentBack: .158,
-        neckFront: .13,
-        neckBack: .112,
+        torsoX: .315,
+        chestFront: .19,
+        garmentFront: .196,
+        upperFront: .16,
+        bustDepth: .01,
+        upperBack: .14,
+        garmentBack: .146,
+        frontNeckDrop: .064,
+        backNeckDrop: .03,
+        neckFront: .126,
+        neckBack: .108,
         armRadius: .073,
         waistY: .99,
         waistRadius: .235,
