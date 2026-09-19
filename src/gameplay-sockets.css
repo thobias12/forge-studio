@@ -136,8 +136,8 @@
   width:8px;
   height:8px;
   border-radius:50%;
-  background:var(--socket-color,#87b89a);
-  box-shadow:0 0 8px color-mix(in srgb,var(--socket-color,#87b89a) 50%,transparent);
+  background:currentColor;
+  box-shadow:0 0 8px currentColor;
 }
 .gameplay-socket-list span{
   overflow:hidden;
