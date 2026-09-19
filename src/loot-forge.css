@@ -1,0 +1,616 @@
+.loot-forge-page{
+  height:100%;
+  min-height:0;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  background:#0b100d;
+  color:#c9d4cd;
+}
+.loot-forge-loading{
+  height:100%;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:8px;
+  color:#8c9d93;
+}
+.loot-forge-loading strong{color:#d7e2db}
+.loot-forge-loading span{font-size:11px}
+.loot-forge-toolbar{
+  min-height:68px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  padding:12px 16px;
+  border-bottom:1px solid #1f2b24;
+  background:#0e1511;
+}
+.loot-forge-toolbar>div:first-child{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.loot-forge-toolbar>div:first-child>span,
+.loot-forge-card header span,
+.loot-forge-preview header span,
+.loot-forge-bindings header span,
+.loot-forge-library header>span{
+  color:#66766d;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.12em;
+}
+.loot-forge-toolbar>div:first-child>strong{
+  color:#e0e9e3;
+  font-size:17px;
+}
+.loot-forge-toolbar>div:first-child>small{
+  color:#728078;
+  font-size:9px;
+}
+.loot-forge-toolbar>div:last-child{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.loot-forge-page button,
+.loot-forge-page select,
+.loot-forge-page input{
+  font:inherit;
+}
+.loot-forge-page button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:30px;
+  padding:6px 9px;
+  border:1px solid #29362f;
+  border-radius:5px;
+  background:#121a15;
+  color:#95a59c;
+  cursor:pointer;
+  font-size:9px;
+}
+.loot-forge-page button:hover{
+  border-color:#405649;
+  color:#c6d2cb;
+}
+.loot-forge-page button:disabled{
+  opacity:.4;
+  cursor:default;
+}
+.loot-forge-page button.primary{
+  border-color:#3f654d;
+  background:#183020;
+  color:#a9d6b7;
+}
+.loot-forge-page button.danger{
+  border-color:#51322f;
+  color:#cf8178;
+}
+.loot-forge-layout{
+  min-height:0;
+  display:grid;
+  grid-template-columns:220px minmax(430px,1fr) 330px;
+}
+.loot-forge-library{
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  border-right:1px solid #1f2b24;
+  background:#0e1511;
+}
+.loot-forge-library>header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:12px;
+  border-bottom:1px solid #1c2721;
+}
+.loot-forge-table-list{
+  min-height:0;
+  flex:1;
+  overflow:auto;
+  padding:6px;
+}
+.loot-forge-table-list>button{
+  width:100%;
+  min-height:48px;
+  display:grid;
+  grid-template-columns:8px minmax(0,1fr);
+  justify-content:stretch;
+  gap:8px;
+  margin:2px 0;
+  border-color:transparent;
+  background:transparent;
+  text-align:left;
+}
+.loot-forge-table-list>button>i{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#6d947a;
+}
+.loot-forge-table-list>button>span{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.loot-forge-table-list>button strong{
+  overflow:hidden;
+  color:#a8b6ad;
+  font-size:9px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.loot-forge-table-list>button small{
+  color:#5f6d65;
+  font-size:7px;
+}
+.loot-forge-table-list>button.active{
+  border-color:#33503e;
+  background:#142019;
+}
+.loot-forge-table-list>button.active strong{
+  color:#d1ddd5;
+}
+.loot-forge-library-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+  padding:10px;
+  border-top:1px solid #1c2721;
+}
+.loot-forge-editor{
+  min-width:0;
+  min-height:0;
+  overflow:auto;
+  padding:12px;
+  background:
+    radial-gradient(circle at 30% 0%,rgba(63,98,75,.08),transparent 42%),
+    #0b100d;
+}
+.loot-forge-card{
+  margin-bottom:10px;
+  border:1px solid #202d26;
+  border-radius:8px;
+  background:#0f1612;
+  box-shadow:0 10px 28px rgba(0,0,0,.14);
+}
+.loot-forge-card>header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:12px 13px;
+  border-bottom:1px solid #1c2821;
+}
+.loot-forge-card>header>div:first-child{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.loot-forge-card h2,
+.loot-forge-card h3{
+  margin:0;
+  color:#d6e0da;
+}
+.loot-forge-card h2{font-size:15px}
+.loot-forge-card h3{font-size:11px}
+.loot-forge-card code{
+  color:#5d6d63;
+  font-size:8px;
+}
+.loot-forge-mode-pill{
+  padding:4px 7px;
+  border:1px solid #35513f;
+  border-radius:999px;
+  background:#15231a;
+  color:#80a98c;
+  font-size:8px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.loot-forge-fields{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  padding:12px;
+}
+.loot-forge-fields>label,
+.loot-reward-editor label{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  color:#718178;
+  font-size:8px;
+}
+.loot-forge-fields input,
+.loot-forge-fields select,
+.loot-entry-row input,
+.loot-entry-row select,
+.loot-binding-list select,
+.loot-reward-editor input{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  border:1px solid #29362f;
+  border-radius:5px;
+  background:#111914;
+  color:#c7d2cb;
+  padding:6px 7px;
+  outline:none;
+  font-size:9px;
+}
+.loot-forge-fields input:focus,
+.loot-forge-fields select:focus,
+.loot-entry-row input:focus,
+.loot-entry-row select:focus,
+.loot-binding-list select:focus,
+.loot-reward-editor input:focus{
+  border-color:#496752;
+}
+.loot-check{
+  grid-column:span 2;
+  flex-direction:row!important;
+  align-items:flex-start;
+  gap:8px!important;
+  padding:5px 0;
+}
+.loot-check input{
+  width:auto;
+  margin-top:2px;
+  accent-color:#6a9878;
+}
+.loot-check>span{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.loot-check strong{
+  color:#9eada4;
+  font-size:9px;
+}
+.loot-check small{
+  color:#5f6e65;
+  font-size:7px;
+  line-height:1.4;
+}
+.loot-entry-header,
+.loot-entry-row{
+  display:grid;
+  grid-template-columns:minmax(150px,1.4fr) minmax(110px,1fr) 78px 78px 30px;
+  align-items:center;
+  gap:7px;
+}
+.loot-entry-header{
+  padding:8px 12px 5px;
+  color:#59675f;
+  font-size:7px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.loot-entry-list{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  padding:0 12px 12px;
+}
+.loot-entry-row{
+  min-height:37px;
+}
+.loot-entry-row button.icon{
+  width:30px;
+  min-width:30px;
+  padding:0;
+}
+.loot-chance-control{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 38px;
+  align-items:center;
+  gap:6px;
+}
+.loot-chance-control input{
+  padding:0;
+  accent-color:#6f9e7e;
+}
+.loot-chance-control b{
+  color:#8ea198;
+  font-size:8px;
+  text-align:right;
+}
+.loot-reward-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  padding:12px;
+}
+.loot-reward-editor{
+  border:1px solid #1f2d25;
+  border-radius:7px;
+  background:#0d1410;
+  padding:10px;
+}
+.loot-reward-editor>header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:8px;
+}
+.loot-reward-editor>header>strong{
+  color:#aebbb3;
+  font-size:9px;
+}
+.loot-reward-editor>header>label{
+  flex-direction:row;
+  align-items:center;
+  gap:5px;
+}
+.loot-reward-editor>header input{
+  width:auto;
+  accent-color:#6f9e7e;
+}
+.loot-reward-editor>div{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+}
+.loot-reward-editor>div>label:last-child{
+  grid-column:1/-1;
+}
+.loot-reward-chance{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 42px;
+  align-items:center;
+  gap:6px;
+}
+.loot-reward-chance input{
+  padding:0;
+  accent-color:#6f9e7e;
+}
+.loot-reward-chance b{
+  color:#84968c;
+  font-size:8px;
+  text-align:right;
+}
+.loot-forge-empty{
+  min-height:260px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  color:#647269;
+}
+.loot-forge-empty strong{color:#a9b6ae}
+.loot-forge-right{
+  min-height:0;
+  overflow:auto;
+  border-left:1px solid #1f2b24;
+  background:#0e1511;
+  padding:9px;
+}
+.loot-forge-preview,
+.loot-forge-bindings{
+  margin-bottom:9px;
+  border:1px solid #202d26;
+  border-radius:7px;
+  background:#0d1410;
+  overflow:hidden;
+}
+.loot-forge-preview>header,
+.loot-forge-bindings>header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:10px;
+  border-bottom:1px solid #1c2821;
+}
+.loot-forge-preview>header>div,
+.loot-forge-bindings>header>div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.loot-forge-preview header strong,
+.loot-forge-bindings header strong{
+  color:#a7b5ac;
+  font-size:9px;
+}
+.loot-preview-sample{
+  min-height:74px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  padding:10px;
+  border-bottom:1px solid #1c2821;
+}
+.loot-preview-sample>span{
+  color:#5d6b63;
+  font-size:7px;
+  font-weight:800;
+  letter-spacing:.09em;
+}
+.loot-preview-sample>div{
+  display:grid;
+  grid-template-columns:9px minmax(0,1fr) auto;
+  align-items:center;
+  gap:6px;
+}
+.loot-preview-sample i,
+.loot-preview-results i{
+  width:7px;
+  height:7px;
+  border-radius:2px;
+}
+.loot-preview-sample strong{
+  color:#b7c4bc;
+  font-size:8px;
+}
+.loot-preview-sample b{
+  color:#7e9186;
+  font-size:8px;
+}
+.loot-preview-sample small{
+  color:#66756c;
+  font-size:8px;
+}
+.loot-preview-metrics{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1px;
+  background:#1d2922;
+  border-bottom:1px solid #1c2821;
+}
+.loot-preview-metrics>div{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  padding:9px 3px;
+  background:#0f1712;
+}
+.loot-preview-metrics strong{
+  color:#bdd0c3;
+  font-size:11px;
+}
+.loot-preview-metrics span{
+  color:#5d6c63;
+  font-size:6px;
+  text-transform:uppercase;
+}
+.loot-preview-results{
+  max-height:215px;
+  overflow:auto;
+  padding:7px;
+}
+.loot-preview-results>div{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:6px 4px;
+  border-bottom:1px solid #18231d;
+}
+.loot-preview-results>div>span{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.loot-preview-results strong{
+  overflow:hidden;
+  color:#95a79c;
+  font-size:8px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.loot-preview-results em{
+  flex:none;
+  color:#607068;
+  font-size:7px;
+  font-style:normal;
+}
+.loot-forge-bindings>header{
+  justify-content:flex-start;
+}
+.loot-forge-bindings>header>svg{
+  color:#759986;
+}
+.loot-binding-list{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:7px;
+}
+.loot-binding-list>div{
+  display:grid;
+  grid-template-columns:24px minmax(0,1fr);
+  gap:6px;
+  padding:7px;
+  border:1px solid #1b2820;
+  border-radius:5px;
+  background:#0f1712;
+}
+.loot-binding-list>div>span:nth-child(2){
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+.loot-binding-list strong{
+  overflow:hidden;
+  color:#9dacA3;
+  font-size:8px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.loot-binding-list small{
+  overflow:hidden;
+  color:#5e6d64;
+  font-size:7px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.loot-binding-list select{
+  grid-column:1/-1;
+}
+.loot-binding-icon{
+  width:22px;
+  height:22px;
+  display:grid;
+  place-items:center;
+  border:1px solid #2d4938;
+  border-radius:4px;
+  color:#7da28a;
+  background:#132019;
+}
+.loot-binding-icon.enemy{
+  border-color:#4b382f;
+  color:#b59075;
+  background:#1d1612;
+}
+.loot-binding-list>p{
+  margin:4px;
+  color:#5f6d65;
+  font-size:8px;
+  line-height:1.45;
+}
+.loot-forge-status{
+  min-height:32px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:6px 12px;
+  border-top:1px solid #1f2b24;
+  background:#0d1410;
+  color:#69776f;
+  font-size:8px;
+}
+.loot-forge-status strong{
+  color:#56645c;
+  font-weight:600;
+}
+@media(max-width:1180px){
+  .loot-forge-layout{
+    grid-template-columns:190px minmax(400px,1fr) 285px;
+  }
+}
+@media(max-width:940px){
+  .loot-forge-layout{
+    grid-template-columns:180px minmax(0,1fr);
+  }
+  .loot-forge-right{
+    display:none;
+  }
+}
