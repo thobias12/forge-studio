@@ -134,6 +134,8 @@ try {
         'pipe',
       ],
       windowsHide: true,
+      detached:
+        process.platform !== 'win32',
     },
   )
 
@@ -375,11 +377,22 @@ try {
     preview &&
     preview.exitCode === null
   ) {
-    preview.kill(
+    if (
       process.platform === 'win32'
-        ? undefined
-        : 'SIGTERM',
-    )
+    ) {
+      preview.kill()
+    } else {
+      try {
+        // npm spawns Vite as a child process. Kill the detached process
+        // group so the preview server cannot keep CI alive after capture.
+        process.kill(
+          -preview.pid,
+          'SIGTERM',
+        )
+      } catch {
+        preview.kill('SIGTERM')
+      }
+    }
   }
   if (
     process.env.FORGE_QA_KEEP_MODEL !==
