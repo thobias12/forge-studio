@@ -342,7 +342,7 @@ async function extractSkillboundFoundationGlbs(
         )
       }
       result[bodyType] = new Blob(
-        [data],
+        [copyBytesToArrayBuffer(data)],
         { type: 'model/gltf-binary' },
       )
     }
@@ -376,7 +376,9 @@ async function inflateZipEntry(
     )
   }
 
-  const stream = new Blob([compressed])
+  const stream = new Blob([
+    copyBytesToArrayBuffer(compressed),
+  ])
     .stream()
     .pipeThrough(new DecompressionStream('deflate-raw'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
@@ -437,6 +439,12 @@ function disposeScene(root: THREE.Object3D) {
     for (const material of list) if (material) materials.add(material)
   })
   for (const material of materials) material.dispose()
+}
+
+function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy.buffer
 }
 
 function round(value: number) {
