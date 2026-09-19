@@ -136,10 +136,34 @@ declare global {
 
 export default function EquipmentQaCapture() {
   const params = useMemo(
-    () =>
-      new URLSearchParams(
-        window.location.search,
-      ),
+    () => {
+      const parsed =
+        new URLSearchParams(
+          window.location.search,
+        )
+      const qaValue =
+        parsed.get('equipmentQa')
+
+      if (
+        qaValue?.startsWith('1&')
+      ) {
+        const embedded =
+          new URLSearchParams(
+            qaValue.slice(2),
+          )
+        for (const [key, value] of embedded) {
+          if (!parsed.has(key)) {
+            parsed.set(key, value)
+          }
+        }
+        parsed.set(
+          'equipmentQa',
+          '1',
+        )
+      }
+
+      return parsed
+    },
     [],
   )
   const bodyType: SkillboundBodyType =

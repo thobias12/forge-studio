@@ -149,6 +149,26 @@ const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'poiforge',
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
+
+  // Be tolerant of links where the remaining query string was URL-encoded
+  // into the equipmentQa value, e.g. equipmentQa=1%26body%3Dfemale%26model%3Dlibrary.
+  const equipmentQaValue =
+    params.get('equipmentQa')
+  if (
+    equipmentQaValue?.startsWith('1&')
+  ) {
+    const embedded =
+      new URLSearchParams(
+        equipmentQaValue.slice(2),
+      )
+    for (const [key, value] of embedded) {
+      if (!params.has(key)) {
+        params.set(key, value)
+      }
+    }
+    params.set('equipmentQa', '1')
+  }
+
   if (
     params.get('equipmentQa') === '1' ||
     window.__FORGE_EQUIPMENT_QA_FORCE__ === true
