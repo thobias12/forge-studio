@@ -23,7 +23,39 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Prepare Equipment QA fixture
+        env:
+          FORGE_QA_FIXTURE_OUTPUT: public/qa-foundation/__qa-base.glb
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
       - name: Build Forge Studio
         env:
           VITE_FORGE_BUILD: ${{ github.sha }}
         run: npm run build
+
+      - name: Install fast QA runtime
+        run: |
+          npm install --no-save --package-lock=false playwright
+          if ! command -v google-chrome >/dev/null 2>&1 && ! command -v google-chrome-stable >/dev/null 2>&1; then
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Capture fast Equipment QA
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
+          FORGE_QA_MODEL: dist/qa-foundation/__qa-base.glb
+          FORGE_QA_BODY: female
+          FORGE_QA_OUTPUT: artifacts/equipment-qa-fast
+          FORGE_QA_SKIP_BUILD: '1'
+          FORGE_QA_HEADLESS: '1'
+          FORGE_QA_BROWSER_CHANNEL: chrome
+          FORGE_QA_VIEWS: front,front-right,top-down-shoulders,top-back-cape,chest-close,vest-detail-close,right-underarm,cape-profile-tight
+        run: npm run qa:equipment
+
+      - name: Upload fast Equipment QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: equipment-qa-fast
+          path: artifacts/equipment-qa-fast
+          if-no-files-found: error
+          retention-days: 3
