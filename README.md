@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.4`  
+> **Current Forge version:** `v1.77.6`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -402,7 +402,7 @@ Fit diagnostics are opt-in for QA so the normal Equipment Forge editor does not 
 
 ### v1.77.4 authored-looking Ranger pass
 
-Current `main` is **Forge v1.77.4**, commit `d05259d`.
+The Ranger reference has continued through **Forge v1.77.6**. v1.77.5 added deeper fitted construction, and v1.77.6 corrects the upper cape drape/front vest detail while adding dedicated top-down QA.
 
 The latest pass moved the Ranger outfit further away from a plain procedural shell by adding/refining:
 
@@ -416,6 +416,15 @@ The latest pass moved the Ranger outfit further away from a plain procedural she
 - additional cape construction detail
 - cape yoke / borders / fasteners
 - extra QA close-ups for the authored-looking layers
+
+### v1.77.6 cape/top corrective pass
+
+The latest corrective pass focuses on problems visible from above:
+
+- upper cape anti-float protection now fades out smoothly near the shoulders rather than constraining half the cape
+- cape folds begin below the attachment edge instead of rippling the top row
+- the narrow diagonal vest reinforcement that read as a rope/cord was replaced by a broader fitted leather shoulder reinforcement
+- Equipment QA now includes dedicated top-down, high-front, high-back/cape, and elevated shoulder views
 
 ### Current visual status / important handoff
 
