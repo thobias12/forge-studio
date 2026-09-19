@@ -72,6 +72,11 @@ import { loadPoiPrefabs } from '../../lib/poiPrefab'
 import { loadPropPrefabs } from '../../lib/propPrefab'
 import { rollLootTable } from '../lootForge'
 import { grantForgeRewardTotals } from './ForgeRewardPickupRuntime'
+import {
+  ForgeChainLightningEffect,
+  normalizeChainConfig,
+  resolveForgeChainTargets,
+} from './ForgeChainLightningRuntime'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -207,6 +212,7 @@ export class ForgePlayRuntime {
   private readonly corpses: RuntimeCorpse[] = []
   private readonly effects: RuntimeEffect[] = []
   private readonly libraryVfx: ForgeLibraryVfxInstance[] = []
+  private readonly chainLightningEffects: ForgeChainLightningEffect[] = []
   private readonly textEffects: RuntimeTextEffect[] = []
   private readonly defeatedEnemyIds = new Set<string>()
   private readonly usedInteractionIds = new Set<string>()
@@ -249,6 +255,7 @@ export class ForgePlayRuntime {
   private savedAt: string | undefined
   private hitStopRemaining = 0
   private cameraShake = 0
+  private chainCastSequence = 0
   private playerMoving = false
   private activeInteractionId: string | undefined
   private interactionHeld = false
@@ -337,6 +344,8 @@ export class ForgePlayRuntime {
     this.enemies.forEach((enemy) => enemy.visual?.dispose())
     this.corpses.forEach((corpse) => corpse.visual?.dispose())
     this.libraryVfx.forEach((effect) => effect.dispose())
+    this.chainLightningEffects.forEach((effect) => effect.dispose())
+    this.chainLightningEffects.length = 0
     this.scene.traverse((object) => {
       if (
         !(object instanceof THREE.Mesh) &&
@@ -782,6 +791,7 @@ export class ForgePlayRuntime {
     this.updateLoot(simulationDelta)
     this.updateEffects(delta)
     this.updateLibraryVfx(delta)
+    this.updateChainLightningEffects(delta)
     this.updateTextEffects(delta)
     this.updateCamera(delta)
     this.updateCameraOcclusion(delta)
@@ -1004,6 +1014,13 @@ export class ForgePlayRuntime {
         this.playerVisual?.play('attack', false)
       }
     }
+    if (ability.delivery === 'chain') {
+      this.performChainAbility(ability, aim, damage)
+      this.cooldowns.set(ability.id, ability.cooldown)
+      this.emitState()
+      return
+    }
+
     if (ability.kind === 'melee') {
       const impact = this.player.position.clone().addScaledVector(aim, Math.max(1, ability.range * 0.5))
       this.spawnPulse(impact, ability.color, ability.radius, 0.24)
@@ -1031,6 +1048,144 @@ export class ForgePlayRuntime {
     }
     this.cooldowns.set(ability.id, ability.cooldown)
     this.emitState()
+  }
+
+  private performChainAbility(
+    ability: ForgeAbilityDefinition,
+    aim: THREE.Vector3,
+    damage: number,
+  ) {
+    const config = normalizeChainConfig(ability.chain)
+    const caster = this.player.position
+      .clone()
+      .add(new THREE.Vector3(0, 1.22, 0))
+    const mouseDistance = this.mouseWorld.distanceTo(this.player.position)
+    const targetDistance = Math.min(
+      ability.range,
+      Math.max(1.5, mouseDistance),
+    )
+    const aimedPoint = this.player.position
+      .clone()
+      .addScaledVector(aim, targetDistance)
+      .add(new THREE.Vector3(0, 1.0, 0))
+
+    const candidates = this.enemies
+      .filter((enemy) =>
+        enemy.health > 0 &&
+        enemy.group.position.distanceTo(this.player.position) <=
+          ability.range + ENEMY_RADIUS,
+      )
+      .map((enemy) => ({
+        id: enemy.id,
+        value: enemy,
+        position: enemy.group.position
+          .clone()
+          .add(new THREE.Vector3(0, 1.05, 0)),
+      }))
+
+    const first = [...candidates].sort((a, b) => {
+      const aAim = a.position.distanceTo(aimedPoint)
+      const bAim = b.position.distanceTo(aimedPoint)
+      if (Math.abs(aAim - bAim) > 1e-6) return aAim - bAim
+      return a.id.localeCompare(b.id)
+    })[0]
+
+    const castId =
+      `${ability.id}:${this.region.seed}:${++this.chainCastSequence}`
+
+    if (!first) {
+      const effect = new ForgeChainLightningEffect(
+        this.scene,
+        [{
+          index: 0,
+          from: caster,
+          to: aimedPoint,
+          delay: 0,
+        }],
+        {
+          color: ability.color,
+          boltLifetime: config.boltLifetime,
+          arcAmplitude: config.arcAmplitude,
+          branchCount: config.branchCount,
+          glowWidth: config.glowWidth,
+          lightFlashIntensity: config.lightFlashIntensity,
+          seed: castId,
+        },
+      )
+      this.chainLightningEffects.push(effect)
+      return
+    }
+
+    const targets = resolveForgeChainTargets(
+      first,
+      candidates,
+      ability.chain,
+    )
+    const hops = targets.map((target, index) => ({
+      index,
+      from:
+        index === 0
+          ? caster.clone()
+          : targets[index - 1].position.clone(),
+      to: target.position.clone(),
+      delay: index * config.jumpDelay,
+    }))
+
+    const effect = new ForgeChainLightningEffect(
+      this.scene,
+      hops,
+      {
+        color: ability.color,
+        boltLifetime: config.boltLifetime,
+        arcAmplitude: config.arcAmplitude,
+        branchCount: config.branchCount,
+        glowWidth: config.glowWidth,
+        lightFlashIntensity: config.lightFlashIntensity,
+        seed: castId,
+      },
+      (index) => {
+        const target = targets[index]
+        if (!target) return
+        const enemy = target.value
+        if (!this.enemies.includes(enemy) || enemy.health <= 0) return
+
+        const from = hops[index]?.from ?? caster
+        const direction = target.position
+          .clone()
+          .sub(from)
+          .setY(0)
+        if (direction.lengthSq() > .001) direction.normalize()
+        else direction.copy(aim)
+
+        this.damageEnemy(
+          enemy,
+          Math.max(1, damage * target.damageMultiplier),
+          direction,
+          ability.color,
+        )
+      },
+    )
+
+    this.chainLightningEffects.push(effect)
+    if (targets.length > 1) {
+      this.setMessage(
+        `${ability.name} chained through ${targets.length} targets.`,
+        1.15,
+      )
+    }
+  }
+
+  private updateChainLightningEffects(delta: number) {
+    for (
+      let index = this.chainLightningEffects.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const effect = this.chainLightningEffects[index]
+      if (!effect.update(delta)) {
+        this.chainLightningEffects.splice(index, 1)
+      }
+    }
   }
 
   private damageEnemy(enemy: RuntimeEnemy, damage: number, direction: THREE.Vector3, color: string) {
