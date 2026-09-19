@@ -15,6 +15,7 @@ import {
   Swords,
   Trash2,
   UserRound,
+  X,
 } from 'lucide-react'
 import CharacterForgePreview from './CharacterForgePreview'
 import SkillboundPlayViewport from './SkillboundPlayViewport'
@@ -45,7 +46,7 @@ import {
 import '../skillbound-frontend.css'
 
 type Screen = 'menu' | 'select' | 'create' | 'settings' | 'play'
-type PausePanel = 'root' | 'character' | 'inventory' | 'skills' | 'map' | 'quests' | 'settings'
+type GameOverlay = 'character' | 'inventory' | 'skills' | 'map' | 'quests' | 'settings'
 type ExtendedSnapshot = ForgeRuntimeSnapshot & { gold?: number; xp?: number; level?: number; xpToNext?: number }
 
 type Props = {
@@ -67,7 +68,7 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
   const [draft, setDraft] = useState<ForgeCharacterBlueprint>(() => createDefaultPlayerBlueprint('Wanderer'))
   const [snapshot, setSnapshot] = useState<ExtendedSnapshot>()
   const [paused, setPaused] = useState(false)
-  const [pausePanel, setPausePanel] = useState<PausePanel>('root')
+  const [gameOverlay, setGameOverlay] = useState<GameOverlay>()
 
   const selected = profiles.find((profile) => profile.id === selectedId) ?? profiles[0]
   const selectedConfig = selected ? blueprintToConfig(selected.blueprint) : undefined
@@ -85,16 +86,40 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
   useEffect(() => {
     if (screen !== 'play') return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' && event.key !== 'Esc') return
       if (event.repeat) return
+      const target = event.target as HTMLElement | null
+      const editing = Boolean(
+        target?.closest?.('input, textarea, select, [contenteditable="true"]'),
+      )
+
+      if (event.key === 'Escape' || event.key === 'Esc') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (gameOverlay) {
+          setGameOverlay(undefined)
+          setPaused(false)
+          return
+        }
+        setPaused((value) => !value)
+        return
+      }
+
+      if (editing) return
+      const shortcut = gameOverlayShortcut(event.key)
+      if (!shortcut) return
       event.preventDefault()
       event.stopPropagation()
-      setPausePanel('root')
-      setPaused((value) => !value)
+      if (gameOverlay === shortcut) {
+        setGameOverlay(undefined)
+        setPaused(false)
+      } else {
+        setGameOverlay(shortcut)
+        setPaused(true)
+      }
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [screen])
+  }, [screen, gameOverlay])
 
   const refreshProfiles = (preferId?: string) => {
     const next = listPlayerProfiles()
@@ -110,7 +135,7 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
     refreshProfiles(touched.id)
     setSnapshot(undefined)
     setPaused(false)
-    setPausePanel('root')
+    setGameOverlay(undefined)
     setScreen('play')
     requestAnimationFrame(() => (document.activeElement as HTMLElement | null)?.blur?.())
   }
@@ -137,15 +162,29 @@ export default function SkillboundFrontend({ workspace, region, onOpenWorld, onB
         paused={paused}
         onSnapshot={(state) => setSnapshot(state as ExtendedSnapshot)}
       />
-      {paused && <PauseMenu
-        panel={pausePanel}
-        setPanel={setPausePanel}
+      {paused && !gameOverlay && <PauseMenu
+        profile={selected}
+        snapshot={snapshot}
+        region={region}
+        onOpen={(panel) => setGameOverlay(panel)}
+        onResume={() => setPaused(false)}
+        onCharacterSelect={() => {
+          setPaused(false)
+          setGameOverlay(undefined)
+          setScreen('select')
+        }}
+      />}
+      {gameOverlay && <GameMenuOverlay
+        panel={gameOverlay}
+        setPanel={setGameOverlay}
         profile={selected}
         snapshot={snapshot}
         workspace={workspace}
         region={region}
-        onResume={() => { setPausePanel('root'); setPaused(false) }}
-        onCharacterSelect={() => { setPaused(false); setPausePanel('root'); setScreen('select') }}
+        onClose={() => {
+          setGameOverlay(undefined)
+          setPaused(false)
+        }}
       />}
     </div>
   }
@@ -399,43 +438,245 @@ function SkillboundBlueprintPreview({
   />
 }
 
-function PauseMenu({ panel, setPanel, profile, snapshot, workspace, region, onResume, onCharacterSelect }: {
-  panel: PausePanel
-  setPanel: (panel: PausePanel) => void
+function PauseMenu({
+  profile,
+  snapshot,
+  region,
+  onOpen,
+  onResume,
+  onCharacterSelect,
+}: {
+  profile: SkillboundPlayerProfile
+  snapshot?: ExtendedSnapshot
+  region: GeneratedRegion
+  onOpen: (panel: GameOverlay) => void
+  onResume: () => void
+  onCharacterSelect: () => void
+}) {
+  return <div className="skillbound-escape-layer">
+    <div className="skillbound-pause-backdrop"/>
+    <section className="skillbound-escape-menu">
+      <header>
+        <span>GAME PAUSED</span>
+        <h2>{profile.name}</h2>
+        <small>
+          Level {snapshot?.level ?? profile.blueprint.level} · {region.regionName}
+        </small>
+      </header>
+
+      <button className="primary" onClick={onResume}>
+        <Play size={16}/>
+        <span><strong>Resume</strong><small>Return to the world</small></span>
+      </button>
+
+      <div className="skillbound-escape-tools">
+        <button onClick={() => onOpen('character')}>
+          <UserRound size={15}/><span>Character</span><kbd>C</kbd>
+        </button>
+        <button onClick={() => onOpen('inventory')}>
+          <Backpack size={15}/><span>Inventory</span><kbd>I</kbd>
+        </button>
+        <button onClick={() => onOpen('skills')}>
+          <Swords size={15}/><span>Skills</span><kbd>K</kbd>
+        </button>
+        <button onClick={() => onOpen('map')}>
+          <Map size={15}/><span>Map</span><kbd>M</kbd>
+        </button>
+        <button onClick={() => onOpen('quests')}>
+          <BookOpen size={15}/><span>Quests</span><kbd>J</kbd>
+        </button>
+        <button onClick={() => onOpen('settings')}>
+          <Settings size={15}/><span>Settings</span>
+        </button>
+      </div>
+
+      <button className="exit" onClick={onCharacterSelect}>
+        <CircleUserRound size={15}/>
+        Exit to Character Select
+      </button>
+    </section>
+  </div>
+}
+
+function GameMenuOverlay({
+  panel,
+  setPanel,
+  profile,
+  snapshot,
+  workspace,
+  region,
+  onClose,
+}: {
+  panel: GameOverlay
+  setPanel: (panel: GameOverlay) => void
   profile: SkillboundPlayerProfile
   snapshot?: ExtendedSnapshot
   workspace: ForgeProjectWorkspace
   region: GeneratedRegion
-  onResume: () => void
-  onCharacterSelect: () => void
+  onClose: () => void
 }) {
-  return <div className="skillbound-pause-layer">
-    <div className="skillbound-pause-backdrop"/>
-    <aside className="pause-navigation">
-      <div><span>SKILLBOUND</span><strong>{profile.name}</strong><small>Level {snapshot?.level ?? profile.blueprint.level} · {region.regionName}</small></div>
-      <button className={panel === 'root' ? 'active' : ''} onClick={() => setPanel('root')}><Gamepad2 size={15}/> Pause</button>
-      <button className={panel === 'character' ? 'active' : ''} onClick={() => setPanel('character')}><UserRound size={15}/> Character</button>
-      <button className={panel === 'inventory' ? 'active' : ''} onClick={() => setPanel('inventory')}><Backpack size={15}/> Inventory</button>
-      <button className={panel === 'skills' ? 'active' : ''} onClick={() => setPanel('skills')}><Swords size={15}/> Skills</button>
-      <button className={panel === 'map' ? 'active' : ''} onClick={() => setPanel('map')}><Map size={15}/> Map</button>
-      <button className={panel === 'quests' ? 'active' : ''} onClick={() => setPanel('quests')}><BookOpen size={15}/> Quests</button>
-      <button className={panel === 'settings' ? 'active' : ''} onClick={() => setPanel('settings')}><Settings size={15}/> Settings</button>
-      <div className="pause-spacer"/>
-      <button onClick={onCharacterSelect}><CircleUserRound size={15}/> Exit to Character Select</button>
-      <button className="resume" onClick={onResume}><Play size={15}/> Resume</button>
-    </aside>
-    <main className="pause-content">{renderPausePanel(panel, profile, snapshot, workspace, region, onResume)}</main>
+  const tabs: Array<{
+    id: GameOverlay
+    label: string
+    shortcut?: string
+    icon: typeof UserRound
+  }> = [
+    { id: 'character', label: 'Character', shortcut: 'C', icon: UserRound },
+    { id: 'inventory', label: 'Inventory', shortcut: 'I', icon: Backpack },
+    { id: 'skills', label: 'Skills', shortcut: 'K', icon: Swords },
+    { id: 'map', label: 'Map', shortcut: 'M', icon: Map },
+    { id: 'quests', label: 'Quests', shortcut: 'J', icon: BookOpen },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ]
+
+  return <div className="skillbound-game-menu-layer">
+    <div className="skillbound-game-menu-backdrop"/>
+    <section className="skillbound-game-menu-window">
+      <header className="skillbound-game-menu-header">
+        <div>
+          <span>SKILLBOUND</span>
+          <strong>{profile.name}</strong>
+          <small>
+            Level {snapshot?.level ?? profile.blueprint.level} · {region.regionName}
+          </small>
+        </div>
+        <nav aria-label="Game menus">
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return <button
+              type="button"
+              key={tab.id}
+              className={panel === tab.id ? 'active' : ''}
+              onClick={() => setPanel(tab.id)}
+            >
+              <Icon size={15}/>
+              <span>{tab.label}</span>
+              {tab.shortcut && <kbd>{tab.shortcut}</kbd>}
+            </button>
+          })}
+        </nav>
+        <button
+          type="button"
+          className="skillbound-game-menu-close"
+          onClick={onClose}
+          aria-label="Close menu"
+        >
+          <X size={17}/>
+          <span>Close</span>
+          <kbd>Esc</kbd>
+        </button>
+      </header>
+
+      <main className="skillbound-game-menu-content">
+        {renderGameOverlayPanel(
+          panel,
+          profile,
+          snapshot,
+          workspace,
+          region,
+        )}
+      </main>
+    </section>
   </div>
 }
 
-function renderPausePanel(panel: PausePanel, profile: SkillboundPlayerProfile, snapshot: ExtendedSnapshot | undefined, workspace: ForgeProjectWorkspace, region: GeneratedRegion, onResume: () => void) {
-  if (panel === 'root') return <div className="pause-hero-panel"><span>GAME PAUSED</span><h2>{profile.name}</h2><p>{region.regionName} · Level {snapshot?.level ?? 1}</p><button onClick={onResume}><Play size={16}/> Return to World</button></div>
-  if (panel === 'character') return <SkillboundCharacterRuntimePanel profile={profile} snapshot={snapshot} workspace={workspace}/>
-  if (panel === 'inventory') return <SkillboundInventoryRuntimePanel profile={profile} snapshot={snapshot} workspace={workspace}/>
-  if (panel === 'skills') return <div className="pause-sheet"><header><span>SKILLS</span><h2>Current abilities</h2></header><div className="pause-skill-list">{workspace.gameplay.abilities.map((ability) => <div key={ability.id}><i style={{ background: ability.color }}/><span><strong>{ability.name}</strong><small>{ability.kind} · {ability.damage} damage · {ability.cooldown}s cooldown</small></span></div>)}</div></div>
-  if (panel === 'map') return <div className="pause-sheet"><header><span>MAP</span><h2>{region.regionName}</h2></header><div className="pause-map"><div className="map-route"/>{region.nodes.slice(0, 12).map((node, index) => <i key={node.id} style={{ left: `${12 + (index * 17) % 76}%`, top: `${20 + (index * 29) % 62}%` }} title={node.label}/>)}</div><p>{region.nodes.length} generated locations · {region.biome}</p></div>
-  if (panel === 'quests') return <div className="pause-sheet"><header><span>QUEST LOG</span><h2>Tracked objectives</h2></header><div className="pause-quest"><strong>{snapshot && snapshot.enemiesAlive > 0 ? 'Clear the encounter' : 'Explore the region'}</strong><span>{snapshot ? `${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies remain` : `Travel through ${region.regionName}`}</span></div></div>
+function renderGameOverlayPanel(
+  panel: GameOverlay,
+  profile: SkillboundPlayerProfile,
+  snapshot: ExtendedSnapshot | undefined,
+  workspace: ForgeProjectWorkspace,
+  region: GeneratedRegion,
+) {
+  if (panel === 'character') {
+    return <SkillboundCharacterRuntimePanel
+      profile={profile}
+      snapshot={snapshot}
+      workspace={workspace}
+    />
+  }
+  if (panel === 'inventory') {
+    return <SkillboundInventoryRuntimePanel
+      profile={profile}
+      snapshot={snapshot}
+      workspace={workspace}
+    />
+  }
+  if (panel === 'skills') {
+    return <section className="game-screen-sheet">
+      <header>
+        <span>SKILLS</span>
+        <h2>Current abilities</h2>
+      </header>
+      <div className="pause-skill-list">
+        {workspace.gameplay.abilities.map((ability) =>
+          <div key={ability.id}>
+            <i style={{ background: ability.color }}/>
+            <span>
+              <strong>{ability.name}</strong>
+              <small>
+                {ability.kind} · {ability.damage} damage · {ability.cooldown}s cooldown
+              </small>
+            </span>
+          </div>,
+        )}
+      </div>
+    </section>
+  }
+  if (panel === 'map') {
+    return <section className="game-screen-sheet">
+      <header>
+        <span>MAP</span>
+        <h2>{region.regionName}</h2>
+      </header>
+      <div className="pause-map">
+        <div className="map-route"/>
+        {region.nodes.slice(0, 12).map((node, index) =>
+          <i
+            key={node.id}
+            style={{
+              left: `${12 + (index * 17) % 76}%`,
+              top: `${20 + (index * 29) % 62}%`,
+            }}
+            title={node.label}
+          />,
+        )}
+      </div>
+      <p>
+        {region.nodes.length} generated locations · {region.biome}
+      </p>
+    </section>
+  }
+  if (panel === 'quests') {
+    return <section className="game-screen-sheet">
+      <header>
+        <span>QUEST LOG</span>
+        <h2>Tracked objectives</h2>
+      </header>
+      <div className="pause-quest">
+        <strong>
+          {snapshot && snapshot.enemiesAlive > 0
+            ? 'Clear the encounter'
+            : 'Explore the region'}
+        </strong>
+        <span>
+          {snapshot
+            ? `${snapshot.enemiesAlive}/${snapshot.enemiesTotal} enemies remain`
+            : `Travel through ${region.regionName}`}
+        </span>
+      </div>
+    </section>
+  }
   return <FrontSettings embedded/>
+}
+
+function gameOverlayShortcut(key: string): GameOverlay | undefined {
+  const normalized = key.toLowerCase()
+  if (normalized === 'c') return 'character'
+  if (normalized === 'i') return 'inventory'
+  if (normalized === 'k') return 'skills'
+  if (normalized === 'm') return 'map'
+  if (normalized === 'j') return 'quests'
+  return undefined
 }
 
 function FrontSettings({ onBack, embedded = false }: { onBack?: () => void; embedded?: boolean }) {
@@ -445,7 +686,7 @@ function FrontSettings({ onBack, embedded = false }: { onBack?: () => void; embe
     localStorage.setItem('skillbound-setting-ui-scale', String(nextScale))
     localStorage.setItem('skillbound-setting-motion', nextMotion ? 'full' : 'reduced')
   }
-  return <main className={embedded ? 'pause-sheet settings-sheet' : 'skillbound-settings-screen'}>
+  return <main className={embedded ? 'game-screen-sheet settings-sheet' : 'skillbound-settings-screen'}>
     {!embedded && <header><button onClick={onBack}><ArrowLeft size={14}/> Main Menu</button><div><span>SETTINGS</span><h2>Interface & display</h2></div></header>}
     <section><label><span><strong>UI Scale</strong><small>Scale Skillbound menus and HUD.</small></span><input type="range" min={75} max={140} value={uiScale} onChange={(event) => { const value = Number(event.target.value); setUiScale(value); save(value, motion) }}/><em>{uiScale}%</em></label><label><span><strong>Full UI motion</strong><small>Keep liquid, pickup and menu animation enabled.</small></span><input type="checkbox" checked={motion} onChange={(event) => { setMotion(event.target.checked); save(uiScale, event.target.checked) }}/></label></section>
   </main>
