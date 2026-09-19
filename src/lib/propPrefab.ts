@@ -913,7 +913,12 @@ function normalizePropPrefab(value: unknown): PropPrefab | undefined {
       simplify: clampNumber(source.lod?.simplify, .1, .9, .45),
     },
     parts,
-    sockets: normalizeGameplaySockets(source.sockets),
+    sockets:
+      source.sockets === undefined
+        ? starterPropSockets(
+            typeof source.id === 'string' ? source.id : '',
+          )
+        : normalizeGameplaySockets(source.sockets),
     thumbnail:
       typeof source.thumbnail === 'string' &&
       source.thumbnail.startsWith('data:image/')
