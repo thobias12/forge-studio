@@ -219,7 +219,7 @@ function aimBone(runtime: RetargetRuntime, key: HumanoidBoneKey, directionWorld:
   runtime.root.updateMatrixWorld(true)
 }
 
-function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
+function stabilizedUp(source: THREE.Vector3, leanAmount: number, groundedNeutral = false) {
   const worldUp = new THREE.Vector3(0, 1, 0)
   if (source.lengthSq() < 1e-8) return worldUp
 
@@ -246,8 +246,8 @@ function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
   )
   if (measuredAngle < 1e-5) return worldUp
 
-  const deadZone = THREE.MathUtils.degToRad(7)
-  const maxLean = THREE.MathUtils.degToRad(18)
+  const deadZone = THREE.MathUtils.degToRad(groundedNeutral ? 12 : 7)
+  const maxLean = THREE.MathUtils.degToRad(groundedNeutral ? 10 : 18)
   const correctedAngle = THREE.MathUtils.clamp(
     measuredAngle - deadZone,
     0,
@@ -263,17 +263,17 @@ function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
     )
     .normalize()
 }
-function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
+function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3, groundedNeutral = false) {
   const direction = toe.clone().sub(heel)
   direction.x *= 0.72
-  direction.y *= 0.12
+  direction.y *= groundedNeutral ? 0.06 : 0.12
   if (direction.lengthSq() < 1e-8) return direction
 
   const horizontal = Math.hypot(direction.x, direction.z)
   if (horizontal > 1e-6) {
     const slope = Math.atan2(direction.y, horizontal)
-    const deadZone = THREE.MathUtils.degToRad(10)
-    const maxSlope = THREE.MathUtils.degToRad(24)
+    const deadZone = THREE.MathUtils.degToRad(groundedNeutral ? 18 : 10)
+    const maxSlope = THREE.MathUtils.degToRad(groundedNeutral ? 14 : 24)
     const magnitude = Math.abs(slope)
 
     if (magnitude <= deadZone) {
@@ -293,7 +293,7 @@ function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
   return direction.normalize()
 }
 
-function stableLegDirection(directionInput: THREE.Vector3) {
+function stableLegDirection(directionInput: THREE.Vector3, groundedNeutral = false) {
   const direction = directionInput.clone()
   if (direction.lengthSq() < 1e-8) return direction
 
@@ -306,8 +306,8 @@ function stableLegDirection(directionInput: THREE.Vector3) {
       Math.abs(direction.z),
       vertical,
     )
-    const deadZone = THREE.MathUtils.degToRad(9)
-    const maxDepth = THREE.MathUtils.degToRad(42)
+    const deadZone = THREE.MathUtils.degToRad(groundedNeutral ? 18 : 9)
+    const maxDepth = THREE.MathUtils.degToRad(groundedNeutral ? 28 : 42)
     if (depthAngle <= deadZone) {
       direction.z = 0
     } else {
@@ -427,11 +427,12 @@ function applyHand(runtime: RetargetRuntime, side: 'left' | 'right', points: Pos
   }
 }
 
-export function applyPoseToRig(runtime: RetargetRuntime, landmarks: PosePoint[], options?: { mirrorX?: boolean; blend?: number; bodySpace?: 'world' | 'image'; leftHand?: PosePoint[]; rightHand?: PosePoint[]; handPointsIgnoreVisibility?: boolean }) {
+export function applyPoseToRig(runtime: RetargetRuntime, landmarks: PosePoint[], options?: { mirrorX?: boolean; blend?: number; bodySpace?: 'world' | 'image'; leftHand?: PosePoint[]; rightHand?: PosePoint[]; handPointsIgnoreVisibility?: boolean; groundedNeutral?: boolean }) {
   if (landmarks.length < 33) return
   const mirrorX = options?.mirrorX ?? false
   const blend = THREE.MathUtils.clamp(options?.blend ?? 0.72, 0.05, 1)
   const bodySpace = options?.bodySpace ?? 'image'
+  const groundedNeutral = options?.groundedNeutral ?? false
   const p = pointsToVectors(landmarks, mirrorX)
   const shouldersVisible = finite(landmarks[11], 0.3) && finite(landmarks[12], 0.3)
   const hipsVisible = finite(landmarks[23], 0.3) && finite(landmarks[24], 0.3)
@@ -443,7 +444,7 @@ export function applyPoseToRig(runtime: RetargetRuntime, landmarks: PosePoint[],
   if (shouldersVisible && hipsVisible) {
     const shoulderCenter = midpoint(p[11], p[12]), hipCenter = midpoint(p[23], p[24])
     const torsoUp = shoulderCenter.clone().sub(hipCenter), shoulderRight = dampYawDepth(p[12].clone().sub(p[11]), bodySpace)
-    const spineUp = stabilizedUp(torsoUp, bodySpace === 'world' ? 0.66 : 0.38)
+    const spineUp = stabilizedUp(torsoUp, bodySpace === 'world' ? 0.66 : 0.38, groundedNeutral)
     orientBasis(runtime, runtime.bases.spine, shoulderRight, spineUp, Math.min(blend, 0.62))
     orientBasis(runtime, runtime.bases.chest, shoulderRight, spineUp, Math.min(blend, 0.68))
   }
@@ -453,12 +454,12 @@ export function applyPoseToRig(runtime: RetargetRuntime, landmarks: PosePoint[],
   if (finite(landmarks[12]) && finite(landmarks[14])) aimBone(runtime, 'rightUpperArm', p[14].clone().sub(p[12]), blend, 160)
   if (finite(landmarks[14]) && finite(landmarks[16])) aimBone(runtime, 'rightLowerArm', p[16].clone().sub(p[14]), blend, 165)
 
-  if (finite(landmarks[23]) && finite(landmarks[25])) aimBone(runtime, 'leftUpperLeg', stableLegDirection(p[25].clone().sub(p[23])), Math.min(blend, 0.8), 112)
-  if (finite(landmarks[25]) && finite(landmarks[27])) aimBone(runtime, 'leftLowerLeg', stableLegDirection(p[27].clone().sub(p[25])), Math.min(blend, 0.82), 135)
-  if (finite(landmarks[24]) && finite(landmarks[26])) aimBone(runtime, 'rightUpperLeg', stableLegDirection(p[26].clone().sub(p[24])), Math.min(blend, 0.8), 112)
-  if (finite(landmarks[26]) && finite(landmarks[28])) aimBone(runtime, 'rightLowerLeg', stableLegDirection(p[28].clone().sub(p[26])), Math.min(blend, 0.82), 135)
-  if (finite(landmarks[29]) && finite(landmarks[31])) aimBone(runtime, 'leftFoot', stableFootDirection(p[29], p[31]), Math.min(blend, 0.58), 55)
-  if (finite(landmarks[30]) && finite(landmarks[32])) aimBone(runtime, 'rightFoot', stableFootDirection(p[30], p[32]), Math.min(blend, 0.58), 55)
+  if (finite(landmarks[23]) && finite(landmarks[25])) aimBone(runtime, 'leftUpperLeg', stableLegDirection(p[25].clone().sub(p[23]), groundedNeutral), Math.min(blend, 0.8), 112)
+  if (finite(landmarks[25]) && finite(landmarks[27])) aimBone(runtime, 'leftLowerLeg', stableLegDirection(p[27].clone().sub(p[25]), groundedNeutral), Math.min(blend, 0.82), 135)
+  if (finite(landmarks[24]) && finite(landmarks[26])) aimBone(runtime, 'rightUpperLeg', stableLegDirection(p[26].clone().sub(p[24]), groundedNeutral), Math.min(blend, 0.8), 112)
+  if (finite(landmarks[26]) && finite(landmarks[28])) aimBone(runtime, 'rightLowerLeg', stableLegDirection(p[28].clone().sub(p[26]), groundedNeutral), Math.min(blend, 0.82), 135)
+  if (finite(landmarks[29]) && finite(landmarks[31])) aimBone(runtime, 'leftFoot', stableFootDirection(p[29], p[31], groundedNeutral), Math.min(blend, 0.58), 55)
+  if (finite(landmarks[30]) && finite(landmarks[32])) aimBone(runtime, 'rightFoot', stableFootDirection(p[30], p[32], groundedNeutral), Math.min(blend, 0.58), 55)
 
   if (shouldersVisible) {
     const shoulderCenter = midpoint(p[11], p[12])
