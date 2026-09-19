@@ -70,9 +70,9 @@ export function createEquipmentForgeV3Recipe(
       cape: true,
     },
     cape: {
-      length: .62,
-      width: .3,
-      flare: .16,
+      length: .66,
+      width: .38,
+      flare: .22,
       clearance: .009,
     },
     materials: {
@@ -171,9 +171,9 @@ export function applyEquipmentForgeV3StylePreset(
       cape: true,
     },
     cape: {
-      length: .62,
-      width: .3,
-      flare: .16,
+      length: .66,
+      width: .38,
+      flare: .22,
       clearance: .009,
     },
     materials: {

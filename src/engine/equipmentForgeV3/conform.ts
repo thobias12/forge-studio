@@ -124,8 +124,8 @@ export function buildConformedTunic(
       48,
       trim,
       'EFV3_NecklineTrim',
-      .5,
-      .0022,
+      .22,
+      .0018,
     )
   meshes.push(necklineTrim)
   meshes.push(
@@ -1079,9 +1079,9 @@ function applyNeckline(
   }
 
   frame.frontNeckRaise =
-    frame.height * .035
+    frame.height * .024
   frame.backNeckRaise =
-    frame.height * .022
+    frame.height * .017
 }
 
 function collectSourceVertices(
@@ -1713,9 +1713,9 @@ function createShoulderBridge(
     sleeveSamples.filter(
       (sample) =>
         side === 'L'
-          ? sample.point.x <=
+          ? sample.point.x >=
             sleeveCenter.x
-          : sample.point.x >=
+          : sample.point.x <=
             sleeveCenter.x,
     )
 
@@ -1991,8 +1991,8 @@ function createVestOverlay(
     ) {
       // Leave a clean split down the front of the leather vest.
       const frontGap =
-        segment <= 4 ||
-        segment >= segments - 4
+        segment <= 7 ||
+        segment >= segments - 7
       if (frontGap) continue
 
       const next =
@@ -3565,7 +3565,8 @@ function createCapeDetails(
       trim,
       'EFV3_CapeBorder_L',
       'back',
-      .0016,
+      .0015,
+      .38,
     ),
     createGridColumnStrip(
       source,
@@ -3577,7 +3578,8 @@ function createCapeDetails(
       trim,
       'EFV3_CapeBorder_R',
       'back',
-      .0016,
+      .0015,
+      .38,
     ),
     createGridRowStrip(
       source,
@@ -3590,36 +3592,20 @@ function createCapeDetails(
       trim,
       'EFV3_CapeHem',
       'back',
-      .0016,
+      .0015,
     ),
-    // A narrow shoulder yoke follows the smooth attachment curve. The
-    // previous rows 0..2 leather slab + diagonal strips dominated the
-    // back/neck silhouette and looked like rigid polygons.
     createGridRowStrip(
       source,
       capeGeometry,
       columns,
       0,
       1,
-      1,
-      9,
+      2,
+      8,
       leather,
       'EFV3_CapeYoke',
       'back',
-      .0018,
-    ),
-    createGridRowStrip(
-      source,
-      capeGeometry,
-      columns,
-      1,
-      2,
-      2,
-      8,
-      trim,
-      'EFV3_CapeYokeLowerSeam',
-      'back',
-      .0021,
+      .0017,
     ),
     createGridColumnStrip(
       source,
@@ -3631,7 +3617,8 @@ function createCapeDetails(
       trim,
       'EFV3_CapeCenterSeam',
       'back',
-      .0016,
+      .0015,
+      .3,
     ),
     createGridPatch(
       source,
@@ -3644,7 +3631,8 @@ function createCapeDetails(
       metal,
       'EFV3_CapeFastener_L',
       'back',
-      .0023,
+      .0022,
+      .52,
     ),
     createGridPatch(
       source,
@@ -3657,7 +3645,8 @@ function createCapeDetails(
       metal,
       'EFV3_CapeFastener_R',
       'back',
-      .0023,
+      .0022,
+      .52,
     ),
   ]
 }
@@ -3673,6 +3662,7 @@ function createGridColumnStrip(
   name: string,
   offsetMode: 'radial' | 'back',
   offset: number,
+  widthFraction = 1,
 ) {
   const position =
     sourceGeometry.getAttribute(
@@ -3682,50 +3672,95 @@ function createGridColumnStrip(
   const uvs: number[] = []
   const indices: number[] = []
   const influences: SkinInfluence[] = []
+  const width =
+    THREE.MathUtils.clamp(
+      widthFraction,
+      .05,
+      1,
+    )
 
   for (
     let row = 0;
     row < rowCount;
     row += 1
   ) {
-    for (
-      const [slot, column] of
-        [columnA, columnB].entries()
-    ) {
-      const index =
-        row * columnCount +
-        column
-      const point =
-        new THREE.Vector3(
-          position.getX(index),
-          position.getY(index),
-          position.getZ(index),
+    const indexA =
+      row * columnCount +
+      columnA
+    const indexB =
+      row * columnCount +
+      columnB
+    const pointA =
+      new THREE.Vector3(
+        position.getX(indexA),
+        position.getY(indexA),
+        position.getZ(indexA),
+      )
+    const pointB =
+      new THREE.Vector3(
+        position.getX(indexB),
+        position.getY(indexB),
+        position.getZ(indexB),
+      )
+    const influenceA =
+      readSkinInfluence(
+        sourceGeometry,
+        indexA,
+      )
+    const influenceB =
+      readSkinInfluence(
+        sourceGeometry,
+        indexB,
+      )
+    const inner =
+      pointA
+        .clone()
+        .lerp(
+          pointB,
+          width,
         )
-      offsetDetailPoint(
-        point,
-        offsetMode,
-        offset,
-      )
-      positions.push(
-        point.x,
-        point.y,
-        point.z,
-      )
-      uvs.push(
-        slot,
-        row /
-          Math.max(
-            1,
-            rowCount - 1,
-          ),
-      )
-      influences.push(
-        readSkinInfluence(
-          sourceGeometry,
-          index,
+
+    offsetDetailPoint(
+      pointA,
+      offsetMode,
+      offset,
+    )
+    offsetDetailPoint(
+      inner,
+      offsetMode,
+      offset,
+    )
+
+    positions.push(
+      pointA.x,
+      pointA.y,
+      pointA.z,
+      inner.x,
+      inner.y,
+      inner.z,
+    )
+    uvs.push(
+      0,
+      row /
+        Math.max(
+          1,
+          rowCount - 1,
         ),
-      )
-    }
+      1,
+      row /
+        Math.max(
+          1,
+          rowCount - 1,
+        ),
+    )
+    influences.push(
+      influenceA,
+      blendSkinInfluence(
+        influenceA,
+        influenceB,
+        width,
+      ),
+    )
   }
 
   for (
@@ -3867,6 +3902,7 @@ function createGridPatch(
   name: string,
   offsetMode: 'radial' | 'back',
   offset: number,
+  inset = 0,
 ) {
   const position =
     sourceGeometry.getAttribute(
@@ -3882,33 +3918,57 @@ function createGridPatch(
     rowB * columnCount +
       columnB,
   ]
+  const sourcePoints =
+    sourceIndices.map(
+      (index) =>
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        ),
+    )
+  const center =
+    sourcePoints.reduce(
+      (sum, point) =>
+        sum.add(point),
+      new THREE.Vector3(),
+    ).multiplyScalar(.25)
+  const shrink =
+    THREE.MathUtils.clamp(
+      inset,
+      0,
+      .8,
+    )
   const positions: number[] = []
   const influences: SkinInfluence[] = []
 
-  for (const index of sourceIndices) {
-    const point =
-      new THREE.Vector3(
-        position.getX(index),
-        position.getY(index),
-        position.getZ(index),
+  sourcePoints.forEach(
+    (sourcePoint, slot) => {
+      const point =
+        sourcePoint
+          .clone()
+          .lerp(
+            center,
+            shrink,
+          )
+      offsetDetailPoint(
+        point,
+        offsetMode,
+        offset,
       )
-    offsetDetailPoint(
-      point,
-      offsetMode,
-      offset,
-    )
-    positions.push(
-      point.x,
-      point.y,
-      point.z,
-    )
-    influences.push(
-      readSkinInfluence(
-        sourceGeometry,
-        index,
-      ),
-    )
-  }
+      positions.push(
+        point.x,
+        point.y,
+        point.z,
+      )
+      influences.push(
+        readSkinInfluence(
+          sourceGeometry,
+          sourceIndices[slot],
+        ),
+      )
+    },
+  )
 
   return createDetailMesh(
     source,

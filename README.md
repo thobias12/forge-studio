@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.8`  
+> **Current Forge version:** `v1.77.9`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -461,6 +461,17 @@ Ranger changes:
 - widened and lifted the neckline trim for a cleaner intentional edge
 
 The goal of this pass is silhouette and construction cleanup first. Subsequent passes should continue from visual QA renders, not revert to the older patch-heavy construction.
+
+### v1.77.9 Ranger fit and silhouette refinement
+
+Follow-up driven by the v1.77.8 28-angle renders:
+
+- corrected the shoulder bridge to sample the torso-facing half of each sleeve ring; the old sign was reversed and caused visible underarm holes
+- raised the default round neckline and reduced the trim thickness
+- widened the Ranger vest front opening so leather reads as side/back reinforcement instead of bulky chest slabs
+- broadened and lengthened the Ranger cape for a proper cape silhouette rather than a narrow sash
+- added variable-width fitted detail strips so cape borders and center seam can be much slimmer than one full grid cell
+- reduced cape hardware footprint with inset fitted patches
 
 ### Current visual status / important handoff
 
