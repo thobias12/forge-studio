@@ -1012,9 +1012,11 @@ function nearestAngularVertex(
   targetAngle: number,
   height: number,
 ) {
-  let best = vertices[0]
-  let bestScore =
-    Number.POSITIVE_INFINITY
+  const nearest:
+    Array<{
+      vertex: SourceVertex
+      score: number
+    }> = []
 
   for (const vertex of vertices) {
     const dy =
@@ -1033,18 +1035,93 @@ function nearestAngularVertex(
       dy * 5.4 +
       da * .85
 
-    if (score < bestScore) {
-      best = vertex
-      bestScore = score
+    let insertAt =
+      nearest.length
+    for (
+      let index = 0;
+      index < nearest.length;
+      index += 1
+    ) {
+      if (
+        score <
+        nearest[index].score
+      ) {
+        insertAt = index
+        break
+      }
+    }
+
+    if (insertAt < 5) {
+      nearest.splice(
+        insertAt,
+        0,
+        { vertex, score },
+      )
+      if (nearest.length > 5) {
+        nearest.pop()
+      }
+    } else if (
+      nearest.length < 5
+    ) {
+      nearest.push({
+        vertex,
+        score,
+      })
     }
   }
 
+  const best = nearest[0]
   if (!best) {
     throw new Error(
       'Could not conform the tunic template to the body.',
     )
   }
-  return best
+
+  // Blend several nearby samples instead of snapping the garment to one
+  // raw body vertex. This removes the center-front/back ridge and small
+  // surface dents that were still visible in v1.76.2.
+  const position =
+    new THREE.Vector3()
+  const normal =
+    new THREE.Vector3()
+  let totalWeight = 0
+
+  for (const sample of nearest) {
+    const weight =
+      1 /
+      Math.pow(
+        sample.score + .018,
+        2,
+      )
+    position.addScaledVector(
+      sample.vertex.position,
+      weight,
+    )
+    normal.addScaledVector(
+      sample.vertex.normal,
+      weight,
+    )
+    totalWeight += weight
+  }
+
+  if (totalWeight > 0) {
+    position.multiplyScalar(
+      1 / totalWeight,
+    )
+    normal.multiplyScalar(
+      1 / totalWeight,
+    )
+  }
+
+  return {
+    ...best.vertex,
+    position,
+    normal:
+      normal.lengthSq() > 1e-6
+        ? normal.normalize()
+        : best.vertex.normal.clone(),
+    angle: targetAngle,
+  }
 }
 
 function nearestEuclideanVertex(
