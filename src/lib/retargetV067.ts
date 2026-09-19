@@ -246,8 +246,8 @@ function stabilizedUp(source: THREE.Vector3, leanAmount: number) {
   )
   if (measuredAngle < 1e-5) return worldUp
 
-  const deadZone = THREE.MathUtils.degToRad(4.5)
-  const maxLean = THREE.MathUtils.degToRad(16)
+  const deadZone = THREE.MathUtils.degToRad(7)
+  const maxLean = THREE.MathUtils.degToRad(18)
   const correctedAngle = THREE.MathUtils.clamp(
     measuredAngle - deadZone,
     0,
@@ -290,6 +290,39 @@ function stableFootDirection(heel: THREE.Vector3, toe: THREE.Vector3) {
         Math.tan(corrected)
     }
   }
+  return direction.normalize()
+}
+
+function stableLegDirection(directionInput: THREE.Vector3) {
+  const direction = directionInput.clone()
+  if (direction.lengthSq() < 1e-8) return direction
+
+  // MediaPipe world depth is the noisiest axis for a standing performer. Keep
+  // lateral stance (X) untouched, but remove a small fore/aft Z bias from
+  // mostly-vertical thigh/shin segments. Larger deliberate steps/kicks survive.
+  const vertical = Math.abs(direction.y)
+  if (vertical > 1e-6) {
+    const depthAngle = Math.atan2(
+      Math.abs(direction.z),
+      vertical,
+    )
+    const deadZone = THREE.MathUtils.degToRad(9)
+    const maxDepth = THREE.MathUtils.degToRad(42)
+    if (depthAngle <= deadZone) {
+      direction.z = 0
+    } else {
+      const corrected = THREE.MathUtils.clamp(
+        depthAngle - deadZone,
+        0,
+        maxDepth,
+      )
+      direction.z =
+        Math.sign(direction.z) *
+        vertical *
+        Math.tan(corrected)
+    }
+  }
+
   return direction.normalize()
 }
 function dampYawDepth(right: THREE.Vector3, bodySpace: 'world' | 'image') {
@@ -420,10 +453,10 @@ export function applyPoseToRig(runtime: RetargetRuntime, landmarks: PosePoint[],
   if (finite(landmarks[12]) && finite(landmarks[14])) aimBone(runtime, 'rightUpperArm', p[14].clone().sub(p[12]), blend, 160)
   if (finite(landmarks[14]) && finite(landmarks[16])) aimBone(runtime, 'rightLowerArm', p[16].clone().sub(p[14]), blend, 165)
 
-  if (finite(landmarks[23]) && finite(landmarks[25])) aimBone(runtime, 'leftUpperLeg', p[25].clone().sub(p[23]), Math.min(blend, 0.8), 112)
-  if (finite(landmarks[25]) && finite(landmarks[27])) aimBone(runtime, 'leftLowerLeg', p[27].clone().sub(p[25]), Math.min(blend, 0.82), 135)
-  if (finite(landmarks[24]) && finite(landmarks[26])) aimBone(runtime, 'rightUpperLeg', p[26].clone().sub(p[24]), Math.min(blend, 0.8), 112)
-  if (finite(landmarks[26]) && finite(landmarks[28])) aimBone(runtime, 'rightLowerLeg', p[28].clone().sub(p[26]), Math.min(blend, 0.82), 135)
+  if (finite(landmarks[23]) && finite(landmarks[25])) aimBone(runtime, 'leftUpperLeg', stableLegDirection(p[25].clone().sub(p[23])), Math.min(blend, 0.8), 112)
+  if (finite(landmarks[25]) && finite(landmarks[27])) aimBone(runtime, 'leftLowerLeg', stableLegDirection(p[27].clone().sub(p[25])), Math.min(blend, 0.82), 135)
+  if (finite(landmarks[24]) && finite(landmarks[26])) aimBone(runtime, 'rightUpperLeg', stableLegDirection(p[26].clone().sub(p[24])), Math.min(blend, 0.8), 112)
+  if (finite(landmarks[26]) && finite(landmarks[28])) aimBone(runtime, 'rightLowerLeg', stableLegDirection(p[28].clone().sub(p[26])), Math.min(blend, 0.82), 135)
   if (finite(landmarks[29]) && finite(landmarks[31])) aimBone(runtime, 'leftFoot', stableFootDirection(p[29], p[31]), Math.min(blend, 0.58), 55)
   if (finite(landmarks[30]) && finite(landmarks[32])) aimBone(runtime, 'rightFoot', stableFootDirection(p[30], p[32]), Math.min(blend, 0.58), 55)
 
