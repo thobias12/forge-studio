@@ -660,7 +660,7 @@ function createSleeveTemplate(
   const startFraction =
     sleeve === 'long'
       ? -.012
-      : -.045
+      : -.02
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -798,7 +798,7 @@ function createSleeveTemplate(
       const shoulderEase =
         THREE.MathUtils.lerp(
           sleeve === 'short'
-            ? 1.24
+            ? 1.16
             : 1.2,
           .96,
           v,
@@ -810,12 +810,12 @@ function createSleeveTemplate(
         ) *
         armLength *
         (sleeve === 'short'
-          ? .014
+          ? .008
           : .012)
       const extra =
         armLength *
         ((sleeve === 'short'
-          ? .0125
+          ? .0115
           : .011) +
           recipe.looseness *
             .008) *
