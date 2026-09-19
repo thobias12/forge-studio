@@ -629,13 +629,36 @@ export class ForgeLibraryVfxInstance {
   }
 }
 
+export async function preloadLibraryVfx(
+  assetIds: Iterable<string | undefined>,
+) {
+  const ids = [
+    ...new Set(
+      [...assetIds].filter(
+        (id): id is string => Boolean(id),
+      ),
+    ),
+  ]
+
+  await Promise.all(
+    ids.map(async (assetId) => {
+      if (vfxPackageCache.has(assetId)) return
+      const asset = await getAsset(assetId)
+      const pkg =
+        asset
+          ? (await parseVfxPackage(asset.blob)) ?? null
+          : null
+      vfxPackageCache.set(assetId, pkg)
+    }),
+  )
+}
+
 export async function spawnLibraryVfx(scene: THREE.Scene, assetId: string | undefined, position: THREE.Vector3) {
   if (!assetId) return undefined
   let pkg = vfxPackageCache.get(assetId)
   if (pkg === undefined) {
-    const asset = await getAsset(assetId)
-    pkg = asset ? await parseVfxPackage(asset.blob) ?? null : null
-    vfxPackageCache.set(assetId, pkg)
+    await preloadLibraryVfx([assetId])
+    pkg = vfxPackageCache.get(assetId)
   }
   if (!pkg) return undefined
   return new ForgeLibraryVfxInstance(scene, pkg, position)
