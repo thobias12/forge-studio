@@ -156,7 +156,17 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
       runtime.dispose()
       if (runtimeRef.current === runtime) runtimeRef.current = null
     }
-  }, [region, gameplay, runtimeProjectId, session, activeDungeonId, profile?.id, profile?.blueprint.role])
+  }, [
+    region,
+    gameplay,
+    runtimeProjectId,
+    session,
+    activeDungeonId,
+    profile?.id,
+    profile?.blueprint.role,
+    profile?.blueprint.foundation?.bodyAssetId,
+    profile?.blueprint.foundation?.baseClothingVisible,
+  ])
 
   useEffect(() => {
     ;(runtimeRef.current as any)?.setPaused?.(paused)
