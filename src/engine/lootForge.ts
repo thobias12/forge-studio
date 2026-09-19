@@ -41,8 +41,9 @@ export function lootEntryChance(entry: ForgeLootEntry) {
 export function lootEntryWeight(entry: ForgeLootEntry) {
   return Math.max(
     0,
+    typeof entry.weight === 'number' &&
     Number.isFinite(entry.weight)
-      ? Number(entry.weight)
+      ? entry.weight
       : Math.max(.01, lootEntryChance(entry) * 100),
   )
 }
