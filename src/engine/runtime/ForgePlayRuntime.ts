@@ -236,6 +236,11 @@ export class ForgePlayRuntime {
   private readonly tempMove = new THREE.Vector3()
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
+  private readonly tempAim = new THREE.Vector3()
+  private readonly tempCamera = new THREE.Vector3()
+  private readonly tempActorNext = new THREE.Vector3()
+  private readonly tempEnemyDirection = new THREE.Vector3()
+  private readonly tempEnemySeparation = new THREE.Vector3()
   private navigation!: ForgeNavigationGrid
   private playerVisual?: ForgeCharacterVisualBinding
   private ambientVisuals?: WorldAmbientVisuals
@@ -1124,23 +1129,53 @@ export class ForgePlayRuntime {
   private updatePlayer(delta: number) {
     let moving = false
     if (this.dodgeRemaining > 0) {
-      const speed = this.playerDefinition.dodgeDistance / DODGE_DURATION
-      this.moveActor(this.player, this.dodgeDirection.clone().multiplyScalar(speed * delta), PLAYER_RADIUS)
-      this.dodgeRemaining = Math.max(0, this.dodgeRemaining - delta)
+      const speed =
+        this.playerDefinition.dodgeDistance /
+        DODGE_DURATION
+      this.tempMove
+        .copy(this.dodgeDirection)
+        .multiplyScalar(speed * delta)
+      this.moveActor(
+        this.player,
+        this.tempMove,
+        PLAYER_RADIUS,
+      )
+      this.dodgeRemaining = Math.max(
+        0,
+        this.dodgeRemaining - delta,
+      )
       moving = true
     } else {
       const move = this.getMoveDirection()
       if (move.lengthSq() > 0) {
-        this.moveActor(this.player, move.multiplyScalar(this.playerDefinition.moveSpeed * delta), PLAYER_RADIUS)
+        move.multiplyScalar(
+          this.playerDefinition.moveSpeed * delta,
+        )
+        this.moveActor(
+          this.player,
+          move,
+          PLAYER_RADIUS,
+        )
         moving = true
       }
     }
-    const aim = this.mouseWorld.clone().sub(this.player.position)
-    aim.y = 0
-    if (aim.lengthSq() > 0.01) this.player.rotation.y = Math.atan2(aim.x, aim.z)
+
+    this.tempAim
+      .copy(this.mouseWorld)
+      .sub(this.player.position)
+      .setY(0)
+    if (this.tempAim.lengthSq() > .01) {
+      this.player.rotation.y = Math.atan2(
+        this.tempAim.x,
+        this.tempAim.z,
+      )
+    }
+
     if (moving !== this.playerMoving) {
       this.playerMoving = moving
-      this.playerVisual?.play(moving ? 'move' : 'idle')
+      this.playerVisual?.play(
+        moving ? 'move' : 'idle',
+      )
     }
     this.playerVisual?.update(delta)
   }
@@ -1155,7 +1190,7 @@ export class ForgePlayRuntime {
     const rightInput = (this.keys.has('d') ? 1 : 0) - (this.keys.has('a') ? 1 : 0)
     this.tempMove.copy(this.tempForward).multiplyScalar(forwardInput).addScaledVector(this.tempRight, rightInput)
     if (this.tempMove.lengthSq() > 1) this.tempMove.normalize()
-    return this.tempMove.clone()
+    return this.tempMove
   }
 
   private startDodge() {
@@ -1828,31 +1863,66 @@ export class ForgePlayRuntime {
       enemy.pathIndex += 1
       target = enemy.path[enemy.pathIndex] ?? this.player.position
     }
-    const direction = target.clone().sub(enemy.group.position).setY(0)
-    if (direction.lengthSq() < 0.001) return
+    const direction =
+      this.tempEnemyDirection
+        .copy(target)
+        .sub(enemy.group.position)
+        .setY(0)
+    if (direction.lengthSq() < .001) return
     direction.normalize()
-    direction.addScaledVector(this.enemySeparation(enemy), 0.7).normalize()
-    this.moveActor(enemy.group, direction.multiplyScalar(enemy.definition.moveSpeed * delta), ENEMY_RADIUS)
-    enemy.group.rotation.y = Math.atan2(direction.x, direction.z)
+    direction
+      .addScaledVector(
+        this.enemySeparation(
+          enemy,
+          this.tempEnemySeparation,
+        ),
+        .7,
+      )
+      .normalize()
+
+    enemy.group.rotation.y =
+      Math.atan2(
+        direction.x,
+        direction.z,
+      )
+    direction.multiplyScalar(
+      enemy.definition.moveSpeed * delta,
+    )
+    this.moveActor(
+      enemy.group,
+      direction,
+      ENEMY_RADIUS,
+    )
   }
 
-  private enemySeparation(enemy: RuntimeEnemy) {
-    const force = new THREE.Vector3()
+  private enemySeparation(
+    enemy: RuntimeEnemy,
+    force: THREE.Vector3,
+  ) {
+    force.set(0, 0, 0)
     const x = enemy.group.position.x
     const z = enemy.group.position.z
 
     for (const other of this.enemies) {
       if (other === enemy) continue
-      const dx = x - other.group.position.x
-      const dz = z - other.group.position.z
-      const distanceSq = dx * dx + dz * dz
-      if (distanceSq <= 1e-6 || distanceSq >= 3.24) {
+      const dx =
+        x - other.group.position.x
+      const dz =
+        z - other.group.position.z
+      const distanceSq =
+        dx * dx + dz * dz
+      if (
+        distanceSq <= 1e-6 ||
+        distanceSq >= 3.24
+      ) {
         continue
       }
 
-      const distance = Math.sqrt(distanceSq)
+      const distance =
+        Math.sqrt(distanceSq)
       const weight =
-        (1.8 - distance) / (1.8 * distance)
+        (1.8 - distance) /
+        (1.8 * distance)
       force.x += dx * weight
       force.z += dz * weight
     }
@@ -1913,22 +1983,53 @@ export class ForgePlayRuntime {
   }
 
   private updateLoot(delta: number) {
-    for (const drop of [...this.loot]) {
+    const playerX = this.player.position.x
+    const playerZ = this.player.position.z
+    const pickupRadiusSq = 1.35 * 1.35
+
+    for (
+      let index = this.loot.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const drop = this.loot[index]
       drop.age += delta
       drop.fallback.rotation.y += delta * 1.8
-      drop.group.position.y = Math.sin(drop.age * 3.2) * 0.08
-      if (drop.group.position.distanceTo(this.player.position) > 1.35) continue
-      const item = this.gameplay.items.find((candidate) => candidate.id === drop.save.itemId)
-      if (!item) continue
-      const inventoryRuntime = this as unknown as {
-        canPickupInventoryItem?: (itemId: string) => boolean
-        refreshInventoryLayout?: () => void
+      drop.group.position.y =
+        Math.sin(drop.age * 3.2) * .08
+
+      const dx =
+        drop.group.position.x - playerX
+      const dz =
+        drop.group.position.z - playerZ
+      if (
+        dx * dx + dz * dz >
+        pickupRadiusSq
+      ) {
+        continue
       }
+
+      const item = this.gameplay.items.find(
+        (candidate) =>
+          candidate.id === drop.save.itemId,
+      )
+      if (!item) continue
+
+      const inventoryRuntime =
+        this as unknown as {
+          canPickupInventoryItem?: (
+            itemId: string,
+          ) => boolean
+          refreshInventoryLayout?: () => void
+        }
+
       if (
         inventoryRuntime.canPickupInventoryItem &&
-        !inventoryRuntime.canPickupInventoryItem(drop.save.itemId)
+        !inventoryRuntime.canPickupInventoryItem(
+          drop.save.itemId,
+        )
       ) {
-        if (this.messageRemaining <= 0.35) {
+        if (this.messageRemaining <= .35) {
           this.setMessage(
             'Pack full. Make room or auto-sort the 12 × 6 inventory.',
             1.8,
@@ -1936,13 +2037,16 @@ export class ForgePlayRuntime {
         }
         continue
       }
+
       this.inventory.push(drop.save.itemId)
       inventoryRuntime.refreshInventoryLayout?.()
-      const index = this.loot.indexOf(drop)
-      if (index >= 0) this.loot.splice(index, 1)
+      this.loot.splice(index, 1)
       this.scene.remove(drop.group)
       this.disposeObject(drop.group)
-      this.setMessage(`${item.name} picked up. Press I to open the pack.`, 3.2)
+      this.setMessage(
+        `${item.name} picked up. Press I to open the pack.`,
+        3.2,
+      )
       this.saveGame(false)
       this.emitState()
     }
@@ -2004,61 +2108,118 @@ export class ForgePlayRuntime {
   }
 
   private updateCamera(delta: number) {
-    this.cameraShake = Math.max(0, this.cameraShake - delta * 2.7)
-    const desired = this.player.position.clone().add(this.cameraOffset())
+    this.cameraShake = Math.max(
+      0,
+      this.cameraShake - delta * 2.7,
+    )
+    const desired = this.cameraOffset(
+      this.tempCamera,
+    ).add(this.player.position)
+
     if (this.cameraShake > 0) {
-      const strength = this.cameraShake * 0.7
-      desired.x += Math.sin(performance.now() * 0.061) * strength
-      desired.y += Math.sin(performance.now() * 0.083) * strength * 0.45
-      desired.z += Math.cos(performance.now() * 0.073) * strength
+      const strength =
+        this.cameraShake * .7
+      const now = performance.now()
+      desired.x +=
+        Math.sin(now * .061) * strength
+      desired.y +=
+        Math.sin(now * .083) *
+        strength *
+        .45
+      desired.z +=
+        Math.cos(now * .073) * strength
     }
-    this.camera.position.lerp(desired, 1 - Math.pow(0.0008, delta))
+
+    this.camera.position.lerp(
+      desired,
+      1 - Math.pow(.0008, delta),
+    )
     this.camera.lookAt(
       this.player.position.x,
-      this.player.position.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
+      this.player.position.y +
+        FORGE_WORLD_SCALE.playCameraLookAtHeight,
       this.player.position.z,
     )
   }
 
   private snapCamera() {
-    this.camera.position.copy(this.player.position).add(this.cameraOffset())
+    this.camera.position
+      .copy(this.player.position)
+      .add(
+        this.cameraOffset(
+          this.tempCamera,
+        ),
+      )
     this.camera.lookAt(
       this.player.position.x,
-      this.player.position.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
+      this.player.position.y +
+        FORGE_WORLD_SCALE.playCameraLookAtHeight,
       this.player.position.z,
     )
   }
 
-  private cameraOffset() {
-    return new THREE.Vector3(
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraVerticalScale,
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
+  private cameraOffset(
+    target: THREE.Vector3,
+  ) {
+    return target.set(
+      this.cameraDistance *
+        FORGE_WORLD_SCALE.playCameraHorizontalScale,
+      this.cameraDistance *
+        FORGE_WORLD_SCALE.playCameraVerticalScale,
+      this.cameraDistance *
+        FORGE_WORLD_SCALE.playCameraHorizontalScale,
     )
   }
 
-  private moveActor(actor: THREE.Object3D, delta: THREE.Vector3, radius: number) {
-    const next = actor.position.clone().add(delta)
-    next.x = THREE.MathUtils.clamp(next.x, this.region.bounds.minX + radius, this.region.bounds.maxX - radius)
-    next.z = THREE.MathUtils.clamp(next.z, this.region.bounds.minZ + radius, this.region.bounds.maxZ - radius)
+  private moveActor(
+    actor: THREE.Object3D,
+    delta: THREE.Vector3,
+    radius: number,
+  ) {
+    const next = this.tempActorNext
+      .copy(actor.position)
+      .add(delta)
+
+    next.x = THREE.MathUtils.clamp(
+      next.x,
+      this.region.bounds.minX + radius,
+      this.region.bounds.maxX - radius,
+    )
+    next.z = THREE.MathUtils.clamp(
+      next.z,
+      this.region.bounds.minZ + radius,
+      this.region.bounds.maxZ - radius,
+    )
+
     for (const obstacle of this.obstacles) {
       let dx = next.x - obstacle.x
       let dz = next.z - obstacle.z
       let distance = Math.hypot(dx, dz)
-      const minimum = radius + obstacle.radius
+      const minimum =
+        radius + obstacle.radius
       if (distance >= minimum) continue
-      if (distance < 0.0001) { dx = 1; dz = 0; distance = 1 }
-      next.x = obstacle.x + dx / distance * minimum
-      next.z = obstacle.z + dz / distance * minimum
+      if (distance < .0001) {
+        dx = 1
+        dz = 0
+        distance = 1
+      }
+      next.x =
+        obstacle.x +
+        (dx / distance) * minimum
+      next.z =
+        obstacle.z +
+        (dz / distance) * minimum
     }
+
     actor.position.x = next.x
     actor.position.z = next.z
     if (this.region.version >= 2) {
-      actor.position.y = runtimeWalkSurfaceHeight(
-        this.region,
-        next.x,
-        next.z,
-      )
+      actor.position.y =
+        runtimeWalkSurfaceHeight(
+          this.region,
+          next.x,
+          next.z,
+        )
     }
   }
 
