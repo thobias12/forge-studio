@@ -278,6 +278,10 @@ export class ForgePlayRuntime {
     this.scene.fog = new THREE.FogExp2(moodStyle.fog, moodStyle.fogDensity)
     this.buildLighting()
     this.buildRegion()
+    this.interactions.forEach((interaction) => {
+      interaction.used = this.usedInteractionIds.has(interaction.id)
+      interaction.anchor.visible = false
+    })
     this.navigation = new ForgeNavigationGrid(this.region.bounds, this.obstacles)
     this.buildPlayer(save?.player)
     this.buildEnemies()
@@ -345,6 +349,13 @@ export class ForgePlayRuntime {
   }
 
   getSnapshot(): ForgeRuntimeSnapshot { return this.makeSnapshot() }
+
+  interact() {
+    const interaction = this.getActiveInteraction()
+    if (!interaction) return false
+    this.triggerInteraction(interaction)
+    return true
+  }
 
   saveGame(manual = true) {
     const savedAt = new Date().toISOString()
@@ -672,6 +683,20 @@ export class ForgePlayRuntime {
       event.preventDefault()
       return
     }
+    if (key === 'e') {
+      this.interactionHeld = true
+      if (!event.repeat) {
+        const interaction = this.getActiveInteraction()
+        if (
+          interaction &&
+          (interaction.socket.trigger ?? 'tap') !== 'hold'
+        ) {
+          this.triggerInteraction(interaction)
+        }
+      }
+      event.preventDefault()
+      return
+    }
     if (event.repeat) return
     if (key === 'q') {
       const ability = this.getSkillAbility()
@@ -683,8 +708,19 @@ export class ForgePlayRuntime {
     }
   }
 
-  private onKeyUp = (event: KeyboardEvent) => this.keys.delete(event.key.toLowerCase())
-  private onBlur = () => this.keys.clear()
+  private onKeyUp = (event: KeyboardEvent) => {
+    const key = event.key.toLowerCase()
+    this.keys.delete(key)
+    if (key === 'e') {
+      this.interactionHeld = false
+      this.interactionHoldProgress = 0
+    }
+  }
+  private onBlur = () => {
+    this.keys.clear()
+    this.interactionHeld = false
+    this.interactionHoldProgress = 0
+  }
   private onContextMenu = (event: MouseEvent) => event.preventDefault()
 
   private onPointerMove = (event: PointerEvent) => {
@@ -727,6 +763,7 @@ export class ForgePlayRuntime {
     const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
     this.updateCooldowns(delta)
     this.updatePlayer(simulationDelta)
+    this.updateInteractions(simulationDelta)
     this.updateEnemies(simulationDelta)
     this.updateCorpses(delta)
     this.updateLoot(simulationDelta)
@@ -1370,6 +1407,207 @@ export class ForgePlayRuntime {
   }
   private getEquippedDamageBonus() { return this.getEquippedItem()?.damageBonus ?? 0 }
   private getEquippedItem(): ForgeItemDefinition | undefined { return this.gameplay.items.find((item) => item.id === this.equippedWeaponId) }
+
+  private updateInteractions(delta: number) {
+    let nearest: RuntimeInteraction | undefined
+    let nearestDistance = Infinity
+    const world = new THREE.Vector3()
+
+    for (const interaction of this.interactions) {
+      interaction.cooldownRemaining = Math.max(
+        0,
+        interaction.cooldownRemaining - delta,
+      )
+      if (
+        interaction.used ||
+        !interaction.socket.enabled
+      ) {
+        interaction.anchor.visible = false
+        continue
+      }
+
+      interaction.anchor.getWorldPosition(world)
+      const distance = Math.hypot(
+        world.x - this.player.position.x,
+        world.z - this.player.position.z,
+      )
+      const radius =
+        interaction.socket.radius *
+        interaction.radiusScale
+      if (
+        distance <= radius &&
+        distance < nearestDistance
+      ) {
+        nearest = interaction
+        nearestDistance = distance
+      }
+    }
+
+    const previous = this.activeInteractionId
+    this.activeInteractionId = nearest?.id
+    if (previous !== this.activeInteractionId) {
+      this.interactionHoldProgress = 0
+    }
+
+    for (const interaction of this.interactions) {
+      interaction.anchor.visible =
+        interaction.id === this.activeInteractionId &&
+        !interaction.used
+    }
+
+    if (!nearest) {
+      this.interactionHoldProgress = 0
+      return
+    }
+
+    const trigger = nearest.socket.trigger ?? 'tap'
+    if (trigger !== 'hold') {
+      this.interactionHoldProgress = 0
+      return
+    }
+
+    if (
+      !this.interactionHeld ||
+      nearest.cooldownRemaining > 0 ||
+      this.isInteractionLocked(nearest)
+    ) {
+      if (!this.interactionHeld) {
+        this.interactionHoldProgress = 0
+      }
+      return
+    }
+
+    const holdSeconds = Math.max(
+      .15,
+      nearest.socket.holdSeconds ?? .6,
+    )
+    this.interactionHoldProgress += delta
+    if (this.interactionHoldProgress >= holdSeconds) {
+      this.interactionHoldProgress = 0
+      this.triggerInteraction(nearest)
+    }
+  }
+
+  private getActiveInteraction() {
+    return this.activeInteractionId
+      ? this.interactions.find(
+          (interaction) =>
+            interaction.id === this.activeInteractionId,
+        )
+      : undefined
+  }
+
+  private isInteractionLocked(
+    interaction: RuntimeInteraction,
+  ) {
+    const required =
+      interaction.socket.requiredItemId?.trim()
+    return Boolean(
+      required &&
+      !this.inventory.includes(required),
+    )
+  }
+
+  private triggerInteraction(
+    interaction: RuntimeInteraction,
+  ) {
+    if (
+      interaction.used ||
+      interaction.cooldownRemaining > 0
+    ) {
+      return
+    }
+
+    const required =
+      interaction.socket.requiredItemId?.trim()
+    if (
+      required &&
+      !this.inventory.includes(required)
+    ) {
+      this.setMessage(
+        interaction.socket.lockedText?.trim() ||
+          `Requires ${required}.`,
+        2.6,
+      )
+      interaction.cooldownRemaining = .3
+      this.emitState()
+      return
+    }
+
+    if (
+      required &&
+      interaction.socket.consumeRequiredItem
+    ) {
+      const index = this.inventory.indexOf(required)
+      if (index >= 0) this.inventory.splice(index, 1)
+    }
+
+    const world = new THREE.Vector3()
+    interaction.anchor.getWorldPosition(world)
+    const action =
+      interaction.socket.action ?? 'message'
+    const fallbackMessage =
+      action === 'container'
+        ? 'Container opened. Loot Forge can bind rewards here.'
+        : action === 'shrine'
+          ? 'The shrine answers with a warm pulse.'
+          : action === 'door'
+            ? 'Door interaction triggered.'
+            : action === 'teleport'
+              ? 'Travel socket triggered.'
+              : action === 'quest'
+                ? 'Quest interaction triggered.'
+                : `${socketActionLabel(interaction.socket)} triggered.`
+
+    this.setMessage(
+      interaction.socket.message?.trim() ||
+        fallbackMessage,
+      action === 'message' ? 3.2 : 2.8,
+    )
+
+    if (action === 'shrine') {
+      this.spawnPulse(world, '#e5c879', 2.5, .5)
+    } else if (action === 'container') {
+      this.spawnPulse(world, '#d4ad61', 1.6, .32)
+    } else if (action === 'door') {
+      this.spawnPulse(world, '#a98a63', 1.25, .24)
+    } else if (action === 'teleport') {
+      this.spawnPulse(world, '#938cff', 2.2, .42)
+    } else if (action === 'quest') {
+      this.spawnPulse(world, '#e4d06e', 1.8, .36)
+    }
+
+    interaction.cooldownRemaining = Math.max(
+      0,
+      interaction.socket.cooldown ?? 0,
+    )
+
+    if (interaction.socket.oneShot) {
+      interaction.used = true
+      interaction.anchor.visible = false
+      this.usedInteractionIds.add(interaction.id)
+      if (
+        this.activeInteractionId === interaction.id
+      ) {
+        this.activeInteractionId = undefined
+      }
+    }
+
+    this.options.onInteraction?.({
+      id: interaction.id,
+      socket: interaction.socket,
+      sourceName: interaction.sourceName,
+    })
+
+    if (
+      interaction.socket.oneShot ||
+      interaction.socket.consumeRequiredItem
+    ) {
+      this.saveGame(false)
+    } else {
+      this.emitState()
+    }
+  }
 
   private updatePersistence(delta: number) {
     this.autosaveElapsed += delta
