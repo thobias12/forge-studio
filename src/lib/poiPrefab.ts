@@ -544,7 +544,12 @@ function normalizePoiPrefab(value: unknown): PoiPrefab | undefined {
     gridSize: clampNumber(source.gridSize, .1, 4, .5),
     snap: typeof source.snap === 'boolean' ? source.snap : true,
     parts,
-    sockets: normalizeGameplaySockets(source.sockets),
+    sockets:
+      source.sockets === undefined
+        ? starterPoiSockets(
+            typeof source.id === 'string' ? source.id : '',
+          )
+        : normalizeGameplaySockets(source.sockets),
     createdAt: typeof source.createdAt === 'string' ? source.createdAt : now,
     updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : now,
   }
