@@ -25,7 +25,7 @@ import {
   buildAuthoredAnimation,
   editMotionForAuthoring,
   libraryCharacterModelBlob,
-  publishAuthoredAnimation,
+  publishAuthoredAnimationV3,
   type AnimationAuthoringEdit,
 } from '../lib/animationAuthoring'
 import {
@@ -49,8 +49,8 @@ import {
   FORGE_ANIMATION_ACTIONS,
   actionDefinition,
   type ForgeAnimationActionId,
-  type ForgeAnimationSet,
 } from '../engine/animationBindings'
+import type { ForgeAnimationProfileV3 } from '../engine/animationV3'
 import type { ForgeMotion, PeerMessage, PoseFrame } from '../types'
 import '../animation-authoring.css'
 import '../animation-studio-v3.css'
@@ -61,7 +61,7 @@ type PublishedState = {
   action: ForgeAnimationActionId
   clipName: string
   animationAssetId: string
-  set: ForgeAnimationSet
+  profile: ForgeAnimationProfileV3
   target: LibraryAsset
   revision: number
 }
@@ -547,7 +547,7 @@ export default function AnimationStudioV3() {
       const publishBlob = bakeTarget.id === characterAsset?.id && characterBlob
         ? characterBlob
         : await libraryCharacterModelBlob(bakeTarget)
-      const result = await publishAuthoredAnimation({
+      const result = await publishAuthoredAnimationV3({
         motion: clip,
         characterBlob: publishBlob,
         edit,
@@ -563,7 +563,7 @@ export default function AnimationStudioV3() {
         action: purpose,
         clipName: result.built.clipName,
         animationAssetId: result.animationAsset.id,
-        set: result.set,
+        profile: result.profile,
         target: bakeTarget,
         revision: Date.now(),
       }
@@ -779,7 +779,7 @@ export default function AnimationStudioV3() {
     </div>
 
     <div className="animation-studio-v3-test">
-      {published ? <AnimationCombatTestArenaV2 key={`${published.animationAssetId}-${published.revision}`} target={published.target} animationSet={published.set} action={published.action} autoPlayToken={testToken}/> : <section className="animation-v3-test-empty"><Gamepad2 size={22}/><div><strong>In-studio gameplay test</strong><span>Press Publish + Test Here. Forge saves the draft, publishes it, and immediately plays that exact game animation here.</span></div></section>}
+      {published ? <AnimationCombatTestArenaV2 key={`${published.animationAssetId}-${published.revision}`} target={published.target} animationProfile={published.profile} action={published.action} autoPlayToken={testToken}/> : <section className="animation-v3-test-empty"><Gamepad2 size={22}/><div><strong>In-studio gameplay test</strong><span>Press Publish + Test Here. Forge saves the draft, publishes it, and immediately plays that exact game animation here.</span></div></section>}
     </div>
   </div>
 }
