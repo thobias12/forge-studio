@@ -130,6 +130,31 @@ export default function SkillboundCharacterInventoryPanel({
     snapshot?.equippedWeaponId,
   )
   const stats = equipmentStats(gameplay, equipment)
+  const equippedInventoryIndexes = useMemo(() => {
+    const used = new Set<number>()
+    const inventory = snapshot?.inventory ?? []
+    for (const slot of FORGE_EQUIPMENT_SLOTS) {
+      const itemId = equipment[slot]
+      if (!itemId) continue
+      const index = inventory.findIndex(
+        (candidate, candidateIndex) =>
+          candidate === itemId &&
+          !used.has(candidateIndex),
+      )
+      if (index >= 0) used.add(index)
+    }
+    return used
+  }, [equipment, snapshot?.inventory])
+  const bagInventory = useMemo(
+    () =>
+      (snapshot?.inventory ?? []).map(
+        (itemId, index) =>
+          equippedInventoryIndexes.has(index)
+            ? `__equipped__:${index}:${itemId}`
+            : itemId,
+      ),
+    [snapshot?.inventory, equippedInventoryIndexes],
+  )
   const layout = useMemo(
     () => normalizeUiScreens(workspace.ui.screens).inventory,
     [workspace.ui.screens],
@@ -138,12 +163,12 @@ export default function SkillboundCharacterInventoryPanel({
     () =>
       resolveInventoryPack(
         gameplay,
-        snapshot?.inventory ?? [],
+        bagInventory,
         snapshot?.inventoryLayout,
       ),
     [
       gameplay,
-      snapshot?.inventory,
+      bagInventory,
       snapshot?.inventoryLayout,
     ],
   )
