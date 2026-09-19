@@ -591,7 +591,7 @@ export default function PoiForge() {
                 key={socket.id}
                 className={selectedSocketId === socket.id ? 'active' : ''}
                 style={{
-                  ['--socket-color' as string]: `#${gameplaySocketColor(socket.kind).toString(16).padStart(6, '0')}`,
+                  color: `#${gameplaySocketColor(socket.kind).toString(16).padStart(6, '0')}`,
                 }}
                 onClick={() => {
                   setSelectedPartId(undefined)
