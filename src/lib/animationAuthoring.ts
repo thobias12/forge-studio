@@ -146,13 +146,18 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
   const existingPack = await getAsset(packId)
   const previousClips = existingPack ? await loadAnimationClips(existingPack.blob) : []
   const newClips = await loadAnimationClips(built.blob)
-  const newClip = newClips.find((clip) => clip.name === built.clipName) ?? newClips[0]
-  if (!newClip) throw new Error('The newly baked animation did not contain a usable clip.')
+  const bakedClip = newClips.find((clip) => clip.name === built.clipName) ?? newClips[0]
+  if (!bakedClip) throw new Error('The newly baked animation did not contain a usable clip.')
 
+  // Skillbound owns world-space movement on the player group. A mocap root-position
+  // track would overwrite the runtime's ground-normalized body root and can make the
+  // character float or snap away from the terrain. Gameplay clips therefore keep the
+  // authored bone rotations but never animate the model root position.
+  const newClip = stripGameplayRootPositionTracks(bakedClip)
   const mergedClips = previousClips
     .filter((clip) => clip.name !== built.clipName && (!previousClipName || clip.name !== previousClipName))
-    .map((clip) => clip.clone())
-  mergedClips.push(newClip.clone())
+    .map(stripGameplayRootPositionTracks)
+  mergedClips.push(newClip)
 
   const packBlob = await exportAnimationPack(built.blob, mergedClips)
   const animationAsset = await saveAsset({
@@ -242,6 +247,16 @@ async function loadAnimationClips(blob: Blob) {
   } finally {
     URL.revokeObjectURL(url)
   }
+}
+
+function stripGameplayRootPositionTracks(clip: THREE.AnimationClip) {
+  const tracks = clip.tracks
+    .filter((track) => !track.name.toLowerCase().endsWith('.position'))
+    .map((track) => track.clone())
+  const next = new THREE.AnimationClip(clip.name, clip.duration, tracks)
+  next.resetDuration()
+  next.optimize()
+  return next
 }
 
 async function linkAnimationPackToSkillbound(characterAssetId: string, animationAssetId: string) {
