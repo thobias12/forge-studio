@@ -127,6 +127,13 @@ export function buildConformedTunic(
       .34,
     )
   meshes.push(necklineTrim)
+  meshes.push(
+    ...createTunicSeamDetails(
+      source,
+      torso.geometry,
+      trim,
+    ),
+  )
 
   if (recipe.sleeve !== 'none') {
     const left = createSleeveTemplate(
@@ -217,6 +224,14 @@ export function buildConformedTunic(
         trim,
       ),
     )
+    meshes.push(
+      ...createVestPanelDetails(
+        source,
+        vest.geometry,
+        leather,
+        trim,
+      ),
+    )
   }
 
   if (recipe.layers.belt) {
@@ -240,16 +255,32 @@ export function buildConformedTunic(
         metal,
       ),
     )
+    meshes.push(
+      ...createBeltAccessories(
+        source,
+        torso.geometry,
+        leather,
+        trim,
+        metal,
+      ),
+    )
   }
 
   if (recipe.layers.tabard) {
-    meshes.push(
+    const tabard =
       createFrontTabard(
         source,
         torso.geometry,
         frame,
         recipe,
         accent,
+      )
+    meshes.push(tabard)
+    meshes.push(
+      ...createTabardDetails(
+        source,
+        tabard.geometry,
+        trim,
       ),
     )
   }
