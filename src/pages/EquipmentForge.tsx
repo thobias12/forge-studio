@@ -22,6 +22,7 @@ import {
 import EquipmentForgeViewport, {
   type EquipmentForgeMaterialInfo,
 } from '../components/EquipmentForgeViewport'
+import EquipmentCreatorPanel from '../components/EquipmentCreatorPanel'
 import {
   EQUIPMENT_FORGE_SLOTS,
   EQUIPMENT_FORGE_SLOT_LABELS,
@@ -46,6 +47,10 @@ import {
   listAssets,
   type LibraryAsset,
 } from '../lib/library'
+import {
+  createProceduralEquipmentRecipe,
+  type ProceduralEquipmentRecipe,
+} from '../engine/equipmentForgeProcedural'
 import '../equipment-forge.css'
 
 type SlotState =
@@ -63,6 +68,22 @@ export default function EquipmentForge() {
   >([])
   const [bodyType, setBodyType] =
     useState<SkillboundBodyType>('female')
+  const [workspaceMode, setWorkspaceMode] =
+    useState<'assemble' | 'create'>('create')
+  const [
+    showImportedEquipment,
+    setShowImportedEquipment,
+  ] = useState(false)
+  const [
+    proceduralRecipe,
+    setProceduralRecipe,
+  ] = useState<ProceduralEquipmentRecipe>(
+    () =>
+      createProceduralEquipmentRecipe(
+        'female',
+        'ranger',
+      ),
+  )
   const [slots, setSlots] =
     useState<SlotState>({})
   const [selectedSlot, setSelectedSlot] =
@@ -274,7 +295,7 @@ export default function EquipmentForge() {
         imported
           .map(equipmentAssetBodyType)
           .find(Boolean)
-      if (inferred) setBodyType(inferred)
+      if (inferred) changeBodyType(inferred)
       await refresh()
       setStatus(
         `Imported ${imported.length} equipment slots from ${file.name} and equipped them.`,
@@ -357,6 +378,25 @@ export default function EquipmentForge() {
     }))
   }
 
+  const changeBodyType = (
+    nextType: SkillboundBodyType,
+  ) => {
+    setBodyType(nextType)
+    setProceduralRecipe((current) => ({
+      ...current,
+      bodyType: nextType,
+    }))
+  }
+
+  const changeProceduralRecipe = (
+    next: ProceduralEquipmentRecipe,
+  ) => {
+    setProceduralRecipe(next)
+    if (next.bodyType !== bodyType) {
+      setBodyType(next.bodyType)
+    }
+  }
+
   const activeOverride =
     activeMaterial
       ? materialOverrides[
@@ -413,6 +453,7 @@ export default function EquipmentForge() {
           bodyType,
           slots,
           materialOverrides,
+          proceduralRecipe,
         })
       setPresetId(result.asset.id)
       await refresh()
@@ -453,6 +494,11 @@ export default function EquipmentForge() {
       setMaterialOverrides(
         preset.materialOverrides ?? {},
       )
+      if (preset.proceduralRecipe) {
+        changeProceduralRecipe(
+          preset.proceduralRecipe,
+        )
+      }
       setPresetName(preset.name)
       setStatus(
         `${preset.name} loaded from the Forge Library.`,
@@ -475,6 +521,7 @@ export default function EquipmentForge() {
       bodyType,
       slots,
       materialOverrides,
+      proceduralRecipe,
     }
     const text = JSON.stringify(
       recipe,
@@ -496,6 +543,7 @@ export default function EquipmentForge() {
         bodyType?: SkillboundBodyType
         slots?: SlotState
         materialOverrides?: EquipmentMaterialOverrides
+        proceduralRecipe?: ProceduralEquipmentRecipe
       }
       if (
         recipe.bodyType === 'male' ||
@@ -523,6 +571,11 @@ export default function EquipmentForge() {
           recipe.materialOverrides,
         )
       }
+      if (recipe.proceduralRecipe) {
+        changeProceduralRecipe(
+          recipe.proceduralRecipe,
+        )
+      }
       setStatus(
         'ChatGPT recipe applied to the live preview.',
       )
@@ -534,7 +587,7 @@ export default function EquipmentForge() {
   }
 
   return (
-    <div className="equipment-forge">
+    <div className="equipment-forge" data-mode={workspaceMode}>
       <aside className="equipment-forge-library">
         <header>
           <span className="eyebrow">
@@ -572,7 +625,7 @@ export default function EquipmentForge() {
                       : ''
                   }
                   onClick={() =>
-                    setBodyType(type)
+                    changeBodyType(type)
                   }
                   disabled={!installed}
                 >
@@ -705,7 +758,7 @@ export default function EquipmentForge() {
         <header className="ef-toolbar">
           <div>
             <span className="eyebrow">
-              EQUIPMENT FORGE · MVP 1
+              EQUIPMENT FORGE · CREATOR V2
             </span>
             <strong>
               {bodyAsset?.name ??
@@ -713,6 +766,48 @@ export default function EquipmentForge() {
             </strong>
           </div>
           <div className="ef-toolbar-actions">
+            <div className="ef-mode-switch">
+              <button
+                className={
+                  workspaceMode === 'create'
+                    ? 'active'
+                    : ''
+                }
+                onClick={() =>
+                  setWorkspaceMode('create')
+                }
+              >
+                Create
+              </button>
+              <button
+                className={
+                  workspaceMode === 'assemble'
+                    ? 'active'
+                    : ''
+                }
+                onClick={() =>
+                  setWorkspaceMode('assemble')
+                }
+              >
+                Assemble
+              </button>
+            </div>
+            {workspaceMode === 'create' && (
+              <button
+                className={
+                  showImportedEquipment
+                    ? 'active'
+                    : ''
+                }
+                onClick={() =>
+                  setShowImportedEquipment(
+                    (value) => !value,
+                  )
+                }
+              >
+                Imported reference
+              </button>
+            )}
             <button
               onClick={() =>
                 setBaseClothingVisible(
@@ -751,6 +846,14 @@ export default function EquipmentForge() {
             bodyAsset={bodyAsset}
             slots={equippedAssets}
             overrides={materialOverrides}
+            proceduralRecipe={
+              workspaceMode === 'create'
+                ? proceduralRecipe
+                : undefined
+            }
+            showImportedEquipment={
+              showImportedEquipment
+            }
             animate={animate}
             baseClothingVisible={
               baseClothingVisible
@@ -795,6 +898,14 @@ export default function EquipmentForge() {
       </main>
 
       <aside className="equipment-forge-inspector">
+        {workspaceMode === 'create' ? (
+          <EquipmentCreatorPanel
+            recipe={proceduralRecipe}
+            onChange={changeProceduralRecipe}
+            onStatus={setStatus}
+          />
+        ) : (
+          <>
         <section className="ef-inspector-block">
           <div className="ef-section-title">
             <Shirt size={14} />
@@ -988,6 +1099,9 @@ export default function EquipmentForge() {
           )}
         </section>
 
+          </>
+        )}
+
         <section className="ef-inspector-block">
           <div className="ef-section-title">
             <Save size={14} />
@@ -1052,10 +1166,10 @@ export default function EquipmentForge() {
             ChatGPT recipe
           </div>
           <p className="ef-muted">
-            Copy the current recipe, ask
-            ChatGPT to restyle the
-            materials, then paste the
-            edited JSON back here.
+            Copy the complete outfit +
+            creator recipe, ask ChatGPT to
+            change the design, then paste
+            the edited JSON back here.
           </p>
           <textarea
             value={recipeText}
