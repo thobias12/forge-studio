@@ -1,7 +1,5 @@
 // @ts-nocheck
 import * as THREE from 'three'
-import { itemVisual } from '../itemPresentation'
-import { itemClassification } from '../itemTaxonomy'
 import {
   FORGE_EQUIPMENT_SLOTS,
   bestEquipmentState,
@@ -15,8 +13,10 @@ import {
   type ForgeEquipmentSlot,
   type ForgeEquipmentState,
 } from '../equipment'
-import { disposeBoundObject } from './ForgeAssetRuntime'
-import { bindRuntimeItemModel, findRuntimeItemSocket } from './ForgeItemRuntime'
+import {
+  bindEquipmentVisualModel,
+  clearEquipmentVisualModels,
+} from './ForgeEquipmentVisuals'
 import { loadRuntimeSave, writeRuntimeSave } from './ForgeGameSave'
 import { ForgePlayRuntime } from './ForgePlayRuntime'
 import { ForgeDungeonRuntime } from './ForgeDungeonRuntime'
@@ -103,38 +103,74 @@ export function installForgeEquipmentRuntime(RuntimeClass: { prototype: any }) {
   const originalRefresh = proto.refreshEquippedModel
   proto.refreshEquippedModel = async function () {
     const equipment = ensureEquipment(this)
-    const revision = (this.__forgeEquipmentVisualRevision ?? 0) + 1
+    const revision =
+      (this.__forgeEquipmentVisualRevision ?? 0) + 1
     this.__forgeEquipmentVisualRevision = revision
     clearEquipmentModels(this)
 
-    const models = new Map<ForgeEquipmentSlot, THREE.Object3D>()
+    const models =
+      new Map<ForgeEquipmentSlot, THREE.Object3D>()
+    const anchors =
+      this.__forgeEquipmentAnchors ??
+      new Map<ForgeEquipmentSlot, THREE.Group>()
     this.__forgeEquippedModels = models
+    this.__forgeEquipmentAnchors = anchors
+
+    const character =
+      this.player?.getObjectByName?.(
+        '__forge_bound_character',
+      ) as THREE.Object3D | undefined
+    const fallbackParent =
+      this.player ?? character
+    if (!fallbackParent) return
+
     for (const slot of FORGE_EQUIPMENT_SLOTS) {
       const itemId = equipment[slot]
-      const item = itemId ? this.gameplay?.items?.find((candidate: any) => candidate.id === itemId) : undefined
+      const item = itemId
+        ? this.gameplay?.items?.find(
+            (candidate: any) =>
+              candidate.id === itemId,
+          )
+        : undefined
       if (!item) continue
-      const target = equipmentTarget(this, item, slot)
+
       try {
-        let model = await bindRuntimeItemModel(target, item, 'equipped')
-        if (!model) {
-          model = createFallbackEquipmentModel(item, slot)
-          target.add(model)
-        }
-        if (this.disposed || revision !== this.__forgeEquipmentVisualRevision || ensureEquipment(this)[slot] !== item.id) {
+        const model = await bindEquipmentVisualModel(
+          {
+            characterRoot: character,
+            fallbackParent,
+            anchors,
+          },
+          item,
+          slot,
+        )
+        if (
+          this.disposed ||
+          revision !==
+            this.__forgeEquipmentVisualRevision ||
+          ensureEquipment(this)[slot] !== item.id
+        ) {
           model.parent?.remove(model)
-          disposeBoundObject(model)
+          clearEquipmentVisualModels(
+            new Map([[slot, model]]),
+          )
           continue
         }
         models.set(slot, model)
       } catch {
-        const fallback = createFallbackEquipmentModel(item, slot)
-        target.add(fallback)
-        if (revision === this.__forgeEquipmentVisualRevision && ensureEquipment(this)[slot] === item.id) models.set(slot, fallback)
-        else { fallback.removeFromParent(); disposeBoundObject(fallback) }
+        // The shared visual binder already provides the same
+        // deterministic fallback geometry used by previews.
       }
     }
+
     this.equippedModel = models.get('MainHand')
-    if (!models.size && typeof originalRefresh === 'function' && !Object.keys(equipment).length) return originalRefresh.call(this)
+    if (
+      !models.size &&
+      typeof originalRefresh === 'function' &&
+      !Object.keys(equipment).length
+    ) {
+      return originalRefresh.call(this)
+    }
   }
 
   proto.getEquippedItem = function () {
@@ -251,117 +287,12 @@ function ensureEquipment(runtime: any): ForgeEquipmentState {
 }
 
 function clearEquipmentModels(runtime: any) {
-  const models = runtime.__forgeEquippedModels as Map<ForgeEquipmentSlot, THREE.Object3D> | undefined
-  models?.forEach((model) => {
-    model.parent?.remove(model)
-    disposeBoundObject(model)
-  })
-  models?.clear()
+  const models = runtime.__forgeEquippedModels as
+    | Map<ForgeEquipmentSlot, THREE.Object3D>
+    | undefined
+  clearEquipmentVisualModels(models)
   runtime.__forgeEquippedModels = new Map()
   runtime.equippedModel = undefined
-}
-
-function equipmentTarget(runtime: any, item: any, slot: ForgeEquipmentSlot) {
-  const character = runtime.player?.getObjectByName?.('__forge_bound_character') as THREE.Object3D | undefined
-  if (character) {
-    if (slot === 'MainHand') {
-      const socket = itemVisual(item).equipped.socket
-      const target = findRuntimeItemSocket(character, socket)
-      if (target) return target
-    }
-    if (slot === 'OffHand') {
-      const target = findRuntimeItemSocket(character, 'LeftHand')
-      if (target) return target
-    }
-    const target = findNamedTarget(character, slotAliases(slot))
-    if (target) return target
-  }
-  const anchors = runtime.__forgeEquipmentAnchors ?? new Map<ForgeEquipmentSlot, THREE.Group>()
-  runtime.__forgeEquipmentAnchors = anchors
-  let anchor = anchors.get(slot)
-  if (!anchor) {
-    anchor = new THREE.Group()
-    anchor.name = `__forge_equipment_anchor_${slot}`
-    anchor.position.set(...fallbackPosition(slot))
-    runtime.player?.add?.(anchor)
-    anchors.set(slot, anchor)
-  }
-  return anchor
-}
-
-function findNamedTarget(root: THREE.Object3D, aliases: string[]) {
-  let best: THREE.Object3D | undefined
-  root.traverse((child) => {
-    if (best) return
-    const name = child.name.toLowerCase().replace(/[^a-z0-9]+/g, '')
-    if (name && aliases.some((alias) => name === alias || name.endsWith(alias) || name.includes(alias))) best = child
-  })
-  return best
-}
-
-function slotAliases(slot: ForgeEquipmentSlot) {
-  if (slot === 'Head') return ['head', 'mixamorighead', 'neck']
-  if (slot === 'Chest') return ['upperchest', 'chest', 'spine2', 'spine1', 'spine']
-  if (slot === 'Hands') return ['upperchest', 'chest', 'spine2', 'spine1', 'spine']
-  if (slot === 'Legs') return ['hips', 'pelvis', 'mixamorighips']
-  if (slot === 'Feet') return ['hips', 'pelvis', 'mixamorighips']
-  return []
-}
-
-function fallbackPosition(slot: ForgeEquipmentSlot): [number, number, number] {
-  if (slot === 'MainHand') return [0.58, 1.12, 0]
-  if (slot === 'OffHand') return [-0.58, 1.12, 0]
-  if (slot === 'Head') return [0, 1.82, 0]
-  if (slot === 'Chest') return [0, 1.35, 0]
-  if (slot === 'Hands') return [0, 1.24, 0]
-  if (slot === 'Legs') return [0, 0.72, 0]
-  return [0, 0.32, 0]
-}
-
-function createFallbackEquipmentModel(item: any, slot: ForgeEquipmentSlot) {
-  const group = new THREE.Group()
-  group.name = `__forge_fallback_equipment_${item.id}`
-  const color = new THREE.Color(item.color || '#8e8a80')
-  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.12 })
-  const dark = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.58), roughness: 0.82, metalness: 0.08 })
-  const add = (geometry: THREE.BufferGeometry, position: [number, number, number], rotation?: [number, number, number], source = material) => {
-    const mesh = new THREE.Mesh(geometry, source)
-    mesh.position.set(...position)
-    if (rotation) mesh.rotation.set(...rotation)
-    mesh.castShadow = true
-    group.add(mesh)
-  }
-  const subtype = itemClassification(item).subtype
-  if (slot === 'MainHand') {
-    if (subtype === 'bow') {
-      add(new THREE.TorusGeometry(.62, .045, 6, 22, Math.PI * 1.25), [0, .02, 0], [0, 0, Math.PI * .38])
-      add(new THREE.BoxGeometry(.025, 1.08, .025), [0, .02, 0], undefined, dark)
-    } else if (subtype === 'staff' || subtype === 'spear') {
-      add(new THREE.CylinderGeometry(.035, .045, 1.72, 8), [0, .45, 0], undefined, dark)
-      add(new THREE.OctahedronGeometry(.14), [0, 1.32, 0])
-    } else {
-      add(new THREE.BoxGeometry(.1, 1.08, .08), [0, .46, 0], undefined, material)
-      add(new THREE.BoxGeometry(.38, .07, .11), [0, -.06, 0], undefined, dark)
-    }
-  } else if (slot === 'OffHand') {
-    add(new THREE.CylinderGeometry(.42, .42, .09, 18), [0, 0, 0], [Math.PI / 2, 0, 0])
-    add(new THREE.SphereGeometry(.11, 10, 8), [0, 0, -.08], undefined, dark)
-  } else if (slot === 'Head') {
-    add(new THREE.SphereGeometry(.36, 16, 12, 0, Math.PI * 2, 0, Math.PI * .62), [0, .05, 0])
-  } else if (slot === 'Chest') {
-    add(new THREE.BoxGeometry(.72, .72, .4), [0, -.02, 0])
-    add(new THREE.BoxGeometry(.82, .12, .46), [0, .34, 0], undefined, dark)
-  } else if (slot === 'Hands') {
-    add(new THREE.BoxGeometry(.2, .3, .22), [-.55, -.08, 0])
-    add(new THREE.BoxGeometry(.2, .3, .22), [.55, -.08, 0])
-  } else if (slot === 'Legs') {
-    add(new THREE.BoxGeometry(.22, .72, .28), [-.16, -.34, 0])
-    add(new THREE.BoxGeometry(.22, .72, .28), [.16, -.34, 0])
-  } else if (slot === 'Feet') {
-    add(new THREE.BoxGeometry(.24, .18, .42), [-.16, -.72, -.08])
-    add(new THREE.BoxGeometry(.24, .18, .42), [.16, -.72, -.08])
-  }
-  return group
 }
 
 function signedDelta(value: number) {
