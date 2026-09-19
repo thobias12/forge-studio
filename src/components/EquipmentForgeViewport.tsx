@@ -13,6 +13,11 @@ import type {
   EquipmentForgeSlot,
   EquipmentMaterialOverrides,
 } from '../engine/equipmentForge'
+import {
+  buildProceduralEquipmentVisual,
+  disposeProceduralEquipmentVisual,
+  type ProceduralEquipmentRecipe,
+} from '../engine/equipmentForgeProcedural'
 
 export type EquipmentForgeMaterialInfo = {
   key: string
@@ -30,6 +35,8 @@ type Props = {
     Record<EquipmentForgeSlot, LibraryAsset>
   >
   overrides: EquipmentMaterialOverrides
+  proceduralRecipe?: ProceduralEquipmentRecipe
+  showImportedEquipment?: boolean
   animate: boolean
   baseClothingVisible: boolean
   onMaterials?: (
@@ -43,6 +50,7 @@ type ViewportState = {
   assembly?: THREE.Group
   bodyRoot?: THREE.Group
   equipmentRoot?: THREE.Group
+  proceduralRoot?: THREE.Group
   mixer?: THREE.AnimationMixer
   action?: THREE.AnimationAction
   materials: Map<
@@ -56,6 +64,8 @@ export default function EquipmentForgeViewport({
   bodyAsset,
   slots,
   overrides,
+  proceduralRecipe,
+  showImportedEquipment = true,
   animate,
   baseClothingVisible,
   onMaterials,
@@ -81,6 +91,11 @@ export default function EquipmentForgeViewport({
     )
     .sort()
     .join('|')
+
+  const proceduralSignature =
+    proceduralRecipe
+      ? JSON.stringify(proceduralRecipe)
+      : ''
 
   useEffect(() => {
     const host = hostRef.current
@@ -306,6 +321,8 @@ export default function EquipmentForgeViewport({
         bodyRoot.add(equipmentRoot)
         state.equipmentRoot =
           equipmentRoot
+        equipmentRoot.visible =
+          showImportedEquipment
         state.materials.clear()
 
         const catalog:
@@ -344,6 +361,14 @@ export default function EquipmentForgeViewport({
           disposeSourceSkeletonOnly(
             loaded.scene,
           )
+        }
+
+        if (proceduralRecipe?.enabled) {
+          state.proceduralRoot =
+            buildProceduralEquipmentVisual(
+              bodyRoot,
+              proceduralRecipe,
+            )
         }
 
         applyMaterialOverrides(
@@ -395,6 +420,29 @@ export default function EquipmentForgeViewport({
       baseClothingVisible,
     )
   }, [baseClothingVisible])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state.equipmentRoot) return
+    state.equipmentRoot.visible =
+      showImportedEquipment
+  }, [showImportedEquipment])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state.bodyRoot) return
+    disposeProceduralEquipmentVisual(
+      state.bodyRoot,
+    )
+    state.proceduralRoot = undefined
+    if (proceduralRecipe?.enabled) {
+      state.proceduralRoot =
+        buildProceduralEquipmentVisual(
+          state.bodyRoot,
+          proceduralRecipe,
+        )
+    }
+  }, [proceduralSignature])
 
   useEffect(() => {
     if (stateRef.current.action) {
@@ -622,11 +670,15 @@ function clearAssembly(
   state.mixer = undefined
   state.action = undefined
   if (state.bodyRoot) {
+    disposeProceduralEquipmentVisual(
+      state.bodyRoot,
+    )
     state.bodyRoot.removeFromParent()
     disposeObject(state.bodyRoot)
     state.bodyRoot = undefined
   }
   state.equipmentRoot = undefined
+  state.proceduralRoot = undefined
   state.materials.clear()
 }
 
