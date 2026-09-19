@@ -514,7 +514,11 @@ export async function createAnimationControllerV3(input: {
   const merged = new Map<ForgeAnimationActionId, ForgeAnimationClipV3>()
 
   if (input.fallbackSource) {
-    const fallback = buildLegacyFallbackAnimationsV3(input.fallbackSource)
+    const fallback = buildLegacyFallbackAnimationsV3({
+      sourceRoot: input.fallbackSource.root,
+      clips: input.fallbackSource.clips,
+      sourceAssetId: input.fallbackSource.sourceAssetId,
+    })
     fallback.forEach((animation, action) => merged.set(action, animation))
   }
 
