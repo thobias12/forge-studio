@@ -692,39 +692,50 @@ function createSleeveTemplate(
           candidates,
           desired,
         )
-      const position =
-        nearest.position.clone()
-      const outward =
-        position
+
+      const radialDirection =
+        axisA
+          .clone()
+          .multiplyScalar(
+            Math.cos(angle),
+          )
+          .addScaledVector(
+            axisB,
+            Math.sin(angle),
+          )
+          .normalize()
+
+      const fromCenter =
+        nearest.position
           .clone()
           .sub(center)
+      const axialDistance =
+        fromCenter.dot(direction)
+      const sampledRadius =
+        fromCenter
+          .addScaledVector(
+            direction,
+            -axialDistance,
+          )
+          .length()
 
-      if (
-        outward.lengthSq() <
-        1e-6
-      ) {
-        outward.copy(
-          axisA
-            .clone()
-            .multiplyScalar(
-              Math.cos(angle),
-            )
-            .addScaledVector(
-              axisB,
-              Math.sin(angle),
-            ),
+      const cleanRadius =
+        THREE.MathUtils.clamp(
+          sampledRadius,
+          armLength * .11,
+          armLength * .235,
         )
-      }
-      outward.normalize()
-
       const extra =
         armLength *
         (.008 +
           recipe.looseness * .018)
-      position.addScaledVector(
-        outward,
-        extra,
-      )
+      const position =
+        center
+          .clone()
+          .addScaledVector(
+            radialDirection,
+            cleanRadius + extra,
+          )
 
       ringPositions.push(position)
       ringInfluences.push(
