@@ -79,7 +79,20 @@ export function createLootTableDefinition(name: string, id: string, workspace: F
     version: 1,
     id,
     name,
-    entries: firstItem ? [{ itemId: firstItem.id, chance: 0.5 }] : [],
+    rollMode: 'weighted',
+    rolls: [1, 2],
+    allowDuplicates: false,
+    nothingWeight: 18,
+    scatterRadius: 1.1,
+    entries: firstItem
+      ? [{
+          itemId: firstItem.id,
+          chance: .5,
+          weight: 50,
+          minQuantity: 1,
+          maxQuantity: 1,
+        }]
+      : [],
   }
 }
 
