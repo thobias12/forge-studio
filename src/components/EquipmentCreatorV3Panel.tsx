@@ -4,6 +4,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import {
+  applyEquipmentForgeV3StylePreset,
   createEquipmentForgeV3Recipe,
   type EquipmentForgeV3Recipe,
 } from '../engine/equipmentForgeV3/types'
@@ -92,6 +93,33 @@ export default function EquipmentCreatorV3Panel({
           <Shirt size={13} />
           Template 01 · Fitted Tunic
         </div>
+
+        <div className="ef-v3-choice">
+          {(
+            [
+              'ranger',
+              'traveler',
+              'acolyte',
+            ] as const
+          ).map((preset) => (
+            <button
+              key={preset}
+              onClick={() => {
+                onChange(
+                  applyEquipmentForgeV3StylePreset(
+                    recipe,
+                    preset,
+                  ),
+                )
+                onStatus?.(
+                  `Applied V3 ${capitalize(preset)} tunic preset.`,
+                )
+              }}
+            >
+              {capitalize(preset)}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="ef-inspector-block">
@@ -126,6 +154,16 @@ export default function EquipmentCreatorV3Panel({
           step={.01}
           onChange={(value) =>
             patch('waistTaper', value)
+          }
+        />
+        <V3Range
+          label="Hem flare"
+          value={recipe.hemFlare ?? .14}
+          min={0}
+          max={.5}
+          step={.01}
+          onChange={(value) =>
+            patch('hemFlare', value)
           }
         />
       </section>
