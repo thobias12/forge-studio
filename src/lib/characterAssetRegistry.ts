@@ -4,6 +4,29 @@ import { saveAsset, type LibraryAsset } from './library'
 
 export type CharacterAssetRole = 'body' | 'head' | 'hair'
 export type CharacterAssetCompatibility = 'ready' | 'warning' | 'invalid'
+export type CharacterAssetRig = 'ForgeHumanoidV1' | 'SkillboundHumanoidV1' | 'unknown'
+export type SkillboundBodyType = 'male' | 'female'
+
+export const OFFICIAL_SKILLBOUND_BASE_IDS: Record<SkillboundBodyType, string> = {
+  male: 'skillbound-male-base-v1',
+  female: 'skillbound-female-base-v1',
+}
+
+const OFFICIAL_SKILLBOUND_BASES: Record<
+  SkillboundBodyType,
+  { id: string; name: string; file: string }
+> = {
+  male: {
+    id: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+    name: 'Skillbound Male Base v1',
+    file: 'assets/characters/skillbound-base-v1/Skillbound-Male-Base-v1.glb',
+  },
+  female: {
+    id: OFFICIAL_SKILLBOUND_BASE_IDS.female,
+    name: 'Skillbound Female Base v1',
+    file: 'assets/characters/skillbound-base-v1/Skillbound-Female-Base-v1.glb',
+  },
+}
 
 export type CharacterAssetInspection = {
   role: CharacterAssetRole
@@ -15,6 +38,7 @@ export type CharacterAssetInspection = {
   boneNames: string[]
   coreBonesFound: number
   coreBonesTotal: number
+  rig: CharacterAssetRig
   bounds: { x: number; y: number; z: number }
   messages: string[]
 }
@@ -25,6 +49,14 @@ const CORE_BONES = [
   'UpperArm_R', 'LowerArm_R', 'Hand_R',
   'UpperLeg_L', 'LowerLeg_L', 'Foot_L',
   'UpperLeg_R', 'LowerLeg_R', 'Foot_R',
+] as const
+
+const SKILLBOUND_CORE_BONES = [
+  'pelvis', 'spine_01', 'spine_03', 'neck_01', 'head',
+  'upperarm_L', 'lowerarm_L', 'hand_L',
+  'upperarm_R', 'lowerarm_R', 'hand_R',
+  'thigh_L', 'calf_L', 'foot_L',
+  'thigh_R', 'calf_R', 'foot_R',
 ] as const
 
 export async function inspectCharacterAsset(blob: Blob, role: CharacterAssetRole): Promise<CharacterAssetInspection> {
@@ -50,7 +82,20 @@ export async function inspectCharacterAsset(blob: Blob, role: CharacterAssetRole
 
   const box = new THREE.Box3().setFromObject(gltf.scene)
   const size = box.getSize(new THREE.Vector3())
-  const coreBonesFound = CORE_BONES.filter((name) => boneNames.has(name)).length
+  const forgeCoreBonesFound =
+    CORE_BONES.filter((name) => boneNames.has(name)).length
+  const skillboundCoreBonesFound =
+    SKILLBOUND_CORE_BONES.filter((name) => boneNames.has(name)).length
+  const rig: CharacterAssetRig =
+    forgeCoreBonesFound === CORE_BONES.length
+      ? 'ForgeHumanoidV1'
+      : skillboundCoreBonesFound === SKILLBOUND_CORE_BONES.length
+        ? 'SkillboundHumanoidV1'
+        : 'unknown'
+  const coreBonesFound = Math.max(
+    forgeCoreBonesFound,
+    skillboundCoreBonesFound,
+  )
   const messages: string[] = []
   let compatibility: CharacterAssetCompatibility = 'ready'
 
@@ -64,11 +109,16 @@ export async function inspectCharacterAsset(blob: Blob, role: CharacterAssetRole
       compatibility = 'warning'
       messages.push('Body has no skinned mesh. It can be stored, but it will need rigging before animation.')
     }
-    if (coreBonesFound < CORE_BONES.length) {
-      compatibility = compatibility === 'invalid' ? 'invalid' : 'warning'
-      messages.push(`ForgeHumanoidV1 bone names: ${coreBonesFound}/${CORE_BONES.length} found. Retargeting or bone mapping may be needed.`)
+    if (rig === 'unknown') {
+      compatibility =
+        compatibility === 'invalid'
+          ? 'invalid'
+          : 'warning'
+      messages.push(
+        `Known humanoid rig bones: ${coreBonesFound}/${CORE_BONES.length} found. Retargeting or bone mapping may be needed.`,
+      )
     } else {
-      messages.push('ForgeHumanoidV1 core bone names detected.')
+      messages.push(`${rig} core bone names detected.`)
     }
     if (size.y < .5 || size.y > 5) {
       compatibility = compatibility === 'invalid' ? 'invalid' : 'warning'
@@ -98,6 +148,7 @@ export async function inspectCharacterAsset(blob: Blob, role: CharacterAssetRole
     boneNames: [...boneNames].sort(),
     coreBonesFound,
     coreBonesTotal: CORE_BONES.length,
+    rig,
     bounds: {
       x: round(size.x),
       y: round(size.y),
@@ -130,13 +181,69 @@ export async function registerCharacterAsset(
       'character-creator-part',
       `character-role:${role}`,
       `compatibility:${inspection.compatibility}`,
-      ...(role === 'body' && inspection.coreBonesFound === inspection.coreBonesTotal ? ['rig:ForgeHumanoidV1'] : []),
+      ...(role === 'body' && inspection.rig !== 'unknown'
+        ? [`rig:${inspection.rig}`]
+        : []),
     ],
     source: 'Forge Character Creator',
     blob: file,
   })
 
   return { asset, inspection }
+}
+
+
+export async function loadOfficialSkillboundBaseAssets(): Promise<LibraryAsset[]> {
+  return await Promise.all(
+    (Object.keys(OFFICIAL_SKILLBOUND_BASES) as SkillboundBodyType[])
+      .map(async (bodyType) => {
+        const definition = OFFICIAL_SKILLBOUND_BASES[bodyType]
+        const response = await fetch(
+          `${import.meta.env.BASE_URL}${definition.file}`,
+        )
+        if (!response.ok) {
+          throw new Error(
+            `Could not load ${definition.name} (${response.status}).`,
+          )
+        }
+        const blob = await response.blob()
+        const timestamp = '2026-09-19T00:00:00.000Z'
+        return {
+          id: definition.id,
+          name: definition.name,
+          category: 'characters' as const,
+          kind: 'glb' as const,
+          mime: 'model/gltf-binary',
+          size: blob.size,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          tags: [
+            'character-creator-part',
+            'character-role:body',
+            'compatibility:ready',
+            'rig:SkillboundHumanoidV1',
+            'official:skillbound',
+            `body-type:${bodyType}`,
+            'secondary-motion:breast-bones',
+            'forward:+z',
+          ],
+          favorite: true,
+          source: 'Skillbound Character Standard v1 · official foundation',
+          blob,
+        } satisfies LibraryAsset
+      }),
+  )
+}
+
+export function skillboundBodyTypeFromAsset(
+  asset?: LibraryAsset,
+): SkillboundBodyType | undefined {
+  if (!asset) return undefined
+  if (asset.id === OFFICIAL_SKILLBOUND_BASE_IDS.male) return 'male'
+  if (asset.id === OFFICIAL_SKILLBOUND_BASE_IDS.female) return 'female'
+  const tag = asset.tags.find((entry) => entry.startsWith('body-type:'))
+  const value = tag?.slice('body-type:'.length)
+  return value === 'male' || value === 'female' ? value : undefined
 }
 
 export function characterAssetRole(asset: LibraryAsset): CharacterAssetRole | undefined {
