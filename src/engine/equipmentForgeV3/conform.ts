@@ -2160,8 +2160,6 @@ function createFrontTabard(
         ) *
         .018 *
         (1 - tailDistance)
-      const topIndex =
-        topIndices[column]
       const top =
         topAnchors[
           column
