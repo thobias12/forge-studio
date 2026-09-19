@@ -708,3 +708,28 @@ button:disabled,
   background: rgba(72, 116, 151, .24);
   border-color: rgba(112, 166, 207, .38);
 }
+
+
+.ef-v3-layer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ef-v3-layer-grid button {
+  min-height: 31px;
+  padding: 0 8px;
+  color: #81909d;
+  background: #0c1219;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 6px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.ef-v3-layer-grid button.active {
+  color: #e6f0f7;
+  background: rgba(72, 116, 151, .24);
+  border-color: rgba(112, 166, 207, .38);
+}

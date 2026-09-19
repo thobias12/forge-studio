@@ -3,6 +3,9 @@ import {
   tunicTopY,
   type TunicTemplateFrame,
 } from './conform'
+import type {
+  EquipmentForgeV3Sleeve,
+} from './types'
 
 export type BodyMaskRestore = () => void
 
@@ -10,6 +13,7 @@ export function maskBodyUnderTunic(
   source: THREE.SkinnedMesh,
   frame: TunicTemplateFrame,
   length: number,
+  sleeve: EquipmentForgeV3Sleeve = 'none',
 ): BodyMaskRestore {
   const original =
     source.geometry
@@ -54,6 +58,27 @@ export function maskBodyUnderTunic(
   const center =
     new THREE.Vector3()
 
+  const sleeveRanges =
+    sleeve === 'none'
+      ? []
+      : [
+          createSleeveMaskRange(
+            source,
+            'L',
+            sleeve,
+          ),
+          createSleeveMaskRange(
+            source,
+            'R',
+            sleeve,
+          ),
+        ].filter(
+          (
+            value,
+          ): value is SleeveMaskRange =>
+            Boolean(value),
+        )
+
   for (
     let triangle = 0;
     triangle < triangleCount;
@@ -93,7 +118,7 @@ export function maskBodyUnderTunic(
       frame.height * .024
     const bottomInset =
       frame.height * .018
-    const covered =
+    const torsoCovered =
       center.y >=
         bottomY + bottomInset &&
       center.y <=
@@ -105,7 +130,19 @@ export function maskBodyUnderTunic(
       Math.abs(center.x) <=
         frame.torsoLimit * .92
 
-    if (!covered) {
+    const sleeveCovered =
+      sleeveRanges.some(
+        (range) =>
+          pointInsideSleeveMask(
+            center,
+            range,
+          ),
+      )
+
+    if (
+      !torsoCovered &&
+      !sleeveCovered
+    ) {
       kept.push(a, b, c)
     }
   }
@@ -122,4 +159,149 @@ export function maskBodyUnderTunic(
     }
     geometry.dispose()
   }
+}
+
+
+type SleeveMaskRange = {
+  start: THREE.Vector3
+  direction: THREE.Vector3
+  length: number
+  startDistance: number
+  endDistance: number
+  radius: number
+  sideSign: number
+}
+
+function createSleeveMaskRange(
+  source: THREE.SkinnedMesh,
+  side: 'L' | 'R',
+  sleeve: EquipmentForgeV3Sleeve,
+): SleeveMaskRange | undefined {
+  const upper =
+    findBone(
+      source,
+      `upperarm_${side}`,
+      `clavicle_${side}`,
+    )
+  const lower =
+    findBone(
+      source,
+      `lowerarm_${side}`,
+      `forearm_${side}`,
+    )
+  if (!upper || !lower) {
+    return undefined
+  }
+
+  const start =
+    objectPositionInMesh(
+      source,
+      upper,
+    )
+  const end =
+    objectPositionInMesh(
+      source,
+      lower,
+    )
+  const vector =
+    end.clone().sub(start)
+  const length =
+    vector.length()
+  if (length < .05) {
+    return undefined
+  }
+
+  return {
+    start,
+    direction:
+      vector.clone().normalize(),
+    length,
+    startDistance:
+      length * .015,
+    endDistance:
+      length *
+      (sleeve === 'long'
+        ? .83
+        : .39),
+    radius:
+      length * .2,
+    sideSign:
+      Math.sign(start.x) ||
+      (side === 'L' ? 1 : -1),
+  }
+}
+
+function pointInsideSleeveMask(
+  point: THREE.Vector3,
+  range: SleeveMaskRange,
+) {
+  if (
+    point.x * range.sideSign <
+    Math.abs(range.start.x) * .9
+  ) {
+    return false
+  }
+
+  const offset =
+    point
+      .clone()
+      .sub(range.start)
+  const projected =
+    offset.dot(range.direction)
+
+  if (
+    projected <
+      range.startDistance ||
+    projected >
+      range.endDistance
+  ) {
+    return false
+  }
+
+  const closest =
+    range.start
+      .clone()
+      .addScaledVector(
+        range.direction,
+        projected,
+      )
+
+  return (
+    point.distanceTo(closest) <=
+    range.radius
+  )
+}
+
+function findBone(
+  source: THREE.SkinnedMesh,
+  ...names: string[]
+) {
+  const normalized =
+    names.map((value) =>
+      value.toLowerCase(),
+    )
+
+  return source.skeleton.bones.find(
+    (bone) => {
+      const lower =
+        bone.name.toLowerCase()
+      return normalized.some(
+        (name) =>
+          lower === name ||
+          lower.endsWith(name) ||
+          lower.includes(name),
+      )
+    },
+  )
+}
+
+function objectPositionInMesh(
+  source: THREE.SkinnedMesh,
+  object: THREE.Object3D,
+) {
+  const world =
+    object.getWorldPosition(
+      new THREE.Vector3(),
+    )
+  return source.worldToLocal(world)
 }

@@ -53,6 +53,52 @@ export function normalizeEquipmentForgeV3Recipe(
       0,
       .65,
     ),
+    hemFlare: clamp(
+      input.hemFlare ?? .14,
+      0,
+      .5,
+    ),
+    layers: {
+      vest:
+        input.layers?.vest ?? false,
+      belt:
+        input.layers?.belt ?? false,
+      tabard:
+        input.layers?.tabard ?? false,
+      cape:
+        input.layers?.cape ?? false,
+    },
+    cape: {
+      length: clamp(
+        input.cape?.length ?? .62,
+        .25,
+        .95,
+      ),
+      width: clamp(
+        input.cape?.width ?? .3,
+        .18,
+        .5,
+      ),
+      flare: clamp(
+        input.cape?.flare ?? .16,
+        0,
+        .5,
+      ),
+    },
+    materials: {
+      cloth:
+        input.materials?.cloth ??
+        '#344b35',
+      trim:
+        input.materials?.trim ??
+        '#4b3528',
+      leather:
+        input.materials?.leather ??
+        '#3b281d',
+      accent:
+        input.materials?.accent ??
+        '#5a1625',
+    },
   }
 }
 
