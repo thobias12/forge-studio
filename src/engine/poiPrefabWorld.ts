@@ -12,6 +12,8 @@ import {
   type PoiPrefabCategory,
   type PoiPrefabPart,
 } from '../lib/poiPrefab'
+import { loadPropPrefabs } from '../lib/propPrefab'
+import { buildPropVisual } from './propPrefabVisual'
 
 export type AuthoredPoiOverride = {
   prefabId?: string
@@ -258,6 +260,36 @@ export function buildPoiPrefabPartObject(part: PoiPrefabPart) {
     return root
   }
 
+  if (part.kind === 'prop') {
+    const prop = part.assetRef
+      ? loadPropPrefabs().find(
+          (candidate) => candidate.id === part.assetRef,
+        )
+      : undefined
+
+    if (prop) {
+      const visual = buildPropVisual(prop, {
+        includeLights: true,
+      })
+      visual.name = `NestedProp_${prop.id}`
+      visual.userData.poiPartId = part.id
+      root.add(visual)
+    } else {
+      const placeholder = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({
+          color: 0x7f4f55,
+          roughness: 1,
+          transparent: true,
+          opacity: .72,
+        }),
+      )
+      placeholder.userData.poiPartId = part.id
+      root.add(placeholder)
+    }
+    return root
+  }
+
   if (part.kind === 'torch') {
     const wood = poiPrefabMaterial({
       ...part,
@@ -362,6 +394,22 @@ export function authoredPoiRuntimeObstacleRadius(type: WorldPoiType) {
 
 function partVisualHeight(part: PoiPrefabPart) {
   if (part.kind === 'torch') return 1.45
+  if (part.kind === 'prop') {
+    const prop = part.assetRef
+      ? loadPropPrefabs().find(
+          (candidate) => candidate.id === part.assetRef,
+        )
+      : undefined
+    if (!prop?.parts.length) return 1
+    let height = 1
+    for (const nested of prop.parts) {
+      height = Math.max(
+        height,
+        nested.position[1] + Math.abs(nested.scale[1]) * .5,
+      )
+    }
+    return height
+  }
   if (part.kind === 'entry') return .2
   return 1
 }
