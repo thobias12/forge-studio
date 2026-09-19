@@ -1,5 +1,9 @@
+import type { ForgeEquipmentSlot } from '../equipment'
+
 export type SkillboundRuntimeCommandTarget = {
   equipItem?: (itemId: string) => void
+  unequipItem?: (slot: ForgeEquipmentSlot) => boolean
+  equipBest?: () => boolean
   getSnapshot?: () => unknown
   saveGame?: (manual?: boolean) => void
   setPaused?: (paused: boolean) => void
@@ -22,6 +26,16 @@ export function equipActiveSkillboundItem(itemId: string) {
   if (!activeRuntime?.equipItem) return false
   activeRuntime.equipItem(itemId)
   return true
+}
+
+export function unequipActiveSkillboundSlot(slot: ForgeEquipmentSlot) {
+  if (!activeRuntime?.unequipItem) return false
+  return activeRuntime.unequipItem(slot)
+}
+
+export function equipBestActiveSkillboundGear() {
+  if (!activeRuntime?.equipBest) return false
+  return activeRuntime.equipBest()
 }
 
 export function saveActiveSkillboundRuntime() {
