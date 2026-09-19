@@ -103,13 +103,18 @@ async function bindSkillboundFoundation(
       authoredSource = authoredLoaded?.scene
 
       if (authored.length && authoredSource) {
+        const authoredOnFoundation = packAsset?.tags?.includes(
+          `source-character:${asset.id}`,
+        )
         clips = uniqueAnimationClips([
           ...clips,
-          ...retargetForgeHumanoidClips(
-            authoredSource,
-            root,
-            authored,
-          ),
+          ...(authoredOnFoundation
+            ? authored
+            : retargetForgeHumanoidClips(
+                authoredSource,
+                root,
+                authored,
+              )),
         ])
       }
     }

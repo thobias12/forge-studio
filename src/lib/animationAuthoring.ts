@@ -130,41 +130,57 @@ export async function buildAuthoredAnimation(input: BuildAuthoredAnimationInput)
 export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInput & {
   characterAsset: LibraryAsset
   action: ForgeAnimationActionId
+  bindingTargetId?: string
+  bindingTargetName?: string
 }) {
   const built = await buildAuthoredAnimation(input)
-  const bindingId = animationBindingAssetId(input.characterAsset.id)
+  const runtimeTargetId = input.bindingTargetId ?? input.characterAsset.id
+  const runtimeTargetName = input.bindingTargetName ?? input.characterAsset.name
+  const bindingId = animationBindingAssetId(runtimeTargetId)
   const existingBindingAsset = await getAsset(bindingId)
-  const existingSet = existingBindingAsset ? await parseAnimationSet(existingBindingAsset.blob, input.characterAsset.id) : undefined
+  const existingSet = existingBindingAsset ? await parseAnimationSet(existingBindingAsset.blob, runtimeTargetId) : undefined
   const previousBinding = existingSet?.actions[input.action]
   const previousClipName = previousBinding?.clip
 
-  const packId = animationPackAssetId(input.characterAsset.id)
+  const packId = animationPackAssetId(runtimeTargetId)
   const existingPack = await getAsset(packId)
   const previousClips = existingPack ? await loadAnimationClips(existingPack.blob) : []
   const newClips = await loadAnimationClips(built.blob)
-  const newClip = newClips.find((clip) => clip.name === built.clipName) ?? newClips[0]
-  if (!newClip) throw new Error('The newly baked animation did not contain a usable clip.')
+  const bakedClip = newClips.find((clip) => clip.name === built.clipName) ?? newClips[0]
+  if (!bakedClip) throw new Error('The newly baked animation did not contain a usable clip.')
 
+  // Skillbound owns world-space movement on the player group. A mocap root-position
+  // track would overwrite the runtime's ground-normalized body root and can make the
+  // character float or snap away from the terrain. Gameplay clips therefore keep the
+  // authored bone rotations but never animate the model root position.
+  const newClip = stripGameplayRootPositionTracks(bakedClip)
   const mergedClips = previousClips
     .filter((clip) => clip.name !== built.clipName && (!previousClipName || clip.name !== previousClipName))
-    .map((clip) => clip.clone())
-  mergedClips.push(newClip.clone())
+    .map(stripGameplayRootPositionTracks)
+  mergedClips.push(newClip)
 
   const packBlob = await exportAnimationPack(built.blob, mergedClips)
   const animationAsset = await saveAsset({
     id: packId,
-    name: `${input.characterAsset.name} · Gameplay Animations`,
+    name: `${runtimeTargetName} · Gameplay Animations`,
     category: 'animations',
     kind: 'glb',
     mime: 'model/gltf-binary',
-    tags: ['animation-pack', 'gameplay', 'ForgeHumanoidV1', input.characterAsset.id],
+    tags: [
+      'animation-pack',
+      'gameplay',
+      'ForgeHumanoidV1',
+      runtimeTargetId,
+      `binding-target:${runtimeTargetId}`,
+      `source-character:${input.characterAsset.id}`,
+    ],
     source: 'Forge Animation Studio',
     blob: packBlob,
   })
 
   const baseSet = normalizeAnimationSet(
-    existingSet ?? createAnimationSet(input.characterAsset.id, mergedClips.map((clip) => clip.name)),
-    input.characterAsset.id,
+    existingSet ?? createAnimationSet(runtimeTargetId, mergedClips.map((clip) => clip.name)),
+    runtimeTargetId,
     mergedClips.map((clip) => clip.name),
   )
   const nextSet: ForgeAnimationSet = {
@@ -182,17 +198,34 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
 
   const bindingAsset = await saveAsset({
     id: bindingId,
-    name: `${input.characterAsset.name} Action Bindings`,
+    name: `${runtimeTargetName} Action Bindings`,
     category: 'animations',
     kind: 'file',
     mime: 'application/x-forge-animation-set+json',
-    tags: ['animation-bindings', 'ForgeHumanoidV1', input.characterAsset.id],
+    tags: [
+      'animation-bindings',
+      'ForgeHumanoidV1',
+      runtimeTargetId,
+      `binding-target:${runtimeTargetId}`,
+      `source-character:${input.characterAsset.id}`,
+    ],
     source: 'Forge Animation Studio',
     blob: animationSetBlob(nextSet),
   })
 
-  const linkedRuntimeTargets = await linkAnimationPackToSkillbound(input.characterAsset.id, packId)
-  return { built, animationAsset, bindingAsset, set: nextSet, linkedRuntimeTargets, clipCount: mergedClips.length }
+  const linkedRuntimeTargets = runtimeTargetId === input.characterAsset.id
+    ? await linkAnimationPackToSkillbound(input.characterAsset.id, packId)
+    : 0
+  return {
+    built,
+    animationAsset,
+    bindingAsset,
+    set: nextSet,
+    linkedRuntimeTargets,
+    clipCount: mergedClips.length,
+    runtimeTargetId,
+    sourceCharacterAssetId: input.characterAsset.id,
+  }
 }
 
 async function exportAnimationPack(sceneBlob: Blob, clips: THREE.AnimationClip[]) {
@@ -214,6 +247,16 @@ async function loadAnimationClips(blob: Blob) {
   } finally {
     URL.revokeObjectURL(url)
   }
+}
+
+function stripGameplayRootPositionTracks(clip: THREE.AnimationClip) {
+  const tracks = clip.tracks
+    .filter((track) => !track.name.toLowerCase().endsWith('.position'))
+    .map((track) => track.clone())
+  const next = new THREE.AnimationClip(clip.name, clip.duration, tracks)
+  next.resetDuration()
+  next.optimize()
+  return next
 }
 
 async function linkAnimationPackToSkillbound(characterAssetId: string, animationAssetId: string) {

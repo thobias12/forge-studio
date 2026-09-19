@@ -36,12 +36,11 @@ import {
   type AnimationStudioDraft,
 } from '../lib/animationDrafts'
 import type { RootMotionMode } from '../lib/animationEdit'
-import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import { cleanupMotion, type MotionCleanupOptions } from '../lib/motionCleanup'
 import { averageVisibility, downloadJson, formatDuration } from '../lib/pose'
 import type { RigInfo } from '../lib/retarget'
 import {
-  ensurePlayerAnimationCharacter,
   getActivePlayerProfileId,
   listPlayerProfiles,
   playerAnimationTargetId,
@@ -94,7 +93,7 @@ export default function AnimationStudioV3() {
   const [trimEndMs, setTrimEndMs] = useState(1)
   const [speed, setSpeed] = useState(1)
   const [closeLoop, setCloseLoop] = useState(false)
-  const [rootMotion, setRootMotion] = useState<RootMotionMode>('keep')
+  const [rootMotion, setRootMotion] = useState<RootMotionMode>('all')
   const [loop, setLoop] = useState(false)
 
   const [smoothing, setSmoothing] = useState(0.42)
@@ -170,19 +169,29 @@ export default function AnimationStudioV3() {
   const activePlayerTargetId = activePlayerProfile
     ? activePlayerProfile.blueprint.targetAssetId || playerAnimationTargetId(activePlayerProfile.id)
     : undefined
-  const activePlayerTarget = activePlayerTargetId
-    ? characters.find((asset) => asset.id === activePlayerTargetId)
-    : undefined
   const activeFoundationAssetId = activePlayerProfile?.blueprint.foundation?.bodyAssetId
-  const publishTarget = activePlayerTarget && characterAsset && (
-    characterAsset.id === activePlayerTarget.id ||
-    characterAsset.id === activeFoundationAssetId
+  const activeFoundationAsset = activeFoundationAssetId
+    ? characters.find((asset) => asset.id === activeFoundationAssetId)
+    : undefined
+  const selectedBelongsToActivePlayer = !!characterAsset && (
+    characterAsset.id === activeFoundationAssetId ||
+    characterAsset.id === activePlayerTargetId
   )
-    ? activePlayerTarget
+  const bakeTarget = selectedBelongsToActivePlayer && activeFoundationAsset
+    ? activeFoundationAsset
     : characterAsset
-  const publishingToActivePlayer = !!activePlayerTarget && publishTarget?.id === activePlayerTarget.id
+  const publishingToActivePlayer = !!activePlayerProfile &&
+    !!activePlayerTargetId &&
+    !!activeFoundationAsset &&
+    bakeTarget?.id === activeFoundationAsset.id
+  const gameBindingTargetId = publishingToActivePlayer
+    ? activePlayerTargetId
+    : bakeTarget?.id
+  const gameBindingTargetName = publishingToActivePlayer
+    ? `${activePlayerProfile?.name ?? 'Player'} · Skillbound Player`
+    : bakeTarget?.name
   const canBake = !!clip && !recording && !busy && !!rigInfo && rigInfo.coreMappedCount >= 8
-  const canPublish = canBake && !!publishTarget
+  const canPublish = canBake && !!bakeTarget && !!gameBindingTargetId
 
   const loadCharacterAsset = async (asset?: LibraryAsset) => {
     if (!asset) {
@@ -212,7 +221,13 @@ export default function AnimationStudioV3() {
     setTrimEndMs(Math.max(1, draft.settings.edit.trimEndMs))
     setSpeed(draft.settings.edit.speed)
     setCloseLoop(draft.settings.edit.closeLoop)
-    setRootMotion(draft.settings.edit.rootMotion)
+    setRootMotion(
+      draft.settings.edit.rootMotion === 'keep' &&
+      draft.settings.purpose !== 'walk' &&
+      draft.settings.purpose !== 'run'
+        ? 'all'
+        : draft.settings.edit.rootMotion,
+    )
     setLoop(draft.settings.edit.loop)
     setSmoothing(draft.settings.smoothing)
     setMirrorX(draft.settings.mirrorX ?? true)
@@ -234,28 +249,36 @@ export default function AnimationStudioV3() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      if (activePlayerProfile) await ensurePlayerAnimationCharacter(activePlayerProfile)
       const [items, savedDrafts] = await Promise.all([listAssets(), listAnimationDrafts()])
       if (cancelled) return
-      const nextCharacters = items.filter((asset) => asset.category === 'characters' && (asset.kind === 'glb' || asset.mime.includes('forge-character')))
+      const nextCharacters = items.filter((asset) =>
+        asset.category === 'characters' &&
+        (asset.kind === 'glb' || asset.mime.includes('forge-character')) &&
+        !asset.tags.includes('animation-target')
+      )
+      const activeFoundationId = activePlayerProfile?.blueprint.foundation?.bodyAssetId
       const activeTargetId = activePlayerProfile
         ? activePlayerProfile.blueprint.targetAssetId || playerAnimationTargetId(activePlayerProfile.id)
         : undefined
-      const activeTarget = activeTargetId ? nextCharacters.find((asset) => asset.id === activeTargetId) : undefined
+      const activeFoundation = activeFoundationId
+        ? nextCharacters.find((asset) => asset.id === activeFoundationId)
+        : undefined
       setCharacters(nextCharacters)
       setDrafts(savedDrafts)
       if (savedDrafts[0]) {
         await applyDraft(savedDrafts[0], nextCharacters)
         const savedCharacterId = savedDrafts[0].settings.characterAssetId
-        const savedUsesFoundation = !!activePlayerProfile?.blueprint.foundation?.bodyAssetId &&
-          savedCharacterId === activePlayerProfile.blueprint.foundation.bodyAssetId
-        if (activeTarget && (!savedCharacterId || savedUsesFoundation)) {
-          await loadCharacterAsset(activeTarget)
-          setStatus(`${savedDrafts[0].settings.edit.name} restored. ${activeTarget.name} selected as the active gameplay animation target.`)
+        const savedBelongsToActivePlayer =
+          !savedCharacterId ||
+          savedCharacterId === activeTargetId ||
+          savedCharacterId === activeFoundationId
+        if (activeFoundation && savedBelongsToActivePlayer) {
+          await loadCharacterAsset(activeFoundation)
+          setStatus(`${savedDrafts[0].settings.edit.name} restored on ${activeFoundation.name}, the active Skillbound body rig.`)
         }
-      } else if (activeTarget) {
-        await loadCharacterAsset(activeTarget)
-        setStatus(`${activeTarget.name} loaded as the active gameplay animation target. Record a take; it will save automatically.`)
+      } else if (activeFoundation) {
+        await loadCharacterAsset(activeFoundation)
+        setStatus(`${activeFoundation.name} loaded as the active Skillbound body rig. Record a take; it will save automatically.`)
       } else if (nextCharacters[0]) {
         await loadCharacterAsset(nextCharacters[0])
         setStatus(`${nextCharacters[0].name} loaded. Record a take; it will save automatically.`)
@@ -279,7 +302,7 @@ export default function AnimationStudioV3() {
         trimEndMs: Math.max(1, next.durationMs),
         speed: 1,
         closeLoop: definition?.loop ?? false,
-        rootMotion: action === 'walk' || action === 'run' ? 'horizontal' : 'keep',
+        rootMotion: action === 'walk' || action === 'run' ? 'horizontal' : 'all',
         loop: definition?.loop ?? false,
       }
       const settings: AnimationDraftSettings = {
@@ -438,7 +461,7 @@ export default function AnimationStudioV3() {
       setClipName(definition.label)
       setLoop(definition.loop)
       setCloseLoop(definition.loop)
-      setRootMotion(next === 'walk' || next === 'run' ? 'horizontal' : 'keep')
+      setRootMotion(next === 'walk' || next === 'run' ? 'horizontal' : 'all')
     }
     setPublished(undefined)
   }
@@ -456,7 +479,7 @@ export default function AnimationStudioV3() {
       const definition = actionDefinition(purpose)
       const settings: AnimationDraftSettings = {
         purpose,
-        edit: { name: next.name || definition?.label || 'Imported Motion', trimStartMs: 0, trimEndMs: Math.max(1, next.durationMs), speed: 1, closeLoop: definition?.loop ?? false, rootMotion: purpose === 'walk' || purpose === 'run' ? 'horizontal' : 'keep', loop: definition?.loop ?? false },
+        edit: { name: next.name || definition?.label || 'Imported Motion', trimStartMs: 0, trimEndMs: Math.max(1, next.durationMs), speed: 1, closeLoop: definition?.loop ?? false, rootMotion: purpose === 'walk' || purpose === 'run' ? 'horizontal' : 'all', loop: definition?.loop ?? false },
         smoothing,
         mirrorX: true,
         cleanup: cleanupOptions,
@@ -513,25 +536,17 @@ export default function AnimationStudioV3() {
   }
 
   const publishCurrent = async (testAfter = false) => {
-    if (!clip || !publishTarget || !canPublish) return false
+    if (!clip || !bakeTarget || !gameBindingTargetId || !canPublish) return false
     setBusy(true)
     setPlaying(false)
-    const targetLabel = publishingToActivePlayer ? `${publishTarget.name} (active gameplay character)` : publishTarget.name
+    const targetLabel = publishingToActivePlayer
+      ? `${activePlayerProfile?.name ?? 'Player'} using ${bakeTarget.name}`
+      : bakeTarget.name
     setStatus(testAfter ? `Publishing ${edit.name} to ${targetLabel} and preparing the in-studio test…` : `Publishing ${edit.name} to ${targetLabel}…`)
     try {
-      let effectiveTarget = publishTarget
-      if (publishingToActivePlayer && activePlayerProfile) {
-        const refreshed = await ensurePlayerAnimationCharacter(activePlayerProfile)
-        if (refreshed) effectiveTarget = refreshed
-        else {
-          const freshAsset = activePlayerTargetId ? await getAsset(activePlayerTargetId).catch(() => undefined) : undefined
-          if (freshAsset) effectiveTarget = freshAsset
-        }
-      }
-
-      const publishBlob = effectiveTarget.id === characterAsset?.id && characterBlob
+      const publishBlob = bakeTarget.id === characterAsset?.id && characterBlob
         ? characterBlob
-        : await libraryCharacterModelBlob(effectiveTarget)
+        : await libraryCharacterModelBlob(bakeTarget)
       const result = await publishAuthoredAnimation({
         motion: clip,
         characterBlob: publishBlob,
@@ -539,26 +554,41 @@ export default function AnimationStudioV3() {
         smoothing,
         mirrorX,
         cleanup: cleanupOptions,
-        characterAsset: effectiveTarget,
+        characterAsset: bakeTarget,
+        bindingTargetId: gameBindingTargetId,
+        bindingTargetName: gameBindingTargetName,
         action: purpose,
       })
-      const nextPublished: PublishedState = { action: purpose, clipName: result.built.clipName, animationAssetId: result.animationAsset.id, set: result.set, target: effectiveTarget, revision: Date.now() }
+      const nextPublished: PublishedState = {
+        action: purpose,
+        clipName: result.built.clipName,
+        animationAssetId: result.animationAsset.id,
+        set: result.set,
+        target: bakeTarget,
+        revision: Date.now(),
+      }
       setPublished(nextPublished)
       if (selectedDraftId) {
         const saved = await saveAnimationDraft({
           id: selectedDraftId,
           motion: clip,
-          settings: { ...draftSettings, characterAssetId: effectiveTarget.id, characterName: effectiveTarget.name, publishedAnimationAssetId: result.animationAsset.id, publishedAt: new Date().toISOString() },
+          settings: {
+            ...draftSettings,
+            characterAssetId: bakeTarget.id,
+            characterName: bakeTarget.name,
+            publishedAnimationAssetId: result.animationAsset.id,
+            publishedAt: new Date().toISOString(),
+          },
         })
         setDrafts((current) => current.map((draft) => draft.id === saved.id ? saved : draft))
         setDraftSavedAt(saved.asset.updatedAt)
       }
       if (testAfter) {
         setTestToken((value) => value + 1)
-        setStatus(`${result.built.clipName} published to ${targetLabel}. Running the exact gameplay animation below.`)
+        setStatus(`${result.built.clipName} published to ${targetLabel}. Running the exact body-rig animation below.`)
         window.setTimeout(() => document.querySelector('.animation-studio-v3-test')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
       } else {
-        setStatus(`${result.built.clipName} published as ${selectedAction?.label} to ${targetLabel}. ${publishingToActivePlayer ? 'It will be used by the active Skillbound character the next time gameplay starts.' : 'The draft remains saved for later edits.'}`)
+        setStatus(`${result.built.clipName} published as ${selectedAction?.label} to ${targetLabel}. ${publishingToActivePlayer ? 'The clip is authored on the active Male/Female body rig and bound to this player profile.' : 'The draft remains saved for later edits.'}`)
       }
       return true
     } catch (error) {
@@ -676,7 +706,7 @@ export default function AnimationStudioV3() {
           </div>
           <input className="timeline-range" type="range" min={0} max={Math.max(1, previewDuration)} value={Math.min(playhead, previewDuration)} disabled={!clip} onChange={(event) => { const value = Number(event.target.value); setPlayhead(value); playbackOffsetRef.current = value; setPlaying(false) }}/>
           <div className="timeline-track"><div className="track-label">{selectedAction?.label?.toUpperCase() ?? 'ANIMATION'}</div><div className={`track-clip ${clip ? 'has-clip' : ''}`}>{clip ? `${cleanedPreview?.motion.frames.length ?? 0} frames · ${speed.toFixed(2)}× · ${rootMotion === 'keep' ? 'root motion' : rootMotion === 'horizontal' ? 'in-place X/Z' : 'root locked'}` : 'Record a take with the phone'}</div></div>
-          <div className="timeline-track character-track"><div className="track-label">CHARACTER</div><div className="track-clip has-character">{characterName} · {publishTarget && publishTarget.id !== characterAsset?.id ? `game publish → ${publishTarget.name}` : characterAsset ? 'publish target' : 'preview only'}</div></div>
+          <div className="timeline-track character-track"><div className="track-label">CHARACTER</div><div className="track-clip has-character">{characterName} · {publishingToActivePlayer ? `body rig → ${bakeTarget?.name} · game binding → ${activePlayerProfile?.name}` : characterAsset ? 'publish target' : 'preview only'}</div></div>
         </div>
       </section>
 
@@ -692,10 +722,10 @@ export default function AnimationStudioV3() {
           <span className="property-label">Character</span>
           <select value={characterAsset?.id ?? 'builtin'} onChange={(event) => { const id = event.target.value; setPublished(undefined); if (id === 'builtin') void loadCharacterAsset(undefined); else void loadCharacterAsset(characters.find((asset) => asset.id === id)) }}>
             <option value="builtin">Forge Mannequin · preview only</option>
-            {characters.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}{asset.id === activePlayerTargetId ? ' · ACTIVE GAME' : ''}</option>)}
+            {characters.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}{asset.id === activeFoundationAssetId ? ' · ACTIVE BODY' : ''}</option>)}
           </select>
           <div className="mini-row"><span>Rig</span><span className={rigInfo && rigInfo.coreMappedCount >= 8 ? 'status-good' : 'status-warn'}>{rigInfo ? `${rigInfo.coreMappedCount}/${rigInfo.coreTotal} core bones` : 'Scanning…'}</span></div>
-          {activePlayerTarget && <p className="active-game-target-note"><b>Active game:</b> {activePlayerTarget.name}{publishTarget?.id === activePlayerTarget.id ? ' · this animation will publish here' : ''}</p>}
+          {activePlayerProfile && activeFoundationAsset && <p className="active-game-target-note"><b>Active game:</b> {activePlayerProfile.name} · body rig {activeFoundationAsset.name}{publishingToActivePlayer ? ' · publish uses this exact rig' : ''}</p>}
         </div>
 
         <div className="authoring-section phone-section">
@@ -729,7 +759,7 @@ export default function AnimationStudioV3() {
 
         <div className="authoring-section publish-section">
           <span className="property-label">Save / publish / test</span>
-          <div className="publish-summary"><div><span>Draft</span><strong>{selectedDraftId ? 'Autosaved' : 'Record first'}</strong></div><div><span>Game target</span><strong>{publishTarget?.name ?? 'Select character'}</strong></div><div><span>Action</span><strong>{selectedAction?.label}</strong></div></div>
+          <div className="publish-summary"><div><span>Draft</span><strong>{selectedDraftId ? 'Autosaved' : 'Record first'}</strong></div><div><span>Body rig</span><strong>{bakeTarget?.name ?? 'Select character'}</strong></div><div><span>Game binding</span><strong>{gameBindingTargetName ?? '—'}</strong></div><div><span>Action</span><strong>{selectedAction?.label}</strong></div></div>
           <button className="primary-button authoring-publish" disabled={!canPublish} onClick={() => void publishCurrent(false)}><UploadCloud size={16}/>{busy ? 'Building…' : 'Publish to Game'}</button>
           <button className="secondary-button authoring-test" disabled={!canPublish} onClick={() => void publishCurrent(true)}><Gamepad2 size={16}/> Publish + Test Here</button>
           {published && <div className="published-confirm"><CheckCircle2 size={15}/><span>{published.clipName} is bound to {actionDefinition(published.action)?.label}.</span></div>}
