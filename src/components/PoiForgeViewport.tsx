@@ -3,10 +3,10 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 import type {
-  PoiMaterialPreset,
   PoiPrefab,
   PoiPrefabPart,
 } from '../lib/poiPrefab'
+import { buildPoiPrefabPartObject } from '../engine/poiPrefabWorld'
 
 export type PoiForgeTransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -261,7 +261,7 @@ export default function PoiForgeViewport({
     addFootprint(root, prefab)
 
     for (const part of prefab.parts) {
-      const object = buildPart(part)
+      const object = buildPoiPrefabPartObject(part)
       state.parts.set(part.id, object)
       root.add(object)
     }
@@ -393,128 +393,6 @@ function addFootprint(root: THREE.Group, prefab: PoiPrefab) {
   )
   line.name = 'PoiForgeFootprintOutline'
   root.add(line)
-}
-
-function buildPart(part: PoiPrefabPart) {
-  const root = new THREE.Group()
-  root.name = `PoiPart_${part.kind}`
-  root.userData.poiPartId = part.id
-  root.position.set(...part.position)
-  root.rotation.set(...part.rotation)
-  root.scale.set(...part.scale)
-
-  if (part.kind === 'entry') {
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x75d394,
-      transparent: true,
-      opacity: .9,
-      depthWrite: false,
-    })
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(.52, .055, 6, 22),
-      material,
-    )
-    ring.rotation.x = Math.PI / 2
-    ring.position.y = .055
-    const arrow = new THREE.Mesh(
-      new THREE.ConeGeometry(.16, .48, 6),
-      material,
-    )
-    arrow.rotation.x = Math.PI / 2
-    arrow.position.set(0, .11, -.7)
-    root.add(ring, arrow)
-    return root
-  }
-
-  if (part.kind === 'torch') {
-    const wood = materialForPart({
-      ...part,
-      material: 'wood',
-      color: undefined,
-    })
-    const post = new THREE.Mesh(
-      new THREE.CylinderGeometry(.055, .075, 1.2, 6),
-      wood,
-    )
-    post.position.y = .6
-    post.castShadow = true
-    const ember = new THREE.Mesh(
-      new THREE.SphereGeometry(.12, 8, 6),
-      new THREE.MeshStandardMaterial({
-        color: 0xffb25e,
-        emissive: 0xff6e28,
-        emissiveIntensity: 2,
-        roughness: .45,
-      }),
-    )
-    ember.position.y = 1.25
-    const glow = new THREE.PointLight(0xff8b3d, 1.45, 7)
-    glow.position.y = 1.3
-    root.add(post, ember, glow)
-    return root
-  }
-
-  const material = materialForPart(part)
-  let geometry: THREE.BufferGeometry
-  if (part.kind === 'cylinder') {
-    geometry = new THREE.CylinderGeometry(.5, .54, 1, 8)
-  } else if (part.kind === 'rock') {
-    geometry = new THREE.DodecahedronGeometry(.5, 0)
-  } else if (part.kind === 'tent') {
-    geometry = new THREE.ConeGeometry(.58, 1, 4)
-    geometry.rotateY(Math.PI / 4)
-  } else if (part.kind === 'log') {
-    geometry = new THREE.CylinderGeometry(.5, .5, 1, 7)
-    geometry.rotateZ(Math.PI / 2)
-  } else {
-    geometry = new THREE.BoxGeometry(1, 1, 1)
-  }
-
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.userData.poiPartId = part.id
-  mesh.castShadow = part.kind !== 'log' || part.scale[1] > .1
-  mesh.receiveShadow = true
-  root.add(mesh)
-  return root
-}
-
-function materialForPart(part: PoiPrefabPart) {
-  const preset = materialPreset(part.material)
-  const color = part.color
-    ? new THREE.Color(part.color)
-    : new THREE.Color(preset.color)
-  return new THREE.MeshStandardMaterial({
-    color,
-    emissive: preset.emissive,
-    emissiveIntensity: preset.emissiveIntensity,
-    roughness: preset.roughness,
-    metalness: preset.metalness,
-  })
-}
-
-function materialPreset(material: PoiMaterialPreset) {
-  if (material === 'dark-stone') {
-    return { color: 0x3f433d, emissive: 0x000000, emissiveIntensity: 0, roughness: 1, metalness: 0 }
-  }
-  if (material === 'wood') {
-    return { color: 0x5b412d, emissive: 0x000000, emissiveIntensity: 0, roughness: .96, metalness: 0 }
-  }
-  if (material === 'cloth') {
-    return { color: 0x6a5941, emissive: 0x000000, emissiveIntensity: 0, roughness: 1, metalness: 0 }
-  }
-  if (material === 'earth') {
-    return { color: 0x514634, emissive: 0x000000, emissiveIntensity: 0, roughness: 1, metalness: 0 }
-  }
-  if (material === 'bone') {
-    return { color: 0xbcb49a, emissive: 0x000000, emissiveIntensity: 0, roughness: .9, metalness: 0 }
-  }
-  if (material === 'metal') {
-    return { color: 0x606966, emissive: 0x000000, emissiveIntensity: 0, roughness: .55, metalness: .55 }
-  }
-  if (material === 'moss') {
-    return { color: 0x415c3d, emissive: 0x000000, emissiveIntensity: 0, roughness: 1, metalness: 0 }
-  }
-  return { color: 0x686b61, emissive: 0x000000, emissiveIntensity: 0, roughness: 1, metalness: 0 }
 }
 
 function disposeObject(root?: THREE.Object3D) {
