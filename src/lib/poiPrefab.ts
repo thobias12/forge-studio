@@ -481,8 +481,9 @@ function starterPoiSockets(id: string): GameplaySocket[] {
         radius: 2.2,
         prompt: 'Search Remains',
         action: 'container',
+        targetRef: 'world-cache',
         oneShot: true,
-        message: 'The den cache is ready for a Loot Forge table.',
+        message: 'You search the remains.',
       }),
     ]
   }
@@ -495,8 +496,9 @@ function starterPoiSockets(id: string): GameplaySocket[] {
         radius: 2.2,
         prompt: 'Search Ruins',
         action: 'container',
+        targetRef: 'world-cache',
         oneShot: true,
-        message: 'The ruins cache is ready for a Loot Forge table.',
+        message: 'You search the ruined cache.',
       }),
       createGameplaySocket('enemy', {
         id: 'socket-ruins-enemy',
@@ -507,6 +509,27 @@ function starterPoiSockets(id: string): GameplaySocket[] {
     ]
   }
   return []
+}
+
+function migrateStarterPoiSockets(
+  prefabId: string,
+  sockets: GameplaySocket[],
+) {
+  if (
+    prefabId !== 'starter-beast-den' &&
+    prefabId !== 'starter-forest-ruins'
+  ) {
+    return sockets
+  }
+  return sockets.map((socket) =>
+    (
+      socket.id === 'socket-den-loot' ||
+      socket.id === 'socket-ruins-loot'
+    ) &&
+    !socket.targetRef
+      ? { ...socket, targetRef: 'world-cache' }
+      : socket,
+  )
 }
 
 function normalizePoiPrefab(value: unknown): PoiPrefab | undefined {
@@ -544,12 +567,14 @@ function normalizePoiPrefab(value: unknown): PoiPrefab | undefined {
     gridSize: clampNumber(source.gridSize, .1, 4, .5),
     snap: typeof source.snap === 'boolean' ? source.snap : true,
     parts,
-    sockets:
+    sockets: migrateStarterPoiSockets(
+      typeof source.id === 'string' ? source.id : '',
       source.sockets === undefined
         ? starterPoiSockets(
             typeof source.id === 'string' ? source.id : '',
           )
         : normalizeGameplaySockets(source.sockets),
+    ),
     createdAt: typeof source.createdAt === 'string' ? source.createdAt : now,
     updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : now,
   }
