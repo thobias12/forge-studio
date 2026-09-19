@@ -122,6 +122,7 @@ export function buildEquipmentForgeV3Visual(
           source,
           result.frame,
           recipe.length,
+          recipe.sleeve,
         )
     }
   }
