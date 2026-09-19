@@ -1,3 +1,4 @@
+# Temporary branch-only build gate for v1.72.0 validation.
 name: Validate inventory branch
 
 on:
