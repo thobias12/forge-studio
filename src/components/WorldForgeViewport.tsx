@@ -78,6 +78,7 @@ type ViewState = {
   ambient?: WorldAmbientVisuals
   weather?: WorldWeatherVisuals
   region?: GeneratedRegion
+  framingKey?: string
   observer?: ResizeObserver
   raf?: number
 }
@@ -337,17 +338,21 @@ export default function WorldForgeViewport({
     resetWorldEnvironmentSceneCache(state.scene)
     updatePoiSelectionHighlight(built.landmarks, selectedPoiId)
 
-    const width = region.bounds.maxX - region.bounds.minX
-    const depth = region.bounds.maxZ - region.bounds.minZ
-    const centerX = (region.bounds.minX + region.bounds.maxX) / 2
-    const centerZ = (region.bounds.minZ + region.bounds.maxZ) / 2
-    const span = Math.max(width, depth)
-    state.controls.target.set(centerX, 0, centerZ)
-    state.camera.position.set(centerX + span * .56, span * .62, centerZ + span * .65)
-    state.camera.lookAt(centerX, 0, centerZ)
-    state.controls.minDistance = Math.max(18, span * .16)
-    state.controls.maxDistance = span * 1.7
-    state.controls.update()
+    const framingKey = `${region.regionId}:${region.seed}`
+    if (state.framingKey !== framingKey) {
+      const width = region.bounds.maxX - region.bounds.minX
+      const depth = region.bounds.maxZ - region.bounds.minZ
+      const centerX = (region.bounds.minX + region.bounds.maxX) / 2
+      const centerZ = (region.bounds.minZ + region.bounds.maxZ) / 2
+      const span = Math.max(width, depth)
+      state.controls.target.set(centerX, 0, centerZ)
+      state.camera.position.set(centerX + span * .56, span * .62, centerZ + span * .65)
+      state.camera.lookAt(centerX, 0, centerZ)
+      state.controls.minDistance = Math.max(18, span * .16)
+      state.controls.maxDistance = span * 1.7
+      state.controls.update()
+      state.framingKey = framingKey
+    }
 
     built.route.visible = showRoute
     built.branches.visible = showBranches
