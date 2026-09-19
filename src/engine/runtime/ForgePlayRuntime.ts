@@ -165,6 +165,7 @@ type RuntimeInteraction = {
   sourceName: string
   radiusScale: number
   cooldownRemaining: number
+  activationCount: number
   used: boolean
 }
 
@@ -1609,7 +1610,7 @@ export class ForgePlayRuntime {
       interaction.socket.action ?? 'message'
     const fallbackMessage =
       action === 'container'
-        ? 'Container opened. Loot Forge can bind rewards here.'
+        ? 'Container opened.'
         : action === 'shrine'
           ? 'The shrine answers with a warm pulse.'
           : action === 'door'
@@ -1620,10 +1621,47 @@ export class ForgePlayRuntime {
                 ? 'Quest interaction triggered.'
                 : `${socketActionLabel(interaction.socket)} triggered.`
 
-    this.setMessage(
+    let resultMessage =
       interaction.socket.message?.trim() ||
-        fallbackMessage,
-      action === 'message' ? 3.2 : 2.8,
+      fallbackMessage
+
+    if (action === 'container') {
+      const tableId =
+        interaction.socket.targetRef?.trim()
+      const loot = this.rollLootTableAt(
+        tableId,
+        `container:${interaction.id}:open:${interaction.activationCount}`,
+        world,
+        false,
+      )
+      if (tableId && !loot) {
+        resultMessage =
+          `Loot table "${tableId}" is missing.`
+      } else if (loot) {
+        const itemCount = loot.items.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        )
+        const rewards = [
+          itemCount > 0
+            ? `${itemCount} item${itemCount === 1 ? '' : 's'}`
+            : '',
+          loot.gold > 0 ? `${loot.gold} gold` : '',
+          loot.xp > 0 ? `${loot.xp} XP` : '',
+        ].filter(Boolean)
+        resultMessage = rewards.length
+          ? `${resultMessage} · ${rewards.join(' · ')}`
+          : `${resultMessage} · Empty`
+      } else if (!tableId) {
+        resultMessage =
+          'Container opened · no Loot Forge table is assigned.'
+      }
+      interaction.activationCount += 1
+    }
+
+    this.setMessage(
+      resultMessage,
+      action === 'message' ? 3.2 : 3.1,
     )
 
     if (action === 'shrine') {
@@ -2931,6 +2969,7 @@ function addGeneratedPois(
           radiusScale:
             placement.scale * poiVisualScale,
           cooldownRemaining: 0,
+          activationCount: 0,
           used: false,
         })
       }
