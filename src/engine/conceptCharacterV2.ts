@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { createConceptCharacter } from '../lib/conceptCryptSkeleton'
-import { disposeForgeCharacter, type ForgeCharacterBuild, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
+import { createProceduralCharacter, disposeForgeCharacter, type ForgeCharacterBuild, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
 import {
   createStarterClassCharacter,
   type SkillboundStarterClass,
@@ -36,19 +36,48 @@ export function starterClassFromRole(role?: string): SkillboundStarterClass | un
 }
 
 export async function exportConceptForgeCharacterGlb(config: ForgeCharacterConfig): Promise<Blob> {
-  const build = createConceptForgeCharacter(config)
+  return exportForgeCharacterBuildGlb(createConceptForgeCharacter(config), true)
+}
+
+export async function exportConceptForgeAnimationTargetGlb(config: ForgeCharacterConfig): Promise<Blob> {
+  // Animation targets must retain a real skinned ForgeHumanoidV1 rig. The visual
+  // starter-class generators intentionally replace the old skinned body with
+  // bone-parented meshes, which is great for rendering but lets GLTF export prune
+  // too much of the authoring skeleton. Keep the same canonical bone names/rest
+  // rotations using the underlying procedural rig and strip gameplay gear instead.
+  const build = createProceduralCharacter({
+    ...config,
+    armor: 'none',
+    headwear: 'none',
+    weapon: 'none',
+  })
+  build.root.userData.forgeCharacter = {
+    ...build.root.userData.forgeCharacter,
+    animationTarget: true,
+    animationTargetVersion: 2,
+    weaponPolicy: 'external-item-forge',
+    previewWeapon: false,
+    mocapFacingYaw: Math.PI,
+  }
+  return exportForgeCharacterBuildGlb(build, false)
+}
+
+async function exportForgeCharacterBuildGlb(build: ForgeCharacterBuild, onlyVisible: boolean): Promise<Blob> {
   build.root.updateMatrixWorld(true)
   const exporter = new GLTFExporter()
-  const result = await new Promise<ArrayBuffer>((resolve, reject) => {
-    exporter.parse(
-      build.root,
-      (data) => data instanceof ArrayBuffer ? resolve(data) : reject(new Error('Forge expected a binary GLB export.')),
-      reject,
-      { binary: true, animations: build.clips, trs: true, onlyVisible: true, includeCustomExtensions: true },
-    )
-  })
-  disposeForgeCharacter(build.root)
-  return new Blob([result], { type: 'model/gltf-binary' })
+  try {
+    const result = await new Promise<ArrayBuffer>((resolve, reject) => {
+      exporter.parse(
+        build.root,
+        (data) => data instanceof ArrayBuffer ? resolve(data) : reject(new Error('Forge expected a binary GLB export.')),
+        reject,
+        { binary: true, animations: build.clips, trs: true, onlyVisible, includeCustomExtensions: true },
+      )
+    })
+    return new Blob([result], { type: 'model/gltf-binary' })
+  } finally {
+    disposeForgeCharacter(build.root)
+  }
 }
 
 function stripLegacyConceptWeapon(build: ForgeCharacterBuild) {

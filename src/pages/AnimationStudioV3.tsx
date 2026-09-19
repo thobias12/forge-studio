@@ -36,11 +36,12 @@ import {
   type AnimationStudioDraft,
 } from '../lib/animationDrafts'
 import type { RootMotionMode } from '../lib/animationEdit'
-import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import { cleanupMotion, type MotionCleanupOptions } from '../lib/motionCleanup'
 import { averageVisibility, downloadJson, formatDuration } from '../lib/pose'
 import type { RigInfo } from '../lib/retarget'
 import {
+  ensurePlayerAnimationCharacter,
   getActivePlayerProfileId,
   listPlayerProfiles,
   playerAnimationTargetId,
@@ -232,7 +233,9 @@ export default function AnimationStudioV3() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([listAssets(), listAnimationDrafts()]).then(async ([items, savedDrafts]) => {
+    void (async () => {
+      if (activePlayerProfile) await ensurePlayerAnimationCharacter(activePlayerProfile)
+      const [items, savedDrafts] = await Promise.all([listAssets(), listAnimationDrafts()])
       if (cancelled) return
       const nextCharacters = items.filter((asset) => asset.category === 'characters' && (asset.kind === 'glb' || asset.mime.includes('forge-character')))
       const activeTargetId = activePlayerProfile
@@ -257,7 +260,7 @@ export default function AnimationStudioV3() {
         await loadCharacterAsset(nextCharacters[0])
         setStatus(`${nextCharacters[0].name} loaded. Record a take; it will save automatically.`)
       }
-    }).catch(() => setStatus('Could not read the Shared Asset Library. Import a character GLB to continue.'))
+    })().catch(() => setStatus('Could not read the Shared Asset Library. Import a character GLB to continue.'))
     return () => { cancelled = true }
   }, [activePlayerProfile])
 
@@ -516,9 +519,19 @@ export default function AnimationStudioV3() {
     const targetLabel = publishingToActivePlayer ? `${publishTarget.name} (active gameplay character)` : publishTarget.name
     setStatus(testAfter ? `Publishing ${edit.name} to ${targetLabel} and preparing the in-studio test…` : `Publishing ${edit.name} to ${targetLabel}…`)
     try {
-      const publishBlob = publishTarget.id === characterAsset?.id && characterBlob
+      let effectiveTarget = publishTarget
+      if (publishingToActivePlayer && activePlayerProfile) {
+        const refreshed = await ensurePlayerAnimationCharacter(activePlayerProfile)
+        if (refreshed) effectiveTarget = refreshed
+        else {
+          const freshAsset = activePlayerTargetId ? await getAsset(activePlayerTargetId).catch(() => undefined) : undefined
+          if (freshAsset) effectiveTarget = freshAsset
+        }
+      }
+
+      const publishBlob = effectiveTarget.id === characterAsset?.id && characterBlob
         ? characterBlob
-        : await libraryCharacterModelBlob(publishTarget)
+        : await libraryCharacterModelBlob(effectiveTarget)
       const result = await publishAuthoredAnimation({
         motion: clip,
         characterBlob: publishBlob,
@@ -526,16 +539,16 @@ export default function AnimationStudioV3() {
         smoothing,
         mirrorX,
         cleanup: cleanupOptions,
-        characterAsset: publishTarget,
+        characterAsset: effectiveTarget,
         action: purpose,
       })
-      const nextPublished: PublishedState = { action: purpose, clipName: result.built.clipName, animationAssetId: result.animationAsset.id, set: result.set, target: publishTarget, revision: Date.now() }
+      const nextPublished: PublishedState = { action: purpose, clipName: result.built.clipName, animationAssetId: result.animationAsset.id, set: result.set, target: effectiveTarget, revision: Date.now() }
       setPublished(nextPublished)
       if (selectedDraftId) {
         const saved = await saveAnimationDraft({
           id: selectedDraftId,
           motion: clip,
-          settings: { ...draftSettings, characterAssetId: publishTarget.id, characterName: publishTarget.name, publishedAnimationAssetId: result.animationAsset.id, publishedAt: new Date().toISOString() },
+          settings: { ...draftSettings, characterAssetId: effectiveTarget.id, characterName: effectiveTarget.name, publishedAnimationAssetId: result.animationAsset.id, publishedAt: new Date().toISOString() },
         })
         setDrafts((current) => current.map((draft) => draft.id === saved.id ? saved : draft))
         setDraftSavedAt(saved.asset.updatedAt)
