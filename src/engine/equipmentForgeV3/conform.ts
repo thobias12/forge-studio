@@ -92,6 +92,7 @@ export function buildConformedTunic(
   trim: THREE.MeshStandardMaterial,
   leather: THREE.MeshStandardMaterial,
   accent: THREE.MeshStandardMaterial,
+  metal: THREE.MeshStandardMaterial,
 ): ConformedTunicResult {
   source.updateMatrixWorld(true)
 
@@ -202,11 +203,18 @@ export function buildConformedTunic(
   }
 
   if (recipe.layers.vest) {
-    meshes.push(
+    const vest =
       createVestOverlay(
         source,
         torso.geometry,
         leather,
+      )
+    meshes.push(vest)
+    meshes.push(
+      ...createVestDetailTrim(
+        source,
+        vest.geometry,
+        trim,
       ),
     )
   }
@@ -225,6 +233,13 @@ export function buildConformedTunic(
         .0045,
       ),
     )
+    meshes.push(
+      createBeltBuckle(
+        source,
+        torso.geometry,
+        metal,
+      ),
+    )
   }
 
   if (recipe.layers.tabard) {
@@ -240,13 +255,23 @@ export function buildConformedTunic(
   }
 
   if (recipe.layers.cape) {
-    meshes.push(
+    const cape =
       createCapeLayer(
         source,
+        sourceVertices,
         torso.geometry,
         frame,
         recipe,
         accent,
+      )
+    meshes.push(cape)
+    meshes.push(
+      ...createCapeDetails(
+        source,
+        cape.geometry,
+        trim,
+        leather,
+        metal,
       ),
     )
   }
