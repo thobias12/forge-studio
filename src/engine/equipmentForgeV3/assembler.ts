@@ -11,6 +11,10 @@ import {
   equipmentForgeV3Template,
   normalizeEquipmentForgeV3Recipe,
 } from './templateRegistry'
+import {
+  analyzeEquipmentForgeV3Fit,
+  type EquipmentFitDiagnostics,
+} from './fitDiagnostics'
 import type {
   EquipmentForgeV3Recipe,
 } from './types'
@@ -19,6 +23,7 @@ type V3RootData = {
   meshes: THREE.SkinnedMesh[]
   restoreMask?: BodyMaskRestore
   materials: THREE.Material[]
+  fitDiagnostics?: EquipmentFitDiagnostics
 }
 
 export function buildEquipmentForgeV3Visual(
@@ -116,6 +121,12 @@ export function buildEquipmentForgeV3Visual(
       ...result.meshes,
     )
 
+    data.fitDiagnostics =
+      analyzeEquipmentForgeV3Fit(
+        source,
+        result.meshes,
+      )
+
     if (template.maskBody) {
       data.restoreMask =
         maskBodyUnderTunic(
@@ -160,4 +171,21 @@ export function disposeEquipmentForgeV3Visual(
   }
 
   root.removeFromParent()
+}
+
+
+export function getEquipmentForgeV3FitDiagnostics(
+  bodyRoot: THREE.Object3D,
+) {
+  const root =
+    bodyRoot.getObjectByName(
+      '__equipment_forge_v3',
+    ) as THREE.Group | undefined
+
+  const data =
+    root?.userData.v3Data as
+      | V3RootData
+      | undefined
+
+  return data?.fitDiagnostics
 }
