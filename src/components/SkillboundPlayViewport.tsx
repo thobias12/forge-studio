@@ -343,6 +343,12 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     <div className="skillbound-runtime-actions">
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
       <button onClick={reset}>Reset run</button>
+      {!activeDungeonId && <button
+        onClick={() => runtimeRef.current?.spawnTestPack(8)}
+        title="Spawns temporary enemies near you without changing world generation or saved encounter progress."
+      >
+        Spawn test pack · 8
+      </button>}
       <button
         className={showEnvironment ? 'active' : ''}
         onClick={() => setShowEnvironment((value) => !value)}

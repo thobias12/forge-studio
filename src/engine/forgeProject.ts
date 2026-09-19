@@ -34,11 +34,31 @@ export type ForgeWorldNodeType = 'procedural-region' | 'town' | 'dungeon'
 export type ForgeWorldNode = { id: string; label: string; type: ForgeWorldNodeType; ref?: string; required: boolean }
 export type ForgeWorldDefinition = { format: 'forge-world'; version: 1; id: string; name: string; act: number; nodes: ForgeWorldNode[] }
 export type ForgePathStyle = 'direct' | 'winding' | 'meandering'
-export type ForgeDensity = 'low' | 'medium' | 'high'
+export type ForgeDensity = 'low' | 'medium' | 'high' | 'horde'
 export type ForgeRegionSize = 'small' | 'medium' | 'large'
 export type ForgeRegionMood = 'auto' | 'normal' | 'dark' | 'deadwood' | 'bleak'
 export type ForgeRegionWorldGeneration = { size: ForgeRegionSize; mood?: ForgeRegionMood; elevation: number; cliffs: number; water: number; forestDensity: number; openSpace: number; exploration: number; loops: number; secretPaths: number; verticality: number; poiDensity: number; layerSeeds?: { terrain: number; routes: number; pois: number; dressing: number } }
-export type ForgeRegionDefinition = { format: 'forge-region'; version: 1; id: string; name: string; biome: string; chunkRange: [number, number]; mainPath: ForgePathStyle; branchRange: [number, number]; landmarkRange: [number, number]; enemyDensity: ForgeDensity; optionalDungeonChance: number; settlementChance: number; features: string[]; linkedDungeonId?: string; worldGen?: ForgeRegionWorldGeneration }
+export type ForgeRegionDefinition = {
+  format: 'forge-region'
+  version: 1
+  id: string
+  name: string
+  biome: string
+  chunkRange: [number, number]
+  mainPath: ForgePathStyle
+  branchRange: [number, number]
+  landmarkRange: [number, number]
+  enemyDensity: ForgeDensity
+  encounterGroupRange?: [number, number]
+  encounterMinSpacing?: number
+  enemyRespawn?: boolean
+  enemyRespawnSeconds?: number
+  optionalDungeonChance: number
+  settlementChance: number
+  features: string[]
+  linkedDungeonId?: string
+  worldGen?: ForgeRegionWorldGeneration
+}
 export type ForgeAbilityKind = 'melee' | 'area'
 export type ForgeAbilityInput = 'primary' | 'skill-1'
 export type ForgeAbilityDelivery = 'standard' | 'chain'

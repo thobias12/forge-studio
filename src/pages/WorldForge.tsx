@@ -549,10 +549,79 @@ export default function WorldForge() {
       <section className="world-forge-section">
         <h3>Gameplay content</h3>
         <Field label="Enemy density">
-          <select value={region.enemyDensity} onChange={(event) => updateRegion({ enemyDensity: event.target.value as ForgeDensity })}>
-            <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+          <select
+            value={region.enemyDensity}
+            onChange={(event) => {
+              const density = event.target.value as ForgeDensity
+              const defaultGroups: Record<ForgeDensity, [number, number]> = {
+                low: [2, 4],
+                medium: [4, 6],
+                high: [6, 9],
+                horde: [9, 12],
+              }
+              updateRegion({
+                enemyDensity: density,
+                encounterGroupRange:
+                  region.encounterGroupRange ?? defaultGroups[density],
+              })
+            }}
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="horde">Horde</option>
           </select>
         </Field>
+        <RangePair
+          label="Enemies per encounter"
+          value={region.encounterGroupRange ?? (
+            region.enemyDensity === 'horde'
+              ? [9, 12]
+              : region.enemyDensity === 'high'
+                ? [6, 9]
+                : region.enemyDensity === 'low'
+                  ? [2, 4]
+                  : [4, 6]
+          )}
+          min={1}
+          max={30}
+          onChange={(encounterGroupRange) =>
+            updateRegion({ encounterGroupRange })
+          }
+        />
+        <Slider
+          label="Minimum enemy spacing"
+          value={region.encounterMinSpacing ?? 1.65}
+          min={.8}
+          max={4}
+          step={.05}
+          onChange={(encounterMinSpacing) =>
+            updateRegion({ encounterMinSpacing })
+          }
+        />
+        <Field label="Respawn enemies">
+          <select
+            value={region.enemyRespawn ? 'on' : 'off'}
+            onChange={(event) =>
+              updateRegion({
+                enemyRespawn: event.target.value === 'on',
+              })
+            }
+          >
+            <option value="off">Off · defeated stays cleared</option>
+            <option value="on">On</option>
+          </select>
+        </Field>
+        {region.enemyRespawn && <Slider
+          label="Respawn delay"
+          value={region.enemyRespawnSeconds ?? 30}
+          min={3}
+          max={120}
+          step={1}
+          onChange={(enemyRespawnSeconds) =>
+            updateRegion({ enemyRespawnSeconds })
+          }
+        />}
         <Slider label="Optional dungeon" value={region.optionalDungeonChance} onChange={(value) => updateRegion({ optionalDungeonChance: value })}/>
         <Slider label="Settlement" value={region.settlementChance} onChange={(value) => updateRegion({ settlementChance: value })}/>
       </section>
@@ -567,6 +636,8 @@ export default function WorldForge() {
         <DebugRow label="Points of interest" value={generated.pois.length}/>
         <DebugRow label="Biome dressing" value={generated.dressing.length}/>
         <DebugRow label="Encounters" value={generated.nodes.filter((node) => node.kind === 'encounter').length}/>
+        <DebugRow label="Enemies / encounter" value={generated.encounters.groupRange[1]}/>
+        <DebugRow label="Encounter max enemies" value={generated.nodes.filter((node) => node.kind === 'encounter').length * generated.encounters.groupRange[1]}/>
         {generated.validation.valid
           ? <div className="world-forge-valid"><CheckCircle2 size={14}/> Entry, exit and dungeon traversal are valid.</div>
           : generated.validation.issues.map((issue) => <div className="world-forge-invalid" key={issue}>{issue}</div>)}

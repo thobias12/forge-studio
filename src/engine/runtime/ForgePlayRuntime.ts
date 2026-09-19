@@ -154,6 +154,11 @@ type RuntimeEnemy = {
   repathRemaining: number
   visual?: ForgeCharacterVisualBinding
   moving: boolean
+  spawnX: number
+  spawnZ: number
+  transient: boolean
+  respawn: boolean
+  respawnSeconds: number
 }
 
 type RuntimeLoot = {
@@ -218,6 +223,7 @@ export class ForgePlayRuntime {
   private readonly usedInteractionIds = new Set<string>()
   private readonly interactions: RuntimeInteraction[] = []
   private readonly cooldowns = new Map<string, number>()
+  private readonly respawnTimers = new Set<number>()
   private readonly abilityAnimationClipNames = new Map<string, string>()
   private readonly playerDefinition: ForgePlayerDefinition
   private readonly saveKey: string
@@ -256,6 +262,7 @@ export class ForgePlayRuntime {
   private hitStopRemaining = 0
   private cameraShake = 0
   private chainCastSequence = 0
+  private testPackSequence = 0
   private playerMoving = false
   private activeInteractionId: string | undefined
   private interactionHeld = false
@@ -346,6 +353,8 @@ export class ForgePlayRuntime {
     this.libraryVfx.forEach((effect) => effect.dispose())
     this.chainLightningEffects.forEach((effect) => effect.dispose())
     this.chainLightningEffects.length = 0
+    this.respawnTimers.forEach((timer) => window.clearTimeout(timer))
+    this.respawnTimers.clear()
     this.scene.traverse((object) => {
       if (
         !(object instanceof THREE.Mesh) &&
@@ -375,6 +384,64 @@ export class ForgePlayRuntime {
     if (!interaction) return false
     this.triggerInteraction(interaction)
     return true
+  }
+
+  spawnTestPack(count = 8) {
+    const definition = this.gameplay.enemies[0]
+    if (!definition || this.disposed) return 0
+
+    const amount = THREE.MathUtils.clamp(
+      Math.round(count),
+      1,
+      20,
+    )
+    const sequence = ++this.testPackSequence
+    const spacing = Math.max(
+      1.35,
+      this.region.encounters?.minSpacing ?? 1.65,
+    )
+
+    for (let index = 0; index < amount; index += 1) {
+      const angle =
+        sequence * .83 +
+        index * 2.399963229728653
+      const radius =
+        3.4 +
+        Math.sqrt(index) * spacing
+      const x = THREE.MathUtils.clamp(
+        this.player.position.x + Math.cos(angle) * radius,
+        this.region.bounds.minX + 1.5,
+        this.region.bounds.maxX - 1.5,
+      )
+      const z = THREE.MathUtils.clamp(
+        this.player.position.z + Math.sin(angle) * radius,
+        this.region.bounds.minZ + 1.5,
+        this.region.bounds.maxZ - 1.5,
+      )
+      const id =
+        `test-pack:${this.region.seed}:${sequence}:${index}`
+      this.spawnEnemy(
+        id,
+        definition,
+        x,
+        z,
+        {
+          transient: true,
+          respawn: false,
+        },
+      )
+    }
+
+    this.totalEnemyCount = Math.max(
+      this.totalEnemyCount,
+      this.enemies.length,
+    )
+    this.setMessage(
+      `Spawned ${amount} test enemies near the player.`,
+      2.2,
+    )
+    this.emitState()
+    return amount
   }
 
   saveGame(manual = true) {
@@ -612,22 +679,81 @@ export class ForgePlayRuntime {
   private buildEnemies() {
     const definition = this.gameplay.enemies[0]
     if (!definition) return
-    const encounterNodes = this.region.nodes.filter((node) => node.kind === 'encounter')
-    const densityLabel = encounterNodes[0]?.label.toLowerCase() ?? 'medium'
-    const spawnCount = densityLabel.includes('high') ? 3 : densityLabel.includes('low') ? 1 : 2
+
+    const encounterNodes = this.region.nodes.filter(
+      (node) => node.kind === 'encounter',
+    )
+    const settings = this.region.encounters ?? {
+      density: 'medium',
+      groupRange: [4, 6] as [number, number],
+      minSpacing: 1.65,
+      respawn: false,
+      respawnSeconds: 30,
+    }
+
     encounterNodes.forEach((node, encounterIndex) => {
+      const [minCount, maxCount] = settings.groupRange
+      const range = Math.max(0, maxCount - minCount)
+      const spawnCount =
+        minCount +
+        Math.floor(
+          hashUnit(
+            `${this.region.seed}:${node.id}:group-size`,
+          ) *
+            (range + 1),
+        )
+
       for (let index = 0; index < spawnCount; index += 1) {
-        const id = `${this.region.regionId}:${node.id}:${definition.id}:${index}`
+        const id =
+          `${this.region.regionId}:${node.id}:${definition.id}:${index}`
         this.totalEnemyCount += 1
-        if (this.defeatedEnemyIds.has(id)) continue
-        const angle = (index / Math.max(1, spawnCount)) * Math.PI * 2 + encounterIndex * 0.7
-        const distance = 1.4 + index * 0.7
-        this.spawnEnemy(id, definition, node.x + Math.cos(angle) * distance, node.z + Math.sin(angle) * distance)
+
+        if (
+          !settings.respawn &&
+          this.defeatedEnemyIds.has(id)
+        ) {
+          continue
+        }
+
+        const angle =
+          encounterIndex * .71 +
+          index * 2.399963229728653
+        const distance =
+          1.5 +
+          Math.sqrt(index) * settings.minSpacing
+        const x =
+          node.x +
+          Math.cos(angle) * distance
+        const z =
+          node.z +
+          Math.sin(angle) * distance
+
+        this.spawnEnemy(
+          id,
+          definition,
+          x,
+          z,
+          {
+            transient: false,
+            respawn: settings.respawn,
+            respawnSeconds: settings.respawnSeconds,
+          },
+        )
       }
     })
   }
 
-  private spawnEnemy(id: string, definition: ForgeEnemyDefinition, x: number, z: number) {
+  private spawnEnemy(
+    id: string,
+    definition: ForgeEnemyDefinition,
+    x: number,
+    z: number,
+    options: {
+      transient?: boolean
+      respawn?: boolean
+      respawnSeconds?: number
+    } = {},
+  ) {
     const group = new THREE.Group()
     const placeholder = new THREE.Group()
     placeholder.name = '__forge_placeholder'
@@ -673,6 +799,15 @@ export class ForgePlayRuntime {
       pathIndex: 0,
       repathRemaining: 0,
       moving: false,
+      spawnX: x,
+      spawnZ: z,
+      transient: options.transient ?? false,
+      respawn: options.respawn ?? false,
+      respawnSeconds: THREE.MathUtils.clamp(
+        options.respawnSeconds ?? 30,
+        3,
+        300,
+      ),
     }
     this.enemies.push(enemy)
     void this.bindEnemyVisual(enemy)
@@ -1217,7 +1352,17 @@ export class ForgePlayRuntime {
     const index = this.enemies.indexOf(enemy)
     if (index >= 0) this.enemies.splice(index, 1)
     if (this.focusEnemyId === enemy.id) this.focusEnemyId = undefined
-    this.defeatedEnemyIds.add(enemy.id)
+
+    if (!enemy.transient && !enemy.respawn) {
+      this.defeatedEnemyIds.add(enemy.id)
+    } else {
+      this.defeatedEnemyIds.delete(enemy.id)
+    }
+
+    if (enemy.respawn && !enemy.transient) {
+      this.scheduleEnemyRespawn(enemy)
+    }
+
     const position = enemy.group.position.clone()
     enemy.windupRemaining = 0
     enemy.telegraph.visible = false
@@ -1229,11 +1374,49 @@ export class ForgePlayRuntime {
     this.corpses.push({ group: enemy.group, visual: enemy.visual, age: 0, duration: 1.15 })
     void this.spawnBoundVfx(enemy.definition.deathVfxAssetId, position)
     this.spawnPulse(position, '#b65e4c', 2.5, 0.45)
-    this.rollLoot(enemy, position)
-    this.setMessage(this.enemies.length === 0 ? 'Encounter cleared. Pick up the loot and equip it from the inventory.' : `${enemy.definition.name} defeated.`, 3.2)
+    if (!enemy.transient) {
+      this.rollLoot(enemy, position)
+    }
+    this.setMessage(
+      enemy.transient
+        ? 'Test enemy defeated.'
+        : this.enemies.length === 0
+          ? enemy.respawn
+            ? `Encounter cleared for now. Enemies respawn in ${Math.round(enemy.respawnSeconds)}s.`
+            : 'Encounter cleared. Pick up the loot and equip it from the inventory.'
+          : `${enemy.definition.name} defeated.`,
+      3.2,
+    )
     this.cameraShake = Math.max(this.cameraShake, 0.34)
-    this.saveGame(false)
+    if (!enemy.transient) this.saveGame(false)
     this.emitState()
+  }
+
+  private scheduleEnemyRespawn(enemy: RuntimeEnemy) {
+    const timer = window.setTimeout(() => {
+      this.respawnTimers.delete(timer)
+      if (this.disposed) return
+      if (this.enemies.some((candidate) => candidate.id === enemy.id)) return
+
+      this.spawnEnemy(
+        enemy.id,
+        enemy.definition,
+        enemy.spawnX,
+        enemy.spawnZ,
+        {
+          transient: false,
+          respawn: true,
+          respawnSeconds: enemy.respawnSeconds,
+        },
+      )
+      this.setMessage(
+        `${enemy.definition.name} encounter has respawned.`,
+        1.8,
+      )
+      this.emitState()
+    }, enemy.respawnSeconds * 1000)
+
+    this.respawnTimers.add(timer)
   }
 
   private updateCorpses(delta: number) {
