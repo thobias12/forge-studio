@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.10`  
+> **Current Forge version:** `v1.77.11`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -483,6 +483,16 @@ Third visual pass after reviewing the v1.77.9 QA artifact:
 - narrowed the tabard center slit and strengthened the two pointed tails
 - retained only thin tabard edge trim plus a small fitted leather top hanger
 - reduced and balanced the hip pouch footprint so the waist is less blocky
+
+### v1.77.11 shoulder-shell / armhole correction
+
+Fourth visual pass after inspecting the v1.77.10 top and underarm QA renders:
+
+- torso conformance now blends toward the source body's true surface normal around the upper shoulder crown instead of forcing all clearance horizontally
+- added dedicated shoulder clearance so upward-facing body polygons no longer poke through the tunic shell
+- moved sleeve roots slightly inside the shoulder joint and added root-only sleeve coverage
+- shoulder bridge endpoints now overlap the torso/sleeve surfaces instead of meeting edge-to-edge
+- shoulder bridges use a dedicated double-sided cloth material so mirrored/back-facing underarm triangles cannot disappear from close views
 
 ### Current visual status / important handoff
 

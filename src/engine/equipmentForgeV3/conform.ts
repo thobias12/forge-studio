@@ -449,8 +449,22 @@ function createTorsoTemplate(
       // visible in v1.76.0.
       position.y = targetY
 
-      const radialNormal =
+      const bodyNormal =
         nearest.normal.clone()
+      if (
+        bodyNormal.lengthSq() <
+        1e-5
+      ) {
+        bodyNormal.set(
+          position.x,
+          0,
+          position.z,
+        )
+      }
+      bodyNormal.normalize()
+
+      const radialNormal =
+        bodyNormal.clone()
       radialNormal.y = 0
       if (
         radialNormal.lengthSq() <
@@ -463,6 +477,36 @@ function createTorsoTemplate(
         )
       }
       radialNormal.normalize()
+
+      // Use true surface-normal clearance only around the upper shoulder
+      // shell. This lifts cloth away from upward-facing shoulder polygons
+      // without puffing the waist/chest away from the body.
+      const shoulderTopT =
+        THREE.MathUtils.clamp(
+          (v - .78) / .22,
+          0,
+          1,
+        )
+      const sideAmount =
+        Math.abs(
+          Math.sin(angle),
+        )
+      const shoulderNormalBlend =
+        shoulderTopT *
+        THREE.MathUtils.smoothstep(
+          sideAmount,
+          .35,
+          1,
+        )
+      const fitNormal =
+        radialNormal
+          .clone()
+          .lerp(
+            bodyNormal,
+            shoulderNormalBlend *
+              .9,
+          )
+          .normalize()
 
       const waistFactor =
         1 -
@@ -510,9 +554,14 @@ function createTorsoTemplate(
             sideEase * .00055) +
         hemFlare
 
+      const shoulderClearance =
+        frame.height *
+        .0035 *
+        shoulderNormalBlend
       position.addScaledVector(
-        radialNormal,
-        extra,
+        fitNormal,
+        extra +
+          shoulderClearance,
       )
 
       ringPositions.push(position)
@@ -657,7 +706,9 @@ function createSleeveTemplate(
   const endFraction =
     sleeve === 'long' ? .86 : .4
   const startFraction =
-    sleeve === 'long' ? .015 : .018
+    sleeve === 'long'
+      ? -.012
+      : -.028
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -794,16 +845,24 @@ function createSleeveTemplate(
 
       const shoulderEase =
         THREE.MathUtils.lerp(
-          1.08,
+          1.2,
           .96,
           v,
         )
+      const rootCoverage =
+        Math.pow(
+          1 - v,
+          4,
+        ) *
+        armLength *
+        .012
       const extra =
         armLength *
         (.011 +
           recipe.looseness *
             .008) *
-        shoulderEase
+        shoulderEase +
+        rootCoverage
       const position =
         center
           .clone()
@@ -1760,9 +1819,19 @@ function createShoulderBridge(
       innerSleeve[sleeveIndex]
 
     const torsoPoint =
-      torsoSample.point.clone()
+      torsoSample.point
+        .clone()
+        .lerp(
+          sleeveSample.point,
+          .035,
+        )
     const sleevePoint =
-      sleeveSample.point.clone()
+      sleeveSample.point
+        .clone()
+        .lerp(
+          torsoSample.point,
+          .055,
+        )
     const middlePoint =
       torsoPoint
         .clone()
@@ -1886,10 +1955,17 @@ function createShoulderBridge(
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
 
+  const bridgeMaterial =
+    material.clone()
+  bridgeMaterial.side =
+    THREE.DoubleSide
+  bridgeMaterial.needsUpdate =
+    true
+
   return makeSkinnedTemplate(
     source,
     geometry,
-    material,
+    bridgeMaterial,
     `EFV3_ShoulderBridge_${side}`,
   )
 }
