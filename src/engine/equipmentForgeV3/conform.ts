@@ -171,6 +171,15 @@ export function buildConformedTunic(
         ),
       )
       meshes.push(
+        createUnderarmGusset(
+          source,
+          torso.geometry,
+          left.geometry,
+          cloth,
+          'L',
+        ),
+      )
+      meshes.push(
         createSkinnedRowBand(
           source,
           left.geometry,
@@ -188,6 +197,15 @@ export function buildConformedTunic(
       meshes.push(right)
       meshes.push(
         createShoulderBridge(
+          source,
+          torso.geometry,
+          right.geometry,
+          cloth,
+          'R',
+        ),
+      )
+      meshes.push(
+        createUnderarmGusset(
           source,
           torso.geometry,
           right.geometry,
@@ -2065,6 +2083,282 @@ function createShoulderBridge(
     geometry,
     bridgeMaterial,
     `EFV3_ShoulderBridge_${side}`,
+  )
+}
+
+function createUnderarmGusset(
+  source: THREE.SkinnedMesh,
+  torsoGeometry: THREE.BufferGeometry,
+  sleeveGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  side: 'L' | 'R',
+) {
+  const torsoPosition =
+    torsoGeometry.getAttribute(
+      'position',
+    )
+  const sleevePosition =
+    sleeveGeometry.getAttribute(
+      'position',
+    )
+
+  const torsoSegments =
+    side === 'L'
+      ? [9, 10, 11, 12, 13, 14, 15]
+      : [33, 34, 35, 36, 37, 38, 39]
+
+  const torsoSamples =
+    torsoSegments.map(
+      (segment) => {
+        const index =
+          18 * 48 +
+          segment
+        return {
+          index,
+          point:
+            new THREE.Vector3(
+              torsoPosition.getX(index),
+              torsoPosition.getY(index),
+              torsoPosition.getZ(index),
+            ),
+        }
+      },
+    )
+
+  const rootSamples =
+    Array.from(
+      { length: 18 },
+      (_, index) => ({
+        index,
+        point:
+          new THREE.Vector3(
+            sleevePosition.getX(index),
+            sleevePosition.getY(index),
+            sleevePosition.getZ(index),
+          ),
+      }),
+    )
+
+  const sleeveCenter =
+    rootSamples.reduce(
+      (sum, sample) =>
+        sum.add(sample.point),
+      new THREE.Vector3(),
+    )
+  sleeveCenter.multiplyScalar(
+    1 /
+      Math.max(
+        1,
+        rootSamples.length,
+      ),
+  )
+
+  let lowerSleeve =
+    rootSamples.filter(
+      (sample) =>
+        sample.point.y <=
+        sleeveCenter.y,
+    )
+
+  if (lowerSleeve.length < 4) {
+    lowerSleeve =
+      rootSamples
+  }
+
+  torsoSamples.sort(
+    (a, b) =>
+      a.point.z - b.point.z,
+  )
+  lowerSleeve.sort(
+    (a, b) =>
+      a.point.z - b.point.z,
+  )
+
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+  const count =
+    torsoSamples.length
+
+  for (
+    let index = 0;
+    index < count;
+    index += 1
+  ) {
+    const torsoSample =
+      torsoSamples[index]
+    const sleeveIndex =
+      Math.round(
+        (index /
+          Math.max(
+            1,
+            count - 1,
+          )) *
+          Math.max(
+            0,
+            lowerSleeve.length - 1,
+          ),
+      )
+    const sleeveSample =
+      lowerSleeve[sleeveIndex]
+
+    const torsoPoint =
+      torsoSample.point
+        .clone()
+        .lerp(
+          sleeveSample.point,
+          .04,
+        )
+    const sleevePoint =
+      sleeveSample.point
+        .clone()
+        .lerp(
+          torsoSample.point,
+          .05,
+        )
+    const middlePoint =
+      torsoPoint
+        .clone()
+        .lerp(
+          sleevePoint,
+          .5,
+        )
+
+    const center =
+      torsoPoint
+        .clone()
+        .add(sleevePoint)
+        .multiplyScalar(.5)
+    const radial =
+      new THREE.Vector3(
+        center.x,
+        0,
+        center.z,
+      )
+
+    if (
+      radial.lengthSq() >
+      1e-6
+    ) {
+      radial.normalize()
+      torsoPoint.addScaledVector(
+        radial,
+        .0012,
+      )
+      middlePoint.addScaledVector(
+        radial,
+        .0018,
+      )
+      sleevePoint.addScaledVector(
+        radial,
+        .0012,
+      )
+    }
+
+    const torsoInfluence =
+      readSkinInfluence(
+        torsoGeometry,
+        torsoSample.index,
+      )
+    const sleeveInfluence =
+      readSkinInfluence(
+        sleeveGeometry,
+        sleeveSample.index,
+      )
+
+    positions.push(
+      torsoPoint.x,
+      torsoPoint.y,
+      torsoPoint.z,
+      middlePoint.x,
+      middlePoint.y,
+      middlePoint.z,
+      sleevePoint.x,
+      sleevePoint.y,
+      sleevePoint.z,
+    )
+
+    const u =
+      index /
+      Math.max(
+        1,
+        count - 1,
+      )
+    uvs.push(
+      u, 0,
+      u, .5,
+      u, 1,
+    )
+
+    influences.push(
+      torsoInfluence,
+      blendSkinInfluence(
+        torsoInfluence,
+        sleeveInfluence,
+        .5,
+      ),
+      sleeveInfluence,
+    )
+  }
+
+  for (
+    let index = 0;
+    index < count - 1;
+    index += 1
+  ) {
+    const a = index * 3
+    const b = a + 1
+    const c0 = a + 2
+    const d =
+      (index + 1) * 3
+    const e = d + 1
+    const f = d + 2
+
+    indices.push(
+      a, d, b,
+      b, d, e,
+      b, e, c0,
+      c0, e, f,
+    )
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  const gussetMaterial =
+    material.clone()
+  gussetMaterial.side =
+    THREE.DoubleSide
+  gussetMaterial.needsUpdate =
+    true
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    gussetMaterial,
+    `EFV3_UnderarmGusset_${side}`,
   )
 }
 
