@@ -1,0 +1,30 @@
+name: Equipment Creator v1.75.2 CI
+
+on:
+  push:
+    branches:
+      - forge-equipment-creator-polish-v1752
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Forge Studio
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
+        run: npm run build
