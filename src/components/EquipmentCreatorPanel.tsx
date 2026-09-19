@@ -324,7 +324,7 @@ export default function EquipmentCreatorPanel({
             recipe.chest.shoulderSize
           }
           min={0}
-          max={.85}
+          max={.46}
           step={.01}
           onChange={(shoulderSize) =>
             patchChest({ shoulderSize })
@@ -390,8 +390,8 @@ export default function EquipmentCreatorPanel({
         <CreatorRange
           label="Belt width"
           value={recipe.waist.beltWidth}
-          min={.06}
-          max={.2}
+          min={.05}
+          max={.14}
           step={.005}
           onChange={(beltWidth) =>
             patchWaist({ beltWidth })
@@ -427,8 +427,8 @@ export default function EquipmentCreatorPanel({
         <CreatorRange
           label="Tabard width"
           value={recipe.waist.tabardWidth}
-          min={.18}
-          max={.55}
+          min={.26}
+          max={.58}
           step={.01}
           onChange={(tabardWidth) =>
             patchWaist({ tabardWidth })
@@ -460,8 +460,8 @@ export default function EquipmentCreatorPanel({
         <CreatorRange
           label="Width"
           value={recipe.cape.width}
-          min={.42}
-          max={.95}
+          min={.36}
+          max={.72}
           step={.01}
           onChange={(width) =>
             patchCape({ width })
@@ -471,7 +471,7 @@ export default function EquipmentCreatorPanel({
           label="Flare"
           value={recipe.cape.flare}
           min={0}
-          max={.5}
+          max={.34}
           step={.01}
           onChange={(flare) =>
             patchCape({ flare })
