@@ -30,6 +30,8 @@ jobs:
         run: npm install
 
       - name: Build Forge Studio
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
         run: npm run build
 
       - name: Setup Pages
