@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { createProceduralCharacter, disposeForgeCharacter, type ForgeCharacterConfig } from '../lib/proceduralCharacter'
 import { createConceptForgeCharacter } from '../engine/conceptCharacterV2'
 import { createProceduralBaseHumanoidV2 } from '../engine/proceduralHumanoidV2'
+import { retargetForgeHumanoidClips } from '../engine/skillboundCharacterAnimation'
 import { applyCharacterIdentityVisuals } from '../engine/characterIdentityVisuals'
 import {
   loadCharacterAssetScene,
@@ -335,11 +336,19 @@ async function buildPreview(
     )
   }
 
-  const clips = skillboundBodyType
-    ? loaded.animations.filter(
-        (clip) => !clip.name.toLowerCase().startsWith('qa_deformation'),
+  let clips = loaded.animations
+  if (skillboundBodyType) {
+    const animationSource = createConceptForgeCharacter(config)
+    try {
+      clips = retargetForgeHumanoidClips(
+        animationSource.root,
+        root,
+        animationSource.clips,
       )
-    : loaded.animations
+    } finally {
+      disposeForgeCharacter(animationSource.root)
+    }
+  }
 
   root.userData.characterIdentity = {
     ...(identity ?? {}),
