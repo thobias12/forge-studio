@@ -5,6 +5,7 @@ import {
   type ForgeCharacterBlueprint,
 } from './characterBlueprint'
 import { exportConceptForgeCharacterGlb } from './conceptCharacterV2'
+import { OFFICIAL_SKILLBOUND_BASE_IDS } from '../lib/characterAssetRegistry'
 import { getAsset, saveAsset } from '../lib/library'
 
 export type SkillboundPlayerProfile = {
@@ -96,6 +97,11 @@ export function createDefaultPlayerBlueprint(name = 'Wanderer') {
   blueprint.combat.preferredRange = 1.6
   blueprint.npc = { occupation: '', dialogueStyle: 'none', important: false }
   blueprint.tags = ['player', 'human', 'duskstrider', 'melee']
+  blueprint.foundation = {
+    bodyType: 'male',
+    bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+    baseClothingVisible: true,
+  }
   blueprint.creatorCompatible = true
   return blueprint
 }
@@ -182,11 +188,18 @@ function readProfiles(): SkillboundPlayerProfile[] {
 }
 
 function withAnimationTarget(profile: SkillboundPlayerProfile): SkillboundPlayerProfile {
-  if (profile.blueprint.targetAssetId) return profile
-  return {
-    ...profile,
-    blueprint: { ...cloneBlueprint(profile.blueprint), targetAssetId: playerAnimationTargetId(profile.id) },
+  const blueprint = cloneBlueprint(profile.blueprint)
+  if (!blueprint.targetAssetId) {
+    blueprint.targetAssetId = playerAnimationTargetId(profile.id)
   }
+  if (!blueprint.foundation) {
+    blueprint.foundation = {
+      bodyType: 'male',
+      bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+      baseClothingVisible: true,
+    }
+  }
+  return { ...profile, blueprint }
 }
 
 function isProfile(value: unknown): value is SkillboundPlayerProfile {
