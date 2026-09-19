@@ -438,6 +438,9 @@ export default function EquipmentQaCapture() {
       ? './qa-foundation/__qa-base.glb'
       : requestedModel
 
+  const analyzeFit =
+    params.get('fit') !== '0'
+
   const recipe = useMemo(() => {
     const base =
       createEquipmentForgeV3Recipe(
@@ -723,15 +726,17 @@ export default function EquipmentQaCapture() {
           bodyRoot,
           recipe,
           {
-            analyzeFit: true,
+            analyzeFit,
           },
         )
         bodyRoot.updateMatrixWorld(true)
 
         const diagnostics =
-          getEquipmentForgeV3FitDiagnostics(
-            bodyRoot,
-          )
+          analyzeFit
+            ? getEquipmentForgeV3FitDiagnostics(
+                bodyRoot,
+              )
+            : undefined
 
         if (!cancelled) {
           setFitDiagnostics(
@@ -850,7 +855,11 @@ export default function EquipmentQaCapture() {
     return () => {
       cancelled = true
     }
-  }, [source, recipe])
+  }, [
+    source,
+    recipe,
+    analyzeFit,
+  ])
 
   const allReady =
     shots.length ===
