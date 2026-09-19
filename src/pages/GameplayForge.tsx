@@ -29,7 +29,7 @@ import { getSkillboundProjectConnection, saveSkillboundWorkspaceToProjectFolder 
 import { listAssets, saveAsset, type AssetCategory, type LibraryAsset } from '../lib/library'
 
 type Tab = 'player' | 'enemies' | 'abilities' | 'items' | 'loot'
-type ToolTarget = 'world' | 'characterforge' | 'animations' | 'vfx' | 'assets' | 'itemforge'
+type ToolTarget = 'world' | 'characterforge' | 'animations' | 'vfx' | 'assets' | 'itemforge' | 'lootforge'
 type Props = { onOpenTool: (target: ToolTarget) => void }
 
 export default function GameplayForge({ onOpenTool }: Props) {
@@ -249,6 +249,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
           <button onClick={() => onOpenTool('animations')}>Animation Studio</button>
           <button onClick={() => onOpenTool('vfx')}>VFX Studio</button>
           <button onClick={() => onOpenTool('itemforge')}>Item Forge</button>
+          <button onClick={() => onOpenTool('lootforge')}>Loot & Container Forge</button>
           <button onClick={() => onOpenTool('assets')}>Asset Library</button>
         </div>
       </aside>
@@ -258,7 +259,7 @@ export default function GameplayForge({ onOpenTool }: Props) {
         {tab === 'enemies' && <><ContentPicker label="ENEMY DEFINITIONS" items={workspace.gameplay.enemies} value={enemy?.id ?? ''} onChange={setSelectedEnemy}/><DefinitionActions onNew={createEnemy} onDuplicate={enemy ? duplicateEnemy : undefined} onDelete={enemy ? deleteEnemy : undefined}/>{enemy ? <EnemyEditor value={enemy} gameplay={workspace.gameplay} assets={assets} onPatch={(patch) => patchEnemy(enemy.id, patch)}/> : <EmptyDefinition label="enemy" onCreate={createEnemy}/>}</>}
         {tab === 'abilities' && <><ContentPicker label="ABILITY DEFINITIONS" items={workspace.gameplay.abilities} value={ability?.id ?? ''} onChange={setSelectedAbility}/><DefinitionActions onNew={createAbility} onDuplicate={ability ? duplicateAbility : undefined} onDelete={ability ? deleteAbility : undefined}/>{ability ? <AbilityEditor value={ability} assets={assets} onPatch={(patch) => patchAbility(ability.id, patch)}/> : <EmptyDefinition label="ability" onCreate={createAbility}/>}</>}
         {tab === 'items' && <><ContentPicker label="ITEM DEFINITIONS" items={workspace.gameplay.items} value={item?.id ?? ''} onChange={setSelectedItem}/><DefinitionActions onNew={createItem} onDuplicate={item ? duplicateItem : undefined} onDelete={item ? deleteItem : undefined} extra={<button onClick={openItemForge}><PackageOpen size={13}/> Open Item Forge</button>}/>{item ? <ItemEditor value={item} assets={assets} onPatch={(patch) => patchItem(item.id, patch)}/> : <EmptyDefinition label="item" onCreate={createItem}/>}</>}
-        {tab === 'loot' && <><ContentPicker label="LOOT TABLES" items={workspace.gameplay.lootTables} value={loot?.id ?? ''} onChange={setSelectedLoot}/><DefinitionActions onNew={createLoot} onDuplicate={loot ? duplicateLoot : undefined} onDelete={loot ? deleteLoot : undefined}/>{loot ? <LootEditor value={loot} gameplay={workspace.gameplay} onPatch={(patch) => patchLoot(loot.id, patch)}/> : <EmptyDefinition label="loot table" onCreate={createLoot}/>}</>}
+        {tab === 'loot' && <><ContentPicker label="LOOT TABLES" items={workspace.gameplay.lootTables} value={loot?.id ?? ''} onChange={setSelectedLoot}/><DefinitionActions onNew={createLoot} onDuplicate={loot ? duplicateLoot : undefined} onDelete={loot ? deleteLoot : undefined} extra={<button onClick={() => onOpenTool('lootforge')}><PackageOpen size={13}/> Open Loot Forge</button>}/>{loot ? <LootEditor value={loot} gameplay={workspace.gameplay} onPatch={(patch) => patchLoot(loot.id, patch)}/> : <EmptyDefinition label="loot table" onCreate={createLoot}/>}</>}
       </main>
 
       <aside className="gameplay-forge-diagnostics">
