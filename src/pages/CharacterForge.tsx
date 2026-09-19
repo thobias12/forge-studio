@@ -23,6 +23,7 @@ import {
   OFFICIAL_SKILLBOUND_BASE_IDS,
   characterAssetCompatibility,
   isCharacterCreatorAsset,
+  importOfficialSkillboundFoundationPack,
   loadOfficialSkillboundBaseAssets,
   registerCharacterAsset,
   skillboundBodyTypeFromAsset,
@@ -69,6 +70,7 @@ export default function CharacterForge() {
   const [stats, setStats] = useState({ bones: 0, skinnedMeshes: 0, triangles: 0 })
   const [status, setStatus] = useState('Create the player identity here. Armor, clothing and weapons stay in the separate equipment system.')
   const [busy, setBusy] = useState(false)
+  const [foundationBusy, setFoundationBusy] = useState(false)
   const [assetBusy, setAssetBusy] = useState<CharacterAssetRole>()
   const [saved, setSaved] = useState<SavedIdentity[]>(() => readPresets())
   const [savedId, setSavedId] = useState('')
@@ -86,16 +88,20 @@ export default function CharacterForge() {
         ...officialBases,
         ...savedAssets.filter((asset) => !officialIds.has(asset.id)),
       ])
-      setIdentity((current) => current.modelAssets.bodyAssetId
-        ? current
-        : {
-            ...current,
-            modelAssets: {
-              ...current.modelAssets,
-              bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
-            },
-          })
-      setStatus('Skillbound Character Standard v1 loaded. Choose the official male or female foundation, then layer identity assets and equipment on top.')
+      if (officialBases.length) {
+        setIdentity((current) => current.modelAssets.bodyAssetId
+          ? current
+          : {
+              ...current,
+              modelAssets: {
+                ...current.modelAssets,
+                bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+              },
+            })
+        setStatus('Skillbound Character Standard v1 is installed. Choose the official male or female foundation, then layer identity assets and equipment on top.')
+      } else {
+        setStatus('Import Skillbound-Base-Characters-v1.zip once to install the official male and female foundations in this browser.')
+      }
     }).catch(() => {
       if (!cancelled) {
         void listAssets()
@@ -113,6 +119,12 @@ export default function CharacterForge() {
   const headAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'head')), [library])
   const hairAssets = useMemo(() => library.filter((asset) => isCharacterCreatorAsset(asset, 'hair')), [library])
   const bodyAsset = bodyAssets.find((asset) => asset.id === identity.modelAssets.bodyAssetId)
+  const maleFoundationInstalled = bodyAssets.some(
+    (asset) => asset.id === OFFICIAL_SKILLBOUND_BASE_IDS.male,
+  )
+  const femaleFoundationInstalled = bodyAssets.some(
+    (asset) => asset.id === OFFICIAL_SKILLBOUND_BASE_IDS.female,
+  )
   const skillboundBodyType = skillboundBodyTypeFromAsset(bodyAsset)
   const headAsset = headAssets.find((asset) => asset.id === identity.modelAssets.headAssetId)
   const hairAsset = hairAssets.find((asset) => asset.id === identity.modelAssets.hairAssetId)
@@ -135,6 +147,10 @@ export default function CharacterForge() {
 
   const selectOfficialBody = (bodyType: SkillboundBodyType) => {
     const assetId = OFFICIAL_SKILLBOUND_BASE_IDS[bodyType]
+    if (!bodyAssets.some((asset) => asset.id === assetId)) {
+      setStatus('Import the Skillbound Character Standard v1 foundation pack first.')
+      return
+    }
     setIdentity((current) => ({
       ...current,
       modelAssets: {
@@ -154,6 +170,39 @@ export default function CharacterForge() {
         ? 'Skillbound Female Base v1 selected · shared 62-bone rig with breast_L / breast_R secondary-motion support.'
         : 'Skillbound Male Base v1 selected · shared 62-bone Skillbound foundation rig.',
     )
+  }
+
+  const importFoundationPack = async (file?: File) => {
+    if (!file) return
+    setFoundationBusy(true)
+    setStatus('Installing Skillbound Character Standard v1 from ' + file.name + '…')
+    try {
+      const officialBases =
+        await importOfficialSkillboundFoundationPack(file)
+      const officialIds =
+        new Set(officialBases.map((asset) => asset.id))
+      setLibrary((items) => [
+        ...officialBases,
+        ...items.filter((asset) => !officialIds.has(asset.id)),
+      ])
+      setIdentity((current) => ({
+        ...current,
+        modelAssets: {
+          ...current.modelAssets,
+          bodyAssetId: OFFICIAL_SKILLBOUND_BASE_IDS.male,
+        },
+      }))
+      setAnimation('Idle')
+      setStatus('Skillbound Character Standard v1 installed. Male and female foundations are now stored in Forge and will still be available after reload.')
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : 'Could not install the Skillbound foundation pack.',
+      )
+    } finally {
+      setFoundationBusy(false)
+    }
   }
 
   const patchModelAsset = (role: CharacterAssetRole, assetId?: string) => {
@@ -280,6 +329,7 @@ export default function CharacterForge() {
         <div className="cf-foundation-picker">
           <button
             type="button"
+            disabled={!maleFoundationInstalled || foundationBusy}
             className={skillboundBodyType === 'male' ? 'active' : ''}
             onClick={() => selectOfficialBody('male')}
           >
@@ -288,6 +338,7 @@ export default function CharacterForge() {
           </button>
           <button
             type="button"
+            disabled={!femaleFoundationInstalled || foundationBusy}
             className={skillboundBodyType === 'female' ? 'active' : ''}
             onClick={() => selectOfficialBody('female')}
           >
@@ -299,6 +350,24 @@ export default function CharacterForge() {
           Official 1.80 m bases · matching topology · shared 62-bone SkillboundHumanoidV1 rig · modular-equipment ready.
           The female base includes weighted breast_L / breast_R bones for future subtle secondary motion.
         </p>
+        {(!maleFoundationInstalled || !femaleFoundationInstalled) && <label className={`cf-foundation-import ${foundationBusy ? 'disabled' : ''}`}>
+          <FileUp size={13}/>
+          <span>{foundationBusy ? 'Installing foundation…' : 'Import Skillbound foundation pack (.zip)'}</span>
+          <input
+            type="file"
+            disabled={foundationBusy}
+            accept=".zip,application/zip,application/x-zip-compressed"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.currentTarget.value = ''
+              void importFoundationPack(file)
+            }}
+          />
+        </label>}
+        {maleFoundationInstalled && femaleFoundationInstalled && <div className="cf-foundation-installed">
+          <Sparkles size={12}/>
+          <span>Foundation installed locally · both official bases ready</span>
+        </div>}
 
         <span className="cf-label cf-label-spaced">MODEL ASSETS</span>
         <CharacterAssetPicker
@@ -328,7 +397,7 @@ export default function CharacterForge() {
           onSelect={(value) => patchModelAsset('hair', value)}
           onImport={(file) => void importCharacterPart('hair', file)}
         />
-        <p className="cf-equipment-note">GLB only. Body assets are checked for ForgeHumanoidV1 or SkillboundHumanoidV1 skinning. The two official Skillbound bases are bundled with Forge and do not need to be imported manually.</p>
+        <p className="cf-equipment-note">GLB only. Body assets are checked for ForgeHumanoidV1 or SkillboundHumanoidV1 skinning. The official foundation pack is imported once and persisted in Forge's local asset library.</p>
       </div>
 
       <div className="cf-section">
