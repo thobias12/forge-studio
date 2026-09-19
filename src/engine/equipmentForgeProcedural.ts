@@ -150,16 +150,16 @@ export function applyProceduralStyle(
     next.chest.looseness = .08
     next.chest.leatherVest = true
     next.chest.plateCoverage = .28
-    next.chest.collarHeight = .18
-    next.chest.shoulderSize = .08
+    next.chest.collarHeight = .11
+    next.chest.shoulderSize = .06
     next.chest.shoulderAsymmetry = .22
     next.chest.strapCount = 2
     next.waist.beltWidth = .08
     next.waist.pouchCount = 2
     next.waist.tabardLength = .34
-    next.waist.tabardWidth = .42
+    next.waist.tabardWidth = .46
     next.cape.length = .46
-    next.cape.width = .48
+    next.cape.width = .43
     next.cape.flare = .1
     next.materials = {
       cloth: '#384737',
@@ -675,44 +675,19 @@ function buildChest(
     }
   }
 
+  buildShoulderYoke(
+    bodyRoot,
+    materials,
+    fit,
+    chest.width,
+  )
+
   if (chest.collarHeight > .02) {
-    const collar = new THREE.Mesh(
-      new THREE.TorusGeometry(
-        .132 +
-          chest.collarHeight * .025,
-        .009 +
-          chest.collarHeight * .018,
-        8,
-        24,
-        Math.PI * 1.62,
-      ),
-      materials.leather,
-    )
-    collar.position.set(
-      0,
-      fit.neckY - .035,
-      .006,
-    )
-    collar.rotation.set(
-      Math.PI / 2,
-      0,
-      Math.PI * .19,
-    )
-    collar.scale.set(
-      1.08,
-      1,
-      .78,
-    )
-    collar.castShadow = true
-    collar.name = 'Procedural_Collar'
-    attachPreservingWorld(
+    buildCollarBand(
       bodyRoot,
-      findBone(
-        bodyRoot,
-        'neck_01',
-        'spine_03',
-      ),
-      collar,
+      materials,
+      fit,
+      chest.collarHeight,
     )
   }
 
@@ -750,7 +725,7 @@ function buildChest(
     ),
   )
   const strapHeight =
-    (topY - bottomY) * .58
+    (topY - bottomY) * .46
   for (
     let index = 0;
     index < strapCount;
@@ -763,19 +738,20 @@ function buildChest(
           .16
     const strap = new THREE.Mesh(
       curvedPanelGeometry(
-        .019,
+        .016,
         strapHeight,
-        .012,
-        .08,
+        .009,
+        .1,
       ),
       materials.leatherDark,
     )
     strap.position.set(
       spread,
-      fit.chestY + .005,
+      fit.chestY + .018 -
+        Math.abs(spread) * .05,
       fit.chestFront +
         shellOffset +
-        .012,
+        .008,
     )
     strap.rotation.z =
       (index % 2 === 0 ? 1 : -1) *
@@ -981,27 +957,28 @@ function buildSleeve(
     sleeve,
   )
 
+  const cuffCenter = start
+    .clone()
+    .addScaledVector(
+      direction,
+      sleeveLength * .94,
+    )
   const cuff = new THREE.Mesh(
-    new THREE.TorusGeometry(
-      radius * .91,
-      .007,
-      6,
-      18,
+    new THREE.CylinderGeometry(
+      radius * .945,
+      radius * .92,
+      .022,
+      16,
+      1,
+      true,
     ),
     materials.leatherDark,
   )
-  cuff.position.copy(
-    start
-      .clone()
-      .addScaledVector(
-        direction,
-        sleeveLength * .96,
-      ),
+  cuff.position.copy(cuffCenter)
+  cuff.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction,
   )
-  cuff.quaternion.copy(
-    sleeve.quaternion,
-  )
-  cuff.rotateX(Math.PI / 2)
   cuff.castShadow = true
   cuff.name =
     `Procedural_SleeveTrim_${side}`
@@ -1020,66 +997,60 @@ function buildWaist(
   fit: ReturnType<typeof bodyFit>,
 ) {
   const waist = recipe.waist
-  const beltRadius =
-    fit.waistRadius * 1.015
-  const belt = new THREE.Mesh(
-    new THREE.TorusGeometry(
-      beltRadius,
-      Math.max(
-        .007,
-        waist.beltWidth * .12,
-      ),
-      7,
-      32,
-    ),
-    materials.leather,
-  )
-  // TorusGeometry is created in the XY plane.
-  // After rotating around X, local Y becomes world Z,
-  // so scale Y (not Z) to hug the body's depth.
-  belt.scale.y =
-    (fit.waistDepth * 1.02) /
-    beltRadius
-  belt.rotation.x = Math.PI / 2
-  belt.position.set(
-    0,
-    fit.waistY + .012,
-    0,
-  )
-  belt.castShadow = true
-  belt.name = 'Procedural_Belt'
-  attachPreservingWorld(
-    bodyRoot,
+  const pelvis =
     findBone(
       bodyRoot,
       'pelvis',
       'spine_01',
+    )
+
+  const beltHeight =
+    Math.max(
+      .034,
+      waist.beltWidth * .46,
+    )
+  const belt = new THREE.Mesh(
+    beltBandGeometry(
+      fit.waistRadius * 1.005,
+      fit.waistDepth * 1.015,
+      beltHeight,
+      .005,
     ),
+    materials.leather,
+  )
+  belt.position.set(
+    0,
+    fit.waistY + .006,
+    0,
+  )
+  belt.castShadow = true
+  belt.name = 'Procedural_BeltBand'
+  attachPreservingWorld(
+    bodyRoot,
+    pelvis,
     belt,
   )
   root.userData.belt = belt
 
   const buckle = new THREE.Mesh(
-    new THREE.TorusGeometry(
-      .026,
-      .0055,
-      5,
-      12,
+    roundedPlateGeometry(
+      .052,
+      .043,
+      .008,
+      .018,
     ),
     materials.metal,
   )
-  buckle.scale.x = 1.2
   buckle.position.set(
     0,
-    fit.waistY + .012,
-    fit.waistDepth + .012,
+    fit.waistY + .006,
+    fit.waistDepth + .011,
   )
-  buckle.rotation.x = Math.PI / 2
   buckle.castShadow = true
   buckle.name = 'Procedural_Buckle'
   attachPreservingWorld(
     bodyRoot,
-    findBone(bodyRoot, 'pelvis'),
+    pelvis,
     buckle,
   )
 
@@ -1099,89 +1070,92 @@ function buildWaist(
       index % 2 === 0 ? 1 : -1
     const row =
       Math.floor(index / 2)
+    const angle =
+      side * (.76 + row * .22)
+    const radiusX =
+      fit.waistRadius * .985
+    const radiusZ =
+      fit.waistDepth * .99
     const pouch = new THREE.Mesh(
-      new THREE.SphereGeometry(
-        1,
-        12,
-        8,
+      roundedPlateGeometry(
+        .068,
+        .085,
+        .028,
+        .022,
       ),
       materials.leatherDark,
     )
-    pouch.scale.set(
-      .044,
-      .058,
-      .025,
-    )
     pouch.position.set(
-      side *
-        (.145 + row * .032),
+      Math.sin(angle) * radiusX,
       fit.waistY - .052,
-      .025 + row * .008,
+      Math.cos(angle) * radiusZ,
     )
+    pouch.rotation.y = angle
     pouch.rotation.z =
-      side * (.1 + row * .025)
+      side * .055
     pouch.castShadow = true
     pouch.name =
       `Procedural_Pouch_${index}`
     attachPreservingWorld(
       bodyRoot,
-      findBone(bodyRoot, 'pelvis'),
+      pelvis,
       pouch,
     )
   }
 
   if (waist.tabardLength > .02) {
     const length =
-      .14 +
-      waist.tabardLength * .44
+      .13 +
+      waist.tabardLength * .42
     const topWidth =
       .15 +
-      waist.tabardWidth * .3
+      waist.tabardWidth * .32
     const bottomWidth =
       topWidth * .72
+
     const panel = new THREE.Mesh(
       clothPanelGeometry(
         length,
         topWidth,
         bottomWidth,
-        .014,
-        .045,
+        .011,
+        .032,
       ),
       materials.clothDouble,
     )
     panel.position.set(
       0,
-      fit.waistY - .018,
-      fit.waistDepth + .008,
+      fit.waistY - .014,
+      fit.waistDepth + .006,
     )
     panel.castShadow = true
     panel.name = 'Procedural_Tabard'
     attachPreservingWorld(
       bodyRoot,
-      findBone(bodyRoot, 'pelvis'),
+      pelvis,
       panel,
     )
 
     const accent = new THREE.Mesh(
       clothPanelGeometry(
-        length * .86,
-        topWidth * .11,
+        length * .84,
+        topWidth * .1,
         bottomWidth * .13,
-        .016,
-        .025,
+        .012,
+        .018,
       ),
       materials.accentDouble,
     )
     accent.position.set(
       0,
-      fit.waistY - .045,
-      fit.waistDepth + .016,
+      fit.waistY - .04,
+      fit.waistDepth + .012,
     )
     accent.name =
       'Procedural_TabardAccent'
     attachPreservingWorld(
       bodyRoot,
-      findBone(bodyRoot, 'pelvis'),
+      pelvis,
       accent,
     )
   }
@@ -1259,6 +1233,283 @@ function buildCape(
       clasp,
     )
   }
+}
+
+function buildShoulderYoke(
+  bodyRoot: THREE.Object3D,
+  materials: MaterialSet,
+  fit: ReturnType<typeof bodyFit>,
+  widthScale: number,
+) {
+  const front = new THREE.Mesh(
+    curvedPanelGeometry(
+      .41 * widthScale,
+      .072,
+      .016,
+      .18,
+    ),
+    materials.cloth,
+  )
+  front.position.set(
+    0,
+    fit.shoulderY - .015,
+    fit.chestFront + .006,
+  )
+  front.rotation.x = -.13
+  front.castShadow = true
+  front.name = 'Procedural_ShoulderYokeFront'
+  attachPreservingWorld(
+    bodyRoot,
+    findBone(
+      bodyRoot,
+      'spine_03',
+      'spine_02',
+    ),
+    front,
+  )
+
+  const back = new THREE.Mesh(
+    curvedPanelGeometry(
+      .39 * widthScale,
+      .062,
+      .013,
+      .16,
+    ),
+    materials.cloth,
+  )
+  back.position.set(
+    0,
+    fit.shoulderY - .012,
+    -fit.upperBack,
+  )
+  back.rotation.set(
+    .13,
+    Math.PI,
+    0,
+  )
+  back.castShadow = true
+  back.name = 'Procedural_ShoulderYokeBack'
+  attachPreservingWorld(
+    bodyRoot,
+    findBone(
+      bodyRoot,
+      'spine_03',
+      'spine_02',
+    ),
+    back,
+  )
+}
+
+function buildCollarBand(
+  bodyRoot: THREE.Object3D,
+  materials: MaterialSet,
+  fit: ReturnType<typeof bodyFit>,
+  height: number,
+) {
+  const collarHeight =
+    .042 + height * .09
+  const front = new THREE.Mesh(
+    curvedPanelGeometry(
+      .25 + height * .08,
+      collarHeight,
+      .012,
+      .2,
+    ),
+    materials.leather,
+  )
+  front.position.set(
+    0,
+    fit.neckY - .045,
+    fit.neckFront,
+  )
+  front.rotation.x = -.16
+  front.castShadow = true
+  front.name = 'Procedural_CollarFront'
+  attachPreservingWorld(
+    bodyRoot,
+    findBone(
+      bodyRoot,
+      'neck_01',
+      'spine_03',
+    ),
+    front,
+  )
+
+  const back = new THREE.Mesh(
+    curvedPanelGeometry(
+      .24 + height * .07,
+      collarHeight * .9,
+      .01,
+      .18,
+    ),
+    materials.leatherDark,
+  )
+  back.position.set(
+    0,
+    fit.neckY - .043,
+    -fit.neckBack,
+  )
+  back.rotation.set(
+    .16,
+    Math.PI,
+    0,
+  )
+  back.castShadow = true
+  back.name = 'Procedural_CollarBack'
+  attachPreservingWorld(
+    bodyRoot,
+    findBone(
+      bodyRoot,
+      'neck_01',
+      'spine_03',
+    ),
+    back,
+  )
+}
+
+function beltBandGeometry(
+  radiusX: number,
+  radiusZ: number,
+  height: number,
+  offset: number,
+) {
+  const segments = 40
+  const positions: number[] = []
+  const indices: number[] = []
+  const uvs: number[] = []
+
+  for (
+    let row = 0;
+    row <= 1;
+    row += 1
+  ) {
+    const y =
+      (row - .5) * height
+    for (
+      let index = 0;
+      index <= segments;
+      index += 1
+    ) {
+      const u = index / segments
+      const angle =
+        u * Math.PI * 2
+      const sx = Math.sin(angle)
+      const cz = Math.cos(angle)
+      const normal = new THREE.Vector2(
+        sx / Math.max(.001, radiusX),
+        cz / Math.max(.001, radiusZ),
+      ).normalize()
+      positions.push(
+        sx * radiusX +
+          normal.x * offset,
+        y,
+        cz * radiusZ +
+          normal.y * offset,
+      )
+      uvs.push(u, row)
+    }
+  }
+
+  for (
+    let index = 0;
+    index < segments;
+    index += 1
+  ) {
+    const a = index
+    const b = index + 1
+    const d =
+      segments + 1 + index
+    const e = d + 1
+    indices.push(
+      a,
+      d,
+      b,
+      b,
+      d,
+      e,
+    )
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function roundedPlateGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  radius: number,
+) {
+  const shape = new THREE.Shape()
+  const x = width * .5
+  const y = height * .5
+  const r = Math.min(
+    radius,
+    x * .8,
+    y * .8,
+  )
+
+  shape.moveTo(-x + r, -y)
+  shape.lineTo(x - r, -y)
+  shape.quadraticCurveTo(
+    x,
+    -y,
+    x,
+    -y + r,
+  )
+  shape.lineTo(x, y - r)
+  shape.quadraticCurveTo(
+    x,
+    y,
+    x - r,
+    y,
+  )
+  shape.lineTo(-x + r, y)
+  shape.quadraticCurveTo(
+    -x,
+    y,
+    -x,
+    y - r,
+  )
+  shape.lineTo(-x, -y + r)
+  shape.quadraticCurveTo(
+    -x,
+    -y,
+    -x + r,
+    -y,
+  )
+
+  const geometry =
+    new THREE.ExtrudeGeometry(
+      shape,
+      {
+        depth,
+        bevelEnabled: true,
+        bevelSize: .003,
+        bevelThickness: .003,
+        bevelSegments: 1,
+        steps: 1,
+      },
+    )
+  geometry.center()
+  return geometry
 }
 
 function capeGeometry(
@@ -2067,6 +2318,9 @@ function bodyFit(
         shoulderX: .285,
         torsoX: .305,
         chestFront: .17,
+        upperBack: .115,
+        neckFront: .122,
+        neckBack: .105,
         armRadius: .066,
         waistY: .985,
         waistRadius: .22,
@@ -2082,6 +2336,9 @@ function bodyFit(
         shoulderX: .315,
         torsoX: .335,
         chestFront: .185,
+        upperBack: .125,
+        neckFront: .13,
+        neckBack: .112,
         armRadius: .073,
         waistY: .99,
         waistRadius: .235,
