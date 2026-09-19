@@ -35,6 +35,7 @@ export type BuildAuthoredAnimationInput = {
   smoothing: number
   mirrorX: boolean
   cleanup: MotionCleanupOptions
+  groundedNeutral?: boolean
 }
 
 export type BuiltAuthoredAnimation = {
@@ -94,6 +95,7 @@ export async function buildAuthoredAnimation(input: BuildAuthoredAnimationInput)
       smoothing: input.smoothing,
       mirrorX: input.mirrorX,
       cleanup: input.cleanup,
+      groundedNeutral: input.groundedNeutral,
     })
 
     bakedUrl = URL.createObjectURL(baked.blob)
@@ -133,7 +135,10 @@ export async function publishAuthoredAnimation(input: BuildAuthoredAnimationInpu
   bindingTargetId?: string
   bindingTargetName?: string
 }) {
-  const built = await buildAuthoredAnimation(input)
+  const built = await buildAuthoredAnimation({
+    ...input,
+    groundedNeutral: input.action === 'idle',
+  })
   const runtimeTargetId = input.bindingTargetId ?? input.characterAsset.id
   const runtimeTargetName = input.bindingTargetName ?? input.characterAsset.name
   const bindingId = animationBindingAssetId(runtimeTargetId)
