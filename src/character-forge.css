@@ -15,6 +15,22 @@
 .cf-equipment-note{margin:7px 0 0;font-size:7px;line-height:1.5;color:#698091}
 .character-creator-v1 .cf-preview-badges span:last-child{color:#d6b471;border-color:rgba(176,133,70,.55)}
 
+.cf-foundation-picker{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:7px 0 6px}
+.cf-foundation-picker>button{display:flex;align-items:center;gap:7px;min-width:0;padding:8px;border:1px solid #2c3d49;border-radius:7px;background:#111b22;color:#91a7b6;text-align:left;cursor:pointer}
+.cf-foundation-picker>button:hover{border-color:#486578;color:#d9edf8}
+.cf-foundation-picker>button.active{border-color:#b78a4e;background:#292219;color:#f0d499;box-shadow:inset 0 0 0 1px rgba(213,167,92,.12)}
+.cf-foundation-picker>button:disabled{opacity:.42;cursor:not-allowed}
+.cf-foundation-picker>button>span{display:grid;gap:1px;min-width:0}
+.cf-foundation-picker strong{font-size:9px}
+.cf-foundation-picker em{font-size:7px;font-style:normal;color:#708696;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cf-foundation-picker>button.active em{color:#aa9066}
+.cf-foundation-note{margin:0 0 9px;color:#667f8f;font-size:7px;line-height:1.45}
+.cf-foundation-import{display:flex;align-items:center;justify-content:center;gap:6px;margin:0 0 9px;padding:8px;border:1px dashed #4b6575;border-radius:7px;background:#101b22;color:#b8cedb;font-size:8px;font-weight:700;cursor:pointer}
+.cf-foundation-import:hover{border-color:#7194aa;color:#e2f3fc;background:#14232c}
+.cf-foundation-import.disabled{opacity:.5;cursor:wait}
+.cf-foundation-import input{display:none}
+.cf-foundation-installed{display:flex;align-items:center;gap:5px;margin:0 0 9px;padding:6px 7px;border:1px solid #315c48;border-radius:6px;background:#102018;color:#86cba3;font-size:7px;line-height:1.35}
+.cf-label-spaced{margin-top:11px}
 .cf-asset-picker{display:grid;gap:5px;margin:8px 0}
 .cf-asset-picker-label{display:flex;align-items:center;justify-content:space-between;font-size:8px;color:#8197a7}
 .cf-asset-picker-label em{font-style:normal;font-size:7px;text-transform:uppercase;letter-spacing:.08em;padding:2px 5px;border-radius:999px;border:1px solid #354854;color:#8fa7b7}

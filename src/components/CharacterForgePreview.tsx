@@ -5,7 +5,10 @@ import { createProceduralCharacter, disposeForgeCharacter, type ForgeCharacterCo
 import { createConceptForgeCharacter } from '../engine/conceptCharacterV2'
 import { createProceduralBaseHumanoidV2 } from '../engine/proceduralHumanoidV2'
 import { applyCharacterIdentityVisuals } from '../engine/characterIdentityVisuals'
-import { loadCharacterAssetScene } from '../lib/characterAssetRegistry'
+import {
+  loadCharacterAssetScene,
+  skillboundBodyTypeFromAsset,
+} from '../lib/characterAssetRegistry'
 import type { CharacterIdentityRecipe } from '../lib/characterCreator'
 import type { LibraryAsset } from '../lib/library'
 
@@ -164,7 +167,7 @@ export default function CharacterForgePreview({
         callbackRef.current?.(preview.stats)
 
         state.mixer = new THREE.AnimationMixer(preview.root)
-        const clip = preview.clips.find((entry) => entry.name === animation) ?? preview.clips[0]
+        const clip = preview.clips.find((entry) => entry.name === animation)
         if (clip) {
           const action = state.mixer.clipAction(clip)
           action.play()
@@ -191,7 +194,11 @@ export default function CharacterForgePreview({
     const state = stateRef.current
     if (!state.root || !state.clips?.length) return
     state.action?.stop()
-    const clip = state.clips.find((entry) => entry.name === animation) ?? state.clips[0]
+    const clip = state.clips.find((entry) => entry.name === animation)
+    if (!clip) {
+      state.action = undefined
+      return
+    }
     const action = state.mixer?.clipAction(clip)
     if (!action) return
     action.reset().play()
@@ -266,6 +273,13 @@ async function buildPreview(
   const root = loaded.scene
   root.name = 'CharacterCreator_CustomBody'
   normalizeImportedBody(root, identity.body.height)
+  if (skillboundBodyTypeFromAsset(bodyAsset)) {
+    // Astra's foundation GLBs face +Z. Character Forge's studio camera
+    // looks toward +Z from negative Z, so rotate the official base once
+    // to present its front consistently with Forge's procedural characters.
+    root.rotation.y = Math.PI
+    root.updateMatrixWorld(true)
+  }
 
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return
@@ -280,12 +294,7 @@ async function buildPreview(
   }
   if (hairAsset) await attachHeadPart(root, hairAsset, 'hair', identity.body.headScale)
 
-  let clips = loaded.animations
-  if (!clips.length) {
-    const fallback = createProceduralBaseHumanoidV2(config, identity.classId)
-    clips = fallback.clips
-    disposeForgeCharacter(fallback.root)
-  }
+  const clips = loaded.animations
 
   root.userData.characterIdentity = {
     ...identity,
