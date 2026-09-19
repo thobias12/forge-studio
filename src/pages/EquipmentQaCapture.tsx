@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -232,24 +233,36 @@ export default function EquipmentQaCapture() {
     recipe,
   ])
 
-  const markReady = (id: string) => {
-    setReadyViews((current) =>
-      current.includes(id)
-        ? current
-        : [...current, id],
-    )
-  }
+  const markReady = useCallback(
+    (id: string) => {
+      setReadyViews((current) =>
+        current.includes(id)
+          ? current
+          : [...current, id],
+      )
+    },
+    [],
+  )
 
-  const markError = (
-    id: string,
-    message: string,
-  ) => {
-    setViewErrors((current) => [
-      ...current,
-      `${id}: ${message}`,
-    ])
-    markReady(id)
-  }
+  const markError = useCallback(
+    (
+      id: string,
+      message: string,
+    ) => {
+      setViewErrors((current) =>
+        current.includes(
+          `${id}: ${message}`,
+        )
+          ? current
+          : [
+              ...current,
+              `${id}: ${message}`,
+            ],
+      )
+      markReady(id)
+    },
+    [markReady],
+  )
 
   return (
     <main className="equipment-qa-page">
@@ -503,7 +516,6 @@ function EquipmentQaView({
           disposeEquipmentForgeV3Visual(
             bodyRoot,
           )
-          disposeScene(bodyRoot)
           bodyRoot.removeFromParent()
         }
         ground.geometry.dispose()
