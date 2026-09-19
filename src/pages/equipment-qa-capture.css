@@ -1,0 +1,120 @@
+.equipment-qa-page {
+  min-height: 100vh;
+  padding: 26px;
+  color: #d9e5ee;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(72, 103, 132, .18), transparent 42%),
+    #070b10;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.equipment-qa-header {
+  max-width: 1376px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.equipment-qa-header span,
+.equipment-qa-header p,
+.equipment-qa-build {
+  color: #728697;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.equipment-qa-header h1 {
+  margin: 5px 0 4px;
+  color: #edf5fb;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.equipment-qa-header p {
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.equipment-qa-build {
+  padding-bottom: 3px;
+  white-space: nowrap;
+}
+
+.equipment-qa-grid {
+  max-width: 1376px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.equipment-qa-view {
+  overflow: hidden;
+  border: 1px solid rgba(145, 174, 198, .16);
+  border-radius: 9px;
+  background: #090e14;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .22);
+}
+
+.equipment-qa-view > header {
+  height: 42px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(145, 174, 198, .1);
+  background: rgba(16, 24, 32, .86);
+}
+
+.equipment-qa-view > header strong {
+  color: #cbd9e4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.equipment-qa-view > header span {
+  color: #536575;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.equipment-qa-canvas {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background: #090d12;
+}
+
+.equipment-qa-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.equipment-qa-error {
+  max-width: 900px;
+  margin: 80px auto;
+  padding: 22px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 110, 110, .25);
+  border-radius: 9px;
+  color: #d7e1e9;
+  background: rgba(87, 25, 25, .18);
+}
+
+.equipment-qa-error span,
+.equipment-qa-error code {
+  color: #9faebb;
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .equipment-qa-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
