@@ -149,7 +149,10 @@ const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'poiforge',
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
-  if (params.get('equipmentQa') === '1') {
+  if (
+    params.get('equipmentQa') === '1' ||
+    window.__FORGE_EQUIPMENT_QA_FORCE__ === true
+  ) {
     return <EquipmentQaCapture />
   }
   if (params.get('capture') === '1') return <Capture />
