@@ -87,6 +87,14 @@ export function buildEquipmentForgeV3Visual(
       metalness: 0,
       side: THREE.DoubleSide,
     })
+  const metal =
+    new THREE.MeshStandardMaterial({
+      name: 'EFV3 Metal',
+      color: recipe.materials.metal,
+      roughness: .4,
+      metalness: .72,
+      side: THREE.DoubleSide,
+    })
 
   const root =
     new THREE.Group()
@@ -103,6 +111,7 @@ export function buildEquipmentForgeV3Visual(
       trim,
       leather,
       accent,
+      metal,
     ],
   }
 
@@ -118,6 +127,7 @@ export function buildEquipmentForgeV3Visual(
         trim,
         leather,
         accent,
+        metal,
       )
 
     data.meshes.push(
