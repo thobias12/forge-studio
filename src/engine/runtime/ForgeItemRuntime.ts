@@ -70,9 +70,9 @@ export function fallbackSocketPosition(socket: ForgeItemSocket): [number, number
 }
 
 function socketAliases(socket: ForgeItemSocket) {
-  if (socket === 'RightHand') return ['righthand', 'handr', 'rhand', 'mixamorigrighthand']
-  if (socket === 'LeftHand') return ['lefthand', 'handl', 'lhand', 'mixamoriglefthand']
-  if (socket === 'Back') return ['upperchest', 'chest', 'spine2', 'spine1', 'spine']
+  if (socket === 'RightHand') return ['socketmainhand', 'righthand', 'handr', 'rhand', 'mixamorigrighthand']
+  if (socket === 'LeftHand') return ['socketoffhand', 'lefthand', 'handl', 'lhand', 'mixamoriglefthand']
+  if (socket === 'Back') return ['socketcape', 'upperchest', 'chest', 'spine3', 'spine2', 'spine1', 'spine']
   if (socket === 'HipLeft') return ['lefthip', 'hipl', 'pelvis', 'hips']
   return ['righthip', 'hipr', 'pelvis', 'hips']
 }
