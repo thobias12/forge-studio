@@ -59,6 +59,7 @@ type Props = {
   smoothing?: number
   mirrorX?: boolean
   showRig?: boolean
+  groundedNeutral?: boolean
   onRigInfo?: (info?: RigInfo) => void
   onDiagnostics?: (snapshot: RetargetDiagnosticsSnapshot) => void
 }
@@ -75,15 +76,16 @@ export default function RetargetViewportV069({
   smoothing = 0.5,
   mirrorX = false,
   showRig = false,
+  groundedNeutral = false,
   onRigInfo,
   onDiagnostics,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const [quality, setQuality] = useState<MocapPolishQuality>()
-  const poseRef = useRef({ landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig })
+  const poseRef = useRef({ landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig, groundedNeutral })
   const infoCallbackRef = useRef(onRigInfo)
   const diagnosticsCallbackRef = useRef(onDiagnostics)
-  poseRef.current = { landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig }
+  poseRef.current = { landmarks, worldLandmarks, leftHandLandmarks, rightHandLandmarks, leftHandWorldLandmarks, rightHandWorldLandmarks, smoothing, mirrorX, showRig, groundedNeutral }
   infoCallbackRef.current = onRigInfo
   diagnosticsCallbackRef.current = onDiagnostics
 
@@ -329,6 +331,7 @@ export default function RetargetViewportV069({
               leftHand,
               rightHand,
               handPointsIgnoreVisibility: true,
+              groundedNeutral: poseRef.current.groundedNeutral,
             })
 
             runtime.root.updateMatrixWorld(true)
