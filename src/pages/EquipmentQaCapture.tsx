@@ -635,9 +635,13 @@ export default function EquipmentQaCapture() {
               'high-performance',
           })
         renderer.setPixelRatio(1)
+        const renderSize =
+          analyzeFit
+            ? 768
+            : 640
         renderer.setSize(
-          768,
-          768,
+          renderSize,
+          renderSize,
           false,
         )
         renderer.outputColorSpace =
@@ -647,7 +651,7 @@ export default function EquipmentQaCapture() {
         renderer.toneMappingExposure =
           1.1
         renderer.shadowMap.enabled =
-          true
+          analyzeFit
 
         scene.add(
           new THREE.HemisphereLight(
@@ -667,7 +671,8 @@ export default function EquipmentQaCapture() {
           5,
           -3,
         )
-        key.castShadow = true
+        key.castShadow =
+          analyzeFit
         scene.add(key)
 
         const rim =
@@ -696,7 +701,8 @@ export default function EquipmentQaCapture() {
           )
         ground.rotation.x =
           -Math.PI / 2
-        ground.receiveShadow = true
+        ground.receiveShadow =
+          analyzeFit
         scene.add(ground)
 
         bodyRoot =
