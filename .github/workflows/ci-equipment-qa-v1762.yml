@@ -28,3 +28,10 @@ jobs:
         env:
           VITE_FORGE_BUILD: ${{ github.sha }}
         run: npm run build
+
+      - name: Upload Equipment QA build
+        uses: actions/upload-artifact@v4
+        with:
+          name: equipment-qa-dist
+          path: ./dist
+          retention-days: 1
