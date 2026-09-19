@@ -63,6 +63,22 @@ export function buildEquipmentForgeV3Visual(
       metalness: .02,
       side: THREE.DoubleSide,
     })
+  const leather =
+    new THREE.MeshStandardMaterial({
+      name: 'EFV3 Leather',
+      color: recipe.materials.leather,
+      roughness: .7,
+      metalness: .01,
+      side: THREE.DoubleSide,
+    })
+  const accent =
+    new THREE.MeshStandardMaterial({
+      name: 'EFV3 Accent',
+      color: recipe.materials.accent,
+      roughness: .78,
+      metalness: 0,
+      side: THREE.DoubleSide,
+    })
 
   const root =
     new THREE.Group()
@@ -74,7 +90,12 @@ export function buildEquipmentForgeV3Visual(
 
   const data: V3RootData = {
     meshes: [],
-    materials: [cloth, trim],
+    materials: [
+      cloth,
+      trim,
+      leather,
+      accent,
+    ],
   }
 
   if (
@@ -87,6 +108,8 @@ export function buildEquipmentForgeV3Visual(
         recipe,
         cloth,
         trim,
+        leather,
+        accent,
       )
 
     data.meshes.push(
