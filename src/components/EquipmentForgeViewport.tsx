@@ -18,6 +18,13 @@ import {
   disposeProceduralEquipmentVisual,
   type ProceduralEquipmentRecipe,
 } from '../engine/equipmentForgeProcedural'
+import {
+  buildEquipmentForgeV3Visual,
+  disposeEquipmentForgeV3Visual,
+} from '../engine/equipmentForgeV3/assembler'
+import type {
+  EquipmentForgeV3Recipe,
+} from '../engine/equipmentForgeV3/types'
 
 export type EquipmentForgeMaterialInfo = {
   key: string
@@ -36,6 +43,7 @@ type Props = {
   >
   overrides: EquipmentMaterialOverrides
   proceduralRecipe?: ProceduralEquipmentRecipe
+  v3Recipe?: EquipmentForgeV3Recipe
   showImportedEquipment?: boolean
   animate: boolean
   baseClothingVisible: boolean
@@ -51,6 +59,7 @@ type ViewportState = {
   bodyRoot?: THREE.Group
   equipmentRoot?: THREE.Group
   proceduralRoot?: THREE.Group
+  v3Root?: THREE.Group
   mixer?: THREE.AnimationMixer
   action?: THREE.AnimationAction
   materials: Map<
@@ -65,6 +74,7 @@ export default function EquipmentForgeViewport({
   slots,
   overrides,
   proceduralRecipe,
+  v3Recipe,
   showImportedEquipment = true,
   animate,
   baseClothingVisible,
@@ -95,6 +105,11 @@ export default function EquipmentForgeViewport({
   const proceduralSignature =
     proceduralRecipe
       ? JSON.stringify(proceduralRecipe)
+      : ''
+
+  const v3Signature =
+    v3Recipe
+      ? JSON.stringify(v3Recipe)
       : ''
 
   useEffect(() => {
@@ -371,6 +386,14 @@ export default function EquipmentForgeViewport({
             )
         }
 
+        if (v3Recipe?.enabled) {
+          state.v3Root =
+            buildEquipmentForgeV3Visual(
+              bodyRoot,
+              v3Recipe,
+            )
+        }
+
         applyMaterialOverrides(
           state.materials,
           overrides,
@@ -443,6 +466,33 @@ export default function EquipmentForgeViewport({
         )
     }
   }, [proceduralSignature])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state.bodyRoot) return
+    try {
+      disposeEquipmentForgeV3Visual(
+        state.bodyRoot,
+      )
+      state.v3Root = undefined
+      if (v3Recipe?.enabled) {
+        state.v3Root =
+          buildEquipmentForgeV3Visual(
+            state.bodyRoot,
+            v3Recipe,
+          )
+        callbacksRef.current.onStatus?.(
+          'Equipment Forge V3 · fitted tunic conformed and skinned to the live body.',
+        )
+      }
+    } catch (error) {
+      callbacksRef.current.onStatus?.(
+        error instanceof Error
+          ? error.message
+          : 'Equipment Forge V3 could not build that template.',
+      )
+    }
+  }, [v3Signature])
 
   useEffect(() => {
     if (stateRef.current.action) {
@@ -670,6 +720,9 @@ function clearAssembly(
   state.mixer = undefined
   state.action = undefined
   if (state.bodyRoot) {
+    disposeEquipmentForgeV3Visual(
+      state.bodyRoot,
+    )
     disposeProceduralEquipmentVisual(
       state.bodyRoot,
     )
@@ -679,6 +732,7 @@ function clearAssembly(
   }
   state.equipmentRoot = undefined
   state.proceduralRoot = undefined
+  state.v3Root = undefined
   state.materials.clear()
 }
 
