@@ -170,8 +170,8 @@ function createTorsoTemplate(
   recipe: EquipmentForgeV3Recipe,
   material: THREE.MeshStandardMaterial,
 ) {
-  const rings = 15
-  const segments = 36
+  const rings = 18
+  const segments = 48
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
@@ -201,6 +201,10 @@ function createTorsoTemplate(
     ring += 1
   ) {
     const v = ring / rings
+    const ringPositions:
+      THREE.Vector3[] = []
+    const ringInfluences:
+      SkinInfluence[] = []
 
     for (
       let segment = 0;
@@ -229,8 +233,28 @@ function createTorsoTemplate(
 
       const position =
         nearest.position.clone()
-      const normal =
-        nearest.normal.clone().normalize()
+
+      // V3.1: the garment topology owns
+      // its vertical contour. The old
+      // nearest-vertex Y produced the
+      // saw-tooth hem and torn neckline
+      // visible in v1.76.0.
+      position.y = targetY
+
+      const radialNormal =
+        nearest.normal.clone()
+      radialNormal.y = 0
+      if (
+        radialNormal.lengthSq() <
+        1e-5
+      ) {
+        radialNormal.set(
+          position.x,
+          0,
+          position.z,
+        )
+      }
+      radialNormal.normalize()
 
       const waistFactor =
         1 -
@@ -249,10 +273,39 @@ function createTorsoTemplate(
             ))
 
       position.addScaledVector(
-        normal,
+        radialNormal,
         extra,
       )
 
+      ringPositions.push(position)
+      ringInfluences.push(
+        readSkinInfluence(
+          source.geometry,
+          nearest.index,
+        ),
+      )
+    }
+
+    const smoothPasses =
+      ring === 0
+        ? 3
+        : ring === rings
+          ? 2
+          : 1
+    const smoothed =
+      smoothCircularRingXZ(
+        ringPositions,
+        smoothPasses,
+      )
+
+    for (
+      let segment = 0;
+      segment < segments;
+      segment += 1
+    ) {
+      const u = segment / segments
+      const position =
+        smoothed[segment]
       positions.push(
         position.x,
         position.y,
@@ -260,10 +313,7 @@ function createTorsoTemplate(
       )
       uvs.push(u, v)
       influences.push(
-        readSkinInfluence(
-          source.geometry,
-          nearest.index,
-        ),
+        ringInfluences[segment],
       )
     }
   }
@@ -787,6 +837,51 @@ function collectSourceVertices(
   }
 
   return vertices
+}
+
+function smoothCircularRingXZ(
+  input: THREE.Vector3[],
+  passes: number,
+) {
+  let current =
+    input.map((point) =>
+      point.clone(),
+    )
+
+  for (
+    let pass = 0;
+    pass < passes;
+    pass += 1
+  ) {
+    const next =
+      current.map((point, index) => {
+        const previous =
+          current[
+            (index -
+              1 +
+              current.length) %
+              current.length
+          ]
+        const following =
+          current[
+            (index + 1) %
+              current.length
+          ]
+
+        return new THREE.Vector3(
+          previous.x * .22 +
+            point.x * .56 +
+            following.x * .22,
+          point.y,
+          previous.z * .22 +
+            point.z * .56 +
+            following.z * .22,
+        )
+      })
+    current = next
+  }
+
+  return current
 }
 
 function nearestAngularVertex(
