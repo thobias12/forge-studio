@@ -555,3 +555,107 @@ button:disabled,
     border-top: 1px solid rgba(255,255,255,.07);
   }
 }
+
+
+/* Equipment Creator v2 */
+.ef-mode-switch {
+  display: inline-flex;
+  padding: 2px;
+  background: #090f15;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 7px;
+}
+
+.ef-mode-switch button {
+  min-height: 25px;
+  padding: 0 9px;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.ef-mode-switch button.active,
+.ef-toolbar button.active {
+  color: #edf7ff;
+  background: rgba(72, 116, 151, .28);
+  box-shadow: inset 0 0 0 1px rgba(112, 166, 207, .28);
+}
+
+.ef-creator-panel {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(58, 88, 115, .08),
+      transparent 72%
+    );
+}
+
+.ef-creator-styles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.ef-creator-styles button {
+  min-width: 0;
+  min-height: 72px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  color: #9aa7b4;
+  background: #0c1219;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ef-creator-styles button strong {
+  color: #cbd6df;
+  font-size: 10px;
+}
+
+.ef-creator-styles button small {
+  color: #65727f;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.ef-creator-styles button.active {
+  background: rgba(75, 112, 143, .16);
+  border-color: rgba(107, 157, 197, .42);
+}
+
+.ef-creator-toggle {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9aa7b4;
+  font-size: 10px;
+}
+
+.ef-creator-toggle input {
+  accent-color: #70a3ca;
+}
+
+.ef-creator-color {
+  margin-top: 10px;
+}
+
+.equipment-forge[data-mode="create"] .ef-slot {
+  opacity: .72;
+}
+
+@media (max-width: 1280px) {
+  .ef-toolbar-actions {
+    gap: 4px;
+  }
+
+  .ef-toolbar button {
+    padding: 0 7px;
+  }
+}
