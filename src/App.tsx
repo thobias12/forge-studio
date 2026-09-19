@@ -57,6 +57,7 @@ import MapStudio from './pages/MapStudio'
 import PoiForge from './pages/PoiForge'
 import PropForge from './pages/PropForge'
 import Capture from './pages/Capture'
+import EquipmentQaCapture from './pages/EquipmentQaCapture'
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
 import { loadSkillboundWorkspace } from './engine/forgeProject'
@@ -148,6 +149,12 @@ const SKILLBOUND_CONTEXT_PAGES = new Set<Page>(['projects', 'world', 'poiforge',
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
+  if (
+    params.get('equipmentQa') === '1' ||
+    window.__FORGE_EQUIPMENT_QA_FORCE__ === true
+  ) {
+    return <EquipmentQaCapture />
+  }
   if (params.get('capture') === '1') return <Capture />
 
   const [page, setPage] = useState<Page>(() => {
