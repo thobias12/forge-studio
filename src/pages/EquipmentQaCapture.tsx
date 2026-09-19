@@ -805,10 +805,14 @@ export default function EquipmentQaCapture() {
               ),
           })
 
+          // Rendering is synchronous. Yield with a timer instead of
+          // requestAnimationFrame so headless/background Chromium cannot
+          // throttle the automated QA capture indefinitely.
           await new Promise<void>(
             (resolve) =>
-              requestAnimationFrame(
-                () => resolve(),
+              setTimeout(
+                resolve,
+                0,
               ),
           )
         }
