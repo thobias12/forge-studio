@@ -714,8 +714,9 @@ function starterPropSockets(id: string): GameplaySocket[] {
         radius: 2.4,
         prompt: 'Open Chest',
         action: 'container',
+        targetRef: 'world-cache',
         oneShot: true,
-        message: 'Ironbound chest opened. Loot binding is ready for Loot Forge.',
+        message: 'Ironbound chest opened.',
       }),
     ]
   }
@@ -872,6 +873,19 @@ function starterPropSockets(id: string): GameplaySocket[] {
   return []
 }
 
+function migrateStarterPropSockets(
+  prefabId: string,
+  sockets: GameplaySocket[],
+) {
+  if (prefabId !== 'prop-chest') return sockets
+  return sockets.map((socket) =>
+    socket.id === 'socket-chest-open' &&
+    !socket.targetRef
+      ? { ...socket, targetRef: 'world-cache' }
+      : socket,
+  )
+}
+
 function normalizePropPrefab(value: unknown): PropPrefab | undefined {
   if (!value || typeof value !== 'object') return undefined
   const source = value as Partial<PropPrefab>
@@ -913,12 +927,14 @@ function normalizePropPrefab(value: unknown): PropPrefab | undefined {
       simplify: clampNumber(source.lod?.simplify, .1, .9, .45),
     },
     parts,
-    sockets:
+    sockets: migrateStarterPropSockets(
+      typeof source.id === 'string' ? source.id : '',
       source.sockets === undefined
         ? starterPropSockets(
             typeof source.id === 'string' ? source.id : '',
           )
         : normalizeGameplaySockets(source.sockets),
+    ),
     thumbnail:
       typeof source.thumbnail === 'string' &&
       source.thumbnail.startsWith('data:image/')
