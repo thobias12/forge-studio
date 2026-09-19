@@ -281,6 +281,7 @@ export function buildConformedTunic(
         source,
         tabard.geometry,
         trim,
+        leather,
       ),
     )
   }
@@ -472,17 +473,40 @@ function createTorsoTemplate(
         recipe.hemFlare *
         .018 *
         Math.pow(1 - v, 2)
+      const frontFactor =
+        Math.max(
+          0,
+          radialNormal.z,
+        )
+      const chestEase =
+        Math.exp(
+          -Math.pow(
+            (v - .63) / .17,
+            2,
+          ),
+        ) *
+        frontFactor
+      const sideEase =
+        Math.exp(
+          -Math.pow(
+            (v - .48) / .22,
+            2,
+          ),
+        ) *
+        (1 - Math.abs(radialNormal.z))
 
       const extra =
         frame.height *
-          (.0028 +
+          (.0026 +
             recipe.looseness *
-              .011 *
+              .0095 *
               THREE.MathUtils.lerp(
                 waistFactor,
                 1,
                 v,
-              )) +
+              ) +
+            chestEase * .00125 +
+            sideEase * .00055) +
         hemFlare
 
       position.addScaledVector(
@@ -767,11 +791,18 @@ function createSleeveTemplate(
           ring < 2 ? .1 : .08,
         )
 
+      const shoulderEase =
+        THREE.MathUtils.lerp(
+          1.08,
+          .96,
+          v,
+        )
       const extra =
         armLength *
-          (.014 +
-            recipe.looseness *
-              .01)
+        (.011 +
+          recipe.looseness *
+            .008) *
+        shoulderEase
       const position =
         center
           .clone()
@@ -1731,6 +1762,13 @@ function createShoulderBridge(
       torsoSample.point.clone()
     const sleevePoint =
       sleeveSample.point.clone()
+    const middlePoint =
+      torsoPoint
+        .clone()
+        .lerp(
+          sleevePoint,
+          .5,
+        )
 
     const center =
       torsoPoint
@@ -1747,38 +1785,60 @@ function createShoulderBridge(
       radial.lengthSq() >
       1e-6
     ) {
-      radial
-        .normalize()
-        .multiplyScalar(.0015)
-      torsoPoint.add(radial)
-      sleevePoint.add(radial)
+      radial.normalize()
+      torsoPoint.addScaledVector(
+        radial,
+        .0012,
+      )
+      sleevePoint.addScaledVector(
+        radial,
+        .0012,
+      )
+      middlePoint.addScaledVector(
+        radial,
+        .0038,
+      )
     }
+    middlePoint.y += .0012
+
+    const torsoInfluence =
+      readSkinInfluence(
+        torsoGeometry,
+        torsoSample.index,
+      )
+    const sleeveInfluence =
+      readSkinInfluence(
+        sleeveGeometry,
+        sleeveSample.index,
+      )
 
     positions.push(
       torsoPoint.x,
       torsoPoint.y,
       torsoPoint.z,
+      middlePoint.x,
+      middlePoint.y,
+      middlePoint.z,
       sleevePoint.x,
       sleevePoint.y,
       sleevePoint.z,
     )
+    const u =
+      index /
+      Math.max(1, count - 1)
     uvs.push(
-      index /
-        Math.max(1, count - 1),
-      0,
-      index /
-        Math.max(1, count - 1),
-      1,
+      u, 0,
+      u, .5,
+      u, 1,
     )
     influences.push(
-      readSkinInfluence(
-        torsoGeometry,
-        torsoSample.index,
+      torsoInfluence,
+      blendSkinInfluence(
+        torsoInfluence,
+        sleeveInfluence,
+        .5,
       ),
-      readSkinInfluence(
-        sleeveGeometry,
-        sleeveSample.index,
-      ),
+      sleeveInfluence,
     )
   }
 
@@ -1787,18 +1847,17 @@ function createShoulderBridge(
     index < count - 1;
     index += 1
   ) {
-    const a = index * 2
+    const a = index * 3
     const b = a + 1
-    const c0 =
-      (index + 1) * 2
-    const d = c0 + 1
+    const c0 = a + 2
+    const d = (index + 1) * 3
+    const e = d + 1
+    const f = d + 2
     indices.push(
-      a,
-      c0,
-      b,
-      b,
-      c0,
-      d,
+      a, d, b,
+      b, d, e,
+      b, e, c0,
+      c0, e, f,
     )
   }
 
@@ -1894,7 +1953,7 @@ function createVestOverlay(
       ) {
         point.addScaledVector(
           radial.normalize(),
-          .004,
+          .0034,
         )
       }
 
@@ -2061,10 +2120,10 @@ function createFrontTabard(
     row += 1
   ) {
     const v = row / rows
-    const taper =
+    const widthScale =
       THREE.MathUtils.lerp(
         1,
-        .72,
+        1.1,
         v,
       )
 
@@ -2075,8 +2134,31 @@ function createFrontTabard(
     ) {
       const u =
         column / columns
+      const centered =
+        u - .5
       const edge =
-        Math.abs(u - .5) * 2
+        Math.abs(centered) * 2
+      const tailCenter =
+        u < .5 ? .23 : .77
+      const tailDistance =
+        THREE.MathUtils.clamp(
+          Math.abs(
+            u - tailCenter,
+          ) / .23,
+          0,
+          1,
+        )
+      const pointedHem =
+        Math.pow(
+          THREE.MathUtils.clamp(
+            (v - .72) / .28,
+            0,
+            1,
+          ),
+          2,
+        ) *
+        .018 *
+        (1 - tailDistance)
       const topIndex =
         topIndices[column]
       const top =
@@ -2094,19 +2176,24 @@ function createFrontTabard(
 
       const point =
         new THREE.Vector3(
-          top.x * taper,
+          top.x * widthScale +
+            centered *
+              .005 *
+              v *
+              v,
           top.y -
             v * length -
             Math.pow(v, 4) *
-              .02 *
-              (1 - edge * edge),
+              .012 *
+              (1 - edge * edge) -
+            pointedHem,
           top.z +
-            .004 +
+            .0036 +
             Math.sin(
               v * Math.PI,
             ) *
-              .008 -
-            v * .003,
+              .006 -
+            v * .0025,
         )
 
       positions.push(
@@ -2137,8 +2224,11 @@ function createFrontTabard(
       // Open a narrow center slit through the lower third so the tabard
       // reads like a constructed garment instead of a single rectangle.
       if (
-        row >= 6 &&
-        column === 3
+        row >= 5 &&
+        (
+          column === 3 ||
+          column === 4
+        )
       ) {
         continue
       }
@@ -2358,9 +2448,14 @@ function createCapeLayer(
         frame.height *
         recipe.cape.clearance *
         THREE.MathUtils.lerp(
-          .65,
-          1.1,
+          .72,
+          1.08,
           v,
+        ) *
+        THREE.MathUtils.lerp(
+          .92,
+          1.08,
+          edge,
         )
       const sampledBackZ =
         sampleBackSurfaceZ(
@@ -2379,14 +2474,36 @@ function createCapeLayer(
         sampledBackZ -
         surfaceClearance
 
+      const collisionSafeZ =
+        Math.min(
+          drapeZ,
+          safeZ,
+        )
+      const maxUpperGap =
+        frame.height *
+        THREE.MathUtils.lerp(
+          .007,
+          .016,
+          THREE.MathUtils.clamp(
+            v / .5,
+            0,
+            1,
+          ),
+        )
+      const guardedZ =
+        v <= .5
+          ? Math.max(
+              collisionSafeZ,
+              safeZ -
+                maxUpperGap,
+            )
+          : collisionSafeZ
+
       const point =
         new THREE.Vector3(
           x,
           y,
-          Math.min(
-            drapeZ,
-            safeZ,
-          ),
+          guardedZ,
         )
 
       positions.push(
@@ -2589,6 +2706,24 @@ function createVestPanelDetails(
       'radial',
       .0073,
     ),
+    createGridPathStrip(
+      source,
+      vestGeometry,
+      48,
+      [
+        { row: 2, column: 6 },
+        { row: 3, column: 7 },
+        { row: 4, column: 7 },
+        { row: 5, column: 8 },
+        { row: 6, column: 9 },
+        { row: 7, column: 9 },
+        { row: 8, column: 10 },
+      ],
+      trim,
+      'EFV3_VestDiagonalReinforcement_L',
+      'radial',
+      .0092,
+    ),
   ]
 }
 
@@ -2600,7 +2735,7 @@ function createBeltAccessories(
   metal: THREE.Material,
 ) {
   return [
-    createGridAreaPatch(
+    createRaisedGridAreaPatch(
       source,
       torsoGeometry,
       48,
@@ -2610,10 +2745,10 @@ function createBeltAccessories(
       14,
       leather,
       'EFV3_Pouch_L',
-      'radial',
-      .011,
+      .009,
+      .006,
     ),
-    createGridAreaPatch(
+    createRaisedGridAreaPatch(
       source,
       torsoGeometry,
       48,
@@ -2623,8 +2758,8 @@ function createBeltAccessories(
       39,
       leather,
       'EFV3_Pouch_R',
-      'radial',
-      .01,
+      .0085,
+      .005,
     ),
     createGridAreaPatch(
       source,
@@ -2678,6 +2813,32 @@ function createBeltAccessories(
       'radial',
       .013,
     ),
+    createGridPatch(
+      source,
+      torsoGeometry,
+      48,
+      2,
+      4,
+      17,
+      18,
+      trim,
+      'EFV3_BeltKeeper_L',
+      'radial',
+      .0075,
+    ),
+    createGridPatch(
+      source,
+      torsoGeometry,
+      48,
+      2,
+      4,
+      30,
+      31,
+      trim,
+      'EFV3_BeltKeeper_R',
+      'radial',
+      .0072,
+    ),
   ]
 }
 
@@ -2685,6 +2846,7 @@ function createTabardDetails(
   source: THREE.SkinnedMesh,
   tabardGeometry: THREE.BufferGeometry,
   material: THREE.Material,
+  leather: THREE.Material,
 ) {
   return [
     createGridColumnStrip(
@@ -2755,15 +2917,275 @@ function createTabardDetails(
       tabardGeometry,
       9,
       0,
-      6,
-      3,
       4,
+      3,
+      5,
       material,
       'EFV3_TabardCenterSeam',
       'radial',
-      .0018,
+      .0022,
+    ),
+    createGridAreaPatch(
+      source,
+      tabardGeometry,
+      9,
+      0,
+      2,
+      1,
+      7,
+      leather,
+      'EFV3_TabardTopReinforcement',
+      'radial',
+      .0035,
+    ),
+    createGridAreaPatch(
+      source,
+      tabardGeometry,
+      9,
+      5,
+      10,
+      2,
+      3,
+      material,
+      'EFV3_TabardSplitEdge_L',
+      'radial',
+      .0022,
+    ),
+    createGridAreaPatch(
+      source,
+      tabardGeometry,
+      9,
+      5,
+      10,
+      5,
+      6,
+      material,
+      'EFV3_TabardSplitEdge_R',
+      'radial',
+      .0022,
     ),
   ]
+}
+
+function createRaisedGridAreaPatch(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  columnCount: number,
+  rowStart: number,
+  rowEnd: number,
+  columnStart: number,
+  columnEnd: number,
+  material: THREE.Material,
+  name: string,
+  baseOffset: number,
+  bulge: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+  const rows =
+    Math.max(
+      1,
+      rowEnd - rowStart,
+    )
+  const columns =
+    Math.max(
+      1,
+      columnEnd - columnStart,
+    )
+
+  for (
+    let row = rowStart;
+    row <= rowEnd;
+    row += 1
+  ) {
+    const v =
+      (row - rowStart) / rows
+
+    for (
+      let column = columnStart;
+      column <= columnEnd;
+      column += 1
+    ) {
+      const u =
+        (column - columnStart) /
+        columns
+      const index =
+        row * columnCount +
+        column
+      const point =
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        )
+      const profile =
+        Math.sin(u * Math.PI) *
+        Math.sin(v * Math.PI)
+      offsetDetailPoint(
+        point,
+        'radial',
+        baseOffset +
+          bulge * profile,
+      )
+      positions.push(
+        point.x,
+        point.y,
+        point.z,
+      )
+      uvs.push(u, v)
+      influences.push(
+        readSkinInfluence(
+          sourceGeometry,
+          index,
+        ),
+      )
+    }
+  }
+
+  const localColumns =
+    columnEnd -
+    columnStart +
+    1
+
+  for (
+    let row = 0;
+    row < rowEnd - rowStart;
+    row += 1
+  ) {
+    for (
+      let column = 0;
+      column < localColumns - 1;
+      column += 1
+    ) {
+      const a =
+        row * localColumns +
+        column
+      const b = a + 1
+      const c0 =
+        (row + 1) *
+          localColumns +
+        column
+      const d = c0 + 1
+      indices.push(
+        a, c0, b,
+        b, c0, d,
+      )
+    }
+  }
+
+  return createDetailMesh(
+    source,
+    positions,
+    uvs,
+    indices,
+    influences,
+    material,
+    name,
+  )
+}
+
+function createGridPathStrip(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  columnCount: number,
+  path: Array<{
+    row: number
+    column: number
+  }>,
+  material: THREE.Material,
+  name: string,
+  offsetMode: 'radial' | 'back',
+  offset: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+
+  for (
+    let step = 0;
+    step < path.length;
+    step += 1
+  ) {
+    const entry = path[step]
+    for (
+      const [slot, column] of
+        [
+          entry.column,
+          entry.column + 1,
+        ].entries()
+    ) {
+      const index =
+        entry.row *
+          columnCount +
+        column
+      const point =
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        )
+      offsetDetailPoint(
+        point,
+        offsetMode,
+        offset,
+      )
+      positions.push(
+        point.x,
+        point.y,
+        point.z,
+      )
+      uvs.push(
+        slot,
+        step /
+          Math.max(
+            1,
+            path.length - 1,
+          ),
+      )
+      influences.push(
+        readSkinInfluence(
+          sourceGeometry,
+          index,
+        ),
+      )
+    }
+  }
+
+  for (
+    let step = 0;
+    step < path.length - 1;
+    step += 1
+  ) {
+    const a = step * 2
+    const b = a + 1
+    const c0 = a + 2
+    const d = a + 3
+    indices.push(
+      a, c0, b,
+      b, c0, d,
+    )
+  }
+
+  return createDetailMesh(
+    source,
+    positions,
+    uvs,
+    indices,
+    influences,
+    material,
+    name,
+  )
 }
 
 function createGridAreaPatch(
@@ -3080,18 +3502,48 @@ function createCapeDetails(
       'back',
       .0018,
     ),
-    createGridRowStrip(
+    createGridAreaPatch(
       source,
       capeGeometry,
       columns,
       0,
+      2,
       1,
-      0,
-      10,
+      9,
       leather,
       'EFV3_CapeYoke',
       'back',
-      .0022,
+      .0024,
+    ),
+    createGridPathStrip(
+      source,
+      capeGeometry,
+      columns,
+      [
+        { row: 0, column: 2 },
+        { row: 1, column: 3 },
+        { row: 2, column: 4 },
+        { row: 3, column: 4 },
+      ],
+      trim,
+      'EFV3_CapeYokeSeam_L',
+      'back',
+      .003,
+    ),
+    createGridPathStrip(
+      source,
+      capeGeometry,
+      columns,
+      [
+        { row: 0, column: 8 },
+        { row: 1, column: 7 },
+        { row: 2, column: 6 },
+        { row: 3, column: 6 },
+      ],
+      trim,
+      'EFV3_CapeYokeSeam_R',
+      'back',
+      .003,
     ),
     createGridColumnStrip(
       source,
@@ -3621,6 +4073,75 @@ function createSkinnedRowBand(
     material,
     name,
   )
+}
+
+function blendSkinInfluence(
+  a: SkinInfluence,
+  b: SkinInfluence,
+  t: number,
+): SkinInfluence {
+  const weights =
+    new Map<number, number>()
+  const add = (
+    influence: SkinInfluence,
+    scale: number,
+  ) => {
+    influence.indices.forEach(
+      (bone, index) => {
+        weights.set(
+          bone,
+          (weights.get(bone) ?? 0) +
+            influence.weights[index] *
+              scale,
+        )
+      },
+    )
+  }
+
+  add(a, 1 - t)
+  add(b, t)
+
+  const ranked =
+    [...weights.entries()]
+      .filter(
+        ([, weight]) =>
+          weight > 1e-6,
+      )
+      .sort(
+        (left, right) =>
+          right[1] - left[1],
+      )
+      .slice(0, 4)
+  const total =
+    ranked.reduce(
+      (sum, [, weight]) =>
+        sum + weight,
+      0,
+    ) || 1
+
+  while (ranked.length < 4) {
+    ranked.push([0, 0])
+  }
+
+  return {
+    indices: ranked.map(
+      ([bone]) => bone,
+    ) as [
+      number,
+      number,
+      number,
+      number,
+    ],
+    weights: ranked.map(
+      ([, weight]) =>
+        weight / total,
+    ) as [
+      number,
+      number,
+      number,
+      number,
+    ],
+  }
 }
 
 function makeSkinnedTemplate(
