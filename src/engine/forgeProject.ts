@@ -50,8 +50,33 @@ export type ForgeItemCameraPreset = 'three-quarter' | 'front' | 'side'
 export type ForgeItemTransform = { position: [number, number, number]; rotation: [number, number, number]; scale: number }
 export type ForgeItemVisualDefinition = { masterAssetId?: string; inventory: { autoIcon: boolean; iconAssetId?: string; cameraPreset: ForgeItemCameraPreset; rotation: [number, number, number]; scale: number }; drop: { useMaster: boolean; modelAssetId?: string; transform: ForgeItemTransform; groundOffset: number }; equipped: { useMaster: boolean; modelAssetId?: string; socket: ForgeItemSocket; transform: ForgeItemTransform } }
 export type ForgeItemDefinition = { format: 'forge-item'; version: 1; id: string; name: string; slot: ForgeItemSlot; rarity: ForgeItemRarity; damageBonus: number; color: string; modelAssetId?: string; visual?: ForgeItemVisualDefinition }
-export type ForgeLootEntry = { itemId: string; chance: number }
-export type ForgeLootTableDefinition = { format: 'forge-loot-table'; version: 1; id: string; name: string; entries: ForgeLootEntry[] }
+export type ForgeLootRollMode = 'independent' | 'weighted'
+export type ForgeLootEntry = {
+  itemId: string
+  chance: number
+  weight?: number
+  minQuantity?: number
+  maxQuantity?: number
+}
+export type ForgeLootRewardRange = {
+  min: number
+  max: number
+  chance: number
+}
+export type ForgeLootTableDefinition = {
+  format: 'forge-loot-table'
+  version: 1
+  id: string
+  name: string
+  entries: ForgeLootEntry[]
+  rollMode?: ForgeLootRollMode
+  rolls?: [number, number]
+  allowDuplicates?: boolean
+  nothingWeight?: number
+  gold?: ForgeLootRewardRange
+  xp?: ForgeLootRewardRange
+  scatterRadius?: number
+}
 export type ForgePlayerArchetypeLoadout = { label?: string; basicAbility: string; activeAbilities: string[]; startingItems: string[] }
 export type ForgePlayerDefinition = { format: 'forge-player'; version: 1; id: string; name: string; maxHealth: number; moveSpeed: number; dodgeDistance: number; dodgeCooldown: number; basicAbility: string; activeAbilities: string[]; startingItems: string[]; characterAssetId?: string; animationAssetId?: string; archetypeLoadouts?: Partial<Record<'melee' | 'ranged' | 'caster', ForgePlayerArchetypeLoadout>> }
 export type ForgeGameplayContent = { player: ForgePlayerDefinition; abilities: ForgeAbilityDefinition[]; enemies: ForgeEnemyDefinition[]; items: ForgeItemDefinition[]; lootTables: ForgeLootTableDefinition[] }
