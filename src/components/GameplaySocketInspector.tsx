@@ -9,6 +9,7 @@ import {
   type GameplaySocket,
   type GameplaySocketKind,
 } from '../engine/gameplaySockets'
+import '../gameplay-sockets.css'
 
 type Props = {
   socket: GameplaySocket
