@@ -153,6 +153,15 @@ export function buildConformedTunic(
     if (left) {
       meshes.push(left)
       meshes.push(
+        createShoulderBridge(
+          source,
+          torso.geometry,
+          left.geometry,
+          cloth,
+          'L',
+        ),
+      )
+      meshes.push(
         createSkinnedRowBand(
           source,
           left.geometry,
@@ -168,6 +177,15 @@ export function buildConformedTunic(
 
     if (right) {
       meshes.push(right)
+      meshes.push(
+        createShoulderBridge(
+          source,
+          torso.geometry,
+          right.geometry,
+          cloth,
+          'R',
+        ),
+      )
       meshes.push(
         createSkinnedRowBand(
           source,
@@ -1300,6 +1318,235 @@ function nearestEuclideanVertex(
     )
   }
   return best
+}
+
+function createShoulderBridge(
+  source: THREE.SkinnedMesh,
+  torsoGeometry: THREE.BufferGeometry,
+  sleeveGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  side: 'L' | 'R',
+) {
+  const torsoPosition =
+    torsoGeometry.getAttribute(
+      'position',
+    )
+  const sleevePosition =
+    sleeveGeometry.getAttribute(
+      'position',
+    )
+  const torsoSegments =
+    side === 'L'
+      ? Array.from(
+          { length: 9 },
+          (_, index) => 8 + index,
+        )
+      : Array.from(
+          { length: 9 },
+          (_, index) => 32 + index,
+        )
+
+  const torsoSamples =
+    torsoSegments.map(
+      (segment) => {
+        const index =
+          18 * 48 +
+          segment
+        return {
+          index,
+          point:
+            new THREE.Vector3(
+              torsoPosition.getX(index),
+              torsoPosition.getY(index),
+              torsoPosition.getZ(index),
+            ),
+        }
+      },
+    )
+
+  const sleeveSamples =
+    Array.from(
+      { length: 18 },
+      (_, index) => ({
+        index,
+        point:
+          new THREE.Vector3(
+            sleevePosition.getX(index),
+            sleevePosition.getY(index),
+            sleevePosition.getZ(index),
+          ),
+      }),
+    )
+
+  const sleeveCenter =
+    sleeveSamples.reduce(
+      (sum, sample) =>
+        sum.add(sample.point),
+      new THREE.Vector3(),
+    )
+  sleeveCenter.multiplyScalar(
+    1 /
+      Math.max(
+        1,
+        sleeveSamples.length,
+      ),
+  )
+
+  let innerSleeve =
+    sleeveSamples.filter(
+      (sample) =>
+        side === 'L'
+          ? sample.point.x <=
+            sleeveCenter.x
+          : sample.point.x >=
+            sleeveCenter.x,
+    )
+
+  if (innerSleeve.length < 5) {
+    innerSleeve =
+      sleeveSamples
+  }
+
+  torsoSamples.sort(
+    (a, b) =>
+      a.point.z - b.point.z,
+  )
+  innerSleeve.sort(
+    (a, b) =>
+      a.point.z - b.point.z,
+  )
+
+  const count =
+    torsoSamples.length
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+
+  for (
+    let index = 0;
+    index < count;
+    index += 1
+  ) {
+    const torsoSample =
+      torsoSamples[index]
+    const sleeveIndex =
+      Math.round(
+        (index /
+          Math.max(1, count - 1)) *
+          Math.max(
+            0,
+            innerSleeve.length - 1,
+          ),
+      )
+    const sleeveSample =
+      innerSleeve[sleeveIndex]
+
+    const torsoPoint =
+      torsoSample.point.clone()
+    const sleevePoint =
+      sleeveSample.point.clone()
+
+    const center =
+      torsoPoint
+        .clone()
+        .add(sleevePoint)
+        .multiplyScalar(.5)
+    const radial =
+      new THREE.Vector3(
+        center.x,
+        0,
+        center.z,
+      )
+    if (
+      radial.lengthSq() >
+      1e-6
+    ) {
+      radial
+        .normalize()
+        .multiplyScalar(.0015)
+      torsoPoint.add(radial)
+      sleevePoint.add(radial)
+    }
+
+    positions.push(
+      torsoPoint.x,
+      torsoPoint.y,
+      torsoPoint.z,
+      sleevePoint.x,
+      sleevePoint.y,
+      sleevePoint.z,
+    )
+    uvs.push(
+      index /
+        Math.max(1, count - 1),
+      0,
+      index /
+        Math.max(1, count - 1),
+      1,
+    )
+    influences.push(
+      readSkinInfluence(
+        torsoGeometry,
+        torsoSample.index,
+      ),
+      readSkinInfluence(
+        sleeveGeometry,
+        sleeveSample.index,
+      ),
+    )
+  }
+
+  for (
+    let index = 0;
+    index < count - 1;
+    index += 1
+  ) {
+    const a = index * 2
+    const b = a + 1
+    const c0 =
+      (index + 1) * 2
+    const d = c0 + 1
+    indices.push(
+      a,
+      c0,
+      b,
+      b,
+      c0,
+      d,
+    )
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    material,
+    `EFV3_ShoulderBridge_${side}`,
+  )
 }
 
 function createVestOverlay(
