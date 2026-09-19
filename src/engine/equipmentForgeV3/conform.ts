@@ -2473,6 +2473,419 @@ function createCapeLayer(
   )
 }
 
+function createTunicSeamDetails(
+  source: THREE.SkinnedMesh,
+  torsoGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+) {
+  return [
+    createGridColumnStrip(
+      source,
+      torsoGeometry,
+      19,
+      48,
+      11,
+      12,
+      material,
+      'EFV3_TunicSideSeam_L',
+      'radial',
+      .0016,
+    ),
+    createGridColumnStrip(
+      source,
+      torsoGeometry,
+      19,
+      48,
+      35,
+      36,
+      material,
+      'EFV3_TunicSideSeam_R',
+      'radial',
+      .0016,
+    ),
+  ]
+}
+
+function createVestPanelDetails(
+  source: THREE.SkinnedMesh,
+  vestGeometry: THREE.BufferGeometry,
+  leather: THREE.Material,
+  trim: THREE.Material,
+) {
+  return [
+    createGridAreaPatch(
+      source,
+      vestGeometry,
+      48,
+      2,
+      8,
+      5,
+      11,
+      leather,
+      'EFV3_VestPanel_L',
+      'radial',
+      .0065,
+    ),
+    createGridAreaPatch(
+      source,
+      vestGeometry,
+      48,
+      3,
+      8,
+      37,
+      43,
+      leather,
+      'EFV3_VestPanel_R',
+      'radial',
+      .0065,
+    ),
+    createGridColumnStrip(
+      source,
+      vestGeometry,
+      10,
+      48,
+      10,
+      11,
+      trim,
+      'EFV3_VestPanelSeam_L',
+      'radial',
+      .0073,
+    ),
+    createGridColumnStrip(
+      source,
+      vestGeometry,
+      10,
+      48,
+      37,
+      38,
+      trim,
+      'EFV3_VestPanelSeam_R',
+      'radial',
+      .0073,
+    ),
+    createGridRowStrip(
+      source,
+      vestGeometry,
+      48,
+      2,
+      3,
+      5,
+      11,
+      trim,
+      'EFV3_VestPanelBase_L',
+      'radial',
+      .0073,
+    ),
+    createGridRowStrip(
+      source,
+      vestGeometry,
+      48,
+      3,
+      4,
+      37,
+      43,
+      trim,
+      'EFV3_VestPanelBase_R',
+      'radial',
+      .0073,
+    ),
+  ]
+}
+
+function createBeltAccessories(
+  source: THREE.SkinnedMesh,
+  torsoGeometry: THREE.BufferGeometry,
+  leather: THREE.Material,
+  trim: THREE.Material,
+  metal: THREE.Material,
+) {
+  return [
+    createGridAreaPatch(
+      source,
+      torsoGeometry,
+      48,
+      0,
+      4,
+      8,
+      14,
+      leather,
+      'EFV3_Pouch_L',
+      'radial',
+      .011,
+    ),
+    createGridAreaPatch(
+      source,
+      torsoGeometry,
+      48,
+      1,
+      4,
+      35,
+      39,
+      leather,
+      'EFV3_Pouch_R',
+      'radial',
+      .01,
+    ),
+    createGridAreaPatch(
+      source,
+      torsoGeometry,
+      48,
+      3,
+      4,
+      8,
+      14,
+      trim,
+      'EFV3_PouchFlap_L',
+      'radial',
+      .013,
+    ),
+    createGridAreaPatch(
+      source,
+      torsoGeometry,
+      48,
+      3,
+      4,
+      35,
+      39,
+      trim,
+      'EFV3_PouchFlap_R',
+      'radial',
+      .012,
+    ),
+    createGridPatch(
+      source,
+      torsoGeometry,
+      48,
+      3,
+      4,
+      10,
+      11,
+      metal,
+      'EFV3_PouchStud_L',
+      'radial',
+      .014,
+    ),
+    createGridPatch(
+      source,
+      torsoGeometry,
+      48,
+      3,
+      4,
+      37,
+      38,
+      metal,
+      'EFV3_PouchStud_R',
+      'radial',
+      .013,
+    ),
+  ]
+}
+
+function createTabardDetails(
+  source: THREE.SkinnedMesh,
+  tabardGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+) {
+  return [
+    createGridColumnStrip(
+      source,
+      tabardGeometry,
+      11,
+      9,
+      0,
+      1,
+      material,
+      'EFV3_TabardEdge_L',
+      'radial',
+      .0018,
+    ),
+    createGridColumnStrip(
+      source,
+      tabardGeometry,
+      11,
+      9,
+      8,
+      7,
+      material,
+      'EFV3_TabardEdge_R',
+      'radial',
+      .0018,
+    ),
+    createGridRowStrip(
+      source,
+      tabardGeometry,
+      9,
+      0,
+      1,
+      0,
+      8,
+      material,
+      'EFV3_TabardTop',
+      'radial',
+      .0018,
+    ),
+    createGridRowStrip(
+      source,
+      tabardGeometry,
+      9,
+      10,
+      9,
+      0,
+      3,
+      material,
+      'EFV3_TabardHem_L',
+      'radial',
+      .0018,
+    ),
+    createGridRowStrip(
+      source,
+      tabardGeometry,
+      9,
+      10,
+      9,
+      4,
+      8,
+      material,
+      'EFV3_TabardHem_R',
+      'radial',
+      .0018,
+    ),
+    createGridAreaPatch(
+      source,
+      tabardGeometry,
+      9,
+      0,
+      6,
+      3,
+      4,
+      material,
+      'EFV3_TabardCenterSeam',
+      'radial',
+      .0018,
+    ),
+  ]
+}
+
+function createGridAreaPatch(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  columnCount: number,
+  rowStart: number,
+  rowEnd: number,
+  columnStart: number,
+  columnEnd: number,
+  material: THREE.Material,
+  name: string,
+  offsetMode: 'radial' | 'back',
+  offset: number,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+
+  const rows =
+    Math.max(
+      1,
+      rowEnd - rowStart,
+    )
+  const columns =
+    Math.max(
+      1,
+      columnEnd - columnStart,
+    )
+
+  for (
+    let row = rowStart;
+    row <= rowEnd;
+    row += 1
+  ) {
+    const v =
+      (row - rowStart) / rows
+
+    for (
+      let column = columnStart;
+      column <= columnEnd;
+      column += 1
+    ) {
+      const u =
+        (column - columnStart) /
+        columns
+      const index =
+        row * columnCount +
+        column
+      const point =
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        )
+      offsetDetailPoint(
+        point,
+        offsetMode,
+        offset,
+      )
+      positions.push(
+        point.x,
+        point.y,
+        point.z,
+      )
+      uvs.push(u, v)
+      influences.push(
+        readSkinInfluence(
+          sourceGeometry,
+          index,
+        ),
+      )
+    }
+  }
+
+  const localColumns =
+    columnEnd -
+    columnStart +
+    1
+
+  for (
+    let row = 0;
+    row < rowEnd - rowStart;
+    row += 1
+  ) {
+    for (
+      let column = 0;
+      column < localColumns - 1;
+      column += 1
+    ) {
+      const a =
+        row * localColumns +
+        column
+      const b = a + 1
+      const c0 =
+        (row + 1) *
+          localColumns +
+        column
+      const d = c0 + 1
+      indices.push(
+        a, c0, b,
+        b, c0, d,
+      )
+    }
+  }
+
+  return createDetailMesh(
+    source,
+    positions,
+    uvs,
+    indices,
+    influences,
+    material,
+    name,
+  )
+}
+
 function createVestDetailTrim(
   source: THREE.SkinnedMesh,
   vestGeometry: THREE.BufferGeometry,
@@ -2679,6 +3092,18 @@ function createCapeDetails(
       'EFV3_CapeYoke',
       'back',
       .0022,
+    ),
+    createGridColumnStrip(
+      source,
+      capeGeometry,
+      rows,
+      columns,
+      5,
+      6,
+      trim,
+      'EFV3_CapeCenterSeam',
+      'back',
+      .0018,
     ),
     createGridPatch(
       source,
