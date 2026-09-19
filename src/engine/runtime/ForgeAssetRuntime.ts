@@ -24,8 +24,19 @@ export class ForgeCharacterVisualBinding {
     right: THREE.Bone
     leftRest: THREE.Quaternion
     rightRest: THREE.Quaternion
+    driver: THREE.Object3D
+    previousDriverPosition: THREE.Vector3
+    previousVelocity: THREE.Vector3
+    smoothedAcceleration: THREE.Vector3
+    rootWorldQuaternion: THREE.Quaternion
+    inverseRootQuaternion: THREE.Quaternion
+    localAcceleration: THREE.Vector3
+    pitch: number
+    pitchVelocity: number
+    roll: number
+    rollVelocity: number
     phase: number
-    amplitude: number
+    initialized: boolean
   }
 
   constructor(private readonly root: THREE.Object3D) {}
@@ -34,13 +45,29 @@ export class ForgeCharacterVisualBinding {
     const left = this.root.getObjectByName('breast_L')
     const right = this.root.getObjectByName('breast_R')
     if (!(left instanceof THREE.Bone) || !(right instanceof THREE.Bone)) return false
+
+    this.root.updateMatrixWorld(true)
+    const driver = left.parent ?? right.parent ?? this.root
+    const previousDriverPosition = driver.getWorldPosition(new THREE.Vector3())
+
     this.secondaryMotion = {
       left,
       right,
       leftRest: left.quaternion.clone(),
       rightRest: right.quaternion.clone(),
+      driver,
+      previousDriverPosition,
+      previousVelocity: new THREE.Vector3(),
+      smoothedAcceleration: new THREE.Vector3(),
+      rootWorldQuaternion: new THREE.Quaternion(),
+      inverseRootQuaternion: new THREE.Quaternion(),
+      localAcceleration: new THREE.Vector3(),
+      pitch: 0,
+      pitchVelocity: 0,
+      roll: 0,
+      rollVelocity: 0,
       phase: 0,
-      amplitude: 0,
+      initialized: false,
     }
     return true
   }
@@ -98,41 +125,140 @@ export class ForgeCharacterVisualBinding {
     const motion = this.secondaryMotion
     if (!motion) return
 
+    const dt = THREE.MathUtils.clamp(delta, 1 / 240, 1 / 30)
+    motion.phase += dt
+
+    motion.driver.updateWorldMatrix(true, false)
+    const driverPosition = motion.driver.getWorldPosition(
+      new THREE.Vector3(),
+    )
+
+    if (!motion.initialized || delta > .12) {
+      motion.previousDriverPosition.copy(driverPosition)
+      motion.previousVelocity.set(0, 0, 0)
+      motion.smoothedAcceleration.set(0, 0, 0)
+      motion.pitch = 0
+      motion.pitchVelocity = 0
+      motion.roll = 0
+      motion.rollVelocity = 0
+      motion.initialized = true
+    }
+
+    const velocity = driverPosition
+      .clone()
+      .sub(motion.previousDriverPosition)
+      .divideScalar(dt)
+    const worldAcceleration = velocity
+      .clone()
+      .sub(motion.previousVelocity)
+      .divideScalar(dt)
+
+    motion.rootWorldQuaternion.copy(
+      this.root.getWorldQuaternion(
+        motion.rootWorldQuaternion,
+      ),
+    )
+    motion.inverseRootQuaternion
+      .copy(motion.rootWorldQuaternion)
+      .invert()
+    motion.localAcceleration
+      .copy(worldAcceleration)
+      .applyQuaternion(motion.inverseRootQuaternion)
+
+    motion.localAcceleration.x = THREE.MathUtils.clamp(
+      motion.localAcceleration.x,
+      -18,
+      18,
+    )
+    motion.localAcceleration.y = THREE.MathUtils.clamp(
+      motion.localAcceleration.y,
+      -18,
+      18,
+    )
+    motion.localAcceleration.z = THREE.MathUtils.clamp(
+      motion.localAcceleration.z,
+      -18,
+      18,
+    )
+
+    const accelerationResponse = 1 - Math.exp(-12 * dt)
+    motion.smoothedAcceleration.lerp(
+      motion.localAcceleration,
+      accelerationResponse,
+    )
+
+    motion.previousDriverPosition.copy(driverPosition)
+    motion.previousVelocity.copy(velocity)
+
     const moving = this.activeKey.includes('cue:move:')
     const attacking = this.activeKey.includes('cue:attack:')
     const dodging = this.activeKey.includes('cue:dodge:')
-    const targetAmplitude = dodging
-      ? .024
-      : attacking
-        ? .018
-        : moving
-          ? .012
-          : .0035
-    const response = 1 - Math.exp(-7.5 * delta)
-    motion.amplitude = THREE.MathUtils.lerp(
-      motion.amplitude,
-      targetAmplitude,
-      response,
-    )
-    const frequency = moving
-      ? 10.2
-      : attacking || dodging
-        ? 12.4
-        : 2.4
-    motion.phase += delta * frequency
+    const hit = this.activeKey.includes('cue:hit:')
 
-    const vertical =
-      Math.sin(motion.phase) * motion.amplitude
-    const settle =
-      Math.sin(motion.phase * .53 + .8) *
-      motion.amplitude *
-      .22
+    const gaitDrive = moving
+      ? Math.sin(motion.phase * 10.5) * .0055
+      : 0
+    const actionDrive = dodging
+      ? Math.sin(motion.phase * 13.5) * .009
+      : attacking
+        ? Math.sin(motion.phase * 12.5) * .0065
+        : hit
+          ? Math.sin(motion.phase * 15.5) * .0075
+          : Math.sin(motion.phase * 2.2) * .0012
+
+    const targetPitch = THREE.MathUtils.clamp(
+      -motion.smoothedAcceleration.y * .0015 +
+      motion.smoothedAcceleration.z * .00115 +
+      gaitDrive +
+      actionDrive,
+      -.052,
+      .052,
+    )
+    const targetRoll = THREE.MathUtils.clamp(
+      motion.smoothedAcceleration.x * .001 +
+      (moving
+        ? Math.sin(motion.phase * 5.25 + .7) * .0016
+        : 0),
+      -.026,
+      .026,
+    )
+
+    integrateSpringAxis(
+      motion,
+      'pitch',
+      'pitchVelocity',
+      targetPitch,
+      dt,
+      92,
+      15.5,
+      .065,
+    )
+    integrateSpringAxis(
+      motion,
+      'roll',
+      'rollVelocity',
+      targetRoll,
+      dt,
+      78,
+      14,
+      .034,
+    )
+
     const leftOffset = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(vertical, 0, settle),
+      new THREE.Euler(
+        motion.pitch,
+        0,
+        motion.roll,
+      ),
     )
     const rightOffset = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(vertical, 0, -settle),
+      new THREE.Euler(
+        motion.pitch,
+        0,
+        -motion.roll,
+      ),
     )
+
     motion.left.quaternion
       .copy(motion.leftRest)
       .multiply(leftOffset)
@@ -164,6 +290,42 @@ export class ForgeCharacterVisualBinding {
     this.oneShot = !loop
     return true
   }
+}
+
+type SpringScalarKey =
+  | 'pitch'
+  | 'roll'
+type SpringVelocityKey =
+  | 'pitchVelocity'
+  | 'rollVelocity'
+
+function integrateSpringAxis(
+  motion: NonNullable<ForgeCharacterVisualBinding['secondaryMotion']>,
+  valueKey: SpringScalarKey,
+  velocityKey: SpringVelocityKey,
+  target: number,
+  delta: number,
+  stiffness: number,
+  damping: number,
+  limit: number,
+) {
+  const value = motion[valueKey]
+  const velocity = motion[velocityKey]
+  const acceleration =
+    (target - value) * stiffness -
+    velocity * damping
+  const nextVelocity = THREE.MathUtils.clamp(
+    velocity + acceleration * delta,
+    -1.2,
+    1.2,
+  )
+  const nextValue = THREE.MathUtils.clamp(
+    value + nextVelocity * delta,
+    -limit,
+    limit,
+  )
+  motion[velocityKey] = nextVelocity
+  motion[valueKey] = nextValue
 }
 
 export async function bindCharacterAsset(
