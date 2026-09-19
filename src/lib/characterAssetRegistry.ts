@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { saveAsset, type LibraryAsset } from './library'
+import { getAsset, saveAsset, type LibraryAsset } from './library'
 
 export type CharacterAssetRole = 'body' | 'head' | 'hair'
 export type CharacterAssetCompatibility = 'ready' | 'warning' | 'invalid'
@@ -14,17 +14,15 @@ export const OFFICIAL_SKILLBOUND_BASE_IDS: Record<SkillboundBodyType, string> = 
 
 const OFFICIAL_SKILLBOUND_BASES: Record<
   SkillboundBodyType,
-  { id: string; name: string; file: string }
+  { id: string; name: string }
 > = {
   male: {
     id: OFFICIAL_SKILLBOUND_BASE_IDS.male,
     name: 'Skillbound Male Base v1',
-    file: 'assets/characters/skillbound-base-v1/Skillbound-Male-Base-v1.glb',
   },
   female: {
     id: OFFICIAL_SKILLBOUND_BASE_IDS.female,
     name: 'Skillbound Female Base v1',
-    file: 'assets/characters/skillbound-base-v1/Skillbound-Female-Base-v1.glb',
   },
 }
 
@@ -194,45 +192,194 @@ export async function registerCharacterAsset(
 
 
 export async function loadOfficialSkillboundBaseAssets(): Promise<LibraryAsset[]> {
-  return await Promise.all(
+  const installed = await Promise.all(
     (Object.keys(OFFICIAL_SKILLBOUND_BASES) as SkillboundBodyType[])
       .map(async (bodyType) => {
         const definition = OFFICIAL_SKILLBOUND_BASES[bodyType]
-        const response = await fetch(
-          `${import.meta.env.BASE_URL}${definition.file}`,
-        )
-        if (!response.ok) {
-          throw new Error(
-            `Could not load ${definition.name} (${response.status}).`,
-          )
-        }
-        const blob = await response.blob()
-        const timestamp = '2026-09-19T00:00:00.000Z'
-        return {
-          id: definition.id,
-          name: definition.name,
-          category: 'characters' as const,
-          kind: 'glb' as const,
-          mime: 'model/gltf-binary',
-          size: blob.size,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-          tags: [
-            'character-creator-part',
-            'character-role:body',
-            'compatibility:ready',
-            'rig:SkillboundHumanoidV1',
-            'official:skillbound',
-            `body-type:${bodyType}`,
-            'secondary-motion:breast-bones',
-            'forward:+z',
-          ],
-          favorite: true,
-          source: 'Skillbound Character Standard v1 · official foundation',
-          blob,
-        } satisfies LibraryAsset
+        const asset = await getAsset(definition.id).catch(() => undefined)
+        return asset && isOfficialSkillboundFoundationAsset(asset, bodyType)
+          ? asset
+          : undefined
       }),
   )
+  return installed.filter(
+    (asset): asset is LibraryAsset => Boolean(asset),
+  )
+}
+
+export async function importOfficialSkillboundFoundationPack(
+  file: File,
+): Promise<LibraryAsset[]> {
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    throw new Error(
+      'Choose the Skillbound-Base-Characters-v1.zip foundation pack.',
+    )
+  }
+
+  const entries = await extractSkillboundFoundationGlbs(file)
+  const assets: LibraryAsset[] = []
+
+  for (const bodyType of ['male', 'female'] as const) {
+    const definition = OFFICIAL_SKILLBOUND_BASES[bodyType]
+    const blob = entries[bodyType]
+    if (!blob) {
+      throw new Error(
+        `The foundation pack is missing ${definition.name}.glb.`,
+      )
+    }
+
+    const inspection = await inspectCharacterAsset(blob, 'body')
+    if (
+      inspection.compatibility === 'invalid' ||
+      inspection.rig !== 'SkillboundHumanoidV1'
+    ) {
+      throw new Error(
+        `${definition.name} did not match the SkillboundHumanoidV1 foundation rig. ${inspection.messages.join(' ')}`,
+      )
+    }
+
+    const asset = await saveAsset({
+      id: definition.id,
+      name: definition.name,
+      category: 'characters',
+      kind: 'glb',
+      mime: 'model/gltf-binary',
+      tags: officialSkillboundBaseTags(bodyType),
+      favorite: true,
+      source: 'Skillbound Character Standard v1 · Astra foundation pack',
+      blob,
+    })
+    assets.push(asset)
+  }
+
+  return assets
+}
+
+function officialSkillboundBaseTags(
+  bodyType: SkillboundBodyType,
+) {
+  return [
+    'character-creator-part',
+    'character-role:body',
+    'compatibility:ready',
+    'rig:SkillboundHumanoidV1',
+    'official:skillbound',
+    `body-type:${bodyType}`,
+    'secondary-motion:breast-bones',
+    'forward:+z',
+  ]
+}
+
+function isOfficialSkillboundFoundationAsset(
+  asset: LibraryAsset,
+  bodyType: SkillboundBodyType,
+) {
+  return (
+    asset.kind === 'glb' &&
+    asset.category === 'characters' &&
+    asset.id === OFFICIAL_SKILLBOUND_BASE_IDS[bodyType] &&
+    asset.tags.includes('official:skillbound')
+  )
+}
+
+async function extractSkillboundFoundationGlbs(
+  file: Blob,
+): Promise<Partial<Record<SkillboundBodyType, Blob>>> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength,
+  )
+  const decoder = new TextDecoder()
+  const result: Partial<Record<SkillboundBodyType, Blob>> = {}
+  let offset = 0
+
+  while (offset + 30 <= bytes.byteLength) {
+    const signature = view.getUint32(offset, true)
+    if (signature !== 0x04034b50) break
+
+    const flags = view.getUint16(offset + 6, true)
+    const compression = view.getUint16(offset + 8, true)
+    const compressedSize = view.getUint32(offset + 18, true)
+    const nameLength = view.getUint16(offset + 26, true)
+    const extraLength = view.getUint16(offset + 28, true)
+
+    if (flags & 0x08) {
+      throw new Error(
+        'This ZIP uses streaming data descriptors, which this Forge importer does not support.',
+      )
+    }
+
+    const nameStart = offset + 30
+    const nameEnd = nameStart + nameLength
+    const dataStart = nameEnd + extraLength
+    const dataEnd = dataStart + compressedSize
+    if (dataEnd > bytes.byteLength) {
+      throw new Error('The Skillbound foundation ZIP appears to be truncated.')
+    }
+
+    const name = decoder.decode(bytes.subarray(nameStart, nameEnd))
+    const bodyType: SkillboundBodyType | undefined =
+      name.endsWith('/Skillbound-Male-Base-v1.glb')
+        ? 'male'
+        : name.endsWith('/Skillbound-Female-Base-v1.glb')
+          ? 'female'
+          : undefined
+
+    if (bodyType) {
+      const compressed = bytes.slice(dataStart, dataEnd)
+      const data = await inflateZipEntry(compressed, compression)
+      if (
+        data.byteLength < 12 ||
+        data[0] !== 0x67 ||
+        data[1] !== 0x6c ||
+        data[2] !== 0x54 ||
+        data[3] !== 0x46
+      ) {
+        throw new Error(
+          `${name} is not a valid binary glTF file.`,
+        )
+      }
+      result[bodyType] = new Blob(
+        [data],
+        { type: 'model/gltf-binary' },
+      )
+    }
+
+    offset = dataEnd
+    if (result.male && result.female) break
+  }
+
+  if (!result.male || !result.female) {
+    throw new Error(
+      'Could not find both Skillbound-Male-Base-v1.glb and Skillbound-Female-Base-v1.glb in that ZIP.',
+    )
+  }
+
+  return result
+}
+
+async function inflateZipEntry(
+  compressed: Uint8Array,
+  compression: number,
+) {
+  if (compression === 0) return compressed
+  if (compression !== 8) {
+    throw new Error(
+      `Unsupported ZIP compression method ${compression}.`,
+    )
+  }
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error(
+      'This browser cannot unpack the foundation ZIP. Use a current Chrome, Edge, Firefox, or Safari release.',
+    )
+  }
+
+  const stream = new Blob([compressed])
+    .stream()
+    .pipeThrough(new DecompressionStream('deflate-raw'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
 export function skillboundBodyTypeFromAsset(
