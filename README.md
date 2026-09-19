@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.75.0`  
+> **Current Forge version:** `v1.77.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -303,31 +303,138 @@ The female body also has support for subtle spring-based secondary motion in the
 
 ## Equipment Forge
 
-Equipment Forge is now both an **assembler** and the beginning of a native **equipment creator**.
+Equipment Forge is now transitioning from the older primitive-based **Equipment Creator v2** into **Equipment Forge V3**, a body-conforming equipment authoring system built around the official Skillbound male/female rigs.
 
-Current version: **Equipment Creator v2**, introduced in Forge v1.75.0.
+The active priority is the **Skillbound Female Base v1** Ranger outfit, because it is being used as the reference case for solving garment fit, attachment, layering, deformation, and visual quality before expanding the system to more equipment families.
 
-### Assemble mode
+### Equipment Forge V3 architecture
 
-Assemble mode supports:
+V3 is deliberately different from the old V2 approach.
 
-- official male/female Skillbound foundation selection
-- installation of the Skillbound base-character ZIP
-- equipment-pack ZIP import
-- individual equipment GLB import
-- live 3D character preview
-- orbit/zoom
-- pose/deformation test
-- imported skinned-mesh rebinding to the active Skillbound skeleton by bone name
-- body compatibility filtering
-- base clothing visibility
-- per-material color
-- roughness
-- metalness
-- outfit preset save/load
-- Shared Asset Library persistence
+Instead of assembling clothing from floating boxes/primitives, V3:
 
-Equipment Forge authoring slots:
+- samples the real body mesh
+- creates fitted garment surfaces from the body contour
+- reuses the official Skillbound skeleton
+- inherits skin weights from the source body/garment surfaces
+- masks covered body geometry where needed
+- builds modular garment layers on top of a fitted base
+- keeps fit diagnostics available through a dedicated QA workflow
+
+Current V3 source:
+
+- `src/engine/equipmentForgeV3/types.ts`
+- `src/engine/equipmentForgeV3/templateRegistry.ts`
+- `src/engine/equipmentForgeV3/conform.ts`
+- `src/engine/equipmentForgeV3/assembler.ts`
+- `src/engine/equipmentForgeV3/bodyMasking.ts`
+- `src/engine/equipmentForgeV3/fitDiagnostics.ts`
+- `src/components/EquipmentCreatorV3Panel.tsx`
+- `src/pages/EquipmentQaCapture.tsx`
+
+### Current V3 garment capabilities
+
+The current V3 fitted-tunic system includes:
+
+- fitted torso garment generated from the real body surface
+- round / scoop / high neckline options
+- none / short / long sleeves
+- shoulder-to-sleeve bridge geometry
+- sleeve body masking
+- smooth arm-axis sleeve fitting
+- tunic looseness
+- waist taper
+- hem flare
+- neckline trim
+- sleeve cuff trim
+- modular split leather vest
+- fitted belt
+- front tabard
+- cape / back layer
+- cloth / trim / leather / accent / metal materials
+- Ranger / Traveler / Acolyte starting presets
+
+### Fit and collision work
+
+The v1.77.x work has focused heavily on eliminating the problems seen in the old procedural approach:
+
+- torso clearance is intentionally tighter
+- sleeves sample the outer arm surface rather than using a rough primitive cylinder
+- body geometry underneath sleeves can be masked to prevent z-fighting
+- shoulder bridge geometry visually joins sleeves to the torso
+- tabard attachment follows several fitted torso points instead of one floating anchor
+- cape attachment follows the fitted back contour across its top edge
+- cape vertices sample the real rear body surface to avoid penetrating the back
+- cape back-gap clearance is adjustable
+- QA has a dedicated upper-cape/back collision zone
+
+### 360° + close-up Equipment QA
+
+Forge now has a dedicated Equipment V3 QA page.
+
+Direct QA URL:
+
+`https://thobias12.github.io/forge-studio/?equipmentQa=1&body=female&model=library`
+
+The QA workflow renders fixed images sequentially through one WebGL renderer rather than keeping many simultaneous live WebGL canvases.
+
+Current QA coverage includes:
+
+- 8 fixed full-body views around the character
+- left/right close side views
+- left/right underarm views
+- chest/neckline close-up
+- back/shoulder close-up
+- left/right waist/hem close-ups
+- dedicated rear-45 cape/back-gap close-ups
+
+The QA page also calculates body-to-garment diagnostics:
+
+- average clearance
+- 95th-percentile clearance
+- clipping sample percentage
+- floating sample percentage
+- separate torso fit
+- separate left/right sleeve fit
+- upper cape/back fit
+
+Fit diagnostics are opt-in for QA so the normal Equipment Forge editor does not pay the extra analysis cost.
+
+### v1.77.4 authored-looking Ranger pass
+
+Current `main` is **Forge v1.77.4**, commit `d05259d`.
+
+The latest pass moved the Ranger outfit further away from a plain procedural shell by adding/refining:
+
+- fitted tunic seam details
+- asymmetric leather vest panel construction
+- additional vest edge/hem/shoulder detailing
+- belt construction details
+- belt pouches
+- belt studs / metal details
+- split and trimmed tabard treatment
+- additional cape construction detail
+- cape yoke / borders / fasteners
+- extra QA close-ups for the authored-looking layers
+
+### Current visual status / important handoff
+
+The user is **not satisfied with the outfit yet**. Do not treat v1.77.4 as finished.
+
+The desired direction is a much more authored, game-ready ARPG outfit while keeping the V3 body-conforming workflow.
+
+The next conversation should:
+
+1. inspect the actual current `main` implementation and live v1.77.4 result before editing;
+2. use the Equipment QA close-ups to inspect side spacing, underarms, shoulders, waist, cape/back clearance, and clipping;
+3. keep refining silhouette, layering, seams, leather panels, belt/pouches, tabard, cape construction, thickness, and asymmetry;
+4. prefer fitted/skinned detail geometry over floating primitives;
+5. keep cape clearance measured so it neither intersects the back nor floats visibly far behind it;
+6. continue until the outfit looks intentionally authored rather than merely procedurally valid.
+
+### Equipment slots
+
+Equipment Forge authoring slots are:
 
 - Head
 - Chest
@@ -341,91 +448,20 @@ Equipment Forge authoring slots:
 
 For the current armor standard, **shoulders are part of Chest**, not a separate equipment slot.
 
-The current Female Adventurer Armor test pack uses slot files such as:
+### Longer-term Equipment Forge direction
 
-- `EQ_Chest.glb`
-- `EQ_Gloves.glb`
-- `EQ_Legs.glb`
-- `EQ_Boots.glb`
-- `EQ_Waist.glb`
-- `EQ_Cape.glb`
+Once the reference Ranger outfit is genuinely strong, expand the same native Forge + ChatGPT workflow into:
 
-### Create mode
+- more chest/cloth/armor templates
+- gloves
+- boots
+- legs
+- headgear
+- capes/backpacks/quivers
+- weapons
+- bake/export to final reusable skinned assets
 
-Forge v1.75.0 added the first procedural equipment-generation layer so new designs can be created without requiring Astra for every item.
-
-Current procedural components:
-
-- fitted tunic/chest shell
-- leather vest layer
-- breastplate
-- lower armor plate
-- integrated left/right shoulder armor
-- shoulder asymmetry
-- collar
-- chest straps
-- waist belt
-- buckle
-- pouches
-- tabard
-- shaped cape
-- cape clasps
-
-Current editable parameters include:
-
-- chest width
-- chest depth
-- chest length
-- looseness
-- leather vest toggle
-- plate coverage
-- shoulder size
-- shoulder asymmetry
-- collar height
-- strap count
-- belt width
-- pouch count
-- tabard length
-- tabard width
-- cape length
-- cape width
-- cape flare
-- cloth color
-- leather color
-- metal color
-- accent/cape color
-
-Starting creator styles:
-
-- Ranger
-- Guard
-- Battlemage
-- Raider
-
-Other creator features:
-
-- deterministic **Random Variant**
-- reset to style
-- imported armor can be toggled as a visual reference
-- generated geometry updates without reparsing the base GLB on each slider movement
-- generated parts attach to Skillbound skeleton bones
-- editable procedural sets can be saved to the Forge Library
-- outfit presets can persist the procedural recipe
-- complete creator recipes can be copied to ChatGPT, edited, pasted back, and applied
-
-### Important Equipment Creator limitation
-
-The procedural creator is still an early geometry system. It currently focuses on **Chest + Waist + Cape/Back** construction and does **not yet bake/export the generated set as a final standalone skinned equipment GLB**.
-
-That export/bake step, more advanced garment geometry, gloves/boots/legs/head generation, weapon generation, and stronger body-conforming topology are future work.
-
-Important source:
-
-- `src/pages/EquipmentForge.tsx`
-- `src/components/EquipmentForgeViewport.tsx`
-- `src/components/EquipmentCreatorPanel.tsx`
-- `src/engine/equipmentForge.ts`
-- `src/engine/equipmentForgeProcedural.ts`
+The goal remains to make Astra optional rather than requiring external generation for every new armor piece, weapon, NPC, monster, animal, or environment asset.
 
 ## Animation Studio
 
@@ -1032,6 +1068,54 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
+## v1.77.4 — Authored-looking Ranger construction
+
+- fitted tunic seam refinement
+- asymmetric vest panels
+- belt pouches and studs
+- split/trimmed tabard
+- additional cape construction detail
+- extra close QA views for new authored-looking layers
+
+## v1.77.3 — Cape collision + detail refinement
+
+- sampled rear-body cape collision guard
+- adjustable cape back gap
+- upper-cape/back fit diagnostics
+- dedicated cape/back QA close-ups
+- vest trim/seams
+- belt buckle
+- cape border/yoke/fasteners
+- metal detail material
+
+## v1.77.2 — Garment fit refinement
+
+- tighter fitted-tunic clearance
+- outer-arm sleeve surface sampling
+- improved vest opening/position
+- fitted belt clearance
+- tabard top follows torso contour
+- cape top follows fitted back contour
+- stricter QA clearance thresholds
+
+## v1.77.1 — Equipment fit QA
+
+- 8 full-body 360° QA angles
+- close side/underarm/chest/back/waist fit views
+- sequential PNG capture using one renderer
+- body-to-garment gap/clipping/floating diagnostics
+
+## v1.77.0 — Equipment Forge V3
+
+- body-conforming fitted tunic foundation
+- shoulder/sleeve joining
+- sleeve masking
+- hem flare
+- modular vest/belt/tabard/cape layers
+- cloth/trim/leather/accent materials
+- Ranger / Traveler / Acolyte presets
+- V3 360° QA workflow
+
 ## v1.75.0 — Equipment Creator v2
 
 - Create / Assemble modes in Equipment Forge
@@ -1100,26 +1184,43 @@ For exact history beyond this point, use Git history.
 
 # Current priorities
 
-At the time of this README update, the main immediate areas are:
+The immediate priority is **Equipment Forge V3 visual quality**.
 
-1. **Visually test and refine Equipment Creator v2** on the official female/male bodies.
-2. Improve procedural clothing/armor geometry so it looks intentionally authored rather than primitive.
-3. Add the missing procedural equipment families:
+1. Continue refining the v1.77.4 Ranger reference outfit until it looks authored and game-ready, not like a procedural shell.
+2. Use the built-in 360° + close-up QA views to inspect:
+   - body/clothing side clearance
+   - shoulders
+   - underarms
+   - chest/neckline
+   - waist/hem
+   - cape/back clearance
+   - clipping / floating layers
+3. Improve garment construction detail:
+   - layered leather panels
+   - shaped seams
+   - believable thickness
+   - belt construction
+   - pouches / straps / studs
+   - tabard shaping
+   - cape yoke / anchors / borders
+   - controlled asymmetry
+4. Preserve the body-conforming/skinned V3 approach. Do not fall back to large detached boxes or floating V2-style primitives.
+5. After the Ranger reference reaches the target quality, add the missing procedural equipment families:
    - gloves
    - boots
    - legs
    - head
-4. Add a native **Weapon Forge** using reusable blade/guard/grip/pommel or staff/bow part systems.
-5. Add bake/export so a procedural creator design becomes a final reusable game-ready equipment asset.
-6. Extend the same Forge + ChatGPT approach toward:
+6. Add a native **Weapon Forge** using reusable blade/guard/grip/pommel or staff/bow construction systems.
+7. Add bake/export so a native Forge equipment design can become a final reusable game-ready equipment asset.
+8. Extend the same Forge + ChatGPT workflow toward:
    - humanoid NPCs
    - enemy factions
    - animals
    - monsters/creature families
    - environment asset generators
-7. Continue visual/performance refinement of Skillbound without regressing stable world/runtime systems.
+9. Continue Skillbound visual/performance refinement without regressing stable world/runtime systems.
 
-Astra should not become a mandatory per-asset cost. The preferred future is:
+Astra should not become a mandatory per-asset cost. The preferred future remains:
 
 ```text
 ChatGPT design intent
@@ -1164,6 +1265,7 @@ src/
     ConceptForge.tsx             Concept/character direction
     CharacterForge.tsx           Character Creator
     EquipmentForge.tsx           Equipment Forge
+    EquipmentQaCapture.tsx        V3 360° / close-up fit QA
     AnimationStudioRuntime2.tsx  Animation Studio UI
     GameplayForge.tsx            Gameplay authoring hub
     SkillForge.tsx               Ability authoring
@@ -1187,7 +1289,8 @@ src/
     contentRegistry.ts           Project registry/health/search
     equipment.ts                 Runtime equipment state/stats
     equipmentForge.ts            Equipment Forge assets/presets/import
-    equipmentForgeProcedural.ts  Equipment Creator v2 generator
+    equipmentForgeProcedural.ts  Legacy Equipment Creator v2 generator
+    equipmentForgeV3/             Body-conforming V3 equipment system
     runtime/
       ForgePlayRuntime.ts        Main playable runtime
       ForgeAssetRuntime.ts       Character/model/runtime bindings
@@ -1197,7 +1300,8 @@ src/
 
   components/
     EquipmentForgeViewport.tsx   Live equipment preview
-    EquipmentCreatorPanel.tsx    Procedural Equipment Creator controls
+    EquipmentCreatorPanel.tsx    Legacy V2 creator controls
+    EquipmentCreatorV3Panel.tsx  V3 fitted garment/layer controls
     WorldForgeViewport.tsx       World preview
     ModelCreatorViewport.tsx     Mesh editor viewport
 
@@ -1253,7 +1357,4 @@ When implementing a new feature:
 
 # Quick handoff summary
 
-If only a short summary is needed:
-
-**Forge Studio v1.75.0** is a React/TypeScript/Three.js browser game-development suite and the active editor/runtime for **Skillbound**. It includes Control Center, Project Manager, World Forge, Play Project, POI Forge, Dungeon Forge, Destruction Lab, Concept Forge, Character Creator, Equipment Forge + procedural Equipment Creator v2, Animation Studio/one-phone mocap, Gameplay Forge, Skill/Encounter/Boss/Item/Loot Forge, UI Forge, VFX Studio, Voice & Audio, Prop Forge, built-in Models editor, Texture Lab, Shared Asset Library, Asset Preview, and Validation. Skillbound uses authored JSON project data, a shared runtime, and IndexedDB-backed library assets. Animation Runtime 3 is active. Chain Lightning has Evergrow-inspired traveling/forked presentation. Runtime performance received a dedicated enemy-death/combat optimization pass. The current content-production direction is **Forge + ChatGPT**, reducing dependence on Astra by building native reusable asset generators, starting with equipment and then weapons/NPCs/creatures/environment.
-
+**Forge Studio v1.77.4** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The current main commit is `d05259d`. The active work is **Equipment Forge V3**, which replaces the old floating-primitive clothing approach with body-conforming, skinned garment templates built from the official Skillbound character rig. The Female Base Ranger outfit is the reference case. V3 currently supports fitted tunics, sleeves, shoulder bridges, masking, vest/belt/tabard/cape layers, material controls, and Ranger/Traveler/Acolyte presets. A dedicated Equipment QA page provides 360° full-body images, close side/underarm/chest/back/waist/cape views, and body-to-garment clearance/clipping diagnostics. v1.77.4 adds authored-looking seams, asymmetric vest panels, belt pouches/studs, split/trimmed tabard work, extra cape detail, and more QA close-ups. **The outfit is not considered finished**: continue refining fit and authored visual detail from current `main`, especially cape/back clearance, side spacing, shoulders/underarms, layering, believable thickness, asymmetry, belt/pouches, tabard, and cape construction. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
