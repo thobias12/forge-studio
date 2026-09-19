@@ -6,12 +6,18 @@ export type ForgeCharacterRole = 'melee' | 'ranged' | 'caster' | 'tank' | 'civil
 export type ForgeCharacterFaction = 'undead' | 'bandits' | 'cult' | 'town' | 'wild' | 'neutral'
 export type ForgeCharacterTemperament = 'passive' | 'defensive' | 'aggressive' | 'fearless'
 export type ForgeCharacterDialogueStyle = 'none' | 'brief' | 'friendly' | 'grim' | 'mysterious'
+export type SkillboundPlayerBodyType = 'male' | 'female'
 export type ForgeCharacterPresetId = 'crypt-skeleton' | 'bone-mage' | 'crypt-zombie' | 'undead-brute' | 'dungeon-bandit' | 'cultist' | 'town-guard' | 'villager'
 
 export type ForgeCharacterBlueprint = {
   format: 'forge-character-blueprint'
   version: 2
   targetAssetId?: string
+  foundation?: {
+    bodyType: SkillboundPlayerBodyType
+    bodyAssetId?: string
+    baseClothingVisible: boolean
+  }
   name: string
   entityKind: ForgeCharacterEntityKind
   lineage: ForgeCharacterSpecies
