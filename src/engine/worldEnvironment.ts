@@ -171,7 +171,9 @@ export function sampleWorldEnvironment(
 
   const solarAngle = (wrapped - 6) / 24 * Math.PI * 2
   const altitude = Math.sin(solarAngle)
-  const daylight = smoothstep(-.14, .24, altitude)
+  // Keep a long readable dusk/dawn instead of snapping to deep night
+  // shortly after the sun crosses the horizon.
+  const daylight = smoothstep(-.5, .24, altitude)
   const night = 1 - daylight
   const twilight =
     (1 - smoothstep(.08, .58, Math.abs(altitude))) *
@@ -222,7 +224,7 @@ export function sampleWorldEnvironment(
 
   const daySky = mixHex(base.nightSky, base.daySky, daylight)
   const hemisphereIntensity =
-    (.62 + daylight * 1.18) *
+    (.86 + daylight * .94) *
     weatherStyle.hemi +
     lightning * 1.6
 
@@ -237,14 +239,14 @@ export function sampleWorldEnvironment(
     smoothstep(.04, .34, daylight),
   )
   const sunIntensity =
-    (.14 + daylight * 2.6) *
+    (.3 + daylight * 2.44) *
       weatherStyle.sun +
     twilight * .34 +
     lightning * 4.5
 
   const azimuth = wrapped / 24 * Math.PI * 2 + .6
   const nightLightHeight =
-    Math.max(16, -altitude * 44)
+    Math.max(24, -altitude * 48)
   const sunPosition: [number, number, number] = [
     Math.cos(azimuth) * 58,
     daylight > .08
@@ -255,7 +257,7 @@ export function sampleWorldEnvironment(
 
   const exposure =
     base.exposure *
-      (.86 + daylight * .14) *
+      (.98 + daylight * .02) *
       weatherStyle.exposure +
     lightning * .18
 
@@ -327,14 +329,18 @@ export function sampleWorldEnvironment(
     fogDensity,
     exposure,
     hemisphereSky: daySky,
-    hemisphereGround: base.ground,
+    hemisphereGround: mixHex(
+      scaleHex(base.ground, 1.35),
+      base.ground,
+      daylight,
+    ),
     hemisphereIntensity,
     sunColor,
     sunIntensity,
     sunPosition,
     fillColor: base.fill,
     fillIntensity:
-      (.42 + daylight * .38) *
+      (.62 + daylight * .18) *
       weatherStyle.hemi +
       lightning * 1.4,
   }
