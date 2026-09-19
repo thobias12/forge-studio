@@ -2160,10 +2160,20 @@ function createFrontTabard(
         ) *
         .018 *
         (1 - tailDistance)
+      const topIndex =
+        topIndices[column]
       const top =
-        topAnchors[
-          column
-        ].clone()
+        new THREE.Vector3(
+          sourcePosition.getX(
+            topIndex,
+          ),
+          sourcePosition.getY(
+            topIndex,
+          ),
+          sourcePosition.getZ(
+            topIndex,
+          ),
+        )
 
       const point =
         new THREE.Vector3(
