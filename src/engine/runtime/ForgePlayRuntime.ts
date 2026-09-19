@@ -159,6 +159,7 @@ type RuntimeEnemy = {
   transient: boolean
   respawn: boolean
   respawnSeconds: number
+  visualAccumulator: number
 }
 
 type RuntimeLoot = {
@@ -224,6 +225,8 @@ export class ForgePlayRuntime {
   private readonly interactions: RuntimeInteraction[] = []
   private readonly cooldowns = new Map<string, number>()
   private readonly respawnTimers = new Set<number>()
+  private readonly pulseGeometry = new THREE.RingGeometry(0.6, 1, 32)
+  private readonly damageTextureCache = new Map<string, THREE.CanvasTexture>()
   private readonly abilityAnimationClipNames = new Map<string, string>()
   private readonly playerDefinition: ForgePlayerDefinition
   private readonly saveKey: string
@@ -267,6 +270,7 @@ export class ForgePlayRuntime {
   private activeInteractionId: string | undefined
   private interactionHeld = false
   private interactionHoldProgress = 0
+  private pendingSaveTimer: number | undefined
 
   constructor(host: HTMLElement, region: GeneratedRegion, gameplay: ForgeGameplayContent, options: ForgePlayRuntimeOptions) {
     this.host = host
@@ -331,8 +335,12 @@ export class ForgePlayRuntime {
 
   dispose() {
     if (this.disposed) return
+    if (this.pendingSaveTimer !== undefined) {
+      window.clearTimeout(this.pendingSaveTimer)
+      this.pendingSaveTimer = undefined
+    }
+    if (!this.skipFinalSave) this.writeRuntimeSaveNow(false)
     this.disposed = true
-    if (!this.skipFinalSave) this.saveGame(false)
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver.disconnect()
     window.removeEventListener('keydown', this.onKeyDown)
@@ -373,6 +381,8 @@ export class ForgePlayRuntime {
         entry.dispose()
       })
     })
+    this.damageTextureCache.forEach((texture) => texture.dispose())
+    this.damageTextureCache.clear()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
@@ -445,6 +455,22 @@ export class ForgePlayRuntime {
   }
 
   saveGame(manual = true) {
+    if (!manual) {
+      this.queueRuntimeSave()
+      return
+    }
+    this.writeRuntimeSaveNow(true)
+  }
+
+  private queueRuntimeSave() {
+    if (this.pendingSaveTimer !== undefined || this.disposed) return
+    this.pendingSaveTimer = window.setTimeout(() => {
+      this.pendingSaveTimer = undefined
+      if (!this.disposed) this.writeRuntimeSaveNow(false)
+    }, 320)
+  }
+
+  private writeRuntimeSaveNow(manual: boolean) {
     const savedAt = new Date().toISOString()
     writeRuntimeSave(this.saveKey, {
       format: 'forge-runtime-save',
@@ -453,7 +479,11 @@ export class ForgePlayRuntime {
       regionId: this.region.regionId,
       worldSeed: this.region.seed,
       generationVersion: this.region.generationVersion,
-      player: { x: this.player.position.x, z: this.player.position.z, health: this.playerHealth },
+      player: {
+        x: this.player.position.x,
+        z: this.player.position.z,
+        health: this.playerHealth,
+      },
       inventory: [...this.inventory],
       equippedWeaponId: this.equippedWeaponId,
       defeatedEnemyIds: [...this.defeatedEnemyIds],
@@ -462,8 +492,13 @@ export class ForgePlayRuntime {
       savedAt,
     })
     this.savedAt = savedAt
-    if (manual) this.setMessage('Game saved. Reloading this seed will restore the same combat state.', 3.2)
-    this.emitState()
+    if (manual) {
+      this.setMessage(
+        'Game saved. Reloading this seed will restore the same combat state.',
+        3.2,
+      )
+      this.emitState()
+    }
   }
 
   resetProgress() {
@@ -808,6 +843,7 @@ export class ForgePlayRuntime {
         3,
         300,
       ),
+      visualAccumulator: hashUnit(id) * .08,
     }
     this.enemies.push(enemy)
     void this.bindEnemyVisual(enemy)
@@ -1387,7 +1423,12 @@ export class ForgePlayRuntime {
       presentation === 'chain' ? .68 : 1.15,
       presentation === 'chain' ? .1 : .18,
     )
-    void this.spawnBoundVfx(enemy.definition.hitVfxAssetId, enemy.group.position)
+    if (enemy.health > 0) {
+      void this.spawnBoundVfx(
+        enemy.definition.hitVfxAssetId,
+        enemy.group.position,
+      )
+    }
     this.hitStopRemaining = Math.max(
       this.hitStopRemaining,
       presentation === 'chain' ? .012 : .035,
@@ -1758,40 +1799,57 @@ export class ForgePlayRuntime {
   }
 
   private updateEffects(delta: number) {
-    for (const effect of [...this.effects]) {
+    for (let index = this.effects.length - 1; index >= 0; index -= 1) {
+      const effect = this.effects[index]
       effect.age += delta
       const progress = Math.min(1, effect.age / effect.duration)
-      effect.mesh.scale.setScalar(0.25 + progress * effect.maxScale)
-      const material = effect.mesh.material as THREE.MeshBasicMaterial
+      effect.mesh.scale.setScalar(
+        0.25 + progress * effect.maxScale,
+      )
+      const material =
+        effect.mesh.material as THREE.MeshBasicMaterial
       material.opacity = (1 - progress) * 0.72
       if (progress < 1) continue
-      this.effects.splice(this.effects.indexOf(effect), 1)
+      this.effects.splice(index, 1)
       this.scene.remove(effect.mesh)
-      effect.mesh.geometry.dispose()
       material.dispose()
     }
   }
 
   private updateLibraryVfx(delta: number) {
-    for (const effect of [...this.libraryVfx]) {
+    for (
+      let index = this.libraryVfx.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const effect = this.libraryVfx[index]
       if (effect.update(delta)) continue
       effect.dispose()
-      this.libraryVfx.splice(this.libraryVfx.indexOf(effect), 1)
+      this.libraryVfx.splice(index, 1)
     }
   }
 
   private updateTextEffects(delta: number) {
-    for (const effect of [...this.textEffects]) {
+    for (
+      let index = this.textEffects.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const effect = this.textEffects[index]
       effect.age += delta
-      const progress = Math.min(1, effect.age / effect.duration)
-      effect.sprite.position.y += delta * (0.9 - progress * 0.35)
-      const material = effect.sprite.material as THREE.SpriteMaterial
+      const progress = Math.min(
+        1,
+        effect.age / effect.duration,
+      )
+      effect.sprite.position.y +=
+        delta * (0.9 - progress * 0.35)
+      const material =
+        effect.sprite.material as THREE.SpriteMaterial
       material.opacity = 1 - progress
       if (progress < 1) continue
       this.scene.remove(effect.sprite)
-      material.map?.dispose()
       material.dispose()
-      this.textEffects.splice(this.textEffects.indexOf(effect), 1)
+      this.textEffects.splice(index, 1)
     }
   }
 
@@ -1856,35 +1914,55 @@ export class ForgePlayRuntime {
 
   private spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
     const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false })
-    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 32), material)
+    const mesh = new THREE.Mesh(this.pulseGeometry, material)
     mesh.rotation.x = -Math.PI / 2
     mesh.position.set(position.x, 0.055, position.z)
     this.scene.add(mesh)
     this.effects.push({ mesh, age: 0, duration, maxScale: Math.max(1, radius) })
   }
 
-  private spawnDamageNumber(position: THREE.Vector3, damage: number, color: string) {
-    const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 64
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.font = '700 34px Inter, Arial, sans-serif'
-    context.textAlign = 'center'
-    context.textBaseline = 'middle'
-    context.lineWidth = 7
-    context.strokeStyle = '#100b09'
-    context.strokeText(String(Math.round(damage)), 64, 32)
-    context.fillStyle = color
-    context.fillText(String(Math.round(damage)), 64, 32)
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.colorSpace = THREE.SRGBColorSpace
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
+  private spawnDamageNumber(
+    position: THREE.Vector3,
+    damage: number,
+    color: string,
+  ) {
+    const label = String(Math.round(damage))
+    const cacheKey = `${label}:${color}`
+    let texture = this.damageTextureCache.get(cacheKey)
+
+    if (!texture) {
+      const canvas = document.createElement('canvas')
+      canvas.width = 128
+      canvas.height = 64
+      const context = canvas.getContext('2d')
+      if (!context) return
+      context.font = '700 34px Inter, Arial, sans-serif'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.lineWidth = 7
+      context.strokeStyle = '#100b09'
+      context.strokeText(label, 64, 32)
+      context.fillStyle = color
+      context.fillText(label, 64, 32)
+      texture = new THREE.CanvasTexture(canvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      this.damageTextureCache.set(cacheKey, texture)
+    }
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    })
     const sprite = new THREE.Sprite(material)
     sprite.position.set(position.x, 2.4, position.z)
     sprite.scale.set(2.1, 1.05, 1)
     this.scene.add(sprite)
-    this.textEffects.push({ sprite, age: 0, duration: 0.68 })
+    this.textEffects.push({
+      sprite,
+      age: 0,
+      duration: 0.68,
+    })
   }
 
   private async spawnBoundVfx(assetId: string | undefined, position: THREE.Vector3) {
