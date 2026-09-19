@@ -151,16 +151,16 @@ export function applyProceduralStyle(
     next.chest.leatherVest = true
     next.chest.plateCoverage = .28
     next.chest.collarHeight = .18
-    next.chest.shoulderSize = .16
+    next.chest.shoulderSize = .08
     next.chest.shoulderAsymmetry = .22
     next.chest.strapCount = 2
-    next.waist.beltWidth = .11
+    next.waist.beltWidth = .08
     next.waist.pouchCount = 2
     next.waist.tabardLength = .34
-    next.waist.tabardWidth = .34
-    next.cape.length = .52
-    next.cape.width = .6
-    next.cape.flare = .14
+    next.waist.tabardWidth = .42
+    next.cape.length = .46
+    next.cape.width = .48
+    next.cape.flare = .1
     next.materials = {
       cloth: '#384737',
       leather: '#3f2b20',
@@ -177,15 +177,15 @@ export function applyProceduralStyle(
     next.chest.leatherVest = true
     next.chest.plateCoverage = .72
     next.chest.collarHeight = .12
-    next.chest.shoulderSize = .62
+    next.chest.shoulderSize = .36
     next.chest.shoulderAsymmetry = 0
     next.chest.strapCount = 1
-    next.waist.beltWidth = .14
+    next.waist.beltWidth = .1
     next.waist.pouchCount = 1
     next.waist.tabardLength = .34
     next.waist.tabardWidth = .3
     next.cape.length = .42
-    next.cape.width = .62
+    next.cape.width = .52
     next.cape.flare = .12
     next.materials = {
       cloth: '#303a42',
@@ -203,15 +203,15 @@ export function applyProceduralStyle(
     next.chest.leatherVest = false
     next.chest.plateCoverage = .38
     next.chest.collarHeight = .38
-    next.chest.shoulderSize = .38
+    next.chest.shoulderSize = .24
     next.chest.shoulderAsymmetry = .08
     next.chest.strapCount = 1
-    next.waist.beltWidth = .09
+    next.waist.beltWidth = .075
     next.waist.pouchCount = 1
     next.waist.tabardLength = .68
     next.waist.tabardWidth = .44
     next.cape.length = .76
-    next.cape.width = .84
+    next.cape.width = .64
     next.cape.flare = .3
     next.materials = {
       cloth: '#29243d',
@@ -229,10 +229,10 @@ export function applyProceduralStyle(
     next.chest.leatherVest = true
     next.chest.plateCoverage = .34
     next.chest.collarHeight = .04
-    next.chest.shoulderSize = .46
+    next.chest.shoulderSize = .3
     next.chest.shoulderAsymmetry = .72
     next.chest.strapCount = 3
-    next.waist.beltWidth = .16
+    next.waist.beltWidth = .11
     next.waist.pouchCount = 3
     next.waist.tabardLength = .22
     next.waist.tabardWidth = .3
@@ -310,9 +310,9 @@ export function randomizeProceduralEquipmentRecipe(
   )
   next.chest.shoulderSize = jitter(
     next.chest.shoulderSize,
-    .16,
+    .08,
     0,
-    .85,
+    .46,
   )
   next.chest.shoulderAsymmetry = jitter(
     next.chest.shoulderAsymmetry,
@@ -335,9 +335,9 @@ export function randomizeProceduralEquipmentRecipe(
     )
   next.waist.beltWidth = jitter(
     next.waist.beltWidth,
-    .035,
-    .06,
-    .2,
+    .018,
+    .05,
+    .14,
   )
   next.waist.pouchCount = Math.max(
     0,
@@ -359,9 +359,9 @@ export function randomizeProceduralEquipmentRecipe(
   )
   next.waist.tabardWidth = jitter(
     next.waist.tabardWidth,
-    .08,
-    .18,
-    .55,
+    .06,
+    .26,
+    .58,
   )
   next.cape.length = jitter(
     next.cape.length,
@@ -371,15 +371,15 @@ export function randomizeProceduralEquipmentRecipe(
   )
   next.cape.width = jitter(
     next.cape.width,
-    .1,
-    .42,
-    .95,
+    .06,
+    .36,
+    .72,
   )
   next.cape.flare = jitter(
     next.cape.flare,
-    .12,
+    .07,
     0,
-    .5,
+    .34,
   )
   return next
 }
@@ -538,7 +538,7 @@ function buildChest(
       name: 'Procedural_Tunic',
       minY: bottomY,
       maxY: topY,
-      maxAbsX: fit.torsoX,
+      maxAbsX: fit.torsoX * .88,
       widthScale: chest.width,
       depthScale: chest.depth,
       offset: shellOffset,
@@ -576,7 +576,7 @@ function buildChest(
         name: 'Procedural_LeatherVest',
         minY: bottomY + .045,
         maxY: topY - .035,
-        maxAbsX: fit.torsoX * .95,
+        maxAbsX: fit.torsoX * .84,
         widthScale: chest.width * 1.006,
         depthScale: chest.depth * 1.018,
         offset: shellOffset + .007,
@@ -585,6 +585,21 @@ function buildChest(
       },
     )
   }
+
+  buildSleeve(
+    bodyRoot,
+    materials,
+    fit,
+    'L',
+    chest.looseness,
+  )
+  buildSleeve(
+    bodyRoot,
+    materials,
+    fit,
+    'R',
+    chest.looseness,
+  )
 
   const plateCoverage =
     THREE.MathUtils.clamp(
@@ -735,7 +750,7 @@ function buildChest(
     ),
   )
   const strapHeight =
-    (topY - bottomY) * .72
+    (topY - bottomY) * .58
   for (
     let index = 0;
     index < strapCount;
@@ -745,26 +760,26 @@ function buildChest(
       strapCount === 1
         ? 0
         : (index / (strapCount - 1) - .5) *
-          .21
+          .16
     const strap = new THREE.Mesh(
       curvedPanelGeometry(
-        .024,
+        .019,
         strapHeight,
-        .006,
-        .04,
+        .012,
+        .08,
       ),
       materials.leatherDark,
     )
     strap.position.set(
       spread,
-      fit.chestY - .01,
+      fit.chestY + .005,
       fit.chestFront +
         shellOffset +
-        .034,
+        .012,
     )
     strap.rotation.z =
       (index % 2 === 0 ? 1 : -1) *
-      (.055 + index * .012)
+      (.12 + index * .018)
     strap.castShadow = true
     strap.name =
       `Procedural_Strap_${index}`
@@ -789,22 +804,40 @@ function buildShoulder(
   amount: number,
 ) {
   const sign = side === 'L' ? 1 : -1
+  const anchor =
+    findBone(
+      bodyRoot,
+      `upperarm_${side}`,
+      `clavicle_${side}`,
+      'spine_03',
+    )
+  const anchorPosition =
+    objectPositionInBody(
+      bodyRoot,
+      anchor,
+      new THREE.Vector3(
+        sign * fit.shoulderX,
+        fit.shoulderY,
+        0,
+      ),
+    )
+
   const width =
-    .105 + amount * .13
+    .072 + amount * .095
   const depth =
-    .105 + amount * .075
+    .085 + amount * .06
   const height =
-    .045 + amount * .035
+    .027 + amount * .025
 
   const shoulder = new THREE.Mesh(
     new THREE.SphereGeometry(
       1,
-      16,
+      18,
       8,
       0,
       Math.PI * 2,
       0,
-      Math.PI * .53,
+      Math.PI * .46,
     ),
     materials.metal,
   )
@@ -813,77 +846,170 @@ function buildShoulder(
     height,
     depth,
   )
-  shoulder.position.set(
-    sign *
-      (fit.shoulderX +
-        amount * .018),
-    fit.shoulderY + .012,
-    -.005,
+  shoulder.position.copy(
+    anchorPosition,
   )
+  shoulder.position.x +=
+    sign * (.008 + amount * .006)
+  shoulder.position.y += .012
+  shoulder.position.z -= .004
   shoulder.rotation.set(
-    -.12,
-    sign * -.08,
-    sign * -.12,
+    -.17,
+    sign * -.06,
+    sign * -.23,
   )
   shoulder.castShadow = true
   shoulder.name =
     `Procedural_Shoulder_${side}`
   attachPreservingWorld(
     bodyRoot,
-    findBone(
-      bodyRoot,
-      `clavicle_${side}`,
-      `upperarm_${side}`,
-      'spine_03',
-    ),
+    anchor,
     shoulder,
   )
 
-  if (amount > .4) {
+  if (amount > .3) {
     const lower = new THREE.Mesh(
       new THREE.SphereGeometry(
         1,
-        14,
+        16,
         7,
         0,
         Math.PI * 2,
         0,
-        Math.PI * .44,
+        Math.PI * .38,
       ),
       materials.metalDark,
     )
     lower.scale.set(
-      width * .78,
-      height * .6,
-      depth * .82,
+      width * .72,
+      height * .52,
+      depth * .74,
     )
-    lower.position.set(
-      sign *
-        (fit.shoulderX +
-          amount * .03),
-      fit.shoulderY - .045,
-      -.018,
+    lower.position.copy(
+      anchorPosition,
     )
+    lower.position.x +=
+      sign * (.014 + amount * .008)
+    lower.position.y -= .026
+    lower.position.z -= .012
     lower.rotation.set(
-      -.18,
-      sign * -.06,
-      sign * -.16,
+      -.22,
+      sign * -.05,
+      sign * -.27,
     )
     lower.castShadow = true
     lower.name =
       `Procedural_ShoulderLower_${side}`
     attachPreservingWorld(
       bodyRoot,
-      findBone(
-        bodyRoot,
-        `upperarm_${side}`,
-        `clavicle_${side}`,
-      ),
+      anchor,
       lower,
     )
   }
 
   void recipe
+}
+
+function buildSleeve(
+  bodyRoot: THREE.Object3D,
+  materials: MaterialSet,
+  fit: ReturnType<typeof bodyFit>,
+  side: 'L' | 'R',
+  looseness: number,
+) {
+  const upper =
+    findBone(bodyRoot, `upperarm_${side}`)
+  const lower =
+    findBone(
+      bodyRoot,
+      `lowerarm_${side}`,
+      `forearm_${side}`,
+    )
+  if (!upper || !lower) return
+
+  const start = objectPositionInBody(
+    bodyRoot,
+    upper,
+  )
+  const end = objectPositionInBody(
+    bodyRoot,
+    lower,
+  )
+  const direction =
+    end.clone().sub(start)
+  const armLength = direction.length()
+  if (armLength < .05) return
+  direction.normalize()
+
+  const sleeveLength =
+    Math.min(
+      .145,
+      armLength * .34,
+    )
+  const center = start
+    .clone()
+    .addScaledVector(
+      direction,
+      sleeveLength * .52,
+    )
+  const radius =
+    fit.armRadius *
+    (1 + looseness * .8)
+
+  const sleeve = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      radius * .98,
+      radius * .9,
+      sleeveLength,
+      16,
+      1,
+      true,
+    ),
+    materials.clothDouble,
+  )
+  sleeve.position.copy(center)
+  sleeve.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction,
+  )
+  sleeve.castShadow = true
+  sleeve.name =
+    `Procedural_Sleeve_${side}`
+  attachPreservingWorld(
+    bodyRoot,
+    upper,
+    sleeve,
+  )
+
+  const cuff = new THREE.Mesh(
+    new THREE.TorusGeometry(
+      radius * .91,
+      .007,
+      6,
+      18,
+    ),
+    materials.leatherDark,
+  )
+  cuff.position.copy(
+    start
+      .clone()
+      .addScaledVector(
+        direction,
+        sleeveLength * .96,
+      ),
+  )
+  cuff.quaternion.copy(
+    sleeve.quaternion,
+  )
+  cuff.rotateX(Math.PI / 2)
+  cuff.castShadow = true
+  cuff.name =
+    `Procedural_SleeveTrim_${side}`
+  attachPreservingWorld(
+    bodyRoot,
+    upper,
+    cuff,
+  )
 }
 
 function buildWaist(
@@ -894,25 +1020,30 @@ function buildWaist(
   fit: ReturnType<typeof bodyFit>,
 ) {
   const waist = recipe.waist
+  const beltRadius =
+    fit.waistRadius * 1.015
   const belt = new THREE.Mesh(
     new THREE.TorusGeometry(
-      fit.waistRadius,
+      beltRadius,
       Math.max(
-        .018,
-        waist.beltWidth * .24,
+        .007,
+        waist.beltWidth * .12,
       ),
       7,
-      28,
+      32,
     ),
     materials.leather,
   )
-  belt.scale.z =
-    fit.waistDepth /
-    fit.waistRadius
+  // TorusGeometry is created in the XY plane.
+  // After rotating around X, local Y becomes world Z,
+  // so scale Y (not Z) to hug the body's depth.
+  belt.scale.y =
+    (fit.waistDepth * 1.02) /
+    beltRadius
   belt.rotation.x = Math.PI / 2
   belt.position.set(
     0,
-    fit.waistY,
+    fit.waistY + .012,
     0,
   )
   belt.castShadow = true
@@ -930,18 +1061,18 @@ function buildWaist(
 
   const buckle = new THREE.Mesh(
     new THREE.TorusGeometry(
-      .032,
-      .008,
+      .026,
+      .0055,
       5,
       12,
     ),
     materials.metal,
   )
-  buckle.scale.x = 1.25
+  buckle.scale.x = 1.2
   buckle.position.set(
     0,
-    fit.waistY,
-    fit.waistDepth + .026,
+    fit.waistY + .012,
+    fit.waistDepth + .012,
   )
   buckle.rotation.x = Math.PI / 2
   buckle.castShadow = true
@@ -971,24 +1102,24 @@ function buildWaist(
     const pouch = new THREE.Mesh(
       new THREE.SphereGeometry(
         1,
-        10,
-        7,
+        12,
+        8,
       ),
       materials.leatherDark,
     )
     pouch.scale.set(
-      .055,
-      .07,
-      .035,
+      .044,
+      .058,
+      .025,
     )
     pouch.position.set(
       side *
-        (.17 + row * .035),
-      fit.waistY - .075,
-      .055 + row * .01,
+        (.145 + row * .032),
+      fit.waistY - .052,
+      .025 + row * .008,
     )
     pouch.rotation.z =
-      side * (.08 + row * .03)
+      side * (.1 + row * .025)
     pouch.castShadow = true
     pouch.name =
       `Procedural_Pouch_${index}`
@@ -1002,26 +1133,26 @@ function buildWaist(
   if (waist.tabardLength > .02) {
     const length =
       .14 +
-      waist.tabardLength * .46
+      waist.tabardLength * .44
     const topWidth =
-      .11 +
-      waist.tabardWidth * .24
+      .15 +
+      waist.tabardWidth * .3
     const bottomWidth =
-      topWidth * .78
+      topWidth * .72
     const panel = new THREE.Mesh(
       clothPanelGeometry(
         length,
         topWidth,
         bottomWidth,
-        .022,
-        .055,
+        .014,
+        .045,
       ),
       materials.clothDouble,
     )
     panel.position.set(
       0,
-      fit.waistY - .045,
-      fit.waistDepth + .018,
+      fit.waistY - .018,
+      fit.waistDepth + .008,
     )
     panel.castShadow = true
     panel.name = 'Procedural_Tabard'
@@ -1033,18 +1164,18 @@ function buildWaist(
 
     const accent = new THREE.Mesh(
       clothPanelGeometry(
-        length * .88,
-        topWidth * .13,
-        bottomWidth * .16,
-        .026,
-        .035,
+        length * .86,
+        topWidth * .11,
+        bottomWidth * .13,
+        .016,
+        .025,
       ),
       materials.accentDouble,
     )
     accent.position.set(
       0,
-      fit.waistY - .075,
-      fit.waistDepth + .029,
+      fit.waistY - .045,
+      fit.waistDepth + .016,
     )
     accent.name =
       'Procedural_TabardAccent'
@@ -1067,12 +1198,12 @@ function buildCape(
   if (cape.length <= .02) return
 
   const length =
-    .22 + cape.length * .72
+    .2 + cape.length * .66
   const topWidth =
-    .27 + cape.width * .18
+    .22 + cape.width * .15
   const bottomWidth =
     topWidth *
-    (1.12 + cape.flare * .58)
+    (1.06 + cape.flare * .38)
   const geometry = capeGeometry(
     length,
     topWidth,
@@ -1085,10 +1216,10 @@ function buildCape(
   )
   mesh.position.set(
     0,
-    fit.capeY,
+    fit.capeY - .018,
     -fit.capeBack,
   )
-  mesh.rotation.x = .035
+  mesh.rotation.x = .015
   mesh.castShadow = true
   mesh.name = 'Procedural_Cape'
   attachPreservingWorld(
@@ -1183,13 +1314,18 @@ function capeGeometry(
           v *
             (.018 + flare * .018))
       const shoulderCurve =
-        Math.pow(edge, 1.6) *
-        (.015 + v * .016)
+        Math.pow(edge, 1.55) *
+        (.009 + v * .012)
       const hang =
         Math.sin(v * Math.PI) *
-        (.025 + flare * .035)
+        (.018 + flare * .025)
+      const shoulderDrop =
+        Math.pow(edge, 1.7) *
+        .025 *
+        (1 - v)
       const y =
-        -v * length +
+        -v * length -
+        shoulderDrop +
         hemLift *
           (1 -
             Math.cos(
@@ -1197,7 +1333,8 @@ function capeGeometry(
             ) *
               .18)
       const z =
-        -fold -
+        (1 - v) * .018 -
+        fold -
         shoulderCurve -
         hang
       positions.push(x, y, z)
@@ -1930,11 +2067,12 @@ function bodyFit(
         shoulderX: .285,
         torsoX: .305,
         chestFront: .17,
+        armRadius: .066,
         waistY: .985,
         waistRadius: .22,
         waistDepth: .145,
         capeY: 1.485,
-        capeBack: .17,
+        capeBack: .125,
         capeFront: .15,
       }
     : {
@@ -1944,13 +2082,29 @@ function bodyFit(
         shoulderX: .315,
         torsoX: .335,
         chestFront: .185,
+        armRadius: .073,
         waistY: .99,
         waistRadius: .235,
         waistDepth: .155,
         capeY: 1.5,
-        capeBack: .18,
+        capeBack: .135,
         capeFront: .16,
       }
+}
+
+function objectPositionInBody(
+  bodyRoot: THREE.Object3D,
+  object: THREE.Object3D | undefined,
+  fallback = new THREE.Vector3(),
+) {
+  if (!object) return fallback.clone()
+  bodyRoot.updateMatrixWorld(true)
+  object.updateMatrixWorld(true)
+  const world =
+    object.getWorldPosition(
+      new THREE.Vector3(),
+    )
+  return bodyRoot.worldToLocal(world)
 }
 
 function findBone(
