@@ -1,3 +1,9 @@
+import {
+  createGameplaySocket,
+  normalizeGameplaySockets,
+  type GameplaySocket,
+} from '../engine/gameplaySockets'
+
 export type PoiPrefabCategory =
   | 'camp'
   | 'shrine'
@@ -54,6 +60,7 @@ export type PoiPrefab = {
   gridSize: number
   snap: boolean
   parts: PoiPrefabPart[]
+  sockets: GameplaySocket[]
   createdAt: string
   updatedAt: string
 }
@@ -115,6 +122,7 @@ export function createBlankPoiPrefab(name = 'Untitled Landmark'): PoiPrefab {
         solid: false,
       }),
     ],
+    sockets: [],
     createdAt: now,
     updatedAt: now,
   }
@@ -152,6 +160,10 @@ export function clonePoiPrefab(
   clone.parts = clone.parts.map((part) => ({
     ...part,
     id: makeId('part'),
+  }))
+  clone.sockets = clone.sockets.map((socket) => ({
+    ...socket,
+    id: makeId('socket'),
   }))
   return clone
 }
@@ -262,6 +274,7 @@ export function starterPoiPrefabs(): PoiPrefab[] {
     gridSize: .5,
     snap: true,
     parts,
+    sockets: starterPoiSockets(id),
     createdAt: now,
     updatedAt: now,
   })
@@ -386,6 +399,116 @@ export function starterPoiPrefabs(): PoiPrefab[] {
   ]
 }
 
+function starterPoiSockets(id: string): GameplaySocket[] {
+  if (id === 'starter-wayfarer-camp') {
+    return [
+      createGameplaySocket('npc', {
+        id: 'socket-camp-npc',
+        name: 'Traveller NPC',
+        position: [-1.25, 0, 1.25],
+        targetRef: 'traveller',
+      }),
+      createGameplaySocket('audio', {
+        id: 'socket-camp-fire-audio',
+        name: 'Campfire Audio',
+        position: [0, .65, .35],
+        radius: 7,
+        targetRef: 'campfire-loop',
+      }),
+    ]
+  }
+  if (id === 'starter-wayside-shrine') {
+    return [
+      createGameplaySocket('interaction', {
+        id: 'socket-shrine-activate',
+        name: 'Shrine Blessing',
+        position: [0, 1.05, .95],
+        radius: 2.6,
+        prompt: 'Activate Shrine',
+        trigger: 'hold',
+        holdSeconds: .9,
+        cooldown: 4,
+        action: 'shrine',
+        message: 'The wayside shrine answers with a warm pulse.',
+      }),
+      createGameplaySocket('vfx', {
+        id: 'socket-shrine-vfx',
+        name: 'Shrine VFX',
+        position: [0, 1.25, .1],
+        targetRef: 'shrine-glow',
+      }),
+    ]
+  }
+  if (id === 'starter-ruined-watchtower') {
+    return [
+      createGameplaySocket('interaction', {
+        id: 'socket-tower-inspect',
+        name: 'Inspect Watchtower',
+        position: [0, 1.05, 2.35],
+        radius: 2.5,
+        prompt: 'Inspect Watchtower',
+        action: 'message',
+        message: 'The ruined tower still overlooks the old road.',
+      }),
+    ]
+  }
+  if (id === 'starter-old-graveyard') {
+    return [
+      createGameplaySocket('quest', {
+        id: 'socket-graveyard-quest',
+        name: 'Weathered Memorial',
+        position: [0, 1.1, -3.7],
+        radius: 2.5,
+        prompt: 'Read Memorial',
+        action: 'quest',
+        targetRef: 'graveyard-memorial',
+        message: 'The memorial socket is ready for a Quest Forge objective.',
+      }),
+    ]
+  }
+  if (id === 'starter-beast-den') {
+    return [
+      createGameplaySocket('enemy', {
+        id: 'socket-den-enemy-a',
+        name: 'Den Enemy Spawn',
+        position: [0, 0, -.9],
+        targetRef: 'beast-pack',
+      }),
+      createGameplaySocket('loot', {
+        id: 'socket-den-loot',
+        name: 'Den Cache',
+        position: [-1.45, .25, 1.75],
+        radius: 2.2,
+        prompt: 'Search Remains',
+        action: 'container',
+        oneShot: true,
+        message: 'The den cache is ready for a Loot Forge table.',
+      }),
+    ]
+  }
+  if (id === 'starter-forest-ruins') {
+    return [
+      createGameplaySocket('loot', {
+        id: 'socket-ruins-loot',
+        name: 'Ruins Cache',
+        position: [2.15, .35, -1.55],
+        radius: 2.2,
+        prompt: 'Search Ruins',
+        action: 'container',
+        oneShot: true,
+        message: 'The ruins cache is ready for a Loot Forge table.',
+      }),
+      createGameplaySocket('enemy', {
+        id: 'socket-ruins-enemy',
+        name: 'Ruins Encounter',
+        position: [-1.6, 0, -1.3],
+        targetRef: 'ruins-encounter',
+      }),
+    ]
+  }
+  return []
+}
+
 function normalizePoiPrefab(value: unknown): PoiPrefab | undefined {
   if (!value || typeof value !== 'object') return undefined
   const source = value as Partial<PoiPrefab>
@@ -421,6 +544,7 @@ function normalizePoiPrefab(value: unknown): PoiPrefab | undefined {
     gridSize: clampNumber(source.gridSize, .1, 4, .5),
     snap: typeof source.snap === 'boolean' ? source.snap : true,
     parts,
+    sockets: normalizeGameplaySockets(source.sockets),
     createdAt: typeof source.createdAt === 'string' ? source.createdAt : now,
     updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : now,
   }
