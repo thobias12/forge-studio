@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { characterPackageDataToBlob, parseCharacterPackage } from '../../lib/characterPackage'
+import { skillboundBodyTypeFromAsset } from '../../lib/characterAssetRegistry'
 import { getAsset, type LibraryAsset } from '../../lib/library'
 import { parseVfxPackage, type ForgeVfxEmitter, type ForgeVfxPackage } from '../../lib/vfxPackage'
 import { animationBindingAssetId, parseAnimationSet, resolveRuntimeBinding, type ForgeAnimationSet } from '../animationBindings'
@@ -8,6 +9,27 @@ import { animationBindingAssetId, parseAnimationSet, resolveRuntimeBinding, type
 export type ForgeAnimationCue = 'idle' | 'move' | 'attack' | 'hit' | 'death' | 'dodge'
 
 type LoadedScene = { root: THREE.Object3D; animations: THREE.AnimationClip[] }
+
+type SecondaryMotionState = {
+  left: THREE.Bone
+  right: THREE.Bone
+  leftRest: THREE.Quaternion
+  rightRest: THREE.Quaternion
+  driver: THREE.Object3D
+  previousDriverPosition: THREE.Vector3
+  previousVelocity: THREE.Vector3
+  smoothedAcceleration: THREE.Vector3
+  rootWorldQuaternion: THREE.Quaternion
+  inverseRootQuaternion: THREE.Quaternion
+  localAcceleration: THREE.Vector3
+  pitch: number
+  pitchVelocity: number
+  roll: number
+  rollVelocity: number
+  phase: number
+  initialized: boolean
+}
+
 const vfxPackageCache = new Map<string, ForgeVfxPackage | null>()
 
 export class ForgeCharacterVisualBinding {
@@ -19,25 +41,7 @@ export class ForgeCharacterVisualBinding {
   private fallbackCue: 'idle' | 'move' = 'idle'
   private oneShot = false
   private disposed = false
-  private secondaryMotion?: {
-    left: THREE.Bone
-    right: THREE.Bone
-    leftRest: THREE.Quaternion
-    rightRest: THREE.Quaternion
-    driver: THREE.Object3D
-    previousDriverPosition: THREE.Vector3
-    previousVelocity: THREE.Vector3
-    smoothedAcceleration: THREE.Vector3
-    rootWorldQuaternion: THREE.Quaternion
-    inverseRootQuaternion: THREE.Quaternion
-    localAcceleration: THREE.Vector3
-    pitch: number
-    pitchVelocity: number
-    roll: number
-    rollVelocity: number
-    phase: number
-    initialized: boolean
-  }
+  private secondaryMotion?: SecondaryMotionState
 
   constructor(private readonly root: THREE.Object3D) {}
 
@@ -300,7 +304,7 @@ type SpringVelocityKey =
   | 'rollVelocity'
 
 function integrateSpringAxis(
-  motion: NonNullable<ForgeCharacterVisualBinding['secondaryMotion']>,
+  motion: SecondaryMotionState,
   valueKey: SpringScalarKey,
   velocityKey: SpringVelocityKey,
   target: number,
@@ -351,6 +355,9 @@ export async function bindCharacterAsset(
   hidePlaceholder(target)
 
   const binding = new ForgeCharacterVisualBinding(loaded.root)
+  if (skillboundBodyTypeFromAsset(asset) === 'female') {
+    binding.enableSubtleChestSecondaryMotion()
+  }
   binding.setAnimationSet(await loadAnimationSetForCharacter(characterAssetId))
   let clips = loaded.animations
   if (animationAssetId) {
