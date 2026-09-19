@@ -16,6 +16,7 @@ import {
   Play,
   RotateCcw,
   Save,
+  ScanLine,
   Shirt,
   Sparkles,
 } from 'lucide-react'
@@ -629,6 +630,25 @@ export default function EquipmentForge() {
     }
   }
 
+  const openEquipmentQa = () => {
+    const query =
+      new URLSearchParams({
+        equipmentQa: '1',
+        body: bodyType,
+        model: 'library',
+        recipe:
+          JSON.stringify(
+            v3Recipe,
+          ),
+      })
+
+    window.open(
+      `${window.location.pathname}?${query.toString()}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
+  }
+
   return (
     <div className="equipment-forge" data-mode={workspaceMode}>
       <aside className="equipment-forge-library">
@@ -882,6 +902,15 @@ export default function EquipmentForge() {
               )}
               Base clothing
             </button>
+            {workspaceMode === 'createV3' && (
+              <button
+                onClick={openEquipmentQa}
+                title="Open the current V3 outfit in the fixed-angle 360° QA viewer."
+              >
+                <ScanLine size={14} />
+                360 QA
+              </button>
+            )}
             <button
               onClick={() =>
                 setAnimate(
