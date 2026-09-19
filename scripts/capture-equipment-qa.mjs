@@ -81,9 +81,6 @@ await rm(outputDir, {
   recursive: true,
   force: true,
 })
-await mkdir(outputDir, {
-  recursive: true,
-})
 
 console.log(
   'Building Forge Studio for Equipment QA…',
@@ -98,6 +95,11 @@ await run(
       'qa-local',
   },
 )
+
+// Vite clears dist during build, so create QA output only after the build.
+await mkdir(outputDir, {
+  recursive: true,
+})
 
 await mkdir(qaModelDir, {
   recursive: true,
@@ -299,9 +301,14 @@ try {
         : 'SIGTERM',
     )
   }
-  await rm(qaModelPath, {
-    force: true,
-  })
+  if (
+    process.env.FORGE_QA_KEEP_MODEL !==
+    '1'
+  ) {
+    await rm(qaModelPath, {
+      force: true,
+    })
+  }
 }
 
 function npmCommand() {

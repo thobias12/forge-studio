@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.6`  
+> **Current Forge version:** `v1.77.7`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -425,6 +425,27 @@ The latest corrective pass focuses on problems visible from above:
 - cape folds begin below the attachment edge instead of rippling the top row
 - the narrow diagonal vest reinforcement that read as a rope/cord was replaced by a broader fitted leather shoulder reinforcement
 - Equipment QA now includes dedicated top-down, high-front, high-back/cape, and elevated shoulder views
+
+### v1.77.7 autonomous Equipment QA
+
+Equipment Forge V3 now has a deterministic, remotely inspectable female QA fixture derived from the official **Skillbound Female Base v1** body. The fixture is QA-only: it preserves the reference body geometry and 62-bone rig needed for fit/conform validation while omitting unrelated character assets.
+
+Every GitHub Pages deployment now:
+
+- reconstructs the QA fixture during CI
+- builds Forge Studio
+- renders the complete Equipment V3 QA page headlessly with Playwright
+- publishes the full contact sheet plus every named angle under `/qa/equipment-v3/female/`
+- keeps the QA foundation available at `/qa-foundation/__qa-base.glb`
+
+Useful deployed inspection URLs:
+
+- `?equipmentQa=1&body=female&model=fixture` — interactive deterministic QA page
+- `/qa/equipment-v3/female/equipment-v3-female-360.png` — full contact sheet
+- `/qa/equipment-v3/female/manifest.json` — build, recipe, views and fit diagnostics
+- individual PNGs such as `front.png`, `top-down-shoulders.png`, `top-back-cape.png`, and `cape-profile-tight.png`
+
+This removes the previous dependence on one browser's IndexedDB for visual review and lets future equipment refinement use the exact same QA body and fixed angles on every build.
 
 ### Current visual status / important handoff
 

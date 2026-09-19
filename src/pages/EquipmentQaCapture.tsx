@@ -429,10 +429,14 @@ export default function EquipmentQaCapture() {
         : window.__FORGE_EQUIPMENT_QA_BODY__ ??
           'female'
 
-  const modelUrl =
+  const requestedModel =
     params.get('model') ??
     window.__FORGE_EQUIPMENT_QA_MODEL_URL__ ??
     'library'
+  const modelUrl =
+    requestedModel === 'fixture'
+      ? './qa-foundation/__qa-base.glb'
+      : requestedModel
 
   const recipe = useMemo(() => {
     const base =
@@ -544,6 +548,24 @@ export default function EquipmentQaCapture() {
           return
         }
 
+        if (
+          requestedModel === 'fixture'
+        ) {
+          gltf.scene.traverse(
+            (object) => {
+              if (
+                object instanceof
+                  THREE.Mesh &&
+                !object.geometry.getAttribute(
+                  'normal',
+                )
+              ) {
+                object.geometry.computeVertexNormals()
+              }
+            },
+          )
+        }
+
         gltf.scene.updateMatrixWorld(true)
         setSource(gltf.scene)
       } catch (cause) {
@@ -566,7 +588,11 @@ export default function EquipmentQaCapture() {
         )
       }
     }
-  }, [modelUrl, bodyType])
+  }, [
+    modelUrl,
+    requestedModel,
+    bodyType,
+  ])
 
   useEffect(() => {
     if (!source) return
@@ -901,9 +927,11 @@ export default function EquipmentQaCapture() {
           </h1>
           <p>
             {bodyType} · {recipe.name}
-            {modelUrl === 'library'
+            {requestedModel === 'library'
               ? ' · live Forge Library model'
-              : ''}
+              : requestedModel === 'fixture'
+                ? ' · deterministic QA fixture'
+                : ''}
           </p>
         </div>
         <div className="equipment-qa-build">

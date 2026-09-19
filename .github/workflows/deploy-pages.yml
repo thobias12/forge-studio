@@ -29,10 +29,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build Forge Studio
+      - name: Install Equipment QA browser
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Prepare Equipment QA fixture
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
+      - name: Build and capture Equipment QA
         env:
           VITE_FORGE_BUILD: ${{ github.sha }}
-        run: npm run build
+          FORGE_QA_MODEL: artifacts/qa-foundation/Skillbound-Female-Base-v1.qa.glb
+          FORGE_QA_BODY: female
+          FORGE_QA_OUTPUT: dist/qa/equipment-v3/female
+          FORGE_QA_KEEP_MODEL: '1'
+        run: npm run qa:equipment
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
