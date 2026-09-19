@@ -1623,6 +1623,16 @@ export class ForgePlayRuntime {
     const primary = this.getPrimaryAbility()
     const skill = this.getSkillAbility()
     const focused = this.enemies.find((enemy) => enemy.id === this.focusEnemyId)
+    const activeInteraction = this.getActiveInteraction()
+    const locked = activeInteraction
+      ? this.isInteractionLocked(activeInteraction)
+      : false
+    const holdSeconds = activeInteraction
+      ? Math.max(
+          .15,
+          activeInteraction.socket.holdSeconds ?? .6,
+        )
+      : .6
     return {
       health: this.playerHealth,
       maxHealth: this.playerDefinition.maxHealth,
@@ -1634,6 +1644,28 @@ export class ForgePlayRuntime {
       inventory: [...this.inventory],
       equippedWeaponId: this.equippedWeaponId,
       target: focused ? { id: focused.id, name: focused.definition.name, health: focused.health, maxHealth: focused.definition.maxHealth } : undefined,
+      interaction: activeInteraction ? {
+        id: activeInteraction.id,
+        name: activeInteraction.socket.name,
+        kind: activeInteraction.socket.kind,
+        action: activeInteraction.socket.action ?? 'message',
+        prompt: socketPrompt(activeInteraction.socket),
+        trigger: activeInteraction.socket.trigger ?? 'tap',
+        progress:
+          (activeInteraction.socket.trigger ?? 'tap') === 'hold'
+            ? THREE.MathUtils.clamp(
+                this.interactionHoldProgress / holdSeconds,
+                0,
+                1,
+              )
+            : 0,
+        holdSeconds,
+        locked,
+        lockedText: locked
+          ? activeInteraction.socket.lockedText ?? 'Locked'
+          : undefined,
+        sourceName: activeInteraction.sourceName,
+      } : undefined,
       message: this.message,
       savedAt: this.savedAt,
     }
@@ -2766,10 +2798,18 @@ function addGeneratedDressing(
   }
 }
 
-function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles: CircleObstacle[]) {
+function addGeneratedPois(
+  scene: THREE.Scene,
+  region: GeneratedRegion,
+  obstacles: CircleObstacle[],
+): RuntimeInteraction[] {
+  const interactions: RuntimeInteraction[] = []
   const authoredPoiSettings = loadAuthoredPoiSettings()
   const authoredPoiPrefabs = authoredPoiSettings.enabled
     ? loadPoiPrefabs()
+    : []
+  const authoredPropPrefabs = authoredPoiSettings.enabled
+    ? loadPropPrefabs()
     : []
   const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x62685f, roughness: 1 })
   const darkStone = new THREE.MeshStandardMaterial({ color: 0x444943, roughness: 1 })
@@ -2800,6 +2840,40 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
       group.userData.forgePoiPrefabId = resolvedPrefab.prefab.id
       group.userData.forgePoiPrefabName = resolvedPrefab.prefab.name
       group.add(buildPoiPrefabVisual(resolvedPrefab.prefab))
+
+      for (
+        const placement of collectPoiGameplaySockets(
+          resolvedPrefab.prefab,
+          authoredPropPrefabs,
+        )
+      ) {
+        if (!isRuntimeInteractableSocket(placement.socket)) continue
+        const runtimeSocket: GameplaySocket = {
+          ...placement.socket,
+          id: `${region.regionId}:${poi.id}:${placement.id}`,
+          position: [...placement.position],
+          rotation: [...placement.rotation],
+        }
+        const marker = buildGameplaySocketMarker(
+          runtimeSocket,
+          { runtime: true },
+        )
+        marker.visible = false
+        marker.userData.forgeInteractionSource =
+          placement.sourceName
+        group.add(marker)
+        interactions.push({
+          id: runtimeSocket.id,
+          socket: runtimeSocket,
+          anchor: marker,
+          sourceName: placement.sourceName,
+          radiusScale:
+            placement.scale * poiVisualScale,
+          cooldownRemaining: 0,
+          used: false,
+        })
+      }
+
       appendAuthoredPoiLegacyObstacles(
         poi,
         poiVisualScale,
@@ -3171,6 +3245,8 @@ function addGeneratedPois(scene: THREE.Scene, region: GeneratedRegion, obstacles
     })
     scene.add(group)
   }
+
+  return interactions
 }
 
 function appendAuthoredPoiLegacyObstacles(
