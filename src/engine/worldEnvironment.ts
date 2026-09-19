@@ -224,7 +224,7 @@ export function sampleWorldEnvironment(
 
   const daySky = mixHex(base.nightSky, base.daySky, daylight)
   const hemisphereIntensity =
-    (1.15 + daylight * .65) *
+    (1.22 + daylight * .58) *
     weatherStyle.hemi +
     lightning * 1.6
 
@@ -239,7 +239,7 @@ export function sampleWorldEnvironment(
     smoothstep(.04, .34, daylight),
   )
   const sunIntensity =
-    (.46 + daylight * 2.28) *
+    (.54 + daylight * 2.2) *
       weatherStyle.sun +
     twilight * .34 +
     lightning * 4.5
@@ -257,7 +257,7 @@ export function sampleWorldEnvironment(
 
   const exposure =
     base.exposure *
-      (1.12 - daylight * .12) *
+      (1.16 - daylight * .16) *
       weatherStyle.exposure +
     lightning * .18
 
@@ -291,7 +291,7 @@ export function sampleWorldEnvironment(
       1,
     )
   const lanternActivity =
-    THREE.MathUtils.clamp(.18 + night * 1.08 + twilight * .42, .18, 1.2)
+    THREE.MathUtils.clamp(.2 + night * 1.2 + twilight * .45, .2, 1.4)
   const fishActivity =
     THREE.MathUtils.clamp(
       weather === 'storm' ? .48 :
@@ -330,7 +330,7 @@ export function sampleWorldEnvironment(
     exposure,
     hemisphereSky: daySky,
     hemisphereGround: mixHex(
-      scaleHex(base.ground, 1.65),
+      scaleHex(base.ground, 1.8),
       base.ground,
       daylight,
     ),
@@ -338,9 +338,13 @@ export function sampleWorldEnvironment(
     sunColor,
     sunIntensity,
     sunPosition,
-    fillColor: base.fill,
+    fillColor: mixHex(
+      base.nightLight,
+      base.fill,
+      daylight,
+    ),
     fillIntensity:
-      (.78 + daylight * .02) *
+      (.86 - daylight * .06) *
       weatherStyle.hemi +
       lightning * 1.4,
   }
@@ -565,15 +569,36 @@ export function applyWorldEnvironmentToScene(
         .28,
         1,
       )
-      material.color.copy(baseColor).multiplyScalar(terrainDarken)
+      const nightReadability =
+        mesh.name === 'MainRoad'
+          ? 1 + sample.night * .14
+          : mesh.name === 'SideTrail'
+            ? 1 + sample.night * .1
+            : 1 + sample.night * .025
+      material.color
+        .copy(baseColor)
+        .multiplyScalar(terrainDarken * nightReadability)
     })
   }
 
   if (refs.waterMaterial) {
+    if (refs.waterMaterial.userData.forgeBaseWaterEmissive === undefined) {
+      refs.waterMaterial.userData.forgeBaseWaterEmissive =
+        refs.waterMaterial.emissive.clone()
+    }
+    const baseEmissive =
+      refs.waterMaterial.userData.forgeBaseWaterEmissive as THREE.Color
     refs.waterMaterial.roughness =
-      THREE.MathUtils.clamp(.44 + sample.rain * .12 - sample.night * .04, .32, .7)
+      THREE.MathUtils.clamp(
+        .44 + sample.rain * .12 - sample.night * .09,
+        .29,
+        .7,
+      )
+    refs.waterMaterial.emissive
+      .copy(baseEmissive)
+      .lerp(new THREE.Color(0x3a6574), sample.night * .34)
     refs.waterMaterial.emissiveIntensity =
-      .08 + sample.night * .12 + sample.rain * .03
+      .09 + sample.night * .2 + sample.rain * .03
     installWaterMotion(refs.waterMaterial)
     const shader = refs.waterMaterial.userData.forgeWaterShader as
       | any
@@ -600,11 +625,25 @@ export function applyWorldEnvironmentToScene(
   }
 
   for (const light of refs.environmentLights) {
-    const base = Number(light.userData.forgeEnvironmentLightBase ?? light.intensity)
+    const base = Number(
+      light.userData.forgeEnvironmentLightBase ??
+      light.intensity,
+    )
+    if (light.userData.forgeEnvironmentLightDistance === undefined) {
+      light.userData.forgeEnvironmentLightDistance = light.distance
+    }
+    const baseDistance = Number(
+      light.userData.forgeEnvironmentLightDistance ??
+      light.distance,
+    )
     light.intensity =
       base *
       sample.lanternActivity *
+      (1 + sample.night * .12) *
       (.92 + Math.sin(elapsedSeconds * 6.7 + light.id) * .045)
+    light.distance =
+      baseDistance *
+      (1 + sample.night * .28)
   }
 }
 

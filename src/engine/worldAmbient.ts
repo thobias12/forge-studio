@@ -101,8 +101,13 @@ export function updateWorldAmbientVisuals(
           : undefined
         if (material instanceof THREE.MeshBasicMaterial) {
           material.opacity =
-            (.58 + Math.sin(time * 2.6 + phase + index) * .22) *
-            activity
+            THREE.MathUtils.clamp(
+              (.68 + Math.sin(time * 2.6 + phase + index) * .24) *
+              activity *
+              (.95 + (environment?.night ?? 0) * .15),
+              0,
+              1,
+            )
         }
       })
       continue
@@ -181,9 +186,15 @@ export function updateWorldAmbientVisuals(
         glow.intensity =
           base *
           activity *
-          (.9 +
+          (.94 +
             Math.sin(time * 7.2 + phase) * .06 +
             Math.sin(time * 3.1 + phase * 2) * .04)
+        const baseDistance = Number(
+          actor.userData.baseDistance ?? glow.distance,
+        )
+        glow.distance =
+          baseDistance *
+          (1 + (environment?.night ?? 0) * .16)
       }
     }
   }
@@ -784,7 +795,8 @@ function addLanterns(
     root.scale.setScalar(item.scale)
     root.userData.ambientKind = 'lantern'
     root.userData.phase = item.rotation + item.variant
-    root.userData.baseIntensity = darkMood ? 1.62 : 1.02
+    root.userData.baseIntensity = darkMood ? 1.8 : 1.12
+    root.userData.baseDistance = darkMood ? 10.5 : 7.3
 
     const post = new THREE.Mesh(
       new THREE.CylinderGeometry(.045, .065, .72, 6),
@@ -817,8 +829,8 @@ function addLanterns(
 
     const glow = new THREE.PointLight(
       0xffaa55,
-      darkMood ? 1.62 : 1.02,
-      darkMood ? 9 : 6.6,
+      darkMood ? 1.8 : 1.12,
+      darkMood ? 10.5 : 7.3,
       2,
     )
     glow.name = 'AmbientLanternGlow'
