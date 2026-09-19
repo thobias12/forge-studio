@@ -99,9 +99,15 @@ export class ForgeCharacterVisualBinding {
     this.mixer?.update(delta)
     this.updateSecondaryMotion(delta)
     if (this.oneShot && this.active && !this.active.isRunning()) {
+      // LoopOnce actions use clampWhenFinished so they hold their final pose.
+      // Stop that action before restoring locomotion; otherwise its final arm/
+      // torso transforms keep contributing to the mixer and pull authored Idle
+      // back toward the attack/dodge end pose.
+      const completed = this.active
       this.oneShot = false
       this.active = undefined
       this.activeKey = ''
+      completed.stop()
       this.play(this.fallbackCue, true)
     }
   }
@@ -281,14 +287,27 @@ export class ForgeCharacterVisualBinding {
   private playClip(clip: THREE.AnimationClip, key: string, loop: boolean, speed = 1) {
     if (!this.mixer) return false
     if (this.activeKey === key && this.active?.isRunning()) return true
+
+    const previous = this.active
     const next = this.mixer.clipAction(clip)
     next.reset()
     next.enabled = true
     next.setEffectiveTimeScale(Math.min(3, Math.max(0.1, speed)))
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
     next.clampWhenFinished = !loop
-    next.fadeIn(0.08).play()
-    if (this.active && this.active !== next) this.active.fadeOut(0.08)
+
+    if (previous && previous !== next && previous.isRunning()) {
+      next.fadeIn(0.08).play()
+      previous.fadeOut(0.08)
+    } else {
+      // When returning from an already-finished one-shot there is no live action
+      // to crossfade from. Start the fallback at full weight so the rest/T-pose
+      // cannot flash through while Idle fades in from zero.
+      next.setEffectiveWeight(1)
+      next.play()
+      if (previous && previous !== next) previous.stop()
+    }
+
     this.active = next
     this.activeKey = key
     this.oneShot = !loop
