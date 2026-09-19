@@ -14,14 +14,14 @@
   "chain": {
     "maxJumps": 5,
     "jumpRadius": 5.8,
-    "jumpDelay": 0.065,
+    "jumpDelay": 0.018,
     "damageFalloff": 0.86,
     "allowRepeatTargets": false,
     "selectionMode": "nearest",
-    "boltLifetime": 0.22,
-    "arcAmplitude": 0.42,
-    "branchCount": 3,
-    "glowWidth": 0.085,
-    "lightFlashIntensity": 8.5
+    "boltLifetime": 0.3,
+    "arcAmplitude": 0.58,
+    "branchCount": 4,
+    "glowWidth": 0.115,
+    "lightFlashIntensity": 11
   }
 }
