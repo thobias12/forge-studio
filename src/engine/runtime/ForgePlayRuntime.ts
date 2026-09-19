@@ -1157,6 +1157,10 @@ export class ForgePlayRuntime {
         if (direction.lengthSq() > .001) direction.normalize()
         else direction.copy(aim)
 
+        void this.spawnBoundVfx(
+          ability.vfxAssetId,
+          target.position,
+        )
         this.damageEnemy(
           enemy,
           Math.max(1, damage * target.damageMultiplier),
