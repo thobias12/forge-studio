@@ -59,7 +59,7 @@ export function buildEquipmentForgeV3Visual(
     new THREE.MeshStandardMaterial({
       name: 'EFV3 Cloth',
       color: recipe.materials.cloth,
-      roughness: .86,
+      roughness: .84,
       metalness: 0,
       side: THREE.DoubleSide,
     })
@@ -67,7 +67,7 @@ export function buildEquipmentForgeV3Visual(
     new THREE.MeshStandardMaterial({
       name: 'EFV3 Trim',
       color: recipe.materials.trim,
-      roughness: .72,
+      roughness: .68,
       metalness: .02,
       side: THREE.DoubleSide,
     })
@@ -75,7 +75,7 @@ export function buildEquipmentForgeV3Visual(
     new THREE.MeshStandardMaterial({
       name: 'EFV3 Leather',
       color: recipe.materials.leather,
-      roughness: .7,
+      roughness: .62,
       metalness: .01,
       side: THREE.DoubleSide,
     })
@@ -91,7 +91,7 @@ export function buildEquipmentForgeV3Visual(
     new THREE.MeshStandardMaterial({
       name: 'EFV3 Metal',
       color: recipe.materials.metal,
-      roughness: .4,
+      roughness: .36,
       metalness: .72,
       side: THREE.DoubleSide,
     })
