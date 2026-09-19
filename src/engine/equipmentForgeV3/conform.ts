@@ -413,14 +413,14 @@ function createTorsoTemplate(
       const hemFlare =
         frame.height *
         recipe.hemFlare *
-        .024 *
+        .018 *
         Math.pow(1 - v, 2)
 
       const extra =
         frame.height *
-          (.004 +
+          (.0028 +
             recipe.looseness *
-              .018 *
+              .011 *
               THREE.MathUtils.lerp(
                 waistFactor,
                 1,
