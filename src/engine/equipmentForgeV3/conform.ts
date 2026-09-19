@@ -129,27 +129,6 @@ export function buildConformedTunic(
     )
   meshes.push(necklineTrim)
 
-  // Cover the low-resolution center-front neckline seam with a fitted
-  // cloth facing. This uses the same skinned torso vertices and only
-  // sits slightly above the surface, so the black center fracture reads
-  // as intentional garment construction instead of a mesh crack.
-  meshes.push(
-    createGridPatch(
-      source,
-      torso.geometry,
-      48,
-      16,
-      18,
-      47,
-      1,
-      cloth,
-      'EFV3_NecklineFacing_Front',
-      'radial',
-      .0026,
-      .04,
-    ),
-  )
-
   meshes.push(
     ...createTunicSeamDetails(
       source,
@@ -471,22 +450,8 @@ function createTorsoTemplate(
       // visible in v1.76.0.
       position.y = targetY
 
-      const bodyNormal =
-        nearest.normal.clone()
-      if (
-        bodyNormal.lengthSq() <
-        1e-5
-      ) {
-        bodyNormal.set(
-          position.x,
-          0,
-          position.z,
-        )
-      }
-      bodyNormal.normalize()
-
       const radialNormal =
-        bodyNormal.clone()
+        nearest.normal.clone()
       radialNormal.y = 0
       if (
         radialNormal.lengthSq() <
@@ -499,36 +464,6 @@ function createTorsoTemplate(
         )
       }
       radialNormal.normalize()
-
-      // Use true surface-normal clearance only around the upper shoulder
-      // shell. This lifts cloth away from upward-facing shoulder polygons
-      // without puffing the waist/chest away from the body.
-      const shoulderTopT =
-        THREE.MathUtils.clamp(
-          (v - .84) / .16,
-          0,
-          1,
-        )
-      const sideAmount =
-        Math.abs(
-          Math.sin(angle),
-        )
-      const shoulderNormalBlend =
-        shoulderTopT *
-        THREE.MathUtils.smoothstep(
-          sideAmount,
-          .55,
-          1,
-        )
-      const fitNormal =
-        radialNormal
-          .clone()
-          .lerp(
-            bodyNormal,
-            shoulderNormalBlend *
-              .76,
-          )
-          .normalize()
 
       const waistFactor =
         1 -
@@ -576,14 +511,9 @@ function createTorsoTemplate(
             sideEase * .00055) +
         hemFlare
 
-      const shoulderClearance =
-        frame.height *
-        .0026 *
-        shoulderNormalBlend
       position.addScaledVector(
-        fitNormal,
-        extra +
-          shoulderClearance,
+        radialNormal,
+        extra,
       )
 
       ringPositions.push(position)
