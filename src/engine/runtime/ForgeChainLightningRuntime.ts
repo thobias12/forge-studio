@@ -473,11 +473,19 @@ export class ForgeChainLightningEffect {
         )
       }
 
-      for (const path of [
-        ...piece.primaryPaths,
-        ...piece.strandPaths,
-        ...piece.branchPaths,
-      ]) {
+      for (const path of piece.primaryPaths) {
+        updateBoltPathProgress(
+          path,
+          travelProgress,
+        )
+      }
+      for (const path of piece.strandPaths) {
+        updateBoltPathProgress(
+          path,
+          travelProgress,
+        )
+      }
+      for (const path of piece.branchPaths) {
         updateBoltPathProgress(
           path,
           travelProgress,
@@ -714,9 +722,6 @@ export class ForgeChainLightningEffect {
       )
     }
   }
-}
-
-function createBoltPath(
 }
 
 function createBoltPath(
@@ -1044,8 +1049,6 @@ function buildBranchPoints(
 }
 
 function addImpactSparks(
-
-function addImpactSparks(
   parent: THREE.Group,
   origin: THREE.Vector3,
   color: THREE.Color,
@@ -1170,8 +1173,6 @@ function addImpactRings(
   }
   return rings
 }
-
-function updateSegmentTransform(
 
 function updateSegmentTransform(
   mesh: THREE.Mesh,
