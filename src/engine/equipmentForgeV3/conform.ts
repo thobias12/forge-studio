@@ -149,19 +149,6 @@ export function buildConformedTunic(
     if (left) {
       meshes.push(left)
       meshes.push(
-        createSkinnedRowBand(
-          source,
-          left.geometry,
-          0,
-          1,
-          18,
-          trim,
-          'EFV3_ArmholeTrim_L',
-          .58,
-          .0021,
-        ),
-      )
-      meshes.push(
         createShoulderBridge(
           source,
           torso.geometry,
@@ -186,19 +173,6 @@ export function buildConformedTunic(
 
     if (right) {
       meshes.push(right)
-      meshes.push(
-        createSkinnedRowBand(
-          source,
-          right.geometry,
-          0,
-          1,
-          18,
-          trim,
-          'EFV3_ArmholeTrim_R',
-          .58,
-          .0021,
-        ),
-      )
       meshes.push(
         createShoulderBridge(
           source,
