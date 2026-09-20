@@ -20,7 +20,6 @@ export function addCryptRoomEnvironment(
   flickerLights: CryptFlickerLight[],
   immersive: boolean,
 ) {
-  const start = parent.children.length
   addLegacyRoom(parent, room, openings, wallThickness, atmosphere, flickerLights, immersive)
   addCryptRoomSurfacePass(parent, room, openings, wallThickness, atmosphere, flickerLights, immersive)
   // Room wall trim now participates in the camera-aware cutaway, so far walls
