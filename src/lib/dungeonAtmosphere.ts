@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { DungeonRoomType, DungeonTheme } from './dungeonPackage'
+import { DEFAULT_DUNGEON_BRIGHTNESS, type DungeonRoomType, type DungeonTheme } from './dungeonPackage'
 
 export type DungeonAtmosphere = {
   background: number
@@ -37,6 +37,37 @@ const THEMES: Record<DungeonTheme, DungeonAtmosphere> = {
   mine: { background:0x080909,fog:0x17140f,fogMultiplier:1.06,sky:0x7d7462,ground:0x12100d,ambient:0.9,key:0xc0b49b,keyIntensity:0.86,exposure:1.06,bloomStrength:0.41,bloomRadius:0.38,bloomThreshold:0.82,floor:0x403a31,wall:0x534a3f,wallDark:0x302a24,corridorFloor:0x383129,corridorWall:0x463e35,seam:0x221d18,torch:0xffa052,torchIntensity:3.8,dust:0x8d8372,mist:0x81786a,boss:0xb24a40,shrine:0x79bca9,treasure:0xe1b257 },
   sewer: { background:0x050907,fog:0x0e1713,fogMultiplier:1.12,sky:0x64786c,ground:0x111611,ambient:0.94,key:0x96a89d,keyIntensity:0.74,exposure:1.03,bloomStrength:0.47,bloomRadius:0.46,bloomThreshold:0.79,floor:0x343d38,wall:0x435049,wallDark:0x27302b,corridorFloor:0x2e3732,corridorWall:0x39463f,seam:0x1c241f,torch:0xef9852,torchIntensity:3.35,dust:0x69786f,mist:0x6d887c,boss:0x9d4248,shrine:0x68c3a2,treasure:0xd9b257 },
   void: { background:0x06040d,fog:0x160d2b,fogMultiplier:1.2,sky:0x705da4,ground:0x0d0816,ambient:0.75,key:0xa18edb,keyIntensity:0.8,exposure:1.04,bloomStrength:0.86,bloomRadius:0.58,bloomThreshold:0.65,floor:0x302a40,wall:0x44395c,wallDark:0x231b31,corridorFloor:0x2a2339,corridorWall:0x392f50,seam:0x171024,torch:0xbc76ff,torchIntensity:4.1,dust:0x8068a7,mist:0x6f5594,boss:0xee5792,shrine:0x80aaff,treasure:0xd39bff },
+}
+
+export type DungeonLightingSettings = {
+  ambientLight: number
+  brightness?: number
+  fogDensity: number
+}
+
+export type DungeonLightingProfile = {
+  brightness: number
+  ambientIntensity: number
+  fillIntensity: number
+  keyIntensity: number
+  exposure: number
+  fogDensity: number
+  bloomStrength: number
+}
+
+export function dungeonLightingProfile(atmosphere: DungeonAtmosphere, settings: DungeonLightingSettings): DungeonLightingProfile {
+  const brightness = THREE.MathUtils.clamp(settings.brightness ?? DEFAULT_DUNGEON_BRIGHTNESS, 0.55, 2.5)
+  const exposureScale = THREE.MathUtils.lerp(0.72, 1.52, (brightness - 0.55) / 1.95)
+  const lightScale = THREE.MathUtils.lerp(0.72, 1.62, (brightness - 0.55) / 1.95)
+  return {
+    brightness,
+    ambientIntensity: atmosphere.ambient * (1.52 + settings.ambientLight * 0.72) * lightScale,
+    fillIntensity: (atmosphere === THEMES.crypt ? 0.6 : 0.36) * lightScale,
+    keyIntensity: atmosphere.keyIntensity * 1.42 * lightScale,
+    exposure: atmosphere.exposure * exposureScale,
+    fogDensity: settings.fogDensity * atmosphere.fogMultiplier,
+    bloomStrength: atmosphere.bloomStrength * THREE.MathUtils.lerp(0.82, 1.08, (brightness - 0.55) / 1.95),
+  }
 }
 
 export function dungeonAtmosphere(theme: DungeonTheme): DungeonAtmosphere {
