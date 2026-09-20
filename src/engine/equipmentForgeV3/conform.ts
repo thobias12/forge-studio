@@ -500,7 +500,7 @@ function createTorsoTemplate(
         )
       const lateralClearance =
         frame.height *
-        .0022 *
+        .0042 *
         lateralShoulder
 
       position.addScaledVector(
@@ -701,6 +701,86 @@ function createTorsoTemplate(
       )
     }
   }
+  // The circular front seam still leaves three low-poly apex rings with
+  // visibly divergent normals once the old crossing trim is removed.
+  // Weld only that tiny core toward symmetric neighboring surface normals.
+  for (
+    let ring = rings - 3;
+    ring <= rings;
+    ring += 1
+  ) {
+    const verticalT =
+      THREE.MathUtils.smoothstep(
+        ring,
+        rings - 3,
+        rings,
+      )
+
+    for (
+      let offset = -1;
+      offset <= 1;
+      offset += 1
+    ) {
+      const segment =
+        (offset +
+          segments) %
+        segments
+      const index =
+        ring * segments +
+        segment
+      const neighborDistance = 3
+      const leftSegment =
+        (segment -
+          neighborDistance +
+          segments) %
+        segments
+      const rightSegment =
+        (segment +
+          neighborDistance) %
+        segments
+      const leftIndex =
+        ring * segments +
+        leftSegment
+      const rightIndex =
+        ring * segments +
+        rightSegment
+      const target =
+        new THREE.Vector3(
+          torsoNormals.getX(leftIndex) +
+            torsoNormals.getX(rightIndex),
+          torsoNormals.getY(leftIndex) +
+            torsoNormals.getY(rightIndex),
+          torsoNormals.getZ(leftIndex) +
+            torsoNormals.getZ(rightIndex),
+        ).normalize()
+      const current =
+        new THREE.Vector3(
+          torsoNormals.getX(index),
+          torsoNormals.getY(index),
+          torsoNormals.getZ(index),
+        ).normalize()
+      const sideT =
+        1 -
+        Math.abs(offset) * .2
+      const welded =
+        current
+          .lerp(
+            target,
+            verticalT *
+              sideT *
+              .78,
+          )
+          .normalize()
+
+      torsoNormals.setXYZ(
+        index,
+        welded.x,
+        welded.y,
+        welded.z,
+      )
+    }
+  }
+
   torsoNormals.needsUpdate =
     true
   geometry.computeBoundingSphere()
@@ -2205,8 +2285,8 @@ function createVestOverlay(
     ) {
       // Leave a clean split down the front of the leather vest.
       const frontGap =
-        segment <= 7 ||
-        segment >= segments - 7
+        segment <= 10 ||
+        segment >= segments - 10
       if (frontGap) continue
 
       const next =
