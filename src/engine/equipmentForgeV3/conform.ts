@@ -124,10 +124,10 @@ export function buildConformedTunic(
       48,
       trim,
       'EFV3_NecklineTrim_L',
-      .3,
-      1,
+      .2,
+      3,
       24,
-      .0019,
+      .002,
     )
   const necklineTrimRight =
     createSkinnedRowBandArc(
@@ -138,10 +138,10 @@ export function buildConformedTunic(
       48,
       trim,
       'EFV3_NecklineTrim_R',
-      .3,
+      .2,
       24,
-      47,
-      .0019,
+      45,
+      .002,
     )
   meshes.push(
     necklineTrimLeft,
@@ -3230,7 +3230,7 @@ function createTabardDetails(
       'EFV3_TabardHanger_L',
       'radial',
       .0028,
-      .42,
+      .7,
     ),
     createGridPatch(
       source,
@@ -3244,7 +3244,7 @@ function createTabardDetails(
       'EFV3_TabardHanger_R',
       'radial',
       .0028,
-      .42,
+      .7,
     ),
   ]
 }
@@ -3670,14 +3670,36 @@ function createBeltBuckle(
   ]
   const positions: number[] = []
   const influences: SkinInfluence[] = []
+  const buckleSource =
+    corners.map(
+      (index) =>
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        ),
+    )
+  const buckleCenter =
+    buckleSource.reduce(
+      (sum, point) =>
+        sum.add(point),
+      new THREE.Vector3(),
+    ).multiplyScalar(.25)
 
-  for (const index of corners) {
+  for (
+    let slot = 0;
+    slot < corners.length;
+    slot += 1
+  ) {
+    const index =
+      corners[slot]
     const point =
-      new THREE.Vector3(
-        position.getX(index),
-        position.getY(index),
-        position.getZ(index),
-      )
+      buckleSource[slot]
+        .clone()
+        .lerp(
+          buckleCenter,
+          .42,
+        )
     offsetDetailPoint(
       point,
       'radial',
