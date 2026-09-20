@@ -224,89 +224,161 @@ function spawnRewardBurst(
   )
   const xpTotal = Math.max(10, Math.round(12 + maxHealth * .16))
 
-  spawnGoldPieces(runtime, enemyId, goldTotal, position)
+  spawnGoldPile(runtime, enemyId, goldTotal, position)
   awardXpImmediately(runtime, xpTotal, position, enemyId)
 }
 
-function spawnGoldPieces(
+function spawnGoldPile(
   runtime: RewardRuntime,
   enemyId: string,
   total: number,
   position: THREE.Vector3,
 ) {
-  const pieces = splitAmount(total, 3)
-  pieces.forEach((amount, index) => {
-    const angle =
-      hashUnit(`${enemyId}:gold:angle:${index}`) * Math.PI * 2
-    const phase =
-      hashUnit(`${enemyId}:gold:phase:${index}`) * Math.PI * 2
-    const launch =
-      3.2 + hashUnit(`${enemyId}:gold:launch:${index}`) * 1.35
-    const lift =
-      4.8 + hashUnit(`${enemyId}:gold:lift:${index}`) * .95
-    const group = buildGoldPickupVisual(phase)
-    const floorY = position.y + .11
+  const angle = hashUnit(`${enemyId}:gold:angle`) * Math.PI * 2
+  const phase = hashUnit(`${enemyId}:gold:phase`) * Math.PI * 2
+  const launch = 2.15 + hashUnit(`${enemyId}:gold:launch`) * .75
+  const lift = 3.5 + hashUnit(`${enemyId}:gold:lift`) * .65
+  const group = buildGoldPickupVisual(phase)
+  const floorY = position.y + .1
 
-    group.position.set(
-      position.x + Math.cos(angle) * .08,
-      position.y + .52,
-      position.z + Math.sin(angle) * .08,
-    )
-    group.scale.setScalar(.72)
-    ;(runtime.world ?? runtime.scene).add(group)
+  group.position.set(
+    position.x + Math.cos(angle) * .06,
+    position.y + .46,
+    position.z + Math.sin(angle) * .06,
+  )
+  group.scale.setScalar(.76)
+  ;(runtime.world ?? runtime.scene).add(group)
 
-    runtime.__forgeRewardPickups!.push({
-      id: `${enemyId}:gold:${index}`,
-      amount,
-      group,
-      floorY,
-      age: index * -.018,
-      velocity: new THREE.Vector3(
-        Math.cos(angle) * launch,
-        lift,
-        Math.sin(angle) * launch,
-      ),
-      spin: new THREE.Vector3(
-        8 + phase % 2,
-        12 + phase % 4,
-        6 + phase % 3,
-      ),
-      settled: false,
-      magnet: false,
-      magnetAge: 0,
-      bounces: 0,
-    })
+  runtime.__forgeRewardPickups!.push({
+    id: `${enemyId}:gold`,
+    amount: total,
+    group,
+    floorY,
+    age: 0,
+    velocity: new THREE.Vector3(
+      Math.cos(angle) * launch,
+      lift,
+      Math.sin(angle) * launch,
+    ),
+    spin: new THREE.Vector3(3.5, 5.5 + phase % 2.5, 2.8),
+    settled: false,
+    magnet: false,
+    magnetAge: 0,
+    bounces: 0,
   })
 }
 
 function buildGoldPickupVisual(phase: number) {
   const group = new THREE.Group()
-  const coin = new THREE.Mesh(
-    new THREE.CylinderGeometry(.14, .14, .055, 20),
-    new THREE.MeshStandardMaterial({
-      color: 0xe2b951,
-      emissive: 0x745016,
-      emissiveIntensity: .62,
-      roughness: .26,
-      metalness: .86,
+  group.userData.rewardPhase = phase
+
+  const aura = new THREE.Mesh(
+    new THREE.CircleGeometry(.38, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0xf3b83f,
+      transparent: true,
+      opacity: .13,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
     }),
   )
-  coin.rotation.y = phase
-  coin.castShadow = true
-  group.add(coin)
+  aura.rotation.x = -Math.PI / 2
+  aura.position.y = .006
+  aura.userData.rewardGlow = true
+  group.add(aura)
 
-  const rim = new THREE.Mesh(
-    new THREE.TorusGeometry(.145, .011, 6, 20),
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(.31, .012, 6, 32),
     new THREE.MeshBasicMaterial({
-      color: 0xffe59a,
+      color: 0xffd86a,
       transparent: true,
-      opacity: .56,
+      opacity: .3,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }),
   )
-  rim.rotation.x = Math.PI / 2
-  group.add(rim)
+  halo.rotation.x = Math.PI / 2
+  halo.position.y = .026
+  halo.userData.rewardGlow = true
+  group.add(halo)
+
+  const layout = [
+    { x: -.13, y: .035, z: .045, rx: -.03, rz: -.08, yaw: .2 },
+    { x: .035, y: .043, z: .085, rx: .025, rz: .055, yaw: 1.25 },
+    { x: .145, y: .05, z: -.025, rx: -.02, rz: .085, yaw: 2.3 },
+    { x: -.015, y: .082, z: -.105, rx: .04, rz: -.035, yaw: 3.15 },
+  ]
+
+  layout.forEach((slot, index) => {
+    const coinGroup = new THREE.Group()
+    coinGroup.position.set(slot.x, slot.y, slot.z)
+    coinGroup.rotation.set(slot.rx, slot.yaw + phase * .08, slot.rz)
+
+    const coin = new THREE.Mesh(
+      new THREE.CylinderGeometry(.145, .145, .052, 24),
+      new THREE.MeshStandardMaterial({
+        color: index === 3 ? 0xf0c958 : 0xe2b246,
+        emissive: 0x8e5b13,
+        emissiveIntensity: .78,
+        roughness: .22,
+        metalness: .88,
+      }),
+    )
+    coin.castShadow = true
+    coinGroup.add(coin)
+
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(.141, .011, 7, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe8a0,
+        transparent: true,
+        opacity: .76,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    rim.rotation.x = Math.PI / 2
+    rim.position.y = .029
+    coinGroup.add(rim)
+
+    const stamp = new THREE.Mesh(
+      new THREE.CylinderGeometry(.075, .075, .004, 18),
+      new THREE.MeshStandardMaterial({
+        color: 0xffda73,
+        emissive: 0x9b681c,
+        emissiveIntensity: .62,
+        roughness: .26,
+        metalness: .74,
+      }),
+    )
+    stamp.position.y = .029
+    coinGroup.add(stamp)
+
+    group.add(coinGroup)
+  })
+
+  const sparkleGeometry = new THREE.OctahedronGeometry(.027, 0)
+  ;[
+    [-.22, .17, -.04],
+    [.2, .2, .09],
+  ].forEach(([x, y, z], index) => {
+    const sparkle = new THREE.Mesh(
+      sparkleGeometry.clone(),
+      new THREE.MeshBasicMaterial({
+        color: index === 0 ? 0xfff3bd : 0xffd56c,
+        transparent: true,
+        opacity: .82,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    sparkle.position.set(x, y, z)
+    sparkle.userData.rewardSparkle = true
+    sparkle.userData.rewardSparkleOffset = index * Math.PI
+    group.add(sparkle)
+  })
+
   return group
 }
 
@@ -414,7 +486,7 @@ function updateGoldPickups(runtime: RewardRuntime, delta: number) {
     const dz = runtime.player.position.z - pickup.group.position.z
     const horizontalDistance = Math.hypot(dx, dz)
 
-    if (pickup.age >= .11 && horizontalDistance < 6.3) {
+    if (pickup.age >= .14 && horizontalDistance < 5.7) {
       pickup.magnet = true
     }
 
@@ -445,7 +517,26 @@ function updateGoldPickups(runtime: RewardRuntime, delta: number) {
           }
         }
       } else {
-        pickup.group.rotation.y += delta * 1.35
+        const phase = Number(pickup.group.userData.rewardPhase ?? 0)
+        const pulse = Math.sin(pickup.age * 4.2 + phase)
+        pickup.group.position.y = pickup.floorY + .018 + pulse * .012
+        pickup.group.rotation.y += delta * .32
+        pickup.group.scale.setScalar(.98 + pulse * .018)
+        pickup.group.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return
+          if (child.userData.rewardGlow && child.material instanceof THREE.MeshBasicMaterial) {
+            child.material.opacity = child.geometry.type === 'CircleGeometry'
+              ? .12 + (pulse + 1) * .025
+              : .28 + (pulse + 1) * .04
+          }
+          if (child.userData.rewardSparkle && child.material instanceof THREE.MeshBasicMaterial) {
+            const offset = Number(child.userData.rewardSparkleOffset ?? 0)
+            const shimmer = .5 + .5 * Math.sin(pickup.age * 7.4 + offset)
+            child.material.opacity = .26 + shimmer * .68
+            child.scale.setScalar(.65 + shimmer * .65)
+            child.rotation.y += delta * 4
+          }
+        })
       }
       continue
     }
@@ -455,9 +546,9 @@ function updateGoldPickups(runtime: RewardRuntime, delta: number) {
     const toTarget = target.sub(pickup.group.position)
     const distance = toTarget.length()
     const speed =
-      10.5 +
-      Math.min(22, pickup.magnetAge * 54) +
-      Math.max(0, 6.3 - Math.min(6.3, horizontalDistance)) * 4.6
+      11.8 +
+      Math.min(24, pickup.magnetAge * 62) +
+      Math.max(0, 5.7 - Math.min(5.7, horizontalDistance)) * 4.8
     const travel = Math.min(distance, speed * delta)
 
     if (distance > .0001) {
@@ -469,7 +560,7 @@ function updateGoldPickups(runtime: RewardRuntime, delta: number) {
       THREE.MathUtils.clamp(.38 + distance * .28, .38, 1),
     )
 
-    if (distance <= .28) collectGold(runtime, pickup)
+    if (distance <= .3) collectGold(runtime, pickup)
   }
 }
 
