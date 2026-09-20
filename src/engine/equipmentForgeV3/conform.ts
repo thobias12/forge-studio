@@ -801,16 +801,27 @@ function createSleeveTemplate(
   side: 'L' | 'R',
   sleeve: EquipmentForgeV3Sleeve,
 ) {
-  const upper = findSkeletonBone(
-    source,
-    `upperarm_${side}`,
-    `clavicle_${side}`,
-  )
-  const lower = findSkeletonBone(
-    source,
-    `lowerarm_${side}`,
-    `forearm_${side}`,
-  )
+  // Respect semantic fallback order instead of skeleton storage order.
+  // On the Skillbound female rig the clavicle is stored before upperarm,
+  // so a multi-name lookup accidentally rooted sleeves at the clavicle.
+  const upper =
+    findSkeletonBone(
+      source,
+      `upperarm_${side}`,
+    ) ??
+    findSkeletonBone(
+      source,
+      `clavicle_${side}`,
+    )
+  const lower =
+    findSkeletonBone(
+      source,
+      `lowerarm_${side}`,
+    ) ??
+    findSkeletonBone(
+      source,
+      `forearm_${side}`,
+    )
   if (!upper || !lower) return undefined
 
   const start =
@@ -1135,17 +1146,25 @@ function createTunicFrame(
       'spine_02',
       'chest',
     )
+  // The torso frame intentionally uses clavicles as the shoulder
+  // landmark. Keep that stable even though sleeve roots use upper arms.
   const leftShoulder =
     findSkeletonBone(
       source,
-      'upperarm_L',
       'clavicle_L',
+    ) ??
+    findSkeletonBone(
+      source,
+      'upperarm_L',
     )
   const rightShoulder =
     findSkeletonBone(
       source,
-      'upperarm_R',
       'clavicle_R',
+    ) ??
+    findSkeletonBone(
+      source,
+      'upperarm_R',
     )
 
   const pelvisPosition =

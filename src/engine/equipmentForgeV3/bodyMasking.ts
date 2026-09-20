@@ -200,16 +200,25 @@ function createSleeveMaskRange(
   side: 'L' | 'R',
   sleeve: EquipmentForgeV3Sleeve,
 ): SleeveMaskRange | undefined {
+  // Match the sleeve generator's semantic fallback order. The rig
+  // stores clavicles before upper arms, so passing both names at once
+  // incorrectly anchored the mask to the clavicle.
   const upper =
     findBone(
       source,
       `upperarm_${side}`,
+    ) ??
+    findBone(
+      source,
       `clavicle_${side}`,
     )
   const lower =
     findBone(
       source,
       `lowerarm_${side}`,
+    ) ??
+    findBone(
+      source,
       `forearm_${side}`,
     )
   if (!upper || !lower) {
