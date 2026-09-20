@@ -768,7 +768,7 @@ function addCorridorSegmentDetail(parent: THREE.Group, x1: number, z1: number, x
 
   const wallMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.corridorWall, roughness: 0.9 })
   const darkMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96 })
-  const wallHeight = immersive ? 3.05 : 1.55
+  const wallHeight = immersive ? 3.05 : 1.04
   for (const side of [-1, 1]) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(0.18, wallHeight, length), wallMaterial)
     wall.position.set(
@@ -788,7 +788,7 @@ function addCorridorSegmentDetail(parent: THREE.Group, x1: number, z1: number, x
     const localZ = -length / 2 + (index + 0.5) * (length / ribCount)
     for (const side of [-1, 1]) {
       const localX = (width / 2 + 0.18) * side
-      const height = immersive ? 2.82 : 1.48
+      const height = immersive ? 2.82 : 1.0
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.34, height, 0.44), index % 2 ? darkMaterial : wallMaterial)
       pillar.position.set(
         cx + Math.cos(angle) * localX + Math.sin(angle) * localZ,
