@@ -228,18 +228,16 @@ function spawnWave(runtime: any, state: any) {
   }
 
   state.spawnSerial += localSerial
+  const waveRoom = runtime.dungeon.rooms.find(
+    (candidate: any) =>
+      candidate.id === state.definition.roomId,
+  )
   runtime.spawnPulse?.(
-    {
-      x: runtime.dungeon.rooms.find(
-        (candidate: any) =>
-          candidate.id === state.definition.roomId,
-      )?.x ?? runtime.player.position.x,
-      y: 0,
-      z: runtime.dungeon.rooms.find(
-        (candidate: any) =>
-          candidate.id === state.definition.roomId,
-      )?.z ?? runtime.player.position.z,
-    },
+    new THREE.Vector3(
+      waveRoom?.x ?? runtime.player.position.x,
+      waveRoom?.floorLevel ?? runtime.player.position.y,
+      waveRoom?.z ?? runtime.player.position.z,
+    ),
     state.definition.boss ? '#d75b58' : '#b77952',
     state.definition.boss ? 3.4 : 2.25,
     .26,
