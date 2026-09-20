@@ -220,6 +220,7 @@ function addWallStoneCourses(ctx: RoomContext, openings: CryptOpening[], thickne
     mesh.castShadow = true
     mesh.receiveShadow = true
     mesh.userData.roomId = ctx.room.id
+    mesh.userData.wallSide = side
     mesh.userData.arpgOccluder = true
     ctx.group.add(mesh)
   }
@@ -512,7 +513,7 @@ function addRoomDressing(ctx: RoomContext) {
 function addRoomFill(ctx: RoomContext) {
   const { room, atmosphere, immersive } = ctx
   const maxDimension = Math.max(room.width, room.depth)
-  const intensity = (room.type === 'boss' ? 0.52 : room.type === 'entrance' ? 0.38 : 0.32) * (immersive ? 1 : 0.92)
+  const intensity = (room.type === 'boss' ? 0.72 : room.type === 'entrance' ? 0.52 : 0.56) * (immersive ? 1 : 0.94)
   for (const [x, z, factor] of [[-room.width * 0.18, -room.depth * 0.1, 1], [room.width * 0.18, room.depth * 0.12, 0.82]] as Array<[number, number, number]>) {
     const fill = new THREE.PointLight(atmosphere.sky, intensity * factor, maxDimension * 0.8, 1.45)
     fill.position.set(x, Math.min(2.3, room.height * 0.48), z)
