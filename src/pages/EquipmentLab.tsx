@@ -240,7 +240,7 @@ export default function EquipmentLab() {
               current?.progress ??
               0,
             message:
-              'SPAR3D is still running · reconnecting to the local processor…',
+              'Local generation is still running · reconnecting to the processor…',
           }),
         )
 
@@ -250,7 +250,7 @@ export default function EquipmentLab() {
         ) {
           throw new Error(
             'The local Equipment Processor has been unreachable for about a minute. ' +
-            'Check that the processor CMD window is still open. The SPAR3D job may still be running there.',
+            'Check that the processor CMD window is still open. The local Blender/3D job may still be running there.',
           )
         }
       }
@@ -595,10 +595,8 @@ export default function EquipmentLab() {
             <small>
               {connected
                 ? generatorReady
-                  ? 'Blender + Local 3D ready'
-                  : health?.generator?.needsAccessToken
-                    ? 'Blender ready · SPAR3D access needed'
-                    : 'Blender ready · Better Local 3D not installed'
+                  ? 'Blender + Procedural + SPAR3D ready'
+                  : 'Blender + Procedural ready'
                 : 'localhost:47831'}
             </small>
           </span>
