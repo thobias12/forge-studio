@@ -60,8 +60,11 @@ export function addDungeonMasonryV3(
   const bounds = dungeonWorldBoundsV3(value, 3)
   addFloor(root, value, atmosphere, bounds)
   addPerimeterWalls(root, value, atmosphere, bounds, mode)
+  addCorridorArchitecture(root, value, atmosphere, mode)
+  addRoomArchitecture(root, value, atmosphere, mode)
   addRoomFixtures(root, value, atmosphere, flickerLights, mode)
-  addRoomDressing(root, value, atmosphere)
+  addCorridorFixtures(root, value, atmosphere, flickerLights, mode)
+  addRoomDressing(root, value, atmosphere, mode)
 
   return root
 }
@@ -266,7 +269,8 @@ export function buildCorridorPathV3(
 }
 
 function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: DungeonAtmosphere, bounds: ReturnType<typeof dungeonWorldBoundsV3>) {
-  const instances: Array<{ x: number; z: number; y: number; width: number; depth: number; shade: number }> = []
+  const instances: Array<{ x: number; z: number; y: number; width: number; depth: number; shade: number; yaw: number }> = []
+  const cracks: Array<{ x: number; z: number; y: number; yaw: number; length: number }> = []
   let row = 0
   for (let z = Math.floor(bounds.minZ / FLOOR_BRICK_D) * FLOOR_BRICK_D; z <= bounds.maxZ; z += FLOOR_BRICK_D) {
     const shift = row % 2 ? FLOOR_BRICK_W / 2 : 0
@@ -276,14 +280,27 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       if (!dungeonContainsPointV3(value, cx, cz, 0.12)) continue
       const hash = numberHash(Math.round(cx * 13), Math.round(cz * 19), value.seed)
       const chip = 0.93 + ((hash >>> 5) % 5) * 0.01
+      const floorY = dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y
+      const damaged = hash % 17 === 0
+      const missingCorner = hash % 29 === 0
       instances.push({
         x: cx,
         z: cz,
-        y: dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y,
-        width: FLOOR_BRICK_W * chip,
-        depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01),
-        shade: 0.88 + (hash % 11) / 100,
+        y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
+        width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
+        depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01) * (damaged ? 0.94 : 1),
+        shade: damaged ? 0.7 + (hash % 7) / 100 : 0.88 + (hash % 11) / 100,
+        yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
+      if (hash % 21 === 0) {
+        cracks.push({
+          x: cx + (((hash >>> 4) % 7) - 3) * 0.035,
+          z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
+          y: floorY + 0.052,
+          yaw: ((hash >>> 12) % 628) / 100,
+          length: 0.28 + ((hash >>> 20) % 5) * 0.07,
+        })
+      }
     }
     row += 1
   }
@@ -305,6 +322,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   const base = new THREE.Color(0xffffff)
   instances.forEach((instance, index) => {
     dummy.position.set(instance.x, instance.y, instance.z)
+    dummy.rotation.set(0, instance.yaw, 0)
     dummy.scale.set(instance.width, 1, instance.depth)
     dummy.updateMatrix()
     mesh.setMatrixAt(index, dummy.matrix)
@@ -312,6 +330,21 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   })
   mesh.receiveShadow = true
   root.add(mesh)
+
+  if (cracks.length) {
+    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x17110d, transparent: true, opacity: 0.72, depthWrite: false })
+    const crackMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.008, 0.045), crackMaterial, cracks.length)
+    crackMesh.name = 'DungeonV3FloorCracks'
+    cracks.forEach((crack, index) => {
+      dummy.position.set(crack.x, crack.y, crack.z)
+      dummy.rotation.set(0, crack.yaw, 0)
+      dummy.scale.set(crack.length, 1, 1)
+      dummy.updateMatrix()
+      crackMesh.setMatrixAt(index, dummy.matrix)
+    })
+    crackMesh.renderOrder = 2
+    root.add(crackMesh)
+  }
 }
 
 type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean }
