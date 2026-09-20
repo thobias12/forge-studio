@@ -753,7 +753,7 @@ def build_torso_vertex_mask(
             and width_distance
             <= height * 0.195
             and depth_distance
-            <= height * 0.175
+            <= height * 0.260
         )
 
         strongly_torso_driven = (
@@ -818,7 +818,7 @@ def build_torso_vertex_mask(
                 and width_distance
                 <= height * 0.18
                 and depth_distance
-                <= height * 0.16
+                <= height * 0.240
             ):
                 keep.add(
                     vertex.index,
