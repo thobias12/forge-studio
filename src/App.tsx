@@ -45,6 +45,7 @@ import Models from './pages/Models'
 import ConceptForge from './pages/ConceptForge'
 import UIForge from './pages/UIForge'
 import EquipmentForge from './pages/EquipmentForge'
+import EquipmentLab from './pages/EquipmentLab'
 import CharacterForge from './pages/CharacterForge'
 import DestructionLab from './pages/DestructionLab'
 import AnimationBindings from './pages/AnimationBindings'
@@ -77,11 +78,12 @@ import './world-forge.css'
 import './gameplay-forge.css'
 import './item-forge.css'
 import './equipment-forge.css'
+import './equipment-lab.css'
 import './encounter-boss-forge.css'
 import './project-control-center.css'
 import './project-theme.css'
 
-type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'lootforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge' | 'propforge'
+type Page = ForgeContentPage | 'gameplay' | 'skillforge' | 'itemforge' | 'lootforge' | 'encounterforge' | 'bossforge' | 'animationbindings' | 'poiforge' | 'propforge' | 'equipmentlab'
 type NavItem = { id: Page; label: string; icon: LucideIcon }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -109,6 +111,7 @@ const navGroups: NavGroup[] = [
       { id: 'conceptforge', label: 'Concept Forge', icon: Sparkles },
       { id: 'characterforge', label: 'Character Creator', icon: Skull },
       { id: 'characters', label: 'Equipment Forge', icon: UserRoundCog },
+      { id: 'equipmentlab', label: 'Equipment Lab', icon: Box },
       { id: 'animations', label: 'Animation Studio', icon: Clapperboard },
     ],
   },
@@ -280,6 +283,7 @@ export default function App() {
           {page === 'uiforge' && <UIForge />}
           {page === 'characterforge' && <CharacterForge />}
           {page === 'characters' && <EquipmentForge />}
+          {page === 'equipmentlab' && <EquipmentLab />}
           {page === 'animations' && <AnimationStudioRuntime2 onTestGame={() => navigate('play')} />}
           {page === 'animationbindings' && <AnimationBindings />}
           {page === 'textures' && <TextureLab />}
