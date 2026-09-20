@@ -114,8 +114,27 @@ export function maskBodyUnderTunic(
         center.x,
         center.z,
       )
+    // Keep generous skin clearance at the front/back neckline, but
+    // tighten the body mask toward the cloth edge over the lateral
+    // shoulder crown. A constant inset leaves isolated shoulder
+    // triangles visible through the fitted shell from top-down views.
+    const sideAmount =
+      Math.abs(
+        Math.sin(angle),
+      )
+    const shoulderMaskT =
+      THREE.MathUtils.smoothstep(
+        sideAmount,
+        .46,
+        .82,
+      )
     const topInset =
-      frame.height * .024
+      frame.height *
+      THREE.MathUtils.lerp(
+        .024,
+        .0045,
+        shoulderMaskT,
+      )
     const bottomInset =
       frame.height * .018
     const torsoCovered =
