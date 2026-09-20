@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.88.1`  
+> **Current Forge version:** `v1.88.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1269,6 +1269,16 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.88.2 — Crypt readability rebalance
+
+- keeps the new local torch/candle flame VFX and warm light pools from v1.88.1 unchanged
+- raises the neutral crypt hemisphere/ambient contribution so floors, walls, enemies and the player remain readable between fixtures
+- increases neutral fill light substantially without reintroducing the old global orange/brown wash
+- restores a stronger neutral directional/key contribution so brick relief and silhouettes remain visible in unlit areas
+- slightly raises crypt exposure at normal brightness while preserving darker black voids outside the authored dungeon
+- the existing Dungeon Forge brightness slider still scales the shared lighting profile across Editor, Walk, Quick ARPG and Play Project live testing
+
 
 ## v1.88.1 — Cozy dungeon lighting, door removal and smooth wall sliding
 
