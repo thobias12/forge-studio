@@ -112,6 +112,10 @@ export class ForgeDungeonRuntime {
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
   private readonly tempMove = new THREE.Vector3()
+  private readonly tempEnemyDirection = new THREE.Vector3()
+  private readonly tempEnemySeparation = new THREE.Vector3()
+  private readonly tempCombatSpacing = new THREE.Vector3()
+  private readonly tempActorNext = new THREE.Vector3()
   private readonly dodgeDirection = new THREE.Vector3()
   private readonly playerVelocity = new THREE.Vector3()
   private readonly cameraFocus = new THREE.Vector3()
@@ -147,6 +151,7 @@ export class ForgeDungeonRuntime {
   private primaryHeld = false
   private meleeComboStep = -1
   private meleeComboResetRemaining = 0
+  private damageNumberSequence = 0
   private pointerTracked = false
   private focusEnemyId?: string
   private disposed = false
