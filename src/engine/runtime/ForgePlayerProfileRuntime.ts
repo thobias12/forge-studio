@@ -50,9 +50,48 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
   wrapNoopWhenPaused(proto, 'updatePlayer')
   wrapNoopWhenPaused(proto, 'updateEnemies')
   wrapNoopWhenPaused(proto, 'updateLoot')
+  wrapDodgePresentation(proto)
   wrapNoopWhenPaused(proto, 'startDodge')
   wrapTimedAbility(proto)
   installForgeSkillRuntime(RuntimeClass)
+}
+
+function wrapDodgePresentation(proto: any) {
+  const original = proto.startDodge
+  if (typeof original !== 'function') return
+  proto.startDodge = function (...args: unknown[]) {
+    const beforeRemaining = Number(this.dodgeRemaining ?? 0)
+    const beforeCooldown = Number(this.dodgeCooldown ?? 0)
+    const result = original.apply(this, args)
+    const started =
+      beforeRemaining <= 0 &&
+      beforeCooldown <= 0 &&
+      Number(this.dodgeRemaining ?? 0) > 0
+    if (!started) return result
+
+    const events =
+      this.playerVisual
+        ?.getAnimationRuntimeV3?.()
+        ?.getEvents('dodge') ?? []
+
+    for (const event of events) {
+      if ((event.kind !== 'vfx' && event.kind !== 'sfx') || !event.assetId) continue
+      const fire = () => {
+        if (this.disposed || this.__forgeProfilePaused) return
+        if (event.kind === 'vfx') {
+          const position = this.player?.position?.clone?.() ?? this.player?.position
+          if (position) position.y = Number(position.y ?? 0) + 0.12
+          try { void this.spawnBoundVfx?.(event.assetId, position) } catch { /* authored dodge VFX stays optional */ }
+        } else {
+          void playLibraryAudio(event.assetId, { volume: .9, playbackRate: .985 + Math.random() * .03 })
+        }
+      }
+      const delay = Math.max(0, Number(event.time || 0) * 1000)
+      if (delay < 12) fire()
+      else window.setTimeout(fire, delay)
+    }
+    return result
+  }
 }
 
 function wrapTimedAbility(proto: any) {
