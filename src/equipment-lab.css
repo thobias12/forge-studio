@@ -633,3 +633,31 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.equipment-lab-experimental-toggle {
+  width: 100%;
+  justify-content: center;
+  margin-top: 16px;
+  opacity: .82;
+}
+
+.equipment-lab-experimental {
+  margin-top: 2px;
+}
+
+.equipment-lab-experimental-fit {
+  margin-top: 0;
+}
+
+.equipment-lab-view-grid.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.equipment-lab-view-grid.single .equipment-lab-preview-card.processed {
+  min-height: 620px;
+}
+
+.equipment-lab-view-grid.single .equipment-lab-preview {
+  min-height: 568px;
+}
