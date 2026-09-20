@@ -160,8 +160,24 @@ export function maskBodyUnderTunic(
         center.x,
         center.z,
       )
+    const frontAmount =
+      Math.max(
+        0,
+        Math.cos(angle),
+      )
+    const frontOpeningT =
+      THREE.MathUtils.smoothstep(
+        frontAmount,
+        .78,
+        .98,
+      )
     const topInset =
-      frame.height * .024
+      frame.height *
+      THREE.MathUtils.lerp(
+        .024,
+        .058,
+        frontOpeningT,
+      )
     const bottomInset =
       frame.height * .018
     const torsoCovered =

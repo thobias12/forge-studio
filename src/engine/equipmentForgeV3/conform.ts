@@ -607,6 +607,17 @@ function createTorsoTemplate(
           segments +
         next
 
+      const frontOpening =
+        ring === rings - 1 &&
+        (
+          segment === 0 ||
+          segment === segments - 1
+        )
+
+      if (frontOpening) {
+        continue
+      }
+
       indices.push(
         a,
         c,
