@@ -82,9 +82,12 @@ import {
 } from './ForgeChainLightningRuntime'
 import {
   FORGE_GAMEPLAY_FEEL,
+  forgeAbilityActionCooldown,
   forgeAbilityTiming,
   forgeAttackMovementMultiplier,
+  forgeCanDodgeCancelAction,
   forgeExpAlpha,
+  forgeMeleeComboProfile,
   forgeMovementResponse,
   forgeWheelDistanceTarget,
   type ForgePlayerActionPhase,
@@ -160,6 +163,8 @@ type RuntimeEnemy = {
   attackCooldown: number
   windupRemaining: number
   windupDuration: number
+  staggerRemaining: number
+  recoveryRemaining: number
   knockback: THREE.Vector3
   path: THREE.Vector3[]
   pathIndex: number
@@ -209,6 +214,7 @@ type RuntimePlayerAction = {
   remaining: number
   activeDuration: number
   recoveryDuration: number
+  comboStep: number
   impacted: boolean
 }
 
@@ -310,6 +316,8 @@ export class ForgePlayRuntime {
   private bufferedAbility: ForgeAbilityDefinition | undefined
   private bufferedAbilityRemaining = 0
   private primaryHeld = false
+  private meleeComboStep = -1
+  private meleeComboResetRemaining = 0
   private activeInteractionId: string | undefined
   private interactionHeld = false
   private interactionHoldProgress = 0
@@ -890,6 +898,8 @@ export class ForgePlayRuntime {
       attackCooldown: 0,
       windupRemaining: 0,
       windupDuration: definition.attackWindup ?? 0.42,
+      staggerRemaining: 0,
+      recoveryRemaining: 0,
       knockback: new THREE.Vector3(),
       path: [],
       pathIndex: 0,
@@ -1187,6 +1197,13 @@ export class ForgePlayRuntime {
   private updateCooldowns(delta: number) {
     for (const [id, value] of this.cooldowns) this.cooldowns.set(id, Math.max(0, value - delta))
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta)
+    if (this.meleeComboResetRemaining > 0) {
+      this.meleeComboResetRemaining = Math.max(
+        0,
+        this.meleeComboResetRemaining - delta,
+      )
+      if (this.meleeComboResetRemaining <= 0) this.meleeComboStep = -1
+    }
     if (this.bufferedAbilityRemaining > 0) {
       this.bufferedAbilityRemaining = Math.max(0, this.bufferedAbilityRemaining - delta)
       if (this.bufferedAbilityRemaining <= 0) this.bufferedAbility = undefined
@@ -1273,10 +1290,12 @@ export class ForgePlayRuntime {
 
   private startDodge() {
     if (this.dodgeCooldown > 0 || this.dodgeRemaining > 0) return
-    if (this.playerAction && this.playerAction.phase !== 'recovery') return
+    if (!forgeCanDodgeCancelAction(this.playerAction?.phase)) return
     this.playerAction = undefined
     this.bufferedAbility = undefined
     this.bufferedAbilityRemaining = 0
+    this.meleeComboStep = -1
+    this.meleeComboResetRemaining = 0
     const direction = this.getMoveDirection()
     if (direction.lengthSq() < 0.01) {
       direction.copy(this.mouseWorld).sub(this.player.position).setY(0)
@@ -1348,7 +1367,25 @@ export class ForgePlayRuntime {
     const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
     if (aim.lengthSq() < .01) aim.set(0, 0, -1)
     aim.normalize()
-    const timing = forgeAbilityTiming(ability)
+    const primaryMelee =
+      ability.id === this.playerDefinition.basicAbility &&
+      ability.input === 'primary' &&
+      ability.kind === 'melee'
+    const comboStep = primaryMelee
+      ? this.meleeComboResetRemaining > 0
+        ? (this.meleeComboStep + 1) % 3
+        : 0
+      : 0
+    if (primaryMelee) {
+      this.meleeComboStep = comboStep
+      this.meleeComboResetRemaining =
+        FORGE_GAMEPLAY_FEEL.combat.comboResetSeconds
+    } else {
+      this.meleeComboStep = -1
+      this.meleeComboResetRemaining = 0
+    }
+
+    const timing = forgeAbilityTiming(ability, comboStep)
     this.playerAction = {
       ability,
       aim,
@@ -1356,16 +1393,33 @@ export class ForgePlayRuntime {
       remaining: timing.windup,
       activeDuration: timing.active,
       recoveryDuration: timing.recovery,
+      comboStep,
       impacted: false,
     }
-    this.cooldowns.set(ability.id, ability.cooldown)
+    this.cooldowns.set(
+      ability.id,
+      forgeAbilityActionCooldown(ability, comboStep),
+    )
     const animationV3 = this.playerVisual?.getAnimationRuntimeV3()
     if (animationV3) {
-      const action =
-        ability.id === this.playerDefinition.basicAbility
-          ? 'attackPrimary'
-          : 'cast'
-      if (!animationV3.playAction(action)) animationV3.playAction('attackPrimary')
+      if (primaryMelee) {
+        const actionNames =
+          comboStep === 0
+            ? ['attackPrimary']
+            : comboStep === 1
+              ? ['attackSecondary', 'attackPrimary']
+              : ['attackHeavy', 'attackPrimary']
+        let played = false
+        for (const actionName of actionNames) {
+          if (animationV3.playAction(actionName)) {
+            played = true
+            break
+          }
+        }
+        if (!played) animationV3.playAction('attackPrimary')
+      } else if (!animationV3.playAction('cast')) {
+        animationV3.playAction('attackPrimary')
+      }
     } else {
       const clipName = this.abilityAnimationClipNames.get(ability.id)
       if (!clipName || !this.playerVisual?.playClipName(clipName, false)) {
@@ -1410,7 +1464,22 @@ export class ForgePlayRuntime {
       action.remaining = action.activeDuration
       if (!action.impacted) {
         action.impacted = true
-        this.resolveAbilityImpact(action.ability, action.aim)
+        if (
+          action.ability.input === 'primary' &&
+          action.ability.kind === 'melee'
+        ) {
+          const combo = forgeMeleeComboProfile(action.comboStep)
+          this.tempMove
+            .copy(action.aim)
+            .multiplyScalar(combo.lunge)
+          this.moveActor(this.player, this.tempMove, PLAYER_RADIUS)
+          this.playerVelocity.multiplyScalar(.42)
+        }
+        this.resolveAbilityImpact(
+          action.ability,
+          action.aim,
+          action.comboStep,
+        )
       }
       return
     }
@@ -1429,8 +1498,17 @@ export class ForgePlayRuntime {
   private resolveAbilityImpact(
     ability: ForgeAbilityDefinition,
     aim: THREE.Vector3,
+    comboStep = 0,
   ) {
-    const damage = ability.damage + this.getEquippedDamageBonus()
+    const primaryMelee =
+      ability.input === 'primary' &&
+      ability.kind === 'melee'
+    const combo = primaryMelee
+      ? forgeMeleeComboProfile(comboStep)
+      : undefined
+    const damage =
+      (ability.damage + this.getEquippedDamageBonus()) *
+      (combo?.damageMultiplier ?? 1)
     if (ability.delivery === 'chain') {
       this.performChainAbility(ability, aim, damage)
       return
@@ -1448,7 +1526,19 @@ export class ForgePlayRuntime {
         const distance = toEnemy.length()
         if (distance > ability.range + ENEMY_RADIUS) continue
         const facing = distance > .001 ? toEnemy.normalize().dot(aim) : 1
-        if (facing >= .08) this.damageEnemy(enemy, damage, aim, ability.color)
+        if (facing >= (combo?.arcDot ?? .08)) {
+          this.damageEnemy(
+            enemy,
+            damage,
+            aim,
+            ability.color,
+            'standard',
+            combo?.knockbackMultiplier ?? 1,
+            combo?.hitStop,
+            combo?.cameraShake,
+            combo?.staggerSeconds,
+          )
+        }
       }
       return
     }
@@ -1656,13 +1746,28 @@ export class ForgePlayRuntime {
     direction: THREE.Vector3,
     color: string,
     presentation: 'standard' | 'chain' = 'standard',
+    knockbackMultiplier = 1,
+    hitStop?: number,
+    cameraShake?: number,
+    staggerSeconds?: number,
   ) {
     this.focusEnemyId = enemy.id
     enemy.health = Math.max(0, enemy.health - damage)
     const normalized = direction.clone().setY(0)
     if (normalized.lengthSq() > 0.001) normalized.normalize()
-    enemy.knockback.addScaledVector(normalized, Math.min(5.5, 2.7 + damage * 0.025))
+    enemy.knockback.addScaledVector(
+      normalized,
+      Math.min(6.8, (2.7 + damage * .025) * knockbackMultiplier),
+    )
     enemy.windupRemaining = 0
+    enemy.staggerRemaining = Math.max(
+      enemy.staggerRemaining,
+      staggerSeconds ??
+        (presentation === 'chain'
+          ? .045
+          : FORGE_GAMEPLAY_FEEL.combat.enemyStaggerSeconds),
+    )
+    enemy.recoveryRemaining = 0
     enemy.telegraph.visible = false
     enemy.visual?.play('hit', false)
     enemy.bodyMaterial.emissive.set(
@@ -1690,11 +1795,11 @@ export class ForgePlayRuntime {
     }
     this.hitStopRemaining = Math.max(
       this.hitStopRemaining,
-      presentation === 'chain' ? .012 : .035,
+      hitStop ?? (presentation === 'chain' ? .012 : .035),
     )
     this.cameraShake = Math.max(
       this.cameraShake,
-      presentation === 'chain' ? .09 : .22,
+      cameraShake ?? (presentation === 'chain' ? .09 : .22),
     )
     if (enemy.health <= 0) this.killEnemy(enemy)
   }
@@ -1950,6 +2055,14 @@ export class ForgePlayRuntime {
         0,
         enemy.attackCooldown - delta,
       )
+      enemy.staggerRemaining = Math.max(
+        0,
+        enemy.staggerRemaining - delta,
+      )
+      enemy.recoveryRemaining = Math.max(
+        0,
+        enemy.recoveryRemaining - delta,
+      )
       enemy.repathRemaining = Math.max(
         0,
         enemy.repathRemaining - delta,
@@ -2006,6 +2119,17 @@ export class ForgePlayRuntime {
         enemy.knockback.multiplyScalar(
           Math.max(0, 1 - delta * 8.5),
         )
+      }
+
+      if (enemy.staggerRemaining > 0) {
+        this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+        continue
+      }
+      if (enemy.recoveryRemaining > 0) {
+        this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+        continue
       }
 
       const distance = Math.hypot(
@@ -2155,6 +2279,11 @@ export class ForgePlayRuntime {
   private resolveEnemyAttack(enemy: RuntimeEnemy) {
     enemy.telegraph.visible = false
     enemy.attackCooldown = enemy.definition.attackCooldown
+    enemy.recoveryRemaining = Math.max(
+      enemy.recoveryRemaining,
+      FORGE_GAMEPLAY_FEEL.combat.enemyRecoverySeconds +
+        enemy.windupDuration * .16,
+    )
     const distance = enemy.group.position.distanceTo(this.player.position)
     if (distance > enemy.definition.attackRange + 0.55) { this.spawnPulse(enemy.group.position, '#804a3c', 0.8, 0.15); return }
     if (this.dodgeRemaining > 0) { this.spawnPulse(this.player.position, '#88bca0', 1.1, 0.18); this.setMessage('Dodged.', 0.8); return }
