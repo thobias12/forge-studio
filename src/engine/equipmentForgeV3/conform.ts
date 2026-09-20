@@ -115,19 +115,38 @@ export function buildConformedTunic(
 
   const meshes = [torso]
 
-  const necklineTrim =
-    createSkinnedRowBand(
+  const necklineTrimLeft =
+    createSkinnedRowBandArc(
       source,
       torso.geometry,
       18,
       17,
       48,
       trim,
-      'EFV3_NecklineTrim',
+      'EFV3_NecklineTrim_L',
       .3,
+      1,
+      24,
       .0019,
     )
-  meshes.push(necklineTrim)
+  const necklineTrimRight =
+    createSkinnedRowBandArc(
+      source,
+      torso.geometry,
+      18,
+      17,
+      48,
+      trim,
+      'EFV3_NecklineTrim_R',
+      .3,
+      24,
+      47,
+      .0019,
+    )
+  meshes.push(
+    necklineTrimLeft,
+    necklineTrimRight,
+  )
 
   meshes.push(
     ...createTunicSeamDetails(
@@ -3199,20 +3218,33 @@ function createTabardDetails(
       .0017,
       .24,
     ),
-    // Small fitted leather hanger instead of the old full-width top slab.
     createGridPatch(
       source,
       tabardGeometry,
       9,
       0,
       1,
-      3,
-      5,
+      1,
+      2,
       leather,
-      'EFV3_TabardTopReinforcement',
+      'EFV3_TabardHanger_L',
       'radial',
       .0028,
-      .52,
+      .42,
+    ),
+    createGridPatch(
+      source,
+      tabardGeometry,
+      9,
+      0,
+      1,
+      6,
+      7,
+      leather,
+      'EFV3_TabardHanger_R',
+      'radial',
+      .0028,
+      .42,
     ),
   ]
 }
@@ -3631,10 +3663,10 @@ function createBeltBuckle(
       'position',
     )
   const corners = [
+    4 * segments + 47,
     3 * segments + 47,
-    2 * segments + 47,
+    4 * segments + 1,
     3 * segments + 1,
-    2 * segments + 1,
   ]
   const positions: number[] = []
   const influences: SkinInfluence[] = []
@@ -4186,6 +4218,174 @@ function createDetailMesh(
   material: THREE.Material,
   name: string,
 ) {
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    material,
+    name,
+  )
+}
+
+function createSkinnedRowBandArc(
+  source: THREE.SkinnedMesh,
+  sourceGeometry: THREE.BufferGeometry,
+  outerRow: number,
+  innerRow: number,
+  segments: number,
+  material: THREE.Material,
+  name: string,
+  widthFraction: number,
+  startSegment: number,
+  endSegment: number,
+  outwardOffset = .0018,
+) {
+  const position =
+    sourceGeometry.getAttribute(
+      'position',
+    )
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+
+  const first =
+    THREE.MathUtils.clamp(
+      startSegment,
+      0,
+      segments - 1,
+    )
+  const last =
+    THREE.MathUtils.clamp(
+      endSegment,
+      first,
+      segments - 1,
+    )
+  const count =
+    last - first + 1
+
+  for (
+    let slot = 0;
+    slot < count;
+    slot += 1
+  ) {
+    const segment =
+      first + slot
+    const outerIndex =
+      outerRow * segments +
+      segment
+    const innerIndex =
+      innerRow * segments +
+      segment
+
+    const outer =
+      new THREE.Vector3(
+        position.getX(outerIndex),
+        position.getY(outerIndex),
+        position.getZ(outerIndex),
+      )
+    const inner =
+      new THREE.Vector3(
+        position.getX(innerIndex),
+        position.getY(innerIndex),
+        position.getZ(innerIndex),
+      )
+    const inset =
+      outer
+        .clone()
+        .lerp(
+          inner,
+          widthFraction,
+        )
+
+    const radial =
+      new THREE.Vector3(
+        outer.x,
+        0,
+        outer.z,
+      )
+    if (
+      radial.lengthSq() >
+      1e-6
+    ) {
+      radial
+        .normalize()
+        .multiplyScalar(
+          outwardOffset,
+        )
+      outer.add(radial)
+      inset.add(radial)
+    }
+
+    const u =
+      slot /
+      Math.max(
+        1,
+        count - 1,
+      )
+    positions.push(
+      outer.x,
+      outer.y,
+      outer.z,
+      inset.x,
+      inset.y,
+      inset.z,
+    )
+    uvs.push(
+      u, 1,
+      u, 0,
+    )
+    influences.push(
+      readSkinInfluence(
+        sourceGeometry,
+        outerIndex,
+      ),
+      readSkinInfluence(
+        sourceGeometry,
+        innerIndex,
+      ),
+    )
+  }
+
+  for (
+    let slot = 0;
+    slot < count - 1;
+    slot += 1
+  ) {
+    const a = slot * 2
+    const b = a + 1
+    const c0 =
+      (slot + 1) * 2
+    const d = c0 + 1
+    indices.push(
+      a, b, c0,
+      c0, b, d,
+    )
+  }
+
   const geometry =
     new THREE.BufferGeometry()
   geometry.setAttribute(
