@@ -435,6 +435,15 @@ def tabard_predicate(frame, style):
 
 
 def create_chest(body, rig, frame, style, seed):
+    style = dict(style)
+    variant = int(seed) % 4
+
+    # Small deterministic changes keep "Generate Another" useful without
+    # changing the fundamental fit contract of the template.
+    style["length"] += [0.0, -0.008, 0.007, -0.003][variant]
+    style["top_center"] += [0.0, 0.006, -0.004, 0.003][variant]
+    style["waist_flare"] += [0.0, 0.004, -0.003, 0.002][variant]
+
     height = frame["height"]
     clearance = height * 0.0024
     cloth_thickness = height * 0.00165
