@@ -35,6 +35,13 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
           return <path key={edge.id} d={`M ${p1.x} ${p1.y} L ${bend.x} ${bend.y} L ${p2.x} ${p2.y}`} />
         })}
       </g>
+      <g className="minimap-walls">
+        {(value.walls ?? []).map((wall) => {
+          const a = layout.point(wall.x1, wall.z1)
+          const b = layout.point(wall.x2, wall.z2)
+          return <line key={wall.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} strokeWidth={Math.max(1.6, wall.thickness * layout.scale)} />
+        })}
+      </g>
       <g className="minimap-rooms">
         {value.rooms.map((room) => {
           const p = layout.point(room.x, room.z)
