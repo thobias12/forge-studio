@@ -77,7 +77,7 @@ export const FORGE_GAMEPLAY_FEEL = Object.freeze({
     enemyStaggerSeconds: .11,
     meleeCombo: MELEE_COMBO,
   }),
-  inputBufferSeconds: 0.14,
+  inputBufferSeconds: 0.18,
   dodgeDuration: 0.21,
   camera: Object.freeze({
     followResponse: 10.5,
