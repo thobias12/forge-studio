@@ -8,6 +8,7 @@ import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity } from './ForgeDungeonRuntimeHelpers'
+import { FORGE_GAMEPLAY_FEEL, forgeExpAlpha } from './ForgeGameplayFeel'
 
 export const dungeonViewMethods = {
   updatePortal(delta: number) {
@@ -19,20 +20,55 @@ export const dungeonViewMethods = {
 
   updateCamera(delta: number) {
     this.cameraShake = Math.max(0, this.cameraShake - delta * 2.7)
-    const desired = this.player.position.clone().add(this.cameraOffset())
+    this.cameraDistance = THREE.MathUtils.lerp(
+      this.cameraDistance,
+      this.cameraDistanceTarget,
+      forgeExpAlpha(FORGE_GAMEPLAY_FEEL.camera.zoomResponse, delta),
+    )
+
+    const focusTarget = this.tempCameraFocus.copy(this.player.position)
+    focusTarget.addScaledVector(
+      this.playerVelocity,
+      FORGE_GAMEPLAY_FEEL.camera.velocityLookAhead,
+    )
+    const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
+    if (aim.lengthSq() > .01) {
+      aim.normalize().multiplyScalar(FORGE_GAMEPLAY_FEEL.camera.aimLookAhead)
+      focusTarget.add(aim)
+    }
+    focusTarget.y = this.player.position.y
+    this.cameraFocus.lerp(
+      focusTarget,
+      forgeExpAlpha(FORGE_GAMEPLAY_FEEL.camera.followResponse, delta),
+    )
+
+    const desired = this.cameraFocus.clone().add(this.cameraOffset())
     if (this.cameraShake > 0) {
       const strength = this.cameraShake * 0.7
       desired.x += Math.sin(performance.now() * 0.061) * strength
       desired.y += Math.sin(performance.now() * 0.083) * strength * 0.45
       desired.z += Math.cos(performance.now() * 0.073) * strength
     }
-    this.camera.position.lerp(desired, 1 - Math.pow(0.0008, delta))
-    this.camera.lookAt(this.player.position.x, 0.8, this.player.position.z)
+    this.camera.position.lerp(
+      desired,
+      forgeExpAlpha(FORGE_GAMEPLAY_FEEL.camera.positionResponse, delta),
+    )
+    this.camera.lookAt(
+      this.cameraFocus.x,
+      this.cameraFocus.y + 0.8,
+      this.cameraFocus.z,
+    )
   },
 
   snapCamera() {
-    this.camera.position.copy(this.player.position).add(this.cameraOffset())
-    this.camera.lookAt(this.player.position.x, 0.8, this.player.position.z)
+    this.cameraDistance = this.cameraDistanceTarget
+    this.cameraFocus.copy(this.player.position)
+    this.camera.position.copy(this.cameraFocus).add(this.cameraOffset())
+    this.camera.lookAt(
+      this.cameraFocus.x,
+      this.cameraFocus.y + 0.8,
+      this.cameraFocus.z,
+    )
   },
 
   updateOcclusion(delta: number) {
