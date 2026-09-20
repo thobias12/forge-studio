@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonPropBlocksMovement, dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomAtV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../lib/dungeonForgeV3'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -706,10 +706,15 @@ export default function DungeonViewport(props: Props) {
       const move = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).multiplyScalar(forwardAmount).add(new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(rightAmount))
       if (move.lengthSq() > 1) move.normalize()
       move.multiplyScalar((keys.has('ShiftLeft') || keys.has('ShiftRight') ? 6.8 : 3.8) * dt)
-      const tx = camera.position.x + move.x
-      const tz = camera.position.z + move.z
-      if (canWalkAt(current, tx, camera.position.z)) camera.position.x = tx
-      if (canWalkAt(current, camera.position.x, tz)) camera.position.z = tz
+      const resolved = resolveDungeonSlideV3(
+        camera.position.x,
+        camera.position.z,
+        move.x,
+        move.z,
+        (x, z) => canWalkAt(current, x, z),
+      )
+      camera.position.x = resolved.x
+      camera.position.z = resolved.z
       camera.position.y = floorHeightAt(current, camera.position.x, camera.position.z) + 1.68
     }
 
