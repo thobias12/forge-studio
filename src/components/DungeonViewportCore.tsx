@@ -7,7 +7,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
-import { dungeonAtmosphere, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
+import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
@@ -156,22 +156,22 @@ export default function DungeonViewport(props: Props) {
       controls.update()
     }
 
-    const applyAtmosphere = (value: DungeonWithProps, immersive: boolean) => {
+    const applyAtmosphere = (value: DungeonWithProps) => {
       const atmosphere = dungeonAtmosphere(value.theme)
-      const authoring = !immersive
+      const lighting = dungeonLightingProfile(atmosphere, value.settings)
       scene.background = new THREE.Color(atmosphere.background)
       if (scene.fog instanceof THREE.FogExp2) {
         scene.fog.color.setHex(atmosphere.fog)
-        scene.fog.density = value.settings.fogDensity * atmosphere.fogMultiplier * (authoring ? 0.42 : 1)
+        scene.fog.density = lighting.fogDensity
       }
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
-      ambient.intensity = atmosphere.ambient * (authoring ? 1.58 : 0.72 + value.settings.ambientLight * 1.15)
-      editorFill.intensity = authoring ? (value.theme === 'crypt' ? 0.62 : 0.32) : 0
+      ambient.intensity = lighting.ambientIntensity
+      editorFill.intensity = lighting.fillIntensity
       key.color.setHex(atmosphere.key)
-      key.intensity = atmosphere.keyIntensity * (authoring ? 1.75 : 1)
-      renderer.toneMappingExposure = atmosphere.exposure * (authoring ? 1.26 : 1)
-      bloomPass.strength = atmosphere.bloomStrength * (authoring ? 0.82 : 1)
+      key.intensity = lighting.keyIntensity
+      renderer.toneMappingExposure = lighting.exposure
+      bloomPass.strength = lighting.bloomStrength
       bloomPass.radius = atmosphere.bloomRadius
       bloomPass.threshold = atmosphere.bloomThreshold
       return atmosphere
@@ -279,7 +279,7 @@ export default function DungeonViewport(props: Props) {
       const state = propsRef.current
       const current = state.value
       const immersive = state.playtest
-      const atmosphere = applyAtmosphere(current, immersive)
+      const atmosphere = applyAtmosphere(current)
       const frameKey = `${current.seed}:${current.rooms.length}:${current.corridors.length}:${current.walls?.length ?? 0}`
       if (!immersive && frameKey !== lastFrameKey) {
         lastFrameKey = frameKey
