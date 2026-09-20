@@ -449,7 +449,9 @@ export function generateDungeon(
 
   const branchParents = mainPath.slice(1, -1)
   let branchIndex = 0
-  while (rooms.length < targetRooms && branchParents.length) {
+  let branchAttempts = 0
+  while (rooms.length < targetRooms && branchParents.length && branchAttempts < targetRooms * 12) {
+    branchAttempts += 1
     const parent = branchParents[branchIndex % branchParents.length]
     branchIndex += 1
     if (random() > generation.branchChance && branchIndex < branchParents.length * 2) continue
