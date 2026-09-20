@@ -32,6 +32,7 @@ import {
   getEquipmentProcessorJob,
   getLocal3DGenerationResult,
   processEquipment,
+  saveGeneratorAccessToken,
   startLocal3DGeneration,
   startLocalGeneratorSetup,
   uploadEquipmentMannequin,
@@ -81,6 +82,8 @@ export default function EquipmentLab() {
   const [polyLimit, setPolyLimit] = useState(25000)
   const [generationQuality, setGenerationQuality] =
     useState<'draft' | 'standard' | 'high'>('standard')
+  const [generatorToken, setGeneratorToken] = useState('')
+  const [savingGeneratorToken, setSavingGeneratorToken] = useState(false)
 
   const [referenceFile, setReferenceFile] = useState<File>()
   const [referenceUrl, setReferenceUrl] = useState<string>()
@@ -232,6 +235,26 @@ export default function EquipmentLab() {
     setState('idle')
   }
 
+  const saveSparAccess = async () => {
+    const token = generatorToken.trim()
+    if (!token) {
+      setError('Paste your Hugging Face read token first.')
+      return
+    }
+
+    setError('')
+    setSavingGeneratorToken(true)
+    try {
+      await saveGeneratorAccessToken(token)
+      setGeneratorToken('')
+      await refreshProcessor()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSavingGeneratorToken(false)
+    }
+  }
+
   const installGenerator = async () => {
     if (!connected) {
       setError('Start the Forge Equipment Processor first.')
@@ -243,7 +266,7 @@ export default function EquipmentLab() {
     setState('installing')
 
     try {
-      const started = await startLocalGeneratorSetup()
+      const started = await startLocalGeneratorSetup('spar3d')
       await waitForJob(started.jobId)
       await refreshProcessor()
       setState('idle')
@@ -320,6 +343,7 @@ export default function EquipmentLab() {
       const started = await startLocal3DGeneration(referenceFile, {
         fileName: referenceFile.name,
         quality: generationQuality,
+        backend: 'spar3d',
       })
 
       await waitForJob(started.jobId)
@@ -353,7 +377,7 @@ export default function EquipmentLab() {
         'equipment',
         'equipment-lab',
         'processed:blender',
-        ...(referenceFile ? ['generated:local-ai', 'generator:triposr'] : []),
+        ...(referenceFile ? ['generated:local-ai', 'generator:spar3d'] : []),
         'body-type:' + bodyType,
         'equipment-slot:' + slot,
         ...maskRegions.map((region) => 'body-mask:' + region.toLowerCase()),
@@ -388,7 +412,9 @@ export default function EquipmentLab() {
               {connected
                 ? generatorReady
                   ? 'Blender + Local 3D ready'
-                  : 'Blender ready · Local 3D not installed'
+                  : health?.generator?.needsAccessToken
+                    ? 'Blender ready · SPAR3D access needed'
+                    : 'Blender ready · Better Local 3D not installed'
                 : 'localhost:47831'}
             </small>
           </span>
@@ -459,10 +485,62 @@ export default function EquipmentLab() {
             </select>
           </label>
 
+          {health?.generator?.needsAccessToken && (
+            <div className="equipment-lab-access">
+              <strong>One-time SPAR3D model access</strong>
+              <p>
+                SPAR3D is free for this non-commercial workflow, but Stability AI
+                requires accepting its model license on Hugging Face once.
+              </p>
+              <div className="equipment-lab-access-links">
+                {health.generator.modelAccessUrl && (
+                  <a
+                    href={health.generator.modelAccessUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    1. Accept model access
+                  </a>
+                )}
+                {health.generator.tokenUrl && (
+                  <a
+                    href={health.generator.tokenUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    2. Create read token
+                  </a>
+                )}
+              </div>
+              <input
+                type="password"
+                value={generatorToken}
+                onChange={(event) => setGeneratorToken(event.target.value)}
+                placeholder="hf_…"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                className="secondary-button"
+                disabled={!generatorToken.trim() || savingGeneratorToken}
+                onClick={saveSparAccess}
+              >
+                {savingGeneratorToken
+                  ? <LoaderCircle className="spin" size={15} />
+                  : <Save size={15} />}
+                Save token locally
+              </button>
+              <small>
+                The token is written only to the local Equipment Processor work
+                folder. Do not paste it into chat.
+              </small>
+            </div>
+          )}
+
           {!generatorReady ? (
             <button
               className="secondary-button equipment-lab-process"
-              disabled={!connected || busy}
+              disabled={!connected || busy || Boolean(health?.generator?.needsAccessToken)}
               onClick={installGenerator}
             >
               {state === 'installing'
@@ -470,7 +548,9 @@ export default function EquipmentLab() {
                 : <HardDriveUpload size={16} />}
               {state === 'installing'
                 ? 'Installing local generator…'
-                : 'Install Free Local Generator'}
+                : health?.generator?.needsAccessToken
+                  ? 'Add SPAR3D access above'
+                  : 'Install Better Local 3D'}
             </button>
           ) : (
             <button
@@ -591,8 +671,8 @@ export default function EquipmentLab() {
             <div className="equipment-lab-warning">
               <AlertTriangle size={16} />
               <span>
-                Local generation needs Python 3.11 once. Blender processing
-                still works without it.
+                Local generation needs Python once so Forge can manage its
+                private runtime. Blender processing still works without it.
               </span>
             </div>
           )}
@@ -672,7 +752,7 @@ export default function EquipmentLab() {
               />
               <PipelineStep
                 label="Generate"
-                detail={referenceFile ? 'Local TripoSR' : 'Imported GLB'}
+                detail={referenceFile ? 'Local SPAR3D' : 'Imported GLB'}
                 done={Boolean(rawFile)}
               />
               <PipelineStep label="Normalize" detail="Scale + orientation" done={state === 'ready'} />

@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.79.5`  
+> **Current Forge version:** `v1.80.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -303,18 +303,20 @@ The female body also has support for subtle spring-based secondary motion in the
 
 ## Equipment Lab
 
-Forge v1.79.0 turns Equipment Lab into an end-to-end local asset factory.
+Forge v1.80.0 changes the recommended local image-to-3D backend from TripoSR to **SPAR3D (Stable Point-Aware 3D)**.
 
-The primary workflow is now:
+The reason is practical: the first real Ranger-chest tests proved that TripoSR can complete the pipeline but often reconstructs a single-view armor reference as a coarse closed torso/bust volume. Blender can align and skin that result, but it cannot recover missing garment structure that the generator never created.
+
+The primary Equipment Lab pipeline is now:
 
 ```text
 reference PNG / JPG / WEBP
     ↓
-free local TripoSR image-to-3D
+local SPAR3D point-aware reconstruction
     ↓
 raw GLB
     ↓
-headless Blender normalization / fitting
+headless Blender orientation / torso fitting
     ↓
 Skillbound weight transfer
     ↓
@@ -323,28 +325,42 @@ processed GLB
 Forge QA preview / Asset Library
 ```
 
-No paid 3D generation service is required. The local generator is installed into the ignored Equipment Processor work directory and is never committed to Git.
+SPAR3D is used in Forge's **geometry-only portable mode**. Forge deliberately bypasses SPAR3D's native texture-baker / UV-unwrapper extensions on Windows so Equipment Lab does not require Visual Studio Build Tools or a local CUDA compiler. The neural reconstruction still runs on the NVIDIA GPU. Forge transfers generated point-cloud color to mesh vertices, then Blender handles the game-side cleanup/fitting pipeline.
 
-From **Characters → Equipment Lab**:
+The workflow remains local and does not use a paid generation API.
 
-- choose Skillbound Female or Male
-- choose the equipment slot
-- upload a clean reference image
-- install the free local generator once if required
-- choose Draft / Standard / High local generation
-- click **Generate + Process**
-- inspect both the raw generated mesh and final Skillbound fit
-- save the accepted result to the Shared Asset Library
+### One-time SPAR3D access
 
-The manual raw-GLB route remains available as a fallback.
+Stability AI distributes the SPAR3D weights through a gated Hugging Face repository. For non-commercial use, Equipment Lab provides a one-time setup card:
 
-Local generation currently uses the open-source **TripoSR** backend. The companion runs it as a background job and reports setup/generation progress back to Forge. The first generation may take longer because model weights are downloaded locally.
+1. open the SPAR3D model page and accept the Stability AI license;
+2. create a Hugging Face **read** token;
+3. paste the token into Equipment Lab;
+4. Forge stores it only in the ignored local Equipment Processor work directory;
+5. click **Install Better Local 3D**.
 
-Forge v1.79.5 adds a chest-specific orientation and torso-fit solver for locally generated meshes. Equipment Lab now tests axis-aligned 90-degree orientations, measures the real Skillbound torso while ignoring arm outliers, chooses the orientation whose proportions best match the torso, then independently targets chest height, width and depth before shrink-fitting and weight transfer. The raw chest preview also auto-orients generated results upright for inspection.
+Do not put Hugging Face tokens into Git, screenshots, issues, or ChatGPT messages.
 
-Forge v1.79.4 also fixes rembg runtime setup on Windows by installing its CPU ONNX backend explicitly. The TripoSR requirements only request plain rembg, while rembg treats ONNX Runtime as an optional backend. Forge now rewrites that dependency to rembg[cpu], validates onnxruntime directly, and repairs incomplete local environments automatically.
+### Equipment Lab capabilities
 
-Forge v1.79.3 makes the local TripoSR setup practical on Windows without requiring a local C++/CUDA compiler toolchain. The upstream TripoSR requirements install torchmcubes from source; current torchmcubes builds against the installed PyTorch and requires a native compiler. Forge now excludes that source build on Windows, installs scikit-image from a prebuilt wheel, and writes a small torchmcubes compatibility module that provides the marching_cubes API TripoSR needs. The TripoSR neural network still runs on the NVIDIA GPU; only final mesh surface extraction uses the portable CPU fallback. Forge still manages Python 3.11 privately, repairs pip/NumPy, validates the full runtime, and leaves the user's normal Python installation unchanged.
+- Female / Male Skillbound foundation selection
+- Chest / Head / Legs / Boots / Gloves / Waist / Back / Main Hand / Off Hand slots
+- reference-image upload
+- local SPAR3D setup and generation
+- Draft / Standard / High generation presets
+- raw generated GLB preview
+- chest-specific auto-orientation
+- robust Skillbound torso measurement
+- independent chest height / width / depth normalization
+- configurable fit and clearance
+- polygon budget
+- Skillbound weight transfer
+- processed preview
+- body-mask metadata
+- save processed GLB to Shared Asset Library
+- manual raw-GLB import fallback
+
+TripoSR remains in the local processor only as a **legacy fallback**, not the recommended equipment generator.
 
 ## Equipment Forge
 

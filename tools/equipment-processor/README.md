@@ -2,7 +2,7 @@
 
 The local companion powers **Forge → Equipment Lab**.
 
-It listens only on `http://127.0.0.1:47831` and lets the GitHub Pages build use software on your own PC.
+It listens only on `http://127.0.0.1:47831` and lets the GitHub Pages build use Blender and local AI on the user's PC.
 
 ## Start
 
@@ -12,16 +12,14 @@ From the Forge repository:
 npm run equipment:processor
 ```
 
-Keep that terminal open while using Equipment Lab.
+Keep the terminal open while using Equipment Lab.
 
-## End-to-end Equipment Lab flow
-
-Forge v1.79.0 supports:
+## v1.80.0 recommended pipeline
 
 ```text
 reference image
     ↓
-free local TripoSR generation
+SPAR3D point-aware local reconstruction
     ↓
 raw GLB
     ↓
@@ -32,65 +30,72 @@ Skillbound fit + skin
 processed GLB
 ```
 
-### Blender
+SPAR3D is the recommended backend. TripoSR remains as a legacy fallback because it successfully proves the end-to-end system, but its single-view geometry quality was not strong enough for the Ranger chest target.
 
-The processor automatically scans the normal Windows Blender installation folders. If Blender is elsewhere, set `BLENDER_PATH`.
+### Why Forge uses SPAR3D geometry-only mode
 
-### Free local 3D generator
+The official SPAR3D project includes native texture-baker and UV-unwrapper extensions. Those extensions normally require native compiler tooling on Windows.
 
-Equipment Lab has an **Install Free Local Generator** button. The processor installs TripoSR into:
+Forge avoids that requirement:
 
-`tools/equipment-processor/work/generators/triposr`
+- the SPAR3D neural reconstruction and point diffusion still run on CUDA/NVIDIA;
+- Forge supplies lightweight import shims for the optional native texture/UV modules;
+- the Forge SPAR3D adapter stops after geometry reconstruction;
+- generated point-cloud color is transferred to mesh vertex colors;
+- Blender then performs the game-specific normalization, fitting, decimation and skinning.
 
-That folder is ignored by Git.
+This keeps the setup realistic for a normal game-development PC without forcing Visual Studio Build Tools or a full CUDA compiler toolchain.
 
-Setup:
+## One-time model access
 
-1. detects any existing Python 3.8+ runtime
-2. if that Python is newer than TripoSR supports (for example Python 3.13), Forge creates a private bootstrap virtual environment
-3. installs uv inside that private bootstrap
-4. uv downloads and manages Python 3.11 for Forge only
-5. clones the official VAST-AI-Research/TripoSR repository
-6. creates the isolated generator environment
-7. installs PyTorch CUDA 12.8 on Windows
-8. installs TripoSR requirements
-9. verifies whether CUDA/NVIDIA GPU access is available
+SPAR3D model weights are hosted in Stability AI's gated Hugging Face repository.
 
-The Forge-managed Python lives under `tools/equipment-processor/work/generators/.forge-python`. It does not replace, downgrade or modify the user's normal Python installation.
+Equipment Lab exposes:
 
-TripoSR model weights are downloaded locally on first generation.
+- **Accept model access**
+- **Create read token**
+- local token field
+- **Save token locally**
 
-If no Python runtime exists at all, install any current Python release once and retry. Some Windows Python packages may require Microsoft Visual C++ build tools.
+The token is stored at:
+
+`tools/equipment-processor/work/generators/.hf-token`
+
+The entire `tools/equipment-processor/work/` tree is ignored by Git.
+
+Never commit or share this token.
+
+## Managed Python
+
+Forge continues to manage its own compatible Python runtime. A newer system Python (for example Python 3.13) can bootstrap uv, and uv supplies Python 3.11 privately for the generator environments. The user's normal Python installation is not replaced or downgraded.
 
 ## Blender processing
 
-After generation (or manual GLB import), the processor:
+After local generation (or manual GLB import), the processor:
 
-1. receives the official Skillbound mannequin from Forge Library
-2. normalizes equipment scale and slot placement
-3. applies the requested polygon budget
-4. identifies body-facing vertices with a proximity contact group
-5. fits only those contact vertices toward the mannequin
-6. transfers Skillbound vertex-group weights
-7. binds the equipment to the Skillbound armature
-8. returns the processed GLB directly to Forge
+1. receives the official Skillbound mannequin from Forge Library;
+2. normalizes equipment orientation and slot placement;
+3. for Chest, measures the actual torso and solves height / width / depth independently;
+4. applies the requested polygon budget;
+5. identifies body-facing contact vertices;
+6. fits contact regions toward the mannequin;
+7. transfers Skillbound vertex-group weights;
+8. binds the equipment to the Skillbound armature;
+9. returns the processed GLB directly to Forge.
 
-Weapons still use the raw normalized path in this proof stage; automatic grip/socket authoring is a later milestone.
+The chest solver also evaluates axis-aligned rotations because image-to-3D generators do not guarantee Blender/Skillbound axis conventions.
 
-## v1.79.2 setup validation
+## Legacy TripoSR
 
-Forge no longer considers the generator ready merely because the virtual environment exists. Setup now validates imports for NumPy, rembg, torch, xatlas, Pillow and TripoSR itself before writing a ready marker. Missing runtime packages are repaired automatically where possible. uv-created environments are seeded with pip, and a missing pip installation is repaired with ensurepip.
+The existing TripoSR environment is intentionally preserved as a fallback.
 
-## v1.79.3 Windows marching-cubes fallback
+Forge's TripoSR compatibility work includes:
 
-The upstream TripoSR requirements install torchmcubes from GitHub. Modern torchmcubes must be compiled against the installed PyTorch and requires a C++20 compiler (and CUDA toolkit for its GPU extension). Forge avoids making those developer tools a prerequisite on Windows.
+- private Python 3.11 management;
+- pip repair/seeding;
+- explicit NumPy and ONNX runtime setup;
+- a Windows-safe scikit-image marching-cubes replacement for native torchmcubes;
+- runtime import validation;
+- automatic invalidation of incomplete installations.
 
-During setup Forge now creates a filtered requirements file without torchmcubes, installs scikit-image from a wheel, and writes a local torchmcubes compatibility module inside the TripoSR checkout. TripoSR inference still uses PyTorch/CUDA on the NVIDIA GPU. Only the final marching-cubes surface extraction runs through the portable scikit-image CPU implementation.
-
-## v1.79.4 rembg / ONNX runtime
-
-The upstream TripoSR requirements include plain `rembg`, while modern rembg packages its inference backend as an optional extra. Forge now rewrites that dependency to `rembg[cpu]`, installs `onnxruntime` explicitly during runtime repair, and validates the ONNX import before marking the local generator ready.
-
-## v1.79.5 chest orientation / torso solve
-
-Generated single-image meshes do not reliably share the Skillbound/Blender axes. Chest processing now evaluates axis-aligned rotations against robust measurements of the actual Skillbound torso, chooses the best proportional match, and scales height/width/depth independently within conservative distortion limits before contact fitting. This prevents sideways imports and oversized shoulder/chest blobs caused by height-only uniform scaling.
+It is no longer the primary Equipment Lab generator.
