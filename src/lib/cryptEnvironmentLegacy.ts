@@ -38,6 +38,7 @@ export function addCryptRoomEnvironment(
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
   group.userData.cryptEnvironment = true
   group.userData.roomId = room.id
+  group.userData.roomRoot = true
   parent.add(group)
 
   const stone = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.88, metalness: 0.015 })
