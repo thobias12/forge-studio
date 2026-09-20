@@ -107,6 +107,11 @@ export default function DungeonViewport(props: Props) {
     scene.add(key)
 
     const grid = new THREE.GridHelper(200, 200, 0x385064, 0x1b2833)
+    const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material]
+    for (const material of gridMaterials) {
+      material.transparent = true
+      material.opacity = 0.18
+    }
     scene.add(grid)
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }))
     ground.rotation.x = -Math.PI / 2
@@ -124,6 +129,8 @@ export default function DungeonViewport(props: Props) {
     const loader = new GLTFLoader()
     const flickerLights: FlickerLight[] = []
     const atmospherePoints: THREE.Points[] = []
+    const cutawayMeshes: THREE.Mesh[] = []
+    const cutawayOpacity = new Map<THREE.Mesh, number>()
     let drag: DragState | undefined
     let yaw = 0
     let pitch = 0
@@ -137,12 +144,15 @@ export default function DungeonViewport(props: Props) {
       if (!value.rooms.length) return
       const bounds = dungeonWorldBounds(value)
       const span = Math.max(bounds.width, bounds.depth)
-      const distance = THREE.MathUtils.clamp(span * 0.58 + 13, 25, 92)
-      const height = THREE.MathUtils.clamp(distance * 0.72, 20, 66)
+      const distance = THREE.MathUtils.clamp(span * 0.49 + 11, 23, 82)
+      const height = THREE.MathUtils.clamp(distance * 0.7, 19, 58)
       controls.target.set(bounds.x, 0, bounds.z)
-      camera.position.set(bounds.x + distance * 0.52, height, bounds.z + distance * 0.64)
-      camera.fov = 46
+      camera.position.set(bounds.x + distance * 0.5, height, bounds.z + distance * 0.61)
+      camera.fov = 45
       camera.updateProjectionMatrix()
+      const gridSize = THREE.MathUtils.clamp(span + 24, 46, 150)
+      grid.position.set(bounds.x, 0, bounds.z)
+      grid.scale.set(gridSize / 200, 1, gridSize / 200)
       controls.update()
     }
 
@@ -167,10 +177,105 @@ export default function DungeonViewport(props: Props) {
       return atmosphere
     }
 
+    const inheritedValue = (object: THREE.Object3D, key: string) => {
+      let current: THREE.Object3D | null = object
+      while (current && current !== dungeonGroup.parent) {
+        const value = current.userData[key]
+        if (value !== undefined) return value
+        current = current.parent
+      }
+      return undefined
+    }
+
+    const ensureCutawayMaterial = (mesh: THREE.Mesh) => {
+      if (mesh.userData.forgeCutawayMaterial) return
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((material) => material.clone())
+        : mesh.material.clone()
+      mesh.userData.forgeCutawayMaterial = true
+      mesh.userData.forgeOriginalCastShadow = mesh.castShadow
+    }
+
+    const setCutawayMeshOpacity = (mesh: THREE.Mesh, opacity: number) => {
+      ensureCutawayMaterial(mesh)
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      const transparent = opacity < 0.995
+      for (const material of materials) {
+        if (material.transparent !== transparent) {
+          material.transparent = transparent
+          material.needsUpdate = true
+        }
+        material.opacity = opacity
+        material.depthWrite = !transparent
+      }
+      mesh.castShadow = transparent ? false : Boolean(mesh.userData.forgeOriginalCastShadow)
+    }
+
+    const refreshCutawayMeshes = () => {
+      cutawayMeshes.length = 0
+      dungeonGroup.traverse((object) => {
+        const mesh = object as THREE.Mesh
+        if (!mesh.isMesh || !inheritedValue(mesh, 'wallSide') || !inheritedValue(mesh, 'roomId')) return
+        cutawayMeshes.push(mesh)
+      })
+    }
+
+    const roomCutawaySides = (room: DungeonRoom) => {
+      const dx = camera.position.x - room.x
+      const dz = camera.position.z - room.z
+      const angle = -THREE.MathUtils.degToRad(room.rotation)
+      const cos = Math.cos(angle)
+      const sin = Math.sin(angle)
+      const localX = dx * cos - dz * sin
+      const localZ = dx * sin + dz * cos
+      return new Set<ResizeSide>([
+        localX >= 0 ? 'east' : 'west',
+        localZ >= 0 ? 'south' : 'north',
+      ])
+    }
+
+    const updateEditorCutaways = (dt: number) => {
+      const state = propsRef.current
+      if (state.playtest) {
+        for (const mesh of cutawayMeshes) {
+          const current = cutawayOpacity.get(mesh) ?? 1
+          const next = THREE.MathUtils.lerp(current, 1, 1 - Math.exp(-10 * dt))
+          setCutawayMeshOpacity(mesh, next)
+          if (next >= 0.995) cutawayOpacity.delete(mesh)
+          else cutawayOpacity.set(mesh, next)
+        }
+        return
+      }
+
+      const roomMap = new Map(state.value.rooms.map((room) => [room.id, room]))
+      const sideCache = new Map<string, Set<ResizeSide>>()
+      for (const mesh of cutawayMeshes) {
+        const roomId = String(inheritedValue(mesh, 'roomId') ?? '')
+        const side = inheritedValue(mesh, 'wallSide') as ResizeSide | undefined
+        const room = roomMap.get(roomId)
+        if (!room || !side) continue
+        let cutSides = sideCache.get(roomId)
+        if (!cutSides) {
+          cutSides = roomCutawaySides(room)
+          sideCache.set(roomId, cutSides)
+        }
+        const target = cutSides.has(side)
+          ? (roomId === state.selectedRoomId ? 0.2 : 0.11)
+          : 1
+        const current = cutawayOpacity.get(mesh) ?? 1
+        const speed = target < current ? 13 : 9
+        const next = THREE.MathUtils.lerp(current, target, 1 - Math.exp(-speed * dt))
+        setCutawayMeshOpacity(mesh, next)
+        cutawayOpacity.set(mesh, next)
+      }
+    }
+
     const rebuild = () => {
       while (dungeonGroup.children.length) disposeObject(dungeonGroup.children.pop()!)
       flickerLights.length = 0
       atmospherePoints.length = 0
+      cutawayMeshes.length = 0
+      cutawayOpacity.clear()
       const state = propsRef.current
       const current = state.value
       const immersive = state.playtest
@@ -209,6 +314,7 @@ export default function DungeonViewport(props: Props) {
           immersive,
           atmosphere,
           flickerLights,
+          crypt,
         )
         if (crypt) addCryptRoomEnvironment(dungeonGroup, roomValue, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, immersive)
       }
@@ -227,6 +333,7 @@ export default function DungeonViewport(props: Props) {
       }
       for (const item of current.markers) addMarker(dungeonGroup, item, item.id === state.selectedMarkerId && !immersive, immersive)
       addAtmosphereParticles(dungeonGroup, current, atmosphere, immersive, atmospherePoints)
+      refreshCutawayMeshes()
     }
     rebuild()
 
@@ -554,6 +661,7 @@ export default function DungeonViewport(props: Props) {
         cloud.rotation.y += dt * (index % 2 === 0 ? 0.012 : -0.007)
         cloud.position.y = Math.sin(seconds * 0.22 + index) * 0.025
       })
+      updateEditorCutaways(dt)
 
       composer.render()
       raf = requestAnimationFrame(tick)
@@ -659,14 +767,20 @@ function seededWallRandom(seedText: string) {
   }
 }
 
-function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[]) {
+function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[], crypt: boolean) {
   const group = new THREE.Group()
   group.position.set(room.x, room.floorLevel, room.z)
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
   parent.add(group)
 
   const floorColor = selected ? new THREE.Color(0x6f9fba) : corridorStart ? new THREE.Color(0x8f78b6) : tintRoomFloor(atmosphere.floor, room.type, atmosphere)
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: floorColor, roughness: 0.96, metalness: 0.01 })
+  const floorMaterial = new THREE.MeshStandardMaterial({
+    color: floorColor,
+    roughness: 0.96,
+    metalness: 0.01,
+    emissive: crypt ? new THREE.Color(atmosphere.floor).multiplyScalar(0.1) : new THREE.Color(0x000000),
+    emissiveIntensity: crypt ? 0.28 : 0,
+  })
   const floor = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.18, room.depth), floorMaterial)
   floor.position.y = 0.09
   floor.userData.roomId = room.id
@@ -680,7 +794,7 @@ function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, 
   }
   addFloorSeams(group, room, atmosphere)
   addCornerStonework(group, room, wallMaterial, darkMaterial)
-  addRoomMoodLighting(group, room, atmosphere, flickerLights)
+  if (!crypt) addRoomMoodLighting(group, room, atmosphere, flickerLights)
 
   if (immersive) {
     const ceiling = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.16, room.depth), darkMaterial)
@@ -714,6 +828,7 @@ function addWallWithOpenings(group: THREE.Group, room: DungeonRoom, side: Resize
       if (horizontal) lintel.position.set(center, doorHeight + lintelHeight / 2, (side === 'south' ? 1 : -1) * room.depth / 2)
       else lintel.position.set((side === 'east' ? 1 : -1) * room.width / 2, doorHeight + lintelHeight / 2, center)
       lintel.userData.roomId = room.id
+      lintel.userData.wallSide = side
       lintel.castShadow = true
       lintel.receiveShadow = true
       group.add(lintel)
@@ -732,6 +847,7 @@ function addWallSegment(group: THREE.Group, room: DungeonRoom, side: ResizeSide,
   if (horizontal) wall.position.set(center, height / 2, (side === 'south' ? 1 : -1) * room.depth / 2)
   else wall.position.set((side === 'east' ? 1 : -1) * room.width / 2, height / 2, center)
   wall.userData.roomId = room.id
+  wall.userData.wallSide = side
   wall.castShadow = true
   wall.receiveShadow = true
   group.add(wall)
@@ -740,11 +856,13 @@ function addWallSegment(group: THREE.Group, room: DungeonRoom, side: ResizeSide,
   base.position.copy(wall.position)
   base.position.y = 0.14
   base.userData.roomId = room.id
+  base.userData.wallSide = side
   group.add(base)
   const cap = horizontal ? new THREE.Mesh(new THREE.BoxGeometry(length, 0.14, thickness + 0.045), darkMaterial) : new THREE.Mesh(new THREE.BoxGeometry(thickness + 0.045, 0.14, length), darkMaterial)
   cap.position.copy(wall.position)
   cap.position.y = height - 0.16
   cap.userData.roomId = room.id
+  cap.userData.wallSide = side
   group.add(cap)
 }
 

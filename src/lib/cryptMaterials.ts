@@ -33,7 +33,11 @@ export function createCryptMaterialSet(atmosphere: DungeonAtmosphere): CryptMate
   const darkPack = texturePack('dark', atmosphere.wallDark, 0.1)
 
   const floor = keepMaterial(standard(floorPack, 0.78, 0.025, 0.075))
+  floor.emissive.copy(new THREE.Color(atmosphere.floor).multiplyScalar(0.12))
+  floor.emissiveIntensity = 0.34
   const floorDark = keepMaterial(standard(darkPack, 0.92, 0.01, 0.045))
+  floorDark.emissive.copy(new THREE.Color(atmosphere.floor).multiplyScalar(0.055))
+  floorDark.emissiveIntensity = 0.24
   const wall = keepMaterial(standard(wallPack, 0.88, 0.015, 0.09))
   const wallLight = keepMaterial(standard(wallPack, 0.82, 0.015, 0.105))
   wallLight.color.setHex(0xdce5eb)

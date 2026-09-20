@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.82.1`  
+> **Current Forge version:** `v1.83.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -252,7 +252,7 @@ Dungeon generation now exposes scale, room count, corridor width and branching c
 
 Manual editing remains first-class. Rooms can be click-dragged directly onto the floor and then resized with the existing edge handles. A new **Wall** tool click-drags independent brick wall segments anywhere in the layout; those segments render in the editor and ARPG preview, appear on the minimap, can be edited numerically, and participate in runtime collision.
 
-The editor world/camera bounds were expanded for the larger layouts, while Walk and ARPG preview continue to use the same authored package. v1.82.1 separates authoring visibility from runtime mood: the editor gets a neutral fill light, reduced authoring fog and automatic layout framing, while Walk/ARPG keeps the darker torch-lit presentation without crushed blacks.
+The editor world/camera bounds were expanded for the larger layouts, while Walk and ARPG preview continue to use the same authored package. v1.82.1 separates authoring visibility from runtime mood: the editor gets a neutral fill light, reduced authoring fog and automatic layout framing, while Walk/ARPG keeps the darker torch-lit presentation without crushed blacks. v1.83.0 adds camera-aware cutaway rendering: the two room walls facing the camera fade automatically, crypt brick courses use a lower editor silhouette, the authoring grid crops around the dungeon, corridor walls are less tunnel-like, crypt floors keep a subtle shadow lift, and ARPG mode uses a higher top-down camera with active-room wall cutaways. Crypt rooms now rely on authored wall sconces instead of duplicate floating torch lights.
 
 Important source:
 
@@ -1549,4 +1549,4 @@ When implementing a new feature:
 
 # Quick handoff summary
 
-**Forge Studio v1.82.0** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The latest major addition is **Dungeon Forge v2**, which combines larger procedural ARPG layouts with fully editable rooms, corridors, props, gameplay markers and independent click-drawn brick walls. The crypt visual target is the Sunken Ossuary direction: running-bond brick floors, heavy masonry, warm local torch pools and deep surrounding darkness. Generation exposes scale, room count, corridor width and branching while keeping the result as normal authored dungeon data. Equipment Lab remains on the body-aware Blender procedural workflow introduced through v1.81.x. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
+**Forge Studio v1.83.0** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The latest major addition is **Dungeon Forge v2**, which combines larger procedural ARPG layouts with fully editable rooms, corridors, props, gameplay markers and independent click-drawn brick walls. The crypt visual target is the Sunken Ossuary direction: running-bond brick floors, heavy masonry, warm local torch pools and deep surrounding darkness. Generation exposes scale, room count, corridor width and branching while keeping the result as normal authored dungeon data. Equipment Lab remains on the body-aware Blender procedural workflow introduced through v1.81.x. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
