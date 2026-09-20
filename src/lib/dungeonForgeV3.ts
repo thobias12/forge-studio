@@ -877,16 +877,123 @@ function addRoomFixtures(
   }
 }
 
-type RoomArtObstacle = { x: number; z: number; radius: number }
+type V3ArtCollider = { x: number; z: number; radius: number }
+const artColliderCaches = new WeakMap<object, readonly V3ArtCollider[]>()
 
 export function dungeonArtCollidesV3(value: DungeonWithProps, x: number, z: number, radius = 0.3) {
-  for (const room of value.rooms) {
-    const local = worldToLocal(room, x, z)
-    for (const obstacle of roomArtObstacles(room)) {
-      if (Math.hypot(local.x - obstacle.x, local.z - obstacle.z) <= obstacle.radius + radius) return true
-    }
+  const colliders = dungeonArtCollidersV3(value)
+  for (const collider of colliders) {
+    if (Math.hypot(x - collider.x, z - collider.z) <= collider.radius + radius) return true
   }
   return false
+}
+
+function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[] {
+  const cached = artColliderCaches.get(value)
+  if (cached) return cached
+
+  const colliders: V3ArtCollider[] = []
+  const add = (x: number, z: number, radius: number) => colliders.push({ x, z, radius })
+
+  // Room dressing colliders are derived from the same template placements used
+  // by the renderer, so visible solid props and movement cannot drift apart.
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const place = (xFraction: number, zFraction: number, radius: number) => {
+      const point = roomPlacement(room, xFraction, zFraction)
+      add(point.x, point.z, radius)
+    }
+
+    if (template === 'burial-chamber') {
+      place(-0.28, 0.18, 1.08); place(0.28, 0.18, 1.08)
+    } else if (template === 'ossuary-gallery') {
+      place(-0.3, -0.24, 1.04); place(-0.3, 0.03, 1.04); place(-0.3, 0.3, 1.04)
+    } else if (template === 'crossroads') {
+      place(0, 0, 0.9)
+    } else if (template === 'warden-hall') {
+      place(-0.31, -0.2, 0.78); place(0.31, -0.2, 0.78)
+    } else if (template === 'reliquary') {
+      place(0, 0.02, 1.36)
+    } else if (template === 'shrine-hall') {
+      place(0, 0.02, 1.46)
+    } else if (template === 'warden-sanctum') {
+      place(0, 0, 2.15)
+      place(-0.34, 0.18, 0.78); place(0.34, 0.18, 0.78)
+    } else if (template === 'sealed-ossuary') {
+      place(0, 0.08, 1.1)
+    } else if (template === 'storage-vault') {
+      place(-0.28, 0.2, 0.82); place(0.3, -0.18, 0.82)
+    }
+
+    // Corner/support pillars rendered by addRoomArchitecture.
+    const outline = roomLocalOutline(room)
+    const cornerStride = outline.length > 8 ? 2 : 1
+    for (let index = 0; index < outline.length; index += cornerStride) {
+      const point = outline[index]
+      const world = localToWorld(room, point.x, point.z)
+      add(world.x, world.z, 0.5)
+    }
+  }
+
+  // Door-frame posts rendered at each room/corridor connection.
+  const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
+  for (const room of value.rooms) {
+    for (const edge of value.corridors) {
+      const otherId = edge.fromRoomId === room.id ? edge.toRoomId : edge.toRoomId === room.id ? edge.fromRoomId : undefined
+      if (!otherId) continue
+      const other = roomMap.get(otherId)
+      if (!other) continue
+      const connection = getRoomConnection(room, other, edge.width)
+      const yaw = THREE.MathUtils.degToRad(connection.yaw)
+      const half = Math.max(1.45, edge.width / 2)
+      for (const side of [-1, 1]) {
+        const localX = side * half
+        add(
+          connection.x + Math.cos(yaw) * localX,
+          connection.z - Math.sin(yaw) * localX,
+          0.44,
+        )
+      }
+    }
+  }
+
+  // Corridor architecture and floor torch fixtures use the same path sampling
+  // rules as the renderer.
+  for (const edge of value.corridors) {
+    const path = dungeonCorridorPath(value, edge)
+    const total = pathLength(path)
+    if (path.length >= 2 && total >= 5) {
+      const supportCount = Math.max(0, Math.floor((total - 4) / 8.6))
+      for (let index = 1; index <= supportCount; index += 1) {
+        const sample = samplePathAtDistance(path, index * total / (supportCount + 1))
+        if (!sample) continue
+        if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 1.7))) continue
+        const half = Math.max(1.45, edge.width / 2 - 0.2)
+        const px = -Math.cos(sample.yaw)
+        const pz = Math.sin(sample.yaw)
+        add(sample.x + px * half, sample.z + pz * half, 0.5)
+        add(sample.x - px * half, sample.z - pz * half, 0.5)
+      }
+    }
+
+    if (path.length >= 2 && total >= 10) {
+      const torchCount = Math.max(1, Math.floor(total / 10))
+      for (let index = 1; index <= torchCount; index += 1) {
+        const sample = samplePathAtDistance(path, index * total / (torchCount + 1))
+        if (!sample) continue
+        if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.1))) continue
+        const side = index % 2 ? 1 : -1
+        const offset = Math.max(1.25, edge.width / 2 - 0.5)
+        const px = -Math.cos(sample.yaw) * side
+        const pz = Math.sin(sample.yaw) * side
+        add(sample.x + px * offset, sample.z + pz * offset, 0.28)
+      }
+    }
+  }
+
+  const frozen = Object.freeze(colliders)
+  artColliderCaches.set(value, frozen)
+  return frozen
 }
 
 function addRoomDressing(
@@ -1015,33 +1122,6 @@ function resolveRoomTemplate(room: DungeonRoom) {
   return 'burial-chamber'
 }
 
-function roomArtObstacles(room: DungeonRoom): RoomArtObstacle[] {
-  const template = resolveRoomTemplate(room)
-  if (template === 'burial-chamber') return [
-    { x: -room.width * 0.28, z: room.depth * 0.18, radius: 1.08 },
-    { x: room.width * 0.28, z: room.depth * 0.18, radius: 1.08 },
-  ]
-  if (template === 'ossuary-gallery') return [-0.24, 0.03, 0.3].map((z) => ({
-    x: -room.width * 0.3,
-    z: room.depth * z,
-    radius: 1.02,
-  }))
-  if (template === 'warden-hall') return [
-    { x: -room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
-    { x: room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
-  ]
-  if (template === 'reliquary' || template === 'shrine-hall') return []
-  if (template === 'warden-sanctum') return [
-    { x: -room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
-    { x: room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
-  ]
-  if (template === 'sealed-ossuary') return [{ x: 0, z: room.depth * 0.08, radius: 1.12 }]
-  if (template === 'storage-vault') return [
-    { x: -room.width * 0.28, z: room.depth * 0.2, radius: 0.85 },
-    { x: room.width * 0.3, z: -room.depth * 0.18, radius: 0.85 },
-  ]
-  return []
-}
 
 function roomPlacement(room: DungeonRoom, xFraction: number, zFraction: number, yaw = 0) {
   const localX = room.width * xFraction
