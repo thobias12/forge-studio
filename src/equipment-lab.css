@@ -225,6 +225,71 @@
   line-height: 1.4;
 }
 
+.equipment-lab-access {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(100, 153, 202, .28);
+  border-radius: 10px;
+  background: rgba(17, 31, 44, .72);
+  display: grid;
+  gap: 9px;
+}
+
+.equipment-lab-access > strong {
+  color: #dce9f4;
+  font-size: 12px;
+}
+
+.equipment-lab-access p,
+.equipment-lab-access small {
+  margin: 0;
+  color: #8699ab;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.equipment-lab-access-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.equipment-lab-access-links a {
+  color: #9bc7ea;
+  text-decoration: none;
+  border: 1px solid rgba(113, 165, 208, .24);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(41, 75, 103, .24);
+  font-size: 10px;
+}
+
+.equipment-lab-access-links a:hover {
+  border-color: rgba(121, 181, 228, .5);
+  color: #cce8ff;
+}
+
+.equipment-lab-access input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(112, 143, 177, .28);
+  border-radius: 8px;
+  background: rgba(7, 13, 19, .86);
+  color: #dce9f4;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.equipment-lab-access input:focus {
+  outline: none;
+  border-color: rgba(105, 169, 218, .72);
+}
+
+.equipment-lab-access .secondary-button {
+  width: 100%;
+  justify-content: center;
+}
+
 .equipment-generator-progress {
   margin-top: 12px;
   border: 1px solid rgba(100, 135, 166, .2);
