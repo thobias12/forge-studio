@@ -280,6 +280,7 @@ export class ForgePlayRuntime {
   private hitStopRemaining = 0
   private cameraShake = 0
   private chainCastSequence = 0
+  private pointerTracked = false
   private testPackSequence = 0
   private playerMoving = false
   private activeInteractionId: string | undefined
@@ -947,6 +948,11 @@ export class ForgePlayRuntime {
     const rect = this.renderer.domElement.getBoundingClientRect()
     this.ndc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
     this.ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+    this.pointerTracked = true
+    this.updateMouseWorldFromPointerRay()
+  }
+
+  private updateMouseWorldFromPointerRay() {
     this.raycaster.setFromCamera(this.ndc, this.camera)
 
     // Resolve the pointer against the actual walk surface while keeping the
@@ -1003,6 +1009,7 @@ export class ForgePlayRuntime {
     this.updateChainLightningEffects(delta)
     this.updateTextEffects(delta)
     this.updateCamera(delta)
+    if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     this.updateCameraOcclusion(delta)
 
     this.environmentElapsed += delta
@@ -1268,6 +1275,7 @@ export class ForgePlayRuntime {
 
   private performAbility(ability: ForgeAbilityDefinition) {
     if ((this.cooldowns.get(ability.id) ?? 0) > 0 || this.playerHealth <= 0) return
+    if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
     if (aim.lengthSq() < 0.01) aim.set(0, 0, -1)
     aim.normalize()
@@ -1364,9 +1372,7 @@ export class ForgePlayRuntime {
       ability.range,
       1.5,
     )
-    const aimedPoint = aimedGroundPoint
-      .clone()
-      .add(new THREE.Vector3(0, .06, 0))
+    const aimedPoint = aimedGroundPoint.clone()
 
     const candidates = this.enemies
       .filter((enemy) =>
