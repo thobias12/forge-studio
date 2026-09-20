@@ -1,5 +1,9 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { anchorPoint, type SkillboundHudLayout, type SkillboundHudModuleId } from '../lib/hudForge'
+import {
+  anchorPoint,
+  type SkillboundHudLayout,
+  type SkillboundHudModuleId,
+} from '../lib/hudForge'
 import {
   playLevelUpFeedbackSound,
   playPickupFeedbackSound,
@@ -17,8 +21,8 @@ export type HudPickupFlightEvent = {
 }
 
 const FLIGHT = {
-  gold: { duration: 720, delayStep: 42, count: 3, impactLead: 24 },
-  xp: { duration: 780, delayStep: 48, count: 3, impactLead: 28 },
+  gold: { duration: 320, delayStep: 24, count: 3, impactLead: 18 },
+  xp: { duration: 350, delayStep: 26, count: 2, impactLead: 18 },
 } as const
 
 export function HudPickupFlights({
@@ -48,14 +52,23 @@ export function HudPickupFlights({
     fresh.slice(-8).forEach((event, index) => {
       const recipe = FLIGHT[event.kind]
       const impactDelay =
-        (recipe.duration + recipe.delayStep * (recipe.count - 1) - recipe.impactLead) / 1000
-      playPickupFeedbackSound(
-        event.kind,
-        event.amount,
-        impactDelay + index * .016,
-      )
+        (recipe.duration +
+          recipe.delayStep * (recipe.count - 1) -
+          recipe.impactLead) /
+        1000
+
+      if (event.kind === 'xp') {
+        playPickupFeedbackSound('xp', event.amount, .015 + index * .012)
+      } else {
+        playPickupFeedbackSound(
+          'gold',
+          event.amount,
+          impactDelay + index * .01,
+        )
+      }
+
       if (event.levelUp) {
-        playLevelUpFeedbackSound(impactDelay + .07 + index * .016)
+        playLevelUpFeedbackSound(.08 + index * .012)
       }
     })
   }, [events])
@@ -74,7 +87,8 @@ function RuntimeFlight({
   event: HudPickupFlightEvent
   layout: SkillboundHudLayout
 }) {
-  const targetId: SkillboundHudModuleId = event.kind === 'gold' ? 'gold' : 'xp'
+  const targetId: SkillboundHudModuleId =
+    event.kind === 'gold' ? 'gold' : 'xp'
   const target = layout.modules[targetId]
   if (!target?.visible) return null
 
@@ -85,38 +99,35 @@ function RuntimeFlight({
   const sourceY = clamp(event.screenY, 2, 98)
   const recipe = FLIGHT[event.kind]
   const impactDelay =
-    recipe.duration + recipe.delayStep * (recipe.count - 1) - recipe.impactLead
-
-  const layerStyle = {
-    '--impact-delay': `${impactDelay}ms`,
-  } as CSSProperties
+    recipe.duration +
+    recipe.delayStep * (recipe.count - 1) -
+    recipe.impactLead
 
   return <div
     className={`hud-motion-layer hud-runtime-flight motion-${event.kind}`}
-    style={layerStyle}
+    style={{ '--impact-delay': `${impactDelay}ms` } as CSSProperties}
   >
     {Array.from({ length: recipe.count }).map((_, index) => {
-      const lane = index - 1
+      const lane = index - (recipe.count - 1) / 2
       const arcHeight =
         event.kind === 'gold'
-          ? 5.8 + index * .72
-          : 6.7 + index * .82
-      const arcX = lane * (event.kind === 'gold' ? 1.35 : 1.7)
-      const style = {
-        '--source-x': `${sourceX + lane * .34}%`,
-        '--source-y': `${sourceY + Math.abs(lane) * .18}%`,
-        '--target-x': `${targetX}%`,
-        '--target-y': `${targetY}%`,
-        '--arc-x': `${arcX}vw`,
-        '--arc-y': `-${arcHeight}vh`,
-        '--tail-x': `${arcX * .34}vw`,
-        '--tail-y': `-${arcHeight * .34}vh`,
-        '--flight-delay': `${index * recipe.delayStep}ms`,
-        '--flight-duration': `${recipe.duration}ms`,
-      } as CSSProperties
+          ? 3.3 + index * .36
+          : 3.7 + index * .44
+      const arcX = lane * (event.kind === 'gold' ? .72 : .92)
       return <i
         className={`hud-motion-particle ${event.kind}`}
-        style={style}
+        style={{
+          '--source-x': `${sourceX + lane * .24}%`,
+          '--source-y': `${sourceY}%`,
+          '--target-x': `${targetX}%`,
+          '--target-y': `${targetY}%`,
+          '--arc-x': `${arcX}vw`,
+          '--arc-y': `-${arcHeight}vh`,
+          '--tail-x': `${arcX * .2}vw`,
+          '--tail-y': `-${arcHeight * .18}vh`,
+          '--flight-delay': `${index * recipe.delayStep}ms`,
+          '--flight-duration': `${recipe.duration}ms`,
+        } as CSSProperties}
         key={index}
       />
     })}
@@ -130,8 +141,8 @@ function RuntimeFlight({
     <b
       className={`hud-motion-gain ${event.kind}`}
       style={{
-        '--target-x': `${targetX}%`,
-        '--target-y': `${targetY}%`,
+        '--target-x': event.kind === 'xp' ? `${sourceX}%` : `${targetX}%`,
+        '--target-y': event.kind === 'xp' ? `${sourceY}%` : `${targetY}%`,
       } as CSSProperties}
     >
       +{event.amount}{event.kind === 'xp' ? ' XP' : ''}
