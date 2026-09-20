@@ -254,6 +254,57 @@ export function dungeonNavigationContainsV3(
   return true
 }
 
+export function resolveDungeonSlideV3(
+  currentX: number,
+  currentZ: number,
+  dx: number,
+  dz: number,
+  isOpen: (x: number, z: number) => boolean,
+) {
+  if (Math.abs(dx) + Math.abs(dz) < 1e-7) return { x: currentX, z: currentZ }
+  const directX = currentX + dx
+  const directZ = currentZ + dz
+  if (isOpen(directX, directZ)) return { x: directX, z: directZ }
+
+  const length = Math.hypot(dx, dz)
+  const ux = dx / length
+  const uz = dz / length
+  const candidates: Array<{ x: number; z: number; score: number }> = []
+
+  const addCandidate = (mx: number, mz: number, scale = 1) => {
+    const tx = currentX + mx * scale
+    const tz = currentZ + mz * scale
+    if (!isOpen(tx, tz)) return
+    const movedX = tx - currentX
+    const movedZ = tz - currentZ
+    const moved = Math.hypot(movedX, movedZ)
+    if (moved < 1e-6) return
+    const alignment = (movedX * ux + movedZ * uz) / moved
+    candidates.push({ x: tx, z: tz, score: alignment * 10 + moved / Math.max(length, 1e-6) })
+  }
+
+  // Axis projections handle straight walls cheaply.
+  addCandidate(dx, 0)
+  addCandidate(0, dz)
+
+  // Angled probes are what keep movement flowing around curved/concave V3
+  // boundaries instead of getting caught when both axis projections fail.
+  const angles = [22.5, -22.5, 45, -45, 67.5, -67.5, 90, -90]
+  for (const degrees of angles) {
+    const angle = THREE.MathUtils.degToRad(degrees)
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const rx = dx * cos - dz * sin
+    const rz = dx * sin + dz * cos
+    addCandidate(rx, rz, 0.94)
+    addCandidate(rx, rz, 0.68)
+  }
+
+  if (!candidates.length) return { x: currentX, z: currentZ }
+  candidates.sort((a, b) => b.score - a.score)
+  return { x: candidates[0].x, z: candidates[0].z }
+}
+
 export function dungeonFloorHeightV3(value: DungeonWithProps, x: number, z: number) {
   return dungeonRoomAtV3(value, x, z)?.floorLevel ?? 0
 }
