@@ -140,7 +140,7 @@ def find_pose_bone(rig, *names):
         if any(
             lower == name
             or lower.endswith(name)
-            or lower.includes(name)
+            or name in lower
             for name in wanted
         ):
             return bone
