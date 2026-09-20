@@ -1,10 +1,11 @@
 // @ts-nocheck
 import * as THREE from 'three'
 import { itemVisual } from '../itemPresentation'
-import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
+import { dungeonAtmosphere, dungeonLightingProfile, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
+import { addDungeonMasonryV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity } from './ForgeDungeonRuntimeHelpers'
@@ -13,8 +14,10 @@ const INTERACT_DISTANCE = 2.65
 export const dungeonSceneMethods = {
   buildLighting() {
     const atmosphere = dungeonAtmosphere(this.dungeon.theme)
-    this.scene.add(new THREE.HemisphereLight(atmosphere.sky, atmosphere.ground, atmosphere.ambient * 1.15))
-    const key = new THREE.DirectionalLight(atmosphere.key, atmosphere.keyIntensity)
+    const lighting = dungeonLightingProfile(atmosphere, this.dungeon.settings)
+    this.scene.add(new THREE.HemisphereLight(atmosphere.sky, atmosphere.ground, lighting.ambientIntensity))
+    this.scene.add(new THREE.AmbientLight(0xb99878, lighting.fillIntensity))
+    const key = new THREE.DirectionalLight(atmosphere.key, lighting.keyIntensity)
     key.position.set(12, 22, 9)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
@@ -27,34 +30,41 @@ export const dungeonSceneMethods = {
 
   buildDungeon() {
     const atmosphere = dungeonAtmosphere(this.dungeon.theme)
-    const roomMap = new Map(this.runtimeDungeon.rooms.map((room) => [room.id, room]))
-    const openings = new Map<string, RoomOpening[]>()
     const flickerLights: CryptFlickerLight[] = []
-    const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
 
-    for (const edge of this.runtimeDungeon.corridors) {
-      const fromRoom = roomMap.get(edge.fromRoomId)
-      const toRoom = roomMap.get(edge.toRoomId)
-      if (!fromRoom || !toRoom) continue
-      const from = getRoomConnection(fromRoom, toRoom, edge.width)
-      const to = getRoomConnection(toRoom, fromRoom, edge.width)
-      addOpening(fromRoom.id, { ...from, corridorId: edge.id })
-      addOpening(toRoom.id, { ...to, corridorId: edge.id })
-      addCorridorFloor(this.world, from, to, edge.width, atmosphere.corridorFloor)
-      if (this.dungeon.theme === 'crypt') {
-        const start = this.world.children.length
-        addCryptCorridorEnvironment(this.world, from, to, edge.width, atmosphere, `${edge.id}-${this.dungeon.seed}`, false)
-        this.world.children.slice(start).forEach(markOccluderTree)
+    if (this.dungeon.theme === 'crypt') {
+      // Play Project and Dungeon Forge now share the exact V3 geometry/art
+      // renderer. This removes the old parallel "game dungeon" appearance.
+      addDungeonMasonryV3(this.world, this.runtimeDungeon, atmosphere, flickerLights, 'arpg')
+    } else {
+      const roomMap = new Map(this.runtimeDungeon.rooms.map((room) => [room.id, room]))
+      const openings = new Map<string, RoomOpening[]>()
+      const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
+
+      for (const edge of this.runtimeDungeon.corridors) {
+        const fromRoom = roomMap.get(edge.fromRoomId)
+        const toRoom = roomMap.get(edge.toRoomId)
+        if (!fromRoom || !toRoom) continue
+        const from = getRoomConnection(fromRoom, toRoom, edge.width)
+        const to = getRoomConnection(toRoom, fromRoom, edge.width)
+        addOpening(fromRoom.id, { ...from, corridorId: edge.id })
+        addOpening(toRoom.id, { ...to, corridorId: edge.id })
+        addCorridorFloor(this.world, from, to, edge.width, atmosphere.corridorFloor)
+        if (this.dungeon.theme === 'crypt') {
+          const start = this.world.children.length
+          addCryptCorridorEnvironment(this.world, from, to, edge.width, atmosphere, `${edge.id}-${this.dungeon.seed}`, false)
+          this.world.children.slice(start).forEach(markOccluderTree)
+        }
       }
-    }
 
-    for (const room of this.runtimeDungeon.rooms) {
-      const roomOpenings = openings.get(room.id) ?? []
-      addRoomShell(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, tintRoomFloor(atmosphere.floor, room.type, atmosphere).getHex(), atmosphere.wall, atmosphere.wallDark)
-      if (this.dungeon.theme === 'crypt') {
-        const start = this.world.children.length
-        addCryptRoomEnvironment(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, atmosphere, flickerLights, false)
-        this.world.children.slice(start).forEach(markOccluderTree)
+      for (const room of this.runtimeDungeon.rooms) {
+        const roomOpenings = openings.get(room.id) ?? []
+        addRoomShell(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, tintRoomFloor(atmosphere.floor, room.type, atmosphere).getHex(), atmosphere.wall, atmosphere.wallDark)
+        if (this.dungeon.theme === 'crypt') {
+          const start = this.world.children.length
+          addCryptRoomEnvironment(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, atmosphere, flickerLights, false)
+          this.world.children.slice(start).forEach(markOccluderTree)
+        }
       }
     }
 
