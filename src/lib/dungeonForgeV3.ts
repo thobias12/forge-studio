@@ -968,13 +968,9 @@ function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[
       place(-0.28, 0.2, 0.82); place(0.3, -0.18, 0.82)
     }
 
-    // Corner/support pillars rendered by addRoomArchitecture.
-    const outline = roomLocalOutline(room)
-    const cornerStride = outline.length > 8 ? 2 : 1
-    for (let index = 0; index < outline.length; index += cornerStride) {
-      const point = outline[index]
-      const world = localToWorld(room, point.x, point.z)
-      add(world.x, world.z, 0.5)
+    // Only the sparse special-room buttresses are physical.
+    for (const support of roomStructuralSupports(room)) {
+      add(support.x, support.z, 0.42)
     }
   }
 
@@ -1000,37 +996,10 @@ function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[
     }
   }
 
-  // Corridor architecture and floor torch fixtures use the same path sampling
-  // rules as the renderer.
+  // Sparse wall buttresses are solid; decorative floor torches are not.
   for (const edge of value.corridors) {
-    const path = dungeonCorridorPath(value, edge)
-    const total = pathLength(path)
-    if (path.length >= 2 && total >= 5) {
-      const supportCount = Math.max(0, Math.floor((total - 4) / 8.6))
-      for (let index = 1; index <= supportCount; index += 1) {
-        const sample = samplePathAtDistance(path, index * total / (supportCount + 1))
-        if (!sample) continue
-        if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 1.7))) continue
-        const half = Math.max(1.45, edge.width / 2 - 0.2)
-        const px = -Math.cos(sample.yaw)
-        const pz = Math.sin(sample.yaw)
-        add(sample.x + px * half, sample.z + pz * half, 0.5)
-        add(sample.x - px * half, sample.z - pz * half, 0.5)
-      }
-    }
-
-    if (path.length >= 2 && total >= 10) {
-      const torchCount = Math.max(1, Math.floor(total / 10))
-      for (let index = 1; index <= torchCount; index += 1) {
-        const sample = samplePathAtDistance(path, index * total / (torchCount + 1))
-        if (!sample) continue
-        if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.1))) continue
-        const side = index % 2 ? 1 : -1
-        const offset = Math.max(1.25, edge.width / 2 - 0.5)
-        const px = -Math.cos(sample.yaw) * side
-        const pz = Math.sin(sample.yaw) * side
-        add(sample.x + px * offset, sample.z + pz * offset, 0.28)
-      }
+    for (const support of corridorStructuralSupports(value, edge)) {
+      add(support.x, support.z, 0.4)
     }
   }
 
