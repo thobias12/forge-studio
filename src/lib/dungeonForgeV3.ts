@@ -1030,10 +1030,8 @@ function roomArtObstacles(room: DungeonRoom): RoomArtObstacle[] {
     { x: -room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
     { x: room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
   ]
-  if (template === 'reliquary') return [{ x: 0, z: room.depth * 0.02, radius: 1.2 }]
-  if (template === 'shrine-hall') return [{ x: 0, z: room.depth * 0.02, radius: 1.3 }]
+  if (template === 'reliquary' || template === 'shrine-hall') return []
   if (template === 'warden-sanctum') return [
-    { x: 0, z: 0, radius: 2.15 },
     { x: -room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
     { x: room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
   ]
@@ -1373,10 +1371,11 @@ function roomWallPoint(room: DungeonRoom, side: 'north' | 'south' | 'east' | 'we
   let x = 0
   let z = 0
   let yaw = 0
-  if (side === 'north') { x = room.width * along; z = -room.depth / 2 + inset; yaw = 0 }
-  if (side === 'south') { x = room.width * along; z = room.depth / 2 - inset; yaw = Math.PI }
-  if (side === 'east') { x = room.width / 2 - inset; z = room.depth * along; yaw = -Math.PI / 2 }
-  if (side === 'west') { x = -room.width / 2 + inset; z = room.depth * along; yaw = Math.PI / 2 }
+  const wallAlong = room.shape === 'cross' ? THREE.MathUtils.clamp(along, -0.16, 0.16) : along
+  if (side === 'north') { x = room.width * wallAlong; z = -room.depth / 2 + inset; yaw = 0 }
+  if (side === 'south') { x = room.width * wallAlong; z = room.depth / 2 - inset; yaw = Math.PI }
+  if (side === 'east') { x = room.width / 2 - inset; z = room.depth * wallAlong; yaw = -Math.PI / 2 }
+  if (side === 'west') { x = -room.width / 2 + inset; z = room.depth * wallAlong; yaw = Math.PI / 2 }
   const world = localToWorld(room, x, z)
   return { ...world, yaw: yaw + THREE.MathUtils.degToRad(room.rotation) }
 }
