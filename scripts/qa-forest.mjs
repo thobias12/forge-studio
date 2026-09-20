@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 fs.mkdirSync('artifacts/world-qa', { recursive: true })
 await build({ stdin: { contents: `export * from './src/engine/forestGeometry'; export * from './src/engine/worldAmbient'; export * from './src/engine/guidedWorld'`, resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'esm', outfile: 'artifacts/world-qa/forest.mjs' })
 const f = await import('../artifacts/world-qa/forest.mjs')
-for (const geometry of [f.forestCrown(1.5,2.7), f.forestBroadleaf(1.2), f.forestRock(), f.forestLog(), f.forestGrass(), f.forestFern()]) {
+for (const geometry of [f.forestBranch(), f.forestCrown(1.5,2.7), f.forestBroadleaf(1.2), f.forestRock(), f.forestLog(), f.forestGrass(), f.forestFern()]) {
   assert.ok([...geometry.attributes.position.array].every(Number.isFinite))
   assert.ok([...geometry.attributes.normal.array].every(Number.isFinite))
   assert.ok(geometry.attributes.position.count < 2000, 'Prop exceeds geometry budget')

@@ -1,4 +1,5 @@
-import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial } from '../engine/forestGeometry'
+import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
+import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial, forestBranch } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -826,22 +827,7 @@ function buildStream(region: GeneratedRegion) {
 
   const water = new THREE.Mesh(
     makeTerrainSafeWaterGeometry(region),
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-      emissive: 0x123f40,
-      emissiveIntensity: .12,
-      roughness: .46,
-      metalness: 0,
-      transparent: false,
-      opacity: 1,
-      depthTest: true,
-      depthWrite: true,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      side: THREE.DoubleSide,
-    }),
+    forestWaterMaterial(),
   )
   water.name = 'GeneratedWaterSurface'
   water.castShadow = false
@@ -856,14 +842,7 @@ function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
   const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
   const road = new THREE.Mesh(
     makeRibbonGeometry(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + (path.kind === 'main' ? .052 : .047)),
-    new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x5b4d38 : 0x4b4938,
-      roughness: 1,
-      metalness: 0,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
+    forestPathMaterial(path.kind === 'main'),
   )
   road.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
   road.receiveShadow = true
@@ -915,9 +894,9 @@ function makeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const uvs: number[] = []
   const colors: number[] = []
   const indices: number[] = []
-  const deepWater = new THREE.Color(0x377c7d)
+  const deepWater = new THREE.Color(0x245962)
   const bankWater = new THREE.Color(editorBiomePalette(region.biome).low).lerp(new THREE.Color(0x668f83), .58)
-  const sheenWater = new THREE.Color(0x78aaa2)
+  const sheenWater = new THREE.Color(0x8bc5bd)
   const waterColor = new THREE.Color()
 
   rows.forEach((row, rowIndex) => {
@@ -1460,7 +1439,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (trees.length) {
-    const trunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
+    const trunkGeometry = new THREE.CylinderGeometry(.13, .29, 3.45, 9)
     const trunkMaterial = markWorldWindMaterial(
       new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
       .16,
@@ -1719,10 +1698,10 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   if (deadTrees.length) {
     const lowerTrunkGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
     const upperTrunkGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
-    const branchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
+    const branchGeometry = forestBranch()
     const deadWood = markWorldWindMaterial(
       new THREE.MeshStandardMaterial({
-        color: 0x493b31,
+        color: 0x697b77,
         roughness: 1,
       }),
       .24,

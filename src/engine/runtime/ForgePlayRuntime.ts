@@ -1,4 +1,5 @@
-import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial } from '../forestGeometry'
+import { forestPathMaterial, forestWaterMaterial } from '../forestAtmosphere'
+import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial, forestBranch } from '../forestGeometry'
 import * as THREE from 'three'
 import type {
   ForgeAbilityDefinition,
@@ -2734,22 +2735,7 @@ function makeGeneratedStream(region: GeneratedRegion) {
   }
   const water = new THREE.Mesh(
     makeRuntimeTerrainSafeWaterGeometry(region),
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-      emissive: 0x123f40,
-      emissiveIntensity: .12,
-      roughness: .46,
-      metalness: 0,
-      transparent: false,
-      opacity: 1,
-      depthTest: true,
-      depthWrite: true,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      side: THREE.DoubleSide,
-    }),
+    forestWaterMaterial(),
   )
   water.name = 'GeneratedWaterSurface'
   water.castShadow = false
@@ -2764,13 +2750,7 @@ function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
   const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
   const road = new THREE.Mesh(
     makeRuntimeRibbon(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + (path.kind === 'main' ? .054 : .049)),
-    new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x5b4d38 : 0x4b4938,
-      roughness: 1,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
+    forestPathMaterial(path.kind === 'main'),
   )
   road.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
   road.receiveShadow = true
@@ -2784,9 +2764,11 @@ function makeRuntimeRibbon(
 ) {
   const sections = buildRuntimeRibbonSections(points, widths)
   const positions: number[] = []
+  const uvs: number[] = []
   const indices: number[] = []
 
   sections.forEach((section, index) => {
+    uvs.push(0,index/Math.max(1,sections.length-1),1,index/Math.max(1,sections.length-1))
     const lx = section.x + section.offsetX
     const lz = section.z + section.offsetZ
     const rx = section.x - section.offsetX
@@ -2801,6 +2783,7 @@ function makeRuntimeRibbon(
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
@@ -2814,13 +2797,13 @@ function makeRuntimeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const uvs: number[] = []
   const colors: number[] = []
   const indices: number[] = []
-  const deepWater = new THREE.Color(0x377c7d)
+  const deepWater = new THREE.Color(0x245962)
   const moodPalette = runtimeMoodPalette(
     runtimeBiomePalette(region.biome),
     region.mood,
   )
   const bankWater = new THREE.Color(moodPalette.low).lerp(new THREE.Color(0x668f83), .58)
-  const sheenWater = new THREE.Color(0x78aaa2)
+  const sheenWater = new THREE.Color(0x8bc5bd)
   const waterColor = new THREE.Color()
 
   rows.forEach((row, rowIndex) => {
@@ -3152,7 +3135,7 @@ function addGeneratedDressing(
     polygonOffsetUnits: -1,
   })
 
-  const treeTrunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
+  const treeTrunkGeometry = new THREE.CylinderGeometry(.13, .29, 3.45, 9)
   const treeTrunkMaterial = markWorldWindMaterial(
     new THREE.MeshStandardMaterial({
       color: 0x382c22,
@@ -3216,10 +3199,10 @@ function addGeneratedDressing(
   ]
   const deadTreeLowerGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
   const deadTreeUpperGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
-  const deadTreeBranchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
+  const deadTreeBranchGeometry = forestBranch()
   const deadTreeMaterial = markWorldWindMaterial(
     new THREE.MeshStandardMaterial({
-      color: 0x493b31,
+      color: 0x697b77,
       roughness: 1,
     }),
     .24,

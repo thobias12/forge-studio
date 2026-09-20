@@ -27,24 +27,38 @@ export function forestFloorMaterial() {
 // Original, deterministic silhouettes shared by the editor and playable world.
 export function forestCrown(radius: number, height: number, seed = 0) {
   const pieces: THREE.BufferGeometry[] = []
-  for (let tier = 0; tier < 3; tier++) {
-    const r = radius * (1 - tier * .24)
-    const g = new THREE.ConeGeometry(r, height * .58, 11, 2)
-    const p = g.attributes.position
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i)
-      const angle = Math.atan2(z, x)
-      const ripple = 1 + .13 * Math.sin(angle * 5 + seed) + .07 * Math.cos(angle * 3 + tier)
-      p.setXYZ(i, x * ripple, y + .07 * height * Math.sin(angle * 4 + seed) * Math.hypot(x,z) / radius, z * ripple)
-    }
-    g.translate(Math.sin(seed + tier) * radius * .08, height * (-.21 + tier * .25), 0)
-    pieces.push(g.toNonIndexed())
-    g.dispose()
+  // Separate flattened boughs leave air between branches, rather than solid cones.
+  for (let branch = 0; branch < 11; branch++) {
+    const tier=Math.floor(branch/4), angle=branch*2.399+seed
+    const reach=radius*(.66-tier*.17)
+    const g=new THREE.SphereGeometry(1,7,5).toNonIndexed()
+    g.scale(radius*(.47-tier*.08),height*.15,radius*(.28-tier*.04))
+    g.rotateY(-angle)
+    g.translate(Math.cos(angle)*reach,height*(-.28+tier*.3),Math.sin(angle)*reach)
+    pieces.push(g)
   }
-  const result = mergeGeometries(pieces)!
-  pieces.forEach(g => g.dispose())
-  result.computeVertexNormals()
+  const result=mergeGeometries(pieces)!
+  pieces.forEach(g=>g.dispose())
   return result
+}
+
+export function forestBranch() {
+  const pieces: THREE.BufferGeometry[]=[]
+  const segment=(a: THREE.Vector3,b: THREE.Vector3,r:number)=>{
+    const d=b.clone().sub(a)
+    const g=new THREE.CylinderGeometry(r*.22,r,d.length(),5)
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()))
+    g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2)
+    pieces.push(g.toNonIndexed());g.dispose()
+  }
+  segment(new THREE.Vector3(0,-.58,0),new THREE.Vector3(.08,.58,0),.11)
+  for(let i=0;i<5;i++) {
+    const y=-.2+i*.15,side=i%2?1:-1
+    const end=new THREE.Vector3(side*(.26+i*.03),y+.3,Math.sin(i*2)*.14)
+    segment(new THREE.Vector3(.03,y,0),end,.036)
+    segment(end.clone().lerp(new THREE.Vector3(.03,y,0),.35),end.clone().add(new THREE.Vector3(-side*.13,.2,.1)),.018)
+  }
+  const result=mergeGeometries(pieces)!;pieces.forEach(g=>g.dispose());return result
 }
 
 export function forestRock(radius = .7) {
@@ -61,11 +75,11 @@ export function forestRock(radius = .7) {
 
 export function forestBroadleaf(radius: number) {
   const pieces: THREE.BufferGeometry[] = []
-  for (let lobe = 0; lobe < 5; lobe++) {
+  for (let lobe = 0; lobe < 11; lobe++) {
     const a = lobe * 2.399
-    const g = new THREE.IcosahedronGeometry(radius * .67, 1)
-    g.scale(1, .82, 1)
-    g.translate(Math.cos(a)*radius*.4, Math.sin(a*2)*radius*.17, Math.sin(a)*radius*.4)
+    const g = new THREE.SphereGeometry(radius * (.32 + (lobe % 3) * .045),7,5).toNonIndexed()
+    g.scale(1.15, .72, 1)
+    g.translate(Math.cos(a)*radius*.65, Math.sin(a*2)*radius*.3, Math.sin(a)*radius*.65)
     pieces.push(g)
   }
   const result = mergeGeometries(pieces)!

@@ -599,6 +599,7 @@ export function applyWorldEnvironmentToScene(
       .lerp(new THREE.Color(0x3a6574), sample.night * .34)
     refs.waterMaterial.emissiveIntensity =
       .09 + sample.night * .2 + sample.rain * .03
+    if (refs.waterMaterial.userData.forestWaterTime) refs.waterMaterial.userData.forestWaterTime.value = elapsedSeconds
     installWaterMotion(refs.waterMaterial)
     const shader = refs.waterMaterial.userData.forgeWaterShader as
       | any
@@ -749,7 +750,7 @@ function installWaterMotion(material: THREE.MeshStandardMaterial) {
       )
     material.userData.forgeWaterShader = shader
   }
-  material.customProgramCacheKey = () => 'forge-water-motion-v1'
+  material.customProgramCacheKey = () => 'forge-water-motion-v2-forest'
   material.userData.forgeWaterMotionInstalled = true
   material.needsUpdate = true
 }
@@ -826,8 +827,8 @@ function moodBase(mood: WorldMood): MoodBase {
     return {
       dayBackground: 0x20231d,
       nightBackground: 0x111610,
-      dayFog: 0x25291f,
-      nightFog: 0x181d16,
+      dayFog: 0x203b3c,
+      nightFog: 0x132c32,
       fogDensity: .0082,
       exposure: 1.2,
       daySky: 0xd6dfcd,
@@ -859,17 +860,17 @@ function moodBase(mood: WorldMood): MoodBase {
   return {
     dayBackground: 0x1a291f,
     nightBackground: 0x0d1812,
-    dayFog: 0x1d2e22,
+    dayFog: 0x203835,
     nightFog: 0x132219,
     fogDensity: .0073,
     exposure: 1.16,
     daySky: 0xc6d8c8,
     nightSky: 0x4d6959,
-    ground: 0x27362c,
+    ground: 0x2c4141,
     daySun: 0xffe3bd,
     duskSun: 0xff9d5f,
     nightLight: 0x93b4c3,
-    fill: 0x86a891,
+    fill: 0x8bb6b3,
   }
 }
 

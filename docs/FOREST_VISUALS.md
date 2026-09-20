@@ -1,5 +1,19 @@
 # Forest presentation
 
+## Atmosphere pass
+
+Live crowns now use separated, rounded foliage clusters instead of solid cone tiers.
+Dead branches include tapered forks and twigs. Existing tree anchors and navigation obstacles stay fixed.
+Shared road materials feather UV edges with world-space grain; runtime ribbons now carry the same UVs as the editor.
+The shared opaque water material adds moving highlights and bank foam using the existing environment clock;
+river geometry, crossing clearance and hydrology are unchanged.
+Forest Classic layouts receive sheltered mist too. Teal fireflies and warm lanterns have depth-tested soft glows,
+and up to three additional trail lanterns use existing terrain/river/POI exclusions. These lanterns have no shadow maps.
+Normal/Deadwood fog and fill colors use cooler tones while daylight remains readable.
+
+Validated editor Classic and Exploration views and gameplay on seed 8472152. Browser console had no shader errors.
+This remains a stylized 3D interpretation, not a reproduction of the reference's pixel artwork.
+
 Original procedural geometry shared by World Forge and gameplay lives in `forestGeometry.ts`.
 Conifers use irregular overlapping boughs; broadleaf crowns use five offset lobes.
 Rocks have weathered, flattened silhouettes. Logs separate bark and exposed wood with vertex color.
