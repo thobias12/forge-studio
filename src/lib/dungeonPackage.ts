@@ -1,7 +1,7 @@
 export type DungeonTheme = 'crypt' | 'castle' | 'cave' | 'cathedral' | 'mine' | 'sewer' | 'void'
 export type DungeonRoomType = 'entrance' | 'combat' | 'treasure' | 'elite' | 'shrine' | 'boss' | 'secret' | 'utility'
 export type DungeonScalePreset = 'standard' | 'grand' | 'massive'
-export const DEFAULT_DUNGEON_BRIGHTNESS = 1.45
+export const DEFAULT_DUNGEON_BRIGHTNESS = 1.35
 export type DungeonMarkerType = 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light'
 export type DungeonTriggerAction = 'start-encounter' | 'open-door' | 'close-door' | 'spawn-enemies' | 'grant-loot' | 'activate-shrine' | 'set-checkpoint' | 'exit-dungeon'
 

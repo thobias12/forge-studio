@@ -430,7 +430,7 @@ function addWallSconce(ctx: RoomContext, side: Side, along: number, thickness: n
   glow.position.copy(flame.position)
   root.add(arm, bowl, flame, glow)
 
-  const base = ctx.atmosphere.torchIntensity * (ctx.immersive ? 0.42 : 0.34)
+  const base = ctx.atmosphere.torchIntensity * 0.36
   const light = new THREE.PointLight(ctx.atmosphere.torch, base, 10.5, 1.38)
   light.position.copy(flame.position)
   root.add(light)
@@ -512,9 +512,9 @@ function addRoomDressing(ctx: RoomContext) {
 }
 
 function addRoomFill(ctx: RoomContext) {
-  const { room, atmosphere, immersive } = ctx
+  const { room, atmosphere } = ctx
   const maxDimension = Math.max(room.width, room.depth)
-  const intensity = (room.type === 'boss' ? 0.72 : room.type === 'entrance' ? 0.52 : 0.56) * (immersive ? 1 : 0.94)
+  const intensity = room.type === 'boss' ? 0.72 : room.type === 'entrance' ? 0.52 : 0.56
   for (const [x, z, factor] of [[-room.width * 0.18, -room.depth * 0.1, 1], [room.width * 0.18, room.depth * 0.12, 0.82]] as Array<[number, number, number]>) {
     const fill = new THREE.PointLight(atmosphere.sky, intensity * factor, maxDimension * 0.8, 1.45)
     fill.position.set(x, Math.min(2.3, room.height * 0.48), z)
@@ -578,7 +578,7 @@ function addBrazier(ctx: RoomContext, x: number, z: number, scale = 1) {
   const glow = flameGlow(ctx.atmosphere.torch, 0.42)
   glow.position.y = 1.08
   root.add(feet, stem, bowl, flame, glow)
-  const base = ctx.atmosphere.torchIntensity * 0.58 * scale * (ctx.immersive ? 1 : 0.9)
+  const base = ctx.atmosphere.torchIntensity * 0.52 * scale
   const light = new THREE.PointLight(ctx.atmosphere.torch, base, 11.5 * scale, 1.42)
   light.position.y = 1.08
   root.add(light)
@@ -601,7 +601,7 @@ function addCandles(ctx: RoomContext, x: number, z: number, count: number) {
     flame.position.set(px, h + 0.045, pz)
     root.add(wax, flame)
   }
-  const light = new THREE.PointLight(ctx.atmosphere.torch, 0.34 * (ctx.immersive ? 1 : 0.85), 4.2, 1.6)
+  const light = new THREE.PointLight(ctx.atmosphere.torch, 0.3, 4.2, 1.6)
   light.position.y = 0.62
   root.add(light)
   ctx.group.add(root)
