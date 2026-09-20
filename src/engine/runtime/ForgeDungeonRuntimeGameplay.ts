@@ -11,9 +11,12 @@ import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } f
 import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
 import {
   FORGE_GAMEPLAY_FEEL,
+  forgeAbilityActionCooldown,
   forgeAbilityTiming,
   forgeAttackMovementMultiplier,
+  forgeCanDodgeCancelAction,
   forgeExpAlpha,
+  forgeMeleeComboProfile,
   forgeMovementResponse,
 } from './ForgeGameplayFeel'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity, distanceToSegment, disposeSceneObject } from './ForgeDungeonRuntimeHelpers'
@@ -29,6 +32,13 @@ export const dungeonGameplayMethods = {
   updateCooldowns(delta: number) {
     for (const [id, value] of this.cooldowns) this.cooldowns.set(id, Math.max(0, value - delta))
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta)
+    if (this.meleeComboResetRemaining > 0) {
+      this.meleeComboResetRemaining = Math.max(
+        0,
+        this.meleeComboResetRemaining - delta,
+      )
+      if (this.meleeComboResetRemaining <= 0) this.meleeComboStep = -1
+    }
     if (this.bufferedAbilityRemaining > 0) {
       this.bufferedAbilityRemaining = Math.max(0, this.bufferedAbilityRemaining - delta)
       if (this.bufferedAbilityRemaining <= 0) this.bufferedAbility = undefined
@@ -140,10 +150,12 @@ export const dungeonGameplayMethods = {
 
   startDodge() {
     if (this.dodgeCooldown > 0 || this.dodgeRemaining > 0) return
-    if (this.playerAction && this.playerAction.phase !== 'recovery') return
+    if (!forgeCanDodgeCancelAction(this.playerAction?.phase)) return
     this.playerAction = undefined
     this.bufferedAbility = undefined
     this.bufferedAbilityRemaining = 0
+    this.meleeComboStep = -1
+    this.meleeComboResetRemaining = 0
     const direction = this.getMoveDirection()
     if (direction.lengthSq() < 0.01) {
       direction.copy(this.mouseWorld).sub(this.player.position).setY(0)
@@ -178,7 +190,26 @@ export const dungeonGameplayMethods = {
     const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
     if (aim.lengthSq() < .01) aim.set(0, 0, -1)
     aim.normalize()
-    const timing = forgeAbilityTiming(ability)
+    const primaryMelee =
+      ability.id === this.gameplay.player.basicAbility &&
+      ability.input === 'primary' &&
+      ability.kind === 'melee'
+    const comboStep = primaryMelee
+      ? this.meleeComboResetRemaining > 0
+        ? (this.meleeComboStep + 1) % 3
+        : 0
+      : 0
+
+    if (primaryMelee) {
+      this.meleeComboStep = comboStep
+      this.meleeComboResetRemaining =
+        FORGE_GAMEPLAY_FEEL.combat.comboResetSeconds
+    } else {
+      this.meleeComboStep = -1
+      this.meleeComboResetRemaining = 0
+    }
+
+    const timing = forgeAbilityTiming(ability, comboStep)
     this.playerAction = {
       ability,
       aim,
@@ -186,14 +217,28 @@ export const dungeonGameplayMethods = {
       remaining: timing.windup,
       activeDuration: timing.active,
       recoveryDuration: timing.recovery,
+      comboStep,
       impacted: false,
     }
-    this.cooldowns.set(ability.id, ability.cooldown)
+    this.cooldowns.set(
+      ability.id,
+      forgeAbilityActionCooldown(ability, comboStep),
+    )
 
     const animationV3 = this.playerVisual?.getAnimationRuntimeV3?.()
     if (animationV3) {
-      const action = ability.id === this.gameplay.player.basicAbility ? 'attackPrimary' : 'cast'
-      if (!animationV3.playAction(action)) animationV3.playAction('attackPrimary')
+      if (primaryMelee) {
+        // Forge V3 currently exposes primary + heavy attack actions.
+        // Hit two keeps the primary animation but has distinct mechanical
+        // timing/arc/lunge; the finisher uses heavy when authored.
+        const played =
+          comboStep === 2
+            ? animationV3.playAction('attackHeavy')
+            : animationV3.playAction('attackPrimary')
+        if (!played) animationV3.playAction('attackPrimary')
+      } else if (!animationV3.playAction('cast')) {
+        animationV3.playAction('attackPrimary')
+      }
     } else {
       const clipName = this.abilityAnimationClipNames.get(ability.id)
       if (!clipName || !this.playerVisual?.playClipName(clipName, false)) {
@@ -238,7 +283,21 @@ export const dungeonGameplayMethods = {
       action.remaining = action.activeDuration
       if (!action.impacted) {
         action.impacted = true
-        this.resolveAbilityImpact(action.ability, action.aim)
+        if (
+          action.ability.input === 'primary' &&
+          action.ability.kind === 'melee'
+        ) {
+          const combo = forgeMeleeComboProfile(action.comboStep)
+          this.movePlayer(
+            action.aim.clone().multiplyScalar(combo.lunge),
+          )
+          this.playerVelocity.multiplyScalar(.42)
+        }
+        this.resolveAbilityImpact(
+          action.ability,
+          action.aim,
+          action.comboStep,
+        )
       }
       return
     }
@@ -253,8 +312,20 @@ export const dungeonGameplayMethods = {
     else this.playerVisual?.play('idle')
   },
 
-  resolveAbilityImpact(ability: ForgeAbilityDefinition, aim: THREE.Vector3) {
-    const damage = ability.damage + this.getEquippedDamageBonus()
+  resolveAbilityImpact(
+    ability: ForgeAbilityDefinition,
+    aim: THREE.Vector3,
+    comboStep = 0,
+  ) {
+    const primaryMelee =
+      ability.input === 'primary' &&
+      ability.kind === 'melee'
+    const combo = primaryMelee
+      ? forgeMeleeComboProfile(comboStep)
+      : undefined
+    const damage =
+      (ability.damage + this.getEquippedDamageBonus()) *
+      (combo?.damageMultiplier ?? 1)
     if (ability.delivery === 'chain') {
       this.performChainAbility(ability, aim, damage)
       return
@@ -273,7 +344,18 @@ export const dungeonGameplayMethods = {
         const distance = toEnemy.length()
         if (distance > ability.range + ENEMY_RADIUS) continue
         const facing = distance > .001 ? toEnemy.normalize().dot(aim) : 1
-        if (facing >= .08) this.damageEnemy(enemy, damage, aim, ability.color)
+        if (facing >= (combo?.arcDot ?? .08)) {
+          this.damageEnemy(
+            enemy,
+            damage,
+            aim,
+            ability.color,
+            combo?.knockbackMultiplier ?? 1,
+            combo?.hitStop,
+            combo?.cameraShake,
+            combo?.staggerSeconds,
+          )
+        }
       }
       return
     }
@@ -418,24 +500,58 @@ export const dungeonGameplayMethods = {
     return enemy.health > 0 && Boolean(this.encounters.get(enemy.encounterId)?.active)
   },
 
-  damageEnemy(enemy: RuntimeEnemy, damage: number, direction: THREE.Vector3, color: string) {
+  damageEnemy(
+    enemy: RuntimeEnemy,
+    damage: number,
+    direction: THREE.Vector3,
+    color: string,
+    knockbackMultiplier = 1,
+    hitStop?: number,
+    cameraShake?: number,
+    staggerSeconds?: number,
+  ) {
     this.focusEnemyId = enemy.id
     enemy.health = Math.max(0, enemy.health - damage)
     enemy.windupRemaining = 0
+    enemy.recoveryRemaining = 0
     enemy.telegraph.visible = false
     enemy.visual?.play('hit', false)
     enemy.placeholderMaterial.emissive.set(0xffffff)
+
     const ratio = Math.max(0.001, enemy.health / enemy.maxHealth)
     enemy.healthFill.scale.x = ratio
     enemy.healthFill.position.x = -(1 - ratio) * 0.64
+
+    const resistance = enemy.boss ? .32 : enemy.elite ? .62 : 1
     const knock = direction.clone().setY(0)
     if (knock.lengthSq() > 0.001) knock.normalize()
-    this.tryMoveEnemy(enemy, knock.multiplyScalar(Math.min(1.1, 0.45 + damage * 0.006)))
+    enemy.knockback.addScaledVector(
+      knock,
+      Math.min(
+        5.4,
+        (2.4 + damage * .022) *
+          knockbackMultiplier *
+          resistance,
+      ),
+    )
+    enemy.staggerRemaining = Math.max(
+      enemy.staggerRemaining,
+      (staggerSeconds ??
+        FORGE_GAMEPLAY_FEEL.combat.enemyStaggerSeconds) *
+        resistance,
+    )
+
     this.spawnDamageNumber(enemy.group.position, damage, color)
     this.spawnPulse(enemy.group.position, color, 1.15, 0.18)
     void this.spawnBoundVfx(enemy.definition.hitVfxAssetId, enemy.group.position)
-    this.hitStopRemaining = Math.max(this.hitStopRemaining, 0.035)
-    this.cameraShake = Math.max(this.cameraShake, 0.22)
+    this.hitStopRemaining = Math.max(
+      this.hitStopRemaining,
+      hitStop ?? .035,
+    )
+    this.cameraShake = Math.max(
+      this.cameraShake,
+      cameraShake ?? .22,
+    )
     if (enemy.health <= 0) this.killEnemy(enemy)
   },
 
@@ -565,16 +681,50 @@ export const dungeonGameplayMethods = {
     for (const enemy of this.enemies.values()) {
       if (enemy.health <= 0) { enemy.visual?.update(delta); continue }
       enemy.attackTimer = Math.max(0, enemy.attackTimer - delta)
+      enemy.staggerRemaining = Math.max(
+        0,
+        enemy.staggerRemaining - delta,
+      )
+      enemy.recoveryRemaining = Math.max(
+        0,
+        enemy.recoveryRemaining - delta,
+      )
       enemy.placeholderMaterial.emissive.lerp(new THREE.Color(0x000000), Math.min(1, delta * 22))
       enemy.visual?.update(delta)
+
+      if (enemy.knockback.lengthSq() > .02) {
+        this.tryMoveEnemy(
+          enemy,
+          enemy.knockback.clone().multiplyScalar(delta),
+        )
+        enemy.knockback.multiplyScalar(
+          Math.max(0, 1 - delta * 9),
+        )
+      }
+
       const encounter = this.encounters.get(enemy.encounterId)
       if (!encounter?.active || encounter.cleared) { this.setEnemyMoving(enemy, false); continue }
       const distance = planarDistance(enemy.group.position, this.player.position)
+      if (enemy.staggerRemaining > 0) {
+        this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+        continue
+      }
+      if (enemy.recoveryRemaining > 0) {
+        this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+        continue
+      }
       if (enemy.windupRemaining > 0) {
         enemy.windupRemaining = Math.max(0, enemy.windupRemaining - delta)
         const progress = 1 - enemy.windupRemaining / Math.max(0.01, enemy.windupDuration)
         enemy.telegraph.visible = true
-        ;(enemy.telegraph.material as THREE.MeshBasicMaterial).opacity = 0.18 + progress * 0.62
+        const telegraphMaterial =
+          enemy.telegraph.material as THREE.MeshBasicMaterial
+        telegraphMaterial.opacity = 0.14 + progress * 0.72
+        enemy.telegraph.scale.setScalar(
+          0.82 + progress * 0.24,
+        )
         if (enemy.windupRemaining <= 0) this.resolveEnemyAttack(enemy)
         continue
       }
@@ -609,11 +759,34 @@ export const dungeonGameplayMethods = {
   resolveEnemyAttack(enemy: RuntimeEnemy) {
     enemy.telegraph.visible = false
     enemy.attackTimer = enemy.attackCooldown
-    if (this.dodgeRemaining > 0 || planarDistance(enemy.group.position, this.player.position) > enemy.attackRange + 0.28) return
+    enemy.recoveryRemaining = Math.max(
+      enemy.recoveryRemaining,
+      FORGE_GAMEPLAY_FEEL.combat.enemyRecoverySeconds +
+        enemy.windupDuration * .16,
+    )
+    if (
+      this.dodgeRemaining > 0 ||
+      planarDistance(enemy.group.position, this.player.position) >
+        enemy.attackRange + .28
+    ) {
+      this.spawnPulse(enemy.group.position, '#804a3c', .72, .12)
+      return
+    }
     this.playerHealth = Math.max(0, this.playerHealth - enemy.damage)
+    this.playerVisual?.play('hit', false)
     this.spawnDamageNumber(this.player.position, enemy.damage, '#ef776b')
     void this.spawnBoundVfx(enemy.definition.attackVfxAssetId, this.player.position)
-    this.cameraShake = Math.max(this.cameraShake, 0.28)
+
+    const recoil = this.player.position
+      .clone()
+      .sub(enemy.group.position)
+      .setY(0)
+    if (recoil.lengthSq() > .001) {
+      this.movePlayer(recoil.normalize().multiplyScalar(.38))
+    }
+
+    this.hitStopRemaining = Math.max(this.hitStopRemaining, .024)
+    this.cameraShake = Math.max(this.cameraShake, .34)
     if (this.playerHealth <= 0) this.respawnPlayer()
   },
 

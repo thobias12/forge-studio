@@ -53,6 +53,9 @@ type RuntimeEnemy = {
   attackTimer: number
   windupRemaining: number
   windupDuration: number
+  staggerRemaining: number
+  recoveryRemaining: number
+  knockback: THREE.Vector3
   boss: boolean
   elite: boolean
   visual?: ForgeCharacterVisualBinding
@@ -142,6 +145,8 @@ export class ForgeDungeonRuntime {
   private bufferedAbility?: ForgeAbilityDefinition
   private bufferedAbilityRemaining = 0
   private primaryHeld = false
+  private meleeComboStep = -1
+  private meleeComboResetRemaining = 0
   private pointerTracked = false
   private focusEnemyId?: string
   private disposed = false

@@ -2,6 +2,62 @@ import type { ForgeAbilityDefinition } from '../forgeProject'
 
 export type ForgePlayerActionPhase = 'windup' | 'active' | 'recovery'
 
+export type ForgeMeleeComboProfile = {
+  step: 0 | 1 | 2
+  windup: number
+  active: number
+  recovery: number
+  lunge: number
+  damageMultiplier: number
+  arcDot: number
+  knockbackMultiplier: number
+  hitStop: number
+  cameraShake: number
+  staggerSeconds: number
+}
+
+const MELEE_COMBO: readonly ForgeMeleeComboProfile[] = Object.freeze([
+  Object.freeze({
+    step: 0,
+    windup: .075,
+    active: .045,
+    recovery: .16,
+    lunge: .28,
+    damageMultiplier: .82,
+    arcDot: .18,
+    knockbackMultiplier: .84,
+    hitStop: .024,
+    cameraShake: .14,
+    staggerSeconds: .1,
+  }),
+  Object.freeze({
+    step: 1,
+    windup: .065,
+    active: .045,
+    recovery: .15,
+    lunge: .34,
+    damageMultiplier: .92,
+    arcDot: .05,
+    knockbackMultiplier: 1,
+    hitStop: .03,
+    cameraShake: .18,
+    staggerSeconds: .125,
+  }),
+  Object.freeze({
+    step: 2,
+    windup: .09,
+    active: .055,
+    recovery: .195,
+    lunge: .48,
+    damageMultiplier: 1.16,
+    arcDot: -.08,
+    knockbackMultiplier: 1.34,
+    hitStop: .047,
+    cameraShake: .28,
+    staggerSeconds: .19,
+  }),
+])
+
 export const FORGE_GAMEPLAY_FEEL = Object.freeze({
   movement: Object.freeze({
     accelerateResponse: 22,
@@ -15,7 +71,13 @@ export const FORGE_GAMEPLAY_FEEL = Object.freeze({
     active: 0.86,
     recovery: 0.97,
   }),
-  inputBufferSeconds: 0.14,
+  combat: Object.freeze({
+    comboResetSeconds: .62,
+    enemyRecoverySeconds: .18,
+    enemyStaggerSeconds: .11,
+    meleeCombo: MELEE_COMBO,
+  }),
+  inputBufferSeconds: 0.18,
   dodgeDuration: 0.21,
   camera: Object.freeze({
     followResponse: 10.5,
@@ -54,10 +116,27 @@ export function forgeAttackMovementMultiplier(
   return FORGE_GAMEPLAY_FEEL.attackMovement[phase]
 }
 
-export function forgeAbilityTiming(ability: ForgeAbilityDefinition) {
+export function forgeMeleeComboProfile(step = 0) {
+  const normalized = ((Math.round(step) % 3) + 3) % 3
+  return FORGE_GAMEPLAY_FEEL.combat.meleeCombo[normalized]
+}
+
+export function forgeAbilityTiming(
+  ability: ForgeAbilityDefinition,
+  comboStep = 0,
+) {
   const primary = ability.input === 'primary'
+  if (primary && ability.kind === 'melee') {
+    const combo = forgeMeleeComboProfile(comboStep)
+    return {
+      windup: combo.windup,
+      active: combo.active,
+      recovery: combo.recovery,
+    }
+  }
+
   const windup = primary
-    ? ability.kind === 'melee' ? 0.075 : 0.095
+    ? 0.095
     : ability.kind === 'melee' ? 0.11 : 0.14
   const active = primary ? 0.04 : 0.055
   const cadence = primary
@@ -68,6 +147,26 @@ export function forgeAbilityTiming(ability: ForgeAbilityDefinition) {
     active,
     recovery: Math.max(0.085, cadence - windup - active),
   }
+}
+
+export function forgeAbilityActionCooldown(
+  ability: ForgeAbilityDefinition,
+  comboStep = 0,
+) {
+  if (ability.input === 'primary' && ability.kind === 'melee') {
+    const combo = forgeMeleeComboProfile(comboStep)
+    return Math.max(
+      .05,
+      combo.windup + combo.active + combo.recovery - .018,
+    )
+  }
+  return Math.max(0, ability.cooldown)
+}
+
+export function forgeCanDodgeCancelAction(
+  phase?: ForgePlayerActionPhase,
+) {
+  return !phase || phase === 'active' || phase === 'recovery'
 }
 
 export function forgeWheelDistanceTarget(
