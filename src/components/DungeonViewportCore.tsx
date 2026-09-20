@@ -1400,7 +1400,7 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
 function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
   const inside = value.theme === 'crypt'
-    ? dungeonContainsPointV3(value, x, z, radius)
+    ? dungeonContainsPointV3(value, x, z, radius + 0.3)
     : value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) || pointInsideCorridor(value, x, z, radius)
   if (!inside) return false
   if (value.theme === 'crypt' && dungeonArtCollidesV3(value, x, z, radius)) return false
