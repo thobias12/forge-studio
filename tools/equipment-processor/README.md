@@ -90,3 +90,7 @@ During setup Forge now creates a filtered requirements file without torchmcubes,
 ## v1.79.4 rembg / ONNX runtime
 
 The upstream TripoSR requirements include plain `rembg`, while modern rembg packages its inference backend as an optional extra. Forge now rewrites that dependency to `rembg[cpu]`, installs `onnxruntime` explicitly during runtime repair, and validates the ONNX import before marking the local generator ready.
+
+## v1.79.5 chest orientation / torso solve
+
+Generated single-image meshes do not reliably share the Skillbound/Blender axes. Chest processing now evaluates axis-aligned rotations against robust measurements of the actual Skillbound torso, chooses the best proportional match, and scales height/width/depth independently within conservative distortion limits before contact fitting. This prevents sideways imports and oversized shoulder/chest blobs caused by height-only uniform scaling.
