@@ -2284,7 +2284,7 @@ function createFrontTabard(
     const widthScale =
       THREE.MathUtils.lerp(
         1,
-        1.1,
+        .94,
         v,
       )
 
@@ -2295,16 +2295,28 @@ function createFrontTabard(
     ) {
       const u =
         column / columns
-      const centered =
-        u - .5
-      const edge =
-        Math.abs(centered) * 2
       const tailCenter =
         u < .5 ? .23 : .77
+      const lowerTaper =
+        THREE.MathUtils.smoothstep(
+          v,
+          .46,
+          1,
+        )
+      const shapedU =
+        THREE.MathUtils.lerp(
+          u,
+          tailCenter,
+          lowerTaper * .2,
+        )
+      const centered =
+        shapedU - .5
+      const edge =
+        Math.abs(centered) * 2
       const tailDistance =
         THREE.MathUtils.clamp(
           Math.abs(
-            u - tailCenter,
+            shapedU - tailCenter,
           ) / .23,
           0,
           1,
@@ -2318,7 +2330,7 @@ function createFrontTabard(
           ),
           2,
         ) *
-        .034 *
+        .052 *
         (1 - tailDistance)
       const topIndex =
         topIndices[column]
@@ -2385,7 +2397,7 @@ function createFrontTabard(
       // Open a narrow center slit through the lower third so the tabard
       // reads like a constructed garment instead of a single rectangle.
       if (
-        row >= 5 &&
+        row >= 4 &&
         column === 3
       ) {
         continue
@@ -2966,8 +2978,8 @@ function createVestPanelDetails(
       48,
       2,
       8,
-      7,
-      10,
+      8,
+      11,
       leather,
       'EFV3_VestPanel_L',
       'radial',
@@ -2979,8 +2991,8 @@ function createVestPanelDetails(
       48,
       2,
       8,
-      38,
-      41,
+      37,
+      40,
       leather,
       'EFV3_VestPanel_R',
       'radial',
@@ -2991,8 +3003,8 @@ function createVestPanelDetails(
       vestGeometry,
       10,
       48,
-      10,
       11,
+      12,
       trim,
       'EFV3_VestPanelSeam_L',
       'radial',
@@ -3003,8 +3015,8 @@ function createVestPanelDetails(
       vestGeometry,
       10,
       48,
+      36,
       37,
-      38,
       trim,
       'EFV3_VestPanelSeam_R',
       'radial',
@@ -3016,8 +3028,8 @@ function createVestPanelDetails(
       48,
       2,
       3,
-      7,
-      10,
+      8,
+      11,
       trim,
       'EFV3_VestPanelBase_L',
       'radial',
@@ -3029,8 +3041,8 @@ function createVestPanelDetails(
       48,
       2,
       3,
-      38,
-      41,
+      37,
+      40,
       trim,
       'EFV3_VestPanelBase_R',
       'radial',
@@ -3193,14 +3205,14 @@ function createTabardDetails(
       tabardGeometry,
       9,
       0,
-      2,
+      1,
       3,
       5,
       leather,
       'EFV3_TabardTopReinforcement',
       'radial',
       .0028,
-      .42,
+      .52,
     ),
   ]
 }
@@ -3560,8 +3572,8 @@ function createVestDetailTrim(
       vestGeometry,
       rowCount,
       columnCount,
-      5,
-      6,
+      8,
+      9,
       material,
       'EFV3_VestEdge_L',
       'radial',
@@ -3572,8 +3584,8 @@ function createVestDetailTrim(
       vestGeometry,
       rowCount,
       columnCount,
-      43,
-      42,
+      40,
+      41,
       material,
       'EFV3_VestEdge_R',
       'radial',
@@ -3585,8 +3597,8 @@ function createVestDetailTrim(
       columnCount,
       0,
       1,
-      5,
-      43,
+      8,
+      40,
       material,
       'EFV3_VestHem',
       'radial',
@@ -3598,8 +3610,8 @@ function createVestDetailTrim(
       columnCount,
       9,
       8,
-      5,
-      43,
+      8,
+      40,
       material,
       'EFV3_VestShoulderSeam',
       'radial',
@@ -3619,9 +3631,9 @@ function createBeltBuckle(
       'position',
     )
   const corners = [
-    4 * segments + 47,
+    3 * segments + 47,
     2 * segments + 47,
-    4 * segments + 1,
+    3 * segments + 1,
     2 * segments + 1,
   ]
   const positions: number[] = []
