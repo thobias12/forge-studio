@@ -558,6 +558,7 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
   const baseBeginEnemyAttack = proto.beginEnemyAttack
   const baseResolveEnemyAttack = proto.resolveEnemyAttack
   const baseDamageEnemy = proto.damageEnemy
+  const baseDamagePlayer = proto.damagePlayer
   const baseMakeSnapshot = proto.makeSnapshot
 
   proto.spawnEnemy = function (...args: any[]) {
@@ -641,12 +642,116 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     )
   }
 
-  proto.makeSnapshot = function (...args: any[]) {
-    return roleTargetSnapshot(
-      this,
-      baseMakeSnapshot.apply(this, args),
-      'overworld',
+  proto.damagePlayer = function (...args: any[]) {
+    if (this.__forgeCombatLabInvulnerable) {
+      this.spawnPulse?.(this.player.position, '#79c79a', .72, .1)
+      return
+    }
+    return baseDamagePlayer.apply(this, args)
+  }
+
+  proto.spawnCombatLabPack = function (
+    selection: 'mixed' | 'skirmisher' | 'brute' | 'ranged' | 'caster' = 'mixed',
+  ) {
+    this.__forgeCombatLabSequence =
+      Number(this.__forgeCombatLabSequence ?? 0) + 1
+    const sequence = this.__forgeCombatLabSequence
+    const roster = this.gameplay?.enemies ?? []
+    const byRole = new Map(
+      roster.map((definition: any) => [roleOf(definition), definition]),
     )
+    const roles =
+      selection === 'mixed'
+        ? ['skirmisher', 'skirmisher', 'brute', 'ranged', 'ranged', 'caster']
+        : selection === 'skirmisher'
+          ? ['skirmisher', 'skirmisher', 'skirmisher']
+          : selection === 'ranged'
+            ? ['ranged', 'ranged']
+            : [selection]
+
+    let spawned = 0
+    roles.forEach((role, index) => {
+      const definition =
+        byRole.get(role) ??
+        roster.find((candidate: any) => candidate.id === role)
+      if (!definition) return
+
+      const angle =
+        index / Math.max(1, roles.length) * Math.PI * 2 +
+        hashUnit(`combat-lab:${sequence}:${index}`) * .48
+      const radius =
+        role === 'ranged' || role === 'caster'
+          ? 6.1
+          : role === 'brute'
+            ? 4.5
+            : 3.8
+      const x = this.player.position.x + Math.cos(angle) * radius
+      const z = this.player.position.z + Math.sin(angle) * radius
+      this.spawnEnemy(
+        `combat-lab:${sequence}:${role}:${index}`,
+        definition,
+        x,
+        z,
+        {
+          transient: true,
+          respawn: false,
+          respawnSeconds: 0,
+        },
+      )
+      spawned += 1
+    })
+
+    this.setMessage?.(
+      `Combat Lab · spawned ${spawned} ${selection === 'mixed' ? 'mixed enemies' : selection + (spawned === 1 ? '' : 's')}.`,
+      2,
+    )
+    this.emitState?.()
+    return spawned
+  }
+
+  proto.clearCombatLab = function () {
+    for (let index = this.enemies.length - 1; index >= 0; index -= 1) {
+      const enemy = this.enemies[index]
+      if (!enemy.transient || !String(enemy.id).startsWith('combat-lab:')) {
+        continue
+      }
+      if (this.focusEnemyId === enemy.id) this.focusEnemyId = undefined
+      enemy.visual?.dispose?.()
+      enemy.group.parent?.remove(enemy.group)
+      this.disposeObject?.(enemy.group)
+      this.enemies.splice(index, 1)
+    }
+    const projectiles = ensureProjectileState(this)
+    for (let index = projectiles.length - 1; index >= 0; index -= 1) {
+      removeProjectile(this, projectiles, index)
+    }
+    this.setMessage?.('Combat Lab cleared.', 1.4)
+    this.emitState?.()
+  }
+
+  proto.setCombatLabInvulnerable = function (enabled: boolean) {
+    this.__forgeCombatLabInvulnerable = Boolean(enabled)
+    if (enabled) {
+      this.playerHealth = this.playerDefinition?.maxHealth ?? this.playerHealth
+    }
+    this.setMessage?.(
+      enabled
+        ? 'Combat Lab · invulnerability enabled.'
+        : 'Combat Lab · invulnerability disabled.',
+      1.4,
+    )
+    this.emitState?.()
+  }
+
+  proto.makeSnapshot = function (...args: any[]) {
+    return {
+      ...roleTargetSnapshot(
+        this,
+        baseMakeSnapshot.apply(this, args),
+        'overworld',
+      ),
+      combatLabInvulnerable: Boolean(this.__forgeCombatLabInvulnerable),
+    }
   }
 }
 
