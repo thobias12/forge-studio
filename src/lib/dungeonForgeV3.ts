@@ -810,41 +810,461 @@ function addRoomFixtures(
   }
 }
 
-function addRoomDressing(root: THREE.Group, value: DungeonWithProps, atmosphere: DungeonAtmosphere) {
-  const stone = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.9 })
-  const dark = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.95 })
+type RoomArtObstacle = { x: number; z: number; radius: number }
 
+export function dungeonArtCollidesV3(value: DungeonWithProps, x: number, z: number, radius = 0.3) {
   for (const room of value.rooms) {
-    const random = seededRandom(stringHash(room.id) ^ value.seed)
-    const count = room.type === 'boss' ? 4 : room.type === 'combat' || room.type === 'elite' ? 2 : room.type === 'treasure' ? 2 : 0
-    for (let index = 0; index < count; index += 1) {
-      const side = index % 2 ? 1 : -1
-      const localX = side * room.width * (0.28 + random() * 0.08)
-      const localZ = room.depth * (0.18 + (index >= 2 ? 0.25 : 0))
-      const point = localToWorld(room, localX, localZ)
-      if (!dungeonRoomContainsV3(room, point.x, point.z, 1.1)) continue
-
-      const group = new THREE.Group()
-      group.position.set(point.x, room.floorLevel, point.z)
-      group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
-      root.add(group)
-
-      const base = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.25, 2.35), dark)
-      base.position.y = 0.13
-      base.castShadow = true
-      base.receiveShadow = true
-      group.add(base)
-      const lid = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.22, 2.1), stone)
-      lid.position.y = 0.32
-      lid.castShadow = true
-      lid.receiveShadow = true
-      group.add(lid)
-      const inset = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 1.45), dark)
-      inset.position.y = 0.47
-      group.add(inset)
+    const local = worldToLocal(room, x, z)
+    for (const obstacle of roomArtObstacles(room)) {
+      if (Math.hypot(local.x - obstacle.x, local.z - obstacle.z) <= obstacle.radius + radius) return true
     }
   }
+  return false
 }
+
+function addRoomDressing(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  const materials = createArtMaterials(atmosphere)
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const random = seededRandom(stringHash(room.id) ^ value.seed)
+    const floorY = room.floorLevel
+
+    if (template === 'threshold') {
+      addRoomBanner(root, room, -0.28, -0.42, materials, mode, 0x5d4030)
+      addRoomBanner(root, room, 0.28, -0.42, materials, mode, 0x5d4030)
+      addRubbleCluster(root, room, -0.34, 0.28, materials, random, false)
+      addRubbleCluster(root, room, 0.32, 0.34, materials, random, false)
+      continue
+    }
+
+    if (template === 'burial-chamber') {
+      addSarcophagus(root, room, -0.28, 0.18, 0.03, materials)
+      addSarcophagus(root, room, 0.28, 0.18, -0.03, materials)
+      addBonePile(root, room, 0, -0.27, materials, random)
+      addRubbleCluster(root, room, 0.38, -0.3, materials, random, false)
+      continue
+    }
+
+    if (template === 'ossuary-gallery') {
+      addSarcophagus(root, room, -0.3, -0.24, 0.02, materials)
+      addSarcophagus(root, room, -0.3, 0.03, -0.02, materials)
+      addSarcophagus(root, room, -0.3, 0.3, 0.025, materials)
+      addBonePile(root, room, 0.26, -0.26, materials, random)
+      addBonePile(root, room, 0.28, 0.24, materials, random)
+      continue
+    }
+
+    if (template === 'crossroads') {
+      addBrokenPlinth(root, room, 0, 0, materials, random)
+      addRubbleCluster(root, room, -0.35, -0.28, materials, random, false)
+      addRubbleCluster(root, room, 0.34, 0.29, materials, random, false)
+      continue
+    }
+
+    if (template === 'warden-hall') {
+      addStatue(root, room, -0.31, -0.2, 0, materials, mode)
+      addStatue(root, room, 0.31, -0.2, Math.PI, materials, mode)
+      addRoomBanner(root, room, -0.28, 0.42, materials, mode, 0x632d2b)
+      addRoomBanner(root, room, 0.28, 0.42, materials, mode, 0x632d2b)
+      addBonePile(root, room, 0, 0.22, materials, random)
+      continue
+    }
+
+    if (template === 'reliquary') {
+      addReliquary(root, room, 0, 0.02, materials)
+      addUrnCluster(root, room, -0.3, 0.3, materials, random)
+      addUrnCluster(root, room, 0.3, 0.3, materials, random)
+      addRoomBanner(root, room, 0, -0.42, materials, mode, 0x5a4430)
+      continue
+    }
+
+    if (template === 'shrine-hall') {
+      addShrine(root, room, 0, 0.02, materials)
+      addUrnCluster(root, room, -0.3, 0.28, materials, random)
+      addUrnCluster(root, room, 0.3, 0.28, materials, random)
+      addBonePile(root, room, 0, -0.3, materials, random)
+      continue
+    }
+
+    if (template === 'warden-sanctum') {
+      addBossDais(root, room, materials)
+      addStatue(root, room, -0.34, 0.18, Math.PI / 2, materials, mode)
+      addStatue(root, room, 0.34, 0.18, -Math.PI / 2, materials, mode)
+      addRoomBanner(root, room, -0.22, -0.43, materials, mode, 0x702d27)
+      addRoomBanner(root, room, 0.22, -0.43, materials, mode, 0x702d27)
+      addRubbleCluster(root, room, -0.38, 0.36, materials, random, false)
+      addRubbleCluster(root, room, 0.38, 0.36, materials, random, false)
+      continue
+    }
+
+    if (template === 'sealed-ossuary') {
+      addSarcophagus(root, room, 0, 0.08, 0, materials)
+      addBonePile(root, room, -0.28, -0.28, materials, random)
+      addBonePile(root, room, 0.29, -0.24, materials, random)
+      addUrnCluster(root, room, 0.3, 0.31, materials, random)
+      continue
+    }
+
+    if (template === 'storage-vault') {
+      addCrateStack(root, room, -0.28, 0.2, materials, random)
+      addCrateStack(root, room, 0.3, -0.18, materials, random)
+      addRubbleCluster(root, room, 0, 0.32, materials, random, false)
+      continue
+    }
+
+    // A safe fallback for manually-authored rooms created before templates were
+    // introduced. This keeps old dungeons visually coherent after migration.
+    if (room.type === 'boss') addBossDais(root, room, materials)
+    else if (room.type === 'treasure') addReliquary(root, room, 0, 0, materials)
+    else if (room.type === 'shrine') addShrine(root, room, 0, 0, materials)
+    else if (room.type === 'combat' || room.type === 'elite') {
+      addSarcophagus(root, room, -0.28, 0.18, 0, materials)
+      addSarcophagus(root, room, 0.28, 0.18, 0, materials)
+    } else {
+      addRubbleCluster(root, room, 0.24, 0.24, materials, random, false)
+    }
+
+    // Keep TypeScript aware that the room's authored floor level is consumed by
+    // every helper even when this fallback has no central object.
+    void floorY
+  }
+}
+
+function resolveRoomTemplate(room: DungeonRoom) {
+  if (room.template) return room.template
+  if (room.type === 'entrance') return 'threshold'
+  if (room.type === 'boss') return 'warden-sanctum'
+  if (room.type === 'elite') return 'warden-hall'
+  if (room.type === 'treasure') return 'reliquary'
+  if (room.type === 'shrine') return 'shrine-hall'
+  if (room.type === 'secret') return 'sealed-ossuary'
+  if (room.type === 'utility') return 'storage-vault'
+  if (room.shape === 'cross') return 'crossroads'
+  return 'burial-chamber'
+}
+
+function roomArtObstacles(room: DungeonRoom): RoomArtObstacle[] {
+  const template = resolveRoomTemplate(room)
+  if (template === 'burial-chamber') return [
+    { x: -room.width * 0.28, z: room.depth * 0.18, radius: 1.08 },
+    { x: room.width * 0.28, z: room.depth * 0.18, radius: 1.08 },
+  ]
+  if (template === 'ossuary-gallery') return [-0.24, 0.03, 0.3].map((z) => ({
+    x: -room.width * 0.3,
+    z: room.depth * z,
+    radius: 1.02,
+  }))
+  if (template === 'warden-hall') return [
+    { x: -room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
+    { x: room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
+  ]
+  if (template === 'reliquary') return [{ x: 0, z: room.depth * 0.02, radius: 1.2 }]
+  if (template === 'shrine-hall') return [{ x: 0, z: room.depth * 0.02, radius: 1.3 }]
+  if (template === 'warden-sanctum') return [
+    { x: 0, z: 0, radius: 2.15 },
+    { x: -room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
+    { x: room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
+  ]
+  if (template === 'sealed-ossuary') return [{ x: 0, z: room.depth * 0.08, radius: 1.12 }]
+  if (template === 'storage-vault') return [
+    { x: -room.width * 0.28, z: room.depth * 0.2, radius: 0.85 },
+    { x: room.width * 0.3, z: -room.depth * 0.18, radius: 0.85 },
+  ]
+  return []
+}
+
+function roomPlacement(room: DungeonRoom, xFraction: number, zFraction: number, yaw = 0) {
+  const localX = room.width * xFraction
+  const localZ = room.depth * zFraction
+  const world = localToWorld(room, localX, localZ)
+  return {
+    x: world.x,
+    y: room.floorLevel,
+    z: world.z,
+    yaw: THREE.MathUtils.degToRad(room.rotation) + yaw,
+  }
+}
+
+function addSarcophagus(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  yaw: number,
+  materials: V3ArtMaterials,
+) {
+  const p = roomPlacement(room, xFraction, zFraction, yaw)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.24, 2.5), materials.dark)
+  base.position.y = 0.12
+  base.castShadow = true
+  base.receiveShadow = true
+  group.add(base)
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.34, 2.28), materials.stone)
+  body.position.y = 0.34
+  body.castShadow = true
+  body.receiveShadow = true
+  group.add(body)
+
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 2.06), materials.cap)
+  lid.position.y = 0.59
+  lid.castShadow = true
+  group.add(lid)
+
+  const inset = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.07, 1.22), materials.dark)
+  inset.position.y = 0.7
+  group.add(inset)
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), materials.bone)
+  head.scale.set(0.9, 0.55, 1.05)
+  head.position.set(0, 0.76, -0.64)
+  group.add(head)
+}
+
+function addReliquary(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.45, 0.26, 8), materials.dark)
+  lower.position.y = 0.13
+  lower.castShadow = true
+  lower.receiveShadow = true
+  group.add(lower)
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 0.22, 8), materials.stone)
+  upper.position.y = 0.37
+  upper.castShadow = true
+  group.add(upper)
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.58, 0.74), materials.wood)
+  chest.position.y = 0.76
+  chest.castShadow = true
+  group.add(chest)
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.18, 0.8), materials.gold)
+  lid.position.y = 1.13
+  lid.rotation.x = -0.08
+  group.add(lid)
+  for (const x of [-0.43, 0.43]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.65, 0.8), materials.metal)
+    band.position.set(x, 0.79, 0)
+    group.add(band)
+  }
+}
+
+function addShrine(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.55, 0.24, 8), materials.dark)
+  base.position.y = 0.12
+  base.receiveShadow = true
+  group.add(base)
+  const step = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 1.24, 0.2, 8), materials.stone)
+  step.position.y = 0.33
+  group.add(step)
+  const altar = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.82, 0.88), materials.cap)
+  altar.position.y = 0.79
+  altar.castShadow = true
+  group.add(altar)
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.16, 1.05), materials.stone)
+  slab.position.y = 1.28
+  group.add(slab)
+  const relic = new THREE.Mesh(new THREE.OctahedronGeometry(0.23), materials.gold)
+  relic.position.y = 1.65
+  relic.rotation.y = Math.PI / 4
+  group.add(relic)
+}
+
+function addBossDais(root: THREE.Group, room: DungeonRoom, materials: V3ArtMaterials) {
+  const p = roomPlacement(room, 0, 0)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+
+  const bottom = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.35, 0.22, 12), materials.dark)
+  bottom.position.y = 0.11
+  bottom.receiveShadow = true
+  group.add(bottom)
+  const middle = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.95, 0.18, 12), materials.stone)
+  middle.position.y = 0.31
+  group.add(middle)
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.62, 0.16, 12), materials.cap)
+  top.position.y = 0.48
+  group.add(top)
+  const seal = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.025, 12), materials.dark)
+  seal.position.y = 0.575
+  group.add(seal)
+  for (let index = 0; index < 6; index += 1) {
+    const angle = index * Math.PI / 3
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.28, 0.62), materials.stone)
+    stone.position.set(Math.cos(angle) * 1.55, 0.68, Math.sin(angle) * 1.55)
+    stone.rotation.y = -angle
+    stone.castShadow = true
+    group.add(stone)
+  }
+}
+
+function addStatue(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  yaw: number,
+  materials: V3ArtMaterials,
+  mode: DungeonRenderMode,
+) {
+  const p = roomPlacement(room, xFraction, zFraction, yaw)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+  const topDown = mode !== 'walk'
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.78, 0.28, 8), materials.dark)
+  base.position.y = 0.14
+  group.add(base)
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, topDown ? 0.68 : 1.12, 4, 8), materials.stone)
+  body.position.y = topDown ? 0.82 : 1.08
+  body.castShadow = true
+  group.add(body)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 9, 7), materials.cap)
+  head.position.y = topDown ? 1.34 : 1.86
+  group.add(head)
+  const staff = new THREE.Mesh(new THREE.BoxGeometry(0.08, topDown ? 1.0 : 1.65, 0.08), materials.metal)
+  staff.position.set(0.38, topDown ? 0.82 : 1.12, 0.02)
+  staff.rotation.z = -0.08
+  group.add(staff)
+}
+
+function addBrokenPlinth(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.18, 1.55), materials.dark)
+  slab.position.y = 0.09
+  slab.rotation.y = random() * 0.15
+  group.add(slab)
+  for (let index = 0; index < 5; index += 1) {
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.25 + random() * 0.28, 0.12 + random() * 0.18, 0.22 + random() * 0.3), index % 2 ? materials.stone : materials.cap)
+    chip.position.set((random() - 0.5) * 1.35, 0.18 + random() * 0.1, (random() - 0.5) * 1.35)
+    chip.rotation.set(random() * 0.25, random() * Math.PI, random() * 0.25)
+    group.add(chip)
+  }
+}
+
+function addRubbleCluster(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  materials: V3ArtMaterials,
+  random: () => number,
+  bones: boolean,
+) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+  for (let index = 0; index < 7; index += 1) {
+    const size = 0.12 + random() * 0.3
+    const mesh = bones
+      ? new THREE.Mesh(new THREE.CapsuleGeometry(0.035, size * 0.55, 3, 5), materials.bone)
+      : new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), index % 3 ? materials.dark : materials.stone)
+    mesh.position.set((random() - 0.5) * 1.35, bones ? 0.07 : size * 0.42, (random() - 0.5) * 1.15)
+    mesh.rotation.set(random() * 0.5, random() * Math.PI, random() * 0.5)
+    mesh.castShadow = !bones
+    group.add(mesh)
+  }
+}
+
+function addBonePile(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  addRubbleCluster(root, room, xFraction, zFraction, materials, random, true)
+  const p = roomPlacement(room, xFraction, zFraction)
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 5), materials.bone)
+  skull.scale.set(1, 0.82, 0.92)
+  skull.position.set(p.x + 0.16, p.y + 0.1, p.z - 0.08)
+  root.add(skull)
+}
+
+function addUrnCluster(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+  for (let index = 0; index < 3; index += 1) {
+    const height = 0.34 + random() * 0.2
+    const urn = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.2, height, 7), index === 1 ? materials.cap : materials.stone)
+    urn.position.set((index - 1) * 0.32 + (random() - 0.5) * 0.08, height / 2, (random() - 0.5) * 0.24)
+    urn.rotation.y = random() * 0.5
+    urn.castShadow = true
+    group.add(urn)
+  }
+}
+
+function addCrateStack(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw + (random() - 0.5) * 0.4
+  root.add(group)
+
+  const crates = [
+    { x: -0.25, y: 0.3, z: 0, size: 0.58 },
+    { x: 0.3, y: 0.26, z: 0.12, size: 0.5 },
+    { x: -0.05, y: 0.78, z: 0.03, size: 0.48 },
+  ]
+  for (const crate of crates) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(crate.size, crate.size, crate.size), materials.wood)
+    mesh.position.set(crate.x, crate.y, crate.z)
+    mesh.rotation.y = (random() - 0.5) * 0.28
+    mesh.castShadow = true
+    group.add(mesh)
+    const band = new THREE.Mesh(new THREE.BoxGeometry(crate.size + 0.03, 0.06, crate.size + 0.03), materials.metal)
+    band.position.set(crate.x, crate.y, crate.z)
+    group.add(band)
+  }
+}
+
+function addRoomBanner(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  materials: V3ArtMaterials,
+  mode: DungeonRenderMode,
+  color: number,
+) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+  const height = mode === 'walk' ? 1.85 : 0.9
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.07, 0.08), materials.metal)
+  bar.position.y = height
+  group.add(bar)
+  const cloth = new THREE.MeshStandardMaterial({ color, roughness: 0.96, side: THREE.DoubleSide })
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(0.72, mode === 'walk' ? 1.15 : 0.55), cloth)
+  banner.position.y = height - (mode === 'walk' ? 0.62 : 0.33)
+  banner.rotation.x = -Math.PI / 2.1
+  group.add(banner)
+}
+
 
 function roomLocalOutline(room: DungeonRoom): DungeonPoint[] {
   const halfW = room.width / 2
