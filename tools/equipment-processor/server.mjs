@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -281,6 +281,12 @@ async function setupGenerator(job) {
       await ensureGeneratorPython(job)
     }
 
+    job.progress = 30
+    job.message = 'Checking Python package installer…'
+    await ensurePipAvailable(
+      venvPython,
+    )
+
     job.progress = 32
     job.message = 'Preparing Python packages…'
     await runCommand(
@@ -386,8 +392,12 @@ async function generate3D(job) {
         venvPython,
       )
     } catch (error) {
+      await rm(
+        generatorReadyMarker,
+        { force: true },
+      )
       throw new Error(
-        'The local 3D generator installation is incomplete. Click Install Free Local Generator to repair it.\n'
+        'The local 3D generator installation is incomplete. Forge marked it for repair. Click Install Free Local Generator, then try again.\n'
         + (
           error instanceof Error
             ? error.message
@@ -498,6 +508,43 @@ function generatorPythonPath() {
   return process.platform === 'win32'
     ? join(generatorVenv, 'Scripts', 'python.exe')
     : join(generatorVenv, 'bin', 'python')
+}
+
+async function ensurePipAvailable(
+  venvPython,
+) {
+  try {
+    await runCommand(
+      venvPython,
+      [
+        '-m', 'pip', '--version',
+      ],
+      {
+        label: 'pip check',
+        quiet: true,
+      },
+    )
+    return
+  } catch {
+    // uv venvs can be created without pip unless seeded.
+  }
+
+  await runCommand(
+    venvPython,
+    [
+      '-m', 'ensurepip',
+      '--upgrade',
+    ],
+    { label: 'pip repair' },
+  )
+
+  await runCommand(
+    venvPython,
+    [
+      '-m', 'pip', '--version',
+    ],
+    { label: 'pip validation' },
+  )
 }
 
 async function ensureGeneratorRuntimeDependencies(
@@ -673,6 +720,7 @@ async function ensureGeneratorPython(job) {
       'venv',
       '--python', '3.11',
       '--managed-python',
+      '--seed',
       generatorVenv,
     ],
     {
