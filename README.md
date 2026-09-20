@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.89.3`  
+> **Current Forge version:** `v1.89.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,10 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.89.4 fixes the dungeon-only camera freeze and makes playable camera behavior shared instead of mode-specific. The overworld and full dungeon runtime now call the same `ForgeGameplayCamera.ts` implementation for framing, follow smoothing, velocity look-ahead, cursor aim look-ahead, camera shake, zoom response, offset angle and look-at height. Dungeon FOV, default distance, zoom limits and wheel step now come from the same `FORGE_WORLD_SCALE` camera contract as overworld play.
+
+The dungeon frame loop also isolates camera/occlusion updates from combat and encounter simulation. A gameplay exception can still be logged without preventing the camera from following the player on that frame, removing the failure mode where the dungeon remained rendered and movable while the camera appeared frozen. Dungeon Forge's Quick ARPG preview now uses the same camera FOV, offset, follow math and movement look-ahead so its framing stays aligned with Play Project.
 
 Forge v1.89.3 is the Combat v2 readability/spacing pass based directly on recorded Wanderer gameplay. Melee lunges now stop at a front-facing contact distance instead of carrying the player through enemies, and the three combo arcs are tightened so primary attacks read as forward cleaves rather than near-360-degree hits. Hit 3 keeps the strongest lunge/impact presentation but is still contact-clamped.
 
