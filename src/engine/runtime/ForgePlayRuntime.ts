@@ -948,13 +948,24 @@ export class ForgePlayRuntime {
     this.ndc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
     this.ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
     this.raycaster.setFromCamera(this.ndc, this.camera)
-    this.raycaster.ray.intersectPlane(this.floorPlane, this.mouseWorld)
+
+    // Resolve the pointer against the actual walk surface while keeping the
+    // point on the camera ray. Simply intersecting Y=0 and then replacing Y
+    // with terrain height moves the world point off the cursor ray.
+    this.floorPlane.constant = 0
+    if (!this.raycaster.ray.intersectPlane(this.floorPlane, this.mouseWorld)) return
+
     if (this.region.version >= 2) {
-      this.mouseWorld.y = runtimeWalkSurfaceHeight(
-        this.region,
-        this.mouseWorld.x,
-        this.mouseWorld.z,
-      )
+      for (let iteration = 0; iteration < 5; iteration += 1) {
+        const surfaceY = runtimeWalkSurfaceHeight(
+          this.region,
+          this.mouseWorld.x,
+          this.mouseWorld.z,
+        )
+        this.floorPlane.constant = -surfaceY
+        if (!this.raycaster.ray.intersectPlane(this.floorPlane, this.mouseWorld)) break
+      }
+      this.floorPlane.constant = 0
     }
   }
 
@@ -1218,6 +1229,43 @@ export class ForgePlayRuntime {
     this.emitState()
   }
 
+  private getGroundAimPoint(
+    range: number,
+    minimumDistance = 0,
+  ) {
+    const direction = this.mouseWorld
+      .clone()
+      .sub(this.player.position)
+      .setY(0)
+    const cursorDistance = direction.length()
+
+    if (cursorDistance > .001) direction.multiplyScalar(1 / cursorDistance)
+    else direction.set(0, 0, -1)
+
+    const clampedMinimum = Math.min(
+      Math.max(0, range),
+      Math.max(0, minimumDistance),
+    )
+    const targetDistance = Math.min(
+      Math.max(0, range),
+      Math.max(clampedMinimum, cursorDistance),
+    )
+    const target = this.player.position
+      .clone()
+      .addScaledVector(direction, targetDistance)
+
+    target.y =
+      this.region.version >= 2
+        ? runtimeWalkSurfaceHeight(
+            this.region,
+            target.x,
+            target.z,
+          )
+        : 0
+
+    return target
+  }
+
   private performAbility(ability: ForgeAbilityDefinition) {
     if ((this.cooldowns.get(ability.id) ?? 0) > 0 || this.playerHealth <= 0) return
     const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
@@ -1261,9 +1309,7 @@ export class ForgePlayRuntime {
         if (facing >= 0.1) this.damageEnemy(enemy, damage, aim, ability.color)
       }
     } else {
-      const mouseDistance = this.mouseWorld.distanceTo(this.player.position)
-      const targetDistance = Math.min(ability.range, mouseDistance)
-      const target = this.player.position.clone().addScaledVector(aim, targetDistance)
+      const target = this.getGroundAimPoint(ability.range)
       this.spawnPulse(target, ability.color, ability.radius, 0.55)
       void this.spawnBoundVfx(ability.vfxAssetId, target)
       for (const enemy of [...this.enemies]) {
@@ -1314,15 +1360,13 @@ export class ForgePlayRuntime {
   ) {
     const config = normalizeChainConfig(ability.chain)
     const caster = this.getChainCastOrigin(aim)
-    const mouseDistance = this.mouseWorld.distanceTo(this.player.position)
-    const targetDistance = Math.min(
+    const aimedGroundPoint = this.getGroundAimPoint(
       ability.range,
-      Math.max(1.5, mouseDistance),
+      1.5,
     )
-    const aimedPoint = this.player.position
+    const aimedPoint = aimedGroundPoint
       .clone()
-      .addScaledVector(aim, targetDistance)
-      .add(new THREE.Vector3(0, 1.0, 0))
+      .add(new THREE.Vector3(0, .06, 0))
 
     const candidates = this.enemies
       .filter((enemy) =>
@@ -1339,8 +1383,12 @@ export class ForgePlayRuntime {
       }))
 
     const first = [...candidates].sort((a, b) => {
-      const aAim = a.position.distanceTo(aimedPoint)
-      const bAim = b.position.distanceTo(aimedPoint)
+      const aDx = a.position.x - aimedGroundPoint.x
+      const aDz = a.position.z - aimedGroundPoint.z
+      const bDx = b.position.x - aimedGroundPoint.x
+      const bDz = b.position.z - aimedGroundPoint.z
+      const aAim = aDx * aDx + aDz * aDz
+      const bAim = bDx * bDx + bDz * bDz
       if (Math.abs(aAim - bAim) > 1e-6) return aAim - bAim
       return a.id.localeCompare(b.id)
     })[0]
