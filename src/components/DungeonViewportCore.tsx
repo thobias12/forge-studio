@@ -89,6 +89,10 @@ export default function DungeonViewport(props: Props) {
 
     const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialAtmosphere.ambient)
     scene.add(ambient)
+    // Authoring fill keeps masonry legible in the editor without flattening the
+    // darker Walk/ARPG presentation.
+    const editorFill = new THREE.AmbientLight(0xb99878, 0)
+    scene.add(editorFill)
     const key = new THREE.DirectionalLight(initialAtmosphere.key, initialAtmosphere.keyIntensity)
     key.position.set(16, 24, 10)
     key.castShadow = true
@@ -127,21 +131,37 @@ export default function DungeonViewport(props: Props) {
     let walkInitialized = false
     let lastFrame = performance.now()
     let lastSignature = ''
+    let lastFrameKey = ''
 
-    const applyAtmosphere = (value: DungeonWithProps) => {
+    const fitEditorCamera = (value: DungeonWithProps) => {
+      if (!value.rooms.length) return
+      const bounds = dungeonWorldBounds(value)
+      const span = Math.max(bounds.width, bounds.depth)
+      const distance = THREE.MathUtils.clamp(span * 0.58 + 13, 25, 92)
+      const height = THREE.MathUtils.clamp(distance * 0.72, 20, 66)
+      controls.target.set(bounds.x, 0, bounds.z)
+      camera.position.set(bounds.x + distance * 0.52, height, bounds.z + distance * 0.64)
+      camera.fov = 46
+      camera.updateProjectionMatrix()
+      controls.update()
+    }
+
+    const applyAtmosphere = (value: DungeonWithProps, immersive: boolean) => {
       const atmosphere = dungeonAtmosphere(value.theme)
+      const authoring = !immersive
       scene.background = new THREE.Color(atmosphere.background)
       if (scene.fog instanceof THREE.FogExp2) {
         scene.fog.color.setHex(atmosphere.fog)
-        scene.fog.density = value.settings.fogDensity * atmosphere.fogMultiplier
+        scene.fog.density = value.settings.fogDensity * atmosphere.fogMultiplier * (authoring ? 0.42 : 1)
       }
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
-      ambient.intensity = atmosphere.ambient * (0.72 + value.settings.ambientLight * 1.15)
+      ambient.intensity = atmosphere.ambient * (authoring ? 1.58 : 0.72 + value.settings.ambientLight * 1.15)
+      editorFill.intensity = authoring ? (value.theme === 'crypt' ? 0.62 : 0.32) : 0
       key.color.setHex(atmosphere.key)
-      key.intensity = atmosphere.keyIntensity
-      renderer.toneMappingExposure = atmosphere.exposure
-      bloomPass.strength = atmosphere.bloomStrength
+      key.intensity = atmosphere.keyIntensity * (authoring ? 1.75 : 1)
+      renderer.toneMappingExposure = atmosphere.exposure * (authoring ? 1.26 : 1)
+      bloomPass.strength = atmosphere.bloomStrength * (authoring ? 0.82 : 1)
       bloomPass.radius = atmosphere.bloomRadius
       bloomPass.threshold = atmosphere.bloomThreshold
       return atmosphere
@@ -154,7 +174,12 @@ export default function DungeonViewport(props: Props) {
       const state = propsRef.current
       const current = state.value
       const immersive = state.playtest
-      const atmosphere = applyAtmosphere(current)
+      const atmosphere = applyAtmosphere(current, immersive)
+      const frameKey = `${current.seed}:${current.rooms.length}:${current.corridors.length}:${current.walls?.length ?? 0}`
+      if (!immersive && frameKey !== lastFrameKey) {
+        lastFrameKey = frameKey
+        fitEditorCamera(current)
+      }
       const crypt = current.theme === 'crypt'
       const roomMap = new Map(current.rooms.map((item) => [item.id, item]))
       const openings = new Map<string, RoomOpening[]>()
@@ -455,10 +480,8 @@ export default function DungeonViewport(props: Props) {
       camera.fov = 48
       camera.updateProjectionMatrix()
       camera.rotation.set(0, 0, 0)
-      camera.position.set(38, 46, 44)
-      controls.target.set(4, 0, 0)
       controls.enabled = true
-      controls.update()
+      fitEditorCamera(propsRef.current.value)
       grid.visible = true
     }
     const updateWalk = (dt: number) => {
@@ -1156,6 +1179,30 @@ function pointInsideCorridor(value: DungeonWithProps, x: number, z: number, marg
 function pointInsideAxisSegment(x: number, z: number, x1: number, z1: number, x2: number, z2: number, width: number, margin: number) { const halfWidth = Math.max(0.25, width / 2 - margin), pad = margin + 0.28; if (Math.abs(z2 - z1) < 0.05) return x >= Math.min(x1, x2) - pad && x <= Math.max(x1, x2) + pad && Math.abs(z - z1) <= halfWidth; if (Math.abs(x2 - x1) < 0.05) return z >= Math.min(z1, z2) - pad && z <= Math.max(z1, z2) + pad && Math.abs(x - x1) <= halfWidth; return false }
 function pointInsideDoor(item: DungeonMarker, x: number, z: number, margin: number) { const dx = x - item.x, dz = z - item.z, angle = -THREE.MathUtils.degToRad(Number(item.data.yaw ?? 0)), cos = Math.cos(angle), sin = Math.sin(angle), localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos; return Math.abs(localX) <= 0.2 + margin && Math.abs(localZ) <= 0.9 + margin }
 function floorHeightAt(value: DungeonWithProps, x: number, z: number) { return value.rooms.find((room) => pointInsideRoom(room, x, z, 0))?.floorLevel ?? 0 }
+function dungeonWorldBounds(value: DungeonWithProps) {
+  const minX = Math.min(
+    ...value.rooms.map((room) => room.x - room.width / 2),
+    ...(value.walls ?? []).flatMap((wall) => [wall.x1, wall.x2]),
+  )
+  const maxX = Math.max(
+    ...value.rooms.map((room) => room.x + room.width / 2),
+    ...(value.walls ?? []).flatMap((wall) => [wall.x1, wall.x2]),
+  )
+  const minZ = Math.min(
+    ...value.rooms.map((room) => room.z - room.depth / 2),
+    ...(value.walls ?? []).flatMap((wall) => [wall.z1, wall.z2]),
+  )
+  const maxZ = Math.max(
+    ...value.rooms.map((room) => room.z + room.depth / 2),
+    ...(value.walls ?? []).flatMap((wall) => [wall.z1, wall.z2]),
+  )
+  return {
+    x: (minX + maxX) / 2,
+    z: (minZ + maxZ) / 2,
+    width: Math.max(8, maxX - minX),
+    depth: Math.max(8, maxZ - minZ),
+  }
+}
 function makeLabel(title: string, subtitle: string) { const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128; const context = canvas.getContext('2d')!; context.fillStyle = 'rgba(7,12,17,.82)'; context.beginPath(); context.roundRect(8, 8, 496, 112, 18); context.fill(); context.fillStyle = '#e9f2f9'; context.font = '600 32px system-ui'; context.textAlign = 'center'; context.fillText(title.slice(0, 28), 256, 56); context.fillStyle = '#87a2b7'; context.font = '600 18px system-ui'; context.fillText(subtitle, 256, 88); const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })); sprite.scale.set(4.6, 1.15, 1); return sprite }
 function markerColor(type: DungeonMarker['type']) { return ({ door: 0xa57743, enemy: 0xe45c5c, loot: 0xe3b64b, checkpoint: 0x65d08a, portal: 0xa675ff, trigger: 0xff9448, light: 0xffd179 } as const)[type] }
 function dungeonCenter(rooms: DungeonRoom[]) { if (!rooms.length) return { x: 0, z: 0 }; return { x: rooms.reduce((sum, room) => sum + room.x, 0) / rooms.length, z: rooms.reduce((sum, room) => sum + room.z, 0) / rooms.length } }
