@@ -282,7 +282,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
         y: dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y,
         width: FLOOR_BRICK_W * chip,
         depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01),
-        shade: 0.74 + (hash % 19) / 100,
+        shade: 0.88 + (hash % 11) / 100,
       })
     }
     row += 1
@@ -295,8 +295,8 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     roughness: 0.9,
     metalness: 0.01,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.floor).multiplyScalar(0.055),
-    emissiveIntensity: 0.18,
+    emissive: new THREE.Color(atmosphere.floor),
+    emissiveIntensity: 0.2,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -324,7 +324,7 @@ function addPerimeterWalls(
   mode: DungeonRenderMode,
 ) {
   const topDown = mode !== 'walk'
-  const wallHeight = topDown ? 1.18 : Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
+  const wallHeight = topDown ? 1.42 : Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
   const rowHeight = 0.46
   const rows = Math.max(2, Math.ceil(wallHeight / rowHeight))
   const samples: BoundaryBrick[] = []
@@ -358,7 +358,7 @@ function addPerimeterWalls(
             y: floorY + row * rowHeight + actualHeight / 2,
             length: WALL_SAMPLE * 1.03,
             yaw: edge.yaw,
-            shade: 0.72 + (hash % 18) / 100,
+            shade: 0.84 + (hash % 13) / 100,
             cap: row === rows - 1,
           })
         }
@@ -373,6 +373,8 @@ function addPerimeterWalls(
     roughness: 0.93,
     metalness: 0.005,
     vertexColors: true,
+    emissive: new THREE.Color(atmosphere.wall),
+    emissiveIntensity: topDown ? 0.11 : 0.07,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, samples.length)
   mesh.name = 'DungeonV3Perimeter'
@@ -382,7 +384,7 @@ function addPerimeterWalls(
   samples.forEach((sample, index) => {
     dummy.position.set(sample.x, sample.y, sample.z)
     dummy.rotation.set(0, sample.yaw, 0)
-    dummy.scale.set(sample.length, rowHeight * (sample.cap ? 0.62 : 0.84), topDown ? 0.28 : 0.36)
+    dummy.scale.set(sample.length, rowHeight * (sample.cap ? 0.7 : 0.88), topDown ? (sample.cap ? 0.52 : 0.44) : (sample.cap ? 0.54 : 0.46))
     dummy.updateMatrix()
     mesh.setMatrixAt(index, dummy.matrix)
     const color = white.clone().multiplyScalar(sample.shade + (sample.cap ? 0.08 : 0))
@@ -400,18 +402,16 @@ function addRoomFixtures(
   flickerLights: DungeonV3FlickerLight[],
   mode: DungeonRenderMode,
 ) {
-  const fixtureY = mode === 'walk' ? 2.05 : 1.05
+  const fixtureY = mode === 'walk' ? 2.05 : 1.18
   for (const room of value.rooms) {
-    const count = room.type === 'boss' ? 4 : room.type === 'treasure' || room.type === 'shrine' ? 2 : 2
-    const positions: Array<{ x: number; z: number; yaw: number }> = []
-    const along = count === 4 ? [-0.3, 0.3] : [0]
-    for (const offset of along) {
-      positions.push(roomWallPoint(room, 'north', offset, 0.28))
-      if (count === 4) positions.push(roomWallPoint(room, 'south', -offset, 0.28))
-      else positions.push(roomWallPoint(room, 'east', offset, 0.28))
-    }
+    const positions: Array<{ x: number; z: number; yaw: number }> = [
+      roomWallPoint(room, 'north', -0.26, 0.3),
+      roomWallPoint(room, 'east', 0.22, 0.3),
+      roomWallPoint(room, 'south', 0.26, 0.3),
+      roomWallPoint(room, 'west', -0.22, 0.3),
+    ]
 
-    positions.slice(0, count).forEach((position, index) => {
+    positions.forEach((position, index) => {
       const fixture = new THREE.Group()
       fixture.position.set(position.x, room.floorLevel, position.z)
       fixture.rotation.y = position.yaw
@@ -430,22 +430,25 @@ function addRoomFixtures(
       const flameMaterial = new THREE.MeshStandardMaterial({
         color: atmosphere.torch,
         emissive: atmosphere.torch,
-        emissiveIntensity: 2.25,
+        emissiveIntensity: 3.15,
         roughness: 0.28,
       })
       const flame = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.28, 8), flameMaterial)
       flame.position.set(0, fixtureY + 0.18, 0.29)
       fixture.add(flame)
 
-      const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.44, 8.8, 1.65)
-      light.position.copy(flame.position)
-      fixture.add(light)
-      flickerLights.push({
-        light,
-        base: light.intensity,
-        phase: ((stringHash(room.id) + index * 17) % 628) / 100,
-        speed: 5.4 + index * 0.35,
-      })
+      const castsLight = room.type === 'boss' || index % 2 === 0
+      if (castsLight) {
+        const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.58, room.type === 'boss' ? 13.5 : 11.8, 1.55)
+        light.position.copy(flame.position)
+        fixture.add(light)
+        flickerLights.push({
+          light,
+          base: light.intensity,
+          phase: ((stringHash(room.id) + index * 17) % 628) / 100,
+          speed: 5.4 + index * 0.35,
+        })
+      }
     })
   }
 }
