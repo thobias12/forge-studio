@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.83.5`  
+> **Current Forge version:** `v1.84.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1260,6 +1260,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
+## v1.84.0 — Recipe-driven Equipment Lab
+
+- pivots Equipment Lab from polishing one manually authored Ranger prototype to a reusable procedural equipment grammar
+- one generator now drives Ranger, Traveler and Acolyte Chest styles
+- style recipes describe silhouette, body profile, front/back panel rules, straps, belts, trims, accents and material roles
+- variation seeds deterministically change recipe cuts/proportions instead of selecting separately modeled armor
+- Body Fit Engine still samples the real Skillbound mannequin and transfers official skin weights automatically
+- output metadata identifies `blender-equipment-grammar-v1`, recipe id and variation
+- Equipment Lab UI shows the recipe-driven pipeline directly
+- processor health exposes the Equipment Grammar capability
+- Blender QA successfully generated all 3 styles × all 4 variations
+
+
 ## v1.83.4 — Ranger body-envelope fit
 
 - replaces the rectangular analytic Ranger torso with an envelope sampled from the real Skillbound mannequin
@@ -1402,50 +1415,40 @@ For exact history beyond this point, use Git history.
 
 # Current priorities
 
-The immediate priority is **Equipment Forge V3 visual quality**.
+The immediate priority is **Equipment Lab as a general one-click asset generator**, not hand-authoring individual armor pieces.
 
-1. Continue refining the v1.77.4 Ranger reference outfit until it looks authored and game-ready, not like a procedural shell.
-2. Use the built-in 360° + close-up QA views to inspect:
-   - body/clothing side clearance
-   - shoulders
-   - underarms
-   - chest/neckline
-   - waist/hem
-   - cape/back clearance
-   - clipping / floating layers
-3. Improve garment construction detail:
-   - layered leather panels
-   - shaped seams
-   - believable thickness
-   - belt construction
-   - pouches / straps / studs
-   - tabard shaping
-   - cape yoke / anchors / borders
-   - controlled asymmetry
-4. Preserve the body-conforming/skinned V3 approach. Do not fall back to large detached boxes or floating V2-style primitives.
-5. After the Ranger reference reaches the target quality, add the missing procedural equipment families:
-   - gloves
-   - boots
-   - legs
-   - head
-6. Add a native **Weapon Forge** using reusable blade/guard/grip/pommel or staff/bow construction systems.
-7. Add bake/export so a native Forge equipment design can become a final reusable game-ready equipment asset.
-8. Extend the same Forge + ChatGPT workflow toward:
-   - humanoid NPCs
-   - enemy factions
-   - animals
-   - monsters/creature families
-   - environment asset generators
-9. Continue Skillbound visual/performance refinement without regressing stable world/runtime systems.
-
-Astra should not become a mandatory per-asset cost. The preferred future remains:
+1. Improve the shared Chest grammar itself: garment silhouettes, neckline/armhole families, panel grammar, seams/trims, straps/belts/hardware, controlled asymmetry and detail density.
+2. Keep Ranger / Traveler / Acolyte as **recipes**, not separately modeled assets.
+3. Make variations meaningfully different while preserving deterministic output and body fit.
+4. Expand the same generator architecture to head, legs, boots, gloves, waist and back/cape.
+5. Add a native Weapon Forge grammar for reusable blade/guard/grip/pommel, staff and bow construction.
+6. Add stronger automatic validation for clipping, disconnected pieces, malformed faces, excessive floating clearance and bad weights.
+7. Keep the production workflow:
 
 ```text
-ChatGPT design intent
+body + slot + style + variation
+           ↓
+    Generate Equipment
+           ↓
+    automatic Blender build
+           ↓
+    automatic fit + skin
+           ↓
+    Forge preview / Library
+```
+
+8. SPAR3D/reference-image reconstruction remains experimental and should not become the required path for wearable equipment.
+
+The preferred future remains:
+
+```text
+ChatGPT / user design intent
         ↓
 structured Forge recipe
         ↓
-native Forge generator/editor
+native Forge generator
+        ↓
+automatic validation
         ↓
 Forge Library
         ↓
