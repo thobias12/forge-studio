@@ -1109,7 +1109,8 @@ function addRoomDressing(
     // Keep most of the playable floor intentionally empty. Dressing is a focal
     // cluster, not a scatter pass.
     if (template === 'threshold') {
-      if (random() > 0.45) addRubbleCluster(root, room, 0.34, 0.34, materials, random, false)
+      if (random() > 0.7) addRubbleCluster(root, room, 0.34, 0.34, materials, random, false)
+      addCandleCluster(root, room, -0.34, 0.3, atmosphere, stringHash(room.id) + 3)
       continue
     }
 
@@ -1141,13 +1142,14 @@ function addRoomDressing(
 
     if (template === 'reliquary') {
       addReliquary(root, room, 0, 0.02, materials)
-      if (random() > 0.55) addUrnCluster(root, room, 0.3, 0.3, materials, random)
+      addCandleCluster(root, room, -0.28, 0.29, atmosphere, stringHash(room.id) + 41)
       continue
     }
 
     if (template === 'shrine-hall') {
       addShrine(root, room, 0, 0.02, materials)
-      if (random() > 0.6) addBonePile(root, room, 0.3, 0.28, materials, random)
+      addCandleCluster(root, room, -0.3, 0.27, atmosphere, stringHash(room.id) + 71)
+      addCandleCluster(root, room, 0.3, 0.27, atmosphere, stringHash(room.id) + 89)
       continue
     }
 
@@ -1179,6 +1181,43 @@ function addRoomDressing(
       addRubbleCluster(root, room, 0.28, 0.28, materials, random, false)
     }
   }
+}
+
+function addCandleCluster(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  atmosphere: DungeonAtmosphere,
+  seed: number,
+) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const wax = new THREE.MeshStandardMaterial({ color: 0xc7bfae, roughness: 0.9, metalness: 0 })
+  const baseOffsets = [
+    { x: -0.13, z: 0.02, h: 0.22 },
+    { x: 0.08, z: -0.07, h: 0.31 },
+    { x: 0.18, z: 0.1, h: 0.17 },
+  ]
+  baseOffsets.forEach((entry, index) => {
+    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, entry.h, 8), wax)
+    candle.position.set(entry.x, entry.h / 2 + 0.03, entry.z)
+    candle.castShadow = true
+    group.add(candle)
+    addFlameVfx(group, entry.x, entry.h + 0.04, entry.z, atmosphere, seed + index * 19, undefined, 0.46)
+  })
+
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.34, 0.38, 0.05, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2a2b2a, roughness: 0.76, metalness: 0.24 }),
+  )
+  plate.position.y = 0.025
+  plate.receiveShadow = true
+  group.add(plate)
 }
 
 function resolveRoomTemplate(room: DungeonRoom) {
