@@ -303,7 +303,7 @@ export class ForgeDungeonRuntime {
     event.preventDefault()
   }
   private onPointerUp = (event: PointerEvent) => {
-    if (event.button === 0) this.primaryHeld = false
+    if (event.button === 0 || event.type !== 'pointerup') this.primaryHeld = false
   }
   private onWheel = (event: WheelEvent) => {
     this.cameraDistanceTarget = forgeWheelDistanceTarget(
