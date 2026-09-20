@@ -91,7 +91,7 @@ export default function DungeonViewport(props: Props) {
     scene.add(ambient)
     // Authoring fill keeps masonry legible in the editor without flattening the
     // darker Walk/ARPG presentation.
-    const editorFill = new THREE.AmbientLight(0xb99878, 0)
+    const editorFill = new THREE.AmbientLight(initialAtmosphere.sky, 0)
     scene.add(editorFill)
     const key = new THREE.DirectionalLight(initialAtmosphere.key, initialAtmosphere.keyIntensity)
     key.position.set(16, 24, 10)
@@ -168,6 +168,7 @@ export default function DungeonViewport(props: Props) {
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
       ambient.intensity = lighting.ambientIntensity
+      editorFill.color.setHex(atmosphere.sky)
       editorFill.intensity = lighting.fillIntensity
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
