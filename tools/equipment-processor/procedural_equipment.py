@@ -1005,6 +1005,7 @@ def material(name, color, roughness=0.7, metallic=0.0):
     mat.use_nodes = True
     rgba = hex_rgb(color)
     mat.diffuse_color = rgba
+    mat.use_backface_culling = False
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         bsdf.inputs["Base Color"].default_value = rgba
@@ -2314,48 +2315,6 @@ def sample_ranger_radius(
             weight,
         ))
 
-    if candidates:
-        candidates.sort(
-            key=lambda entry: entry[0],
-        )
-        # Use an upper-middle quantile rather than the maximum. This wraps
-        # the body reliably without tracing nipples, scapula edges or an
-        # occasional shoulder/arm outlier.
-        target_index = int(
-            round(
-                (len(candidates) - 1)
-                * 0.72
-            )
-        )
-        measured = candidates[
-            max(
-                0,
-                min(
-                    len(candidates) - 1,
-                    target_index,
-                ),
-            )
-        ][0]
-
-        # Blend neighboring angular sectors and vertical levels to create
-        # a garment envelope rather than a scan-like anatomical copy.
-        neighbor_values = [
-            entry[0]
-            for entry
-            in candidates
-            if abs(
-                entry[0] - measured
-            ) <= height * 0.035
-        ]
-        if neighbor_values:
-            measured = sum(
-                neighbor_values
-            ) / len(
-                neighbor_values
-            )
-
-        return measured
-
     width_radius, front_depth, back_depth = (
         ranger_profile(
             frame,
@@ -2380,12 +2339,61 @@ def sample_ranger_radius(
             / max(depth_radius, 1e-5)
         ) ** 2
     )
-    return (
+    analytic = (
         1.0 / max(
             denominator,
             1e-5,
         )
     )
+
+    if candidates:
+        candidates.sort(
+            key=lambda entry: entry[0],
+        )
+        target_index = int(
+            round(
+                (len(candidates) - 1)
+                * 0.72
+            )
+        )
+        measured = candidates[
+            max(
+                0,
+                min(
+                    len(candidates) - 1,
+                    target_index,
+                ),
+            )
+        ][0]
+
+        neighbor_values = [
+            entry[0]
+            for entry
+            in candidates
+            if abs(
+                entry[0] - measured
+            ) <= height * 0.035
+        ]
+        if neighbor_values:
+            measured = sum(
+                neighbor_values
+            ) / len(
+                neighbor_values
+            )
+
+        measured = max(
+            analytic * 0.88,
+            min(
+                analytic * 1.12,
+                measured,
+            ),
+        )
+        return (
+            measured * 0.78
+            + analytic * 0.22
+        )
+
+    return analytic
 
 
 def ranger_angle_point(
@@ -2570,6 +2578,19 @@ def create_authored_mesh(
         faces,
     )
     mesh.update()
+
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        if bm.faces:
+            bmesh.ops.recalc_face_normals(
+                bm,
+                faces=list(bm.faces),
+            )
+        bm.to_mesh(mesh)
+        mesh.update()
+    finally:
+        bm.free()
 
     obj = bpy.data.objects.new(
         name,
@@ -3125,9 +3146,11 @@ def create_ranger_authored_chest(
         (1.0, "R"),
     ]:
         columns = [
-            side_sign * 0.20,
-            side_sign * 0.40,
-            side_sign * 0.62,
+            side_sign * 0.18,
+            side_sign * 0.30,
+            side_sign * 0.42,
+            side_sign * 0.54,
+            side_sign * 0.66,
         ]
         if side_sign < 0:
             columns = list(
@@ -3135,11 +3158,13 @@ def create_ranger_authored_chest(
             )
 
         rows = [
-            lower + 0.055,
-            lower + 0.095,
-            lower + 0.135,
-            lower + 0.172,
-            center_top - 0.045,
+            lower + 0.050,
+            lower + 0.082,
+            lower + 0.114,
+            lower + 0.146,
+            lower + 0.176,
+            center_top - 0.060,
+            center_top - 0.032,
             center_top - 0.006,
         ]
 
@@ -3173,9 +3198,11 @@ def create_ranger_authored_chest(
         (1.0, "R"),
     ]:
         columns = [
-            side_sign * 0.10,
-            side_sign * 0.34,
-            side_sign * 0.62,
+            side_sign * 0.08,
+            side_sign * 0.22,
+            side_sign * 0.36,
+            side_sign * 0.50,
+            side_sign * 0.64,
         ]
         if side_sign < 0:
             columns = list(
@@ -3189,10 +3216,12 @@ def create_ranger_authored_chest(
                 surface_samples,
                 "back",
                 [
-                    lower + 0.060,
-                    lower + 0.105,
-                    lower + 0.150,
-                    center_top - 0.050,
+                    lower + 0.055,
+                    lower + 0.087,
+                    lower + 0.119,
+                    lower + 0.151,
+                    center_top - 0.065,
+                    center_top - 0.038,
                     center_top - 0.012,
                 ],
                 columns,
