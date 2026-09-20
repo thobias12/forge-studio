@@ -391,6 +391,8 @@ async function generateProceduralEquipment(
       blender,
       [
         '--background',
+        '--python-exit-code',
+        '1',
         '--python',
         proceduralGenerator,
         '--',
