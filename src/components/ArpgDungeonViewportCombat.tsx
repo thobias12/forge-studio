@@ -7,6 +7,12 @@ import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, t
 import { addDungeonMasonryV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../lib/dungeonForgeV3'
 import { getAsset, listAssets } from '../lib/library'
 import { definitionFromMetadata, findDestructibleRoot, isForgeDestructibleMetadata, playDestructibleBreakSound } from '../lib/destructibleAsset'
+import { FORGE_WORLD_SCALE } from '../engine/worldScale'
+import {
+  forgeGameplayCameraOffset,
+  forgeSnapGameplayCamera,
+  forgeUpdateGameplayCamera,
+} from '../engine/runtime/ForgeGameplayCamera'
 import '../arpg-combat.css'
 
 type Props = { value: DungeonWithProps }
@@ -24,11 +30,6 @@ type RuntimeEncounter = { encounter: DungeonEncounter; active: boolean; cleared:
 type AttackFx = { mesh: THREE.Mesh; life: number }
 type Hud = { hp: number; maxHp: number; gold: number; encounter: string; alive: number; total: number }
 
-const CAMERA_OFFSET = new THREE.Vector3(5.4, 15.8, 7.2)
-const CAMERA_FOV = 35
-const CAMERA_LOOK_AHEAD = 1.55
-const CAMERA_FOLLOW_RATE = 10.5
-const CAMERA_FOCUS_RATE = 8.5
 const WALK_SPEED = 4.2
 const SPRINT_SPEED = 7.2
 const OCCLUDER_OPACITY = 0.075
@@ -60,7 +61,12 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(initialAtmosphere.background)
     scene.fog = new THREE.FogExp2(initialAtmosphere.fog, initialLighting.fogDensity)
-    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.08, 220)
+    const camera = new THREE.PerspectiveCamera(
+      FORGE_WORLD_SCALE.playCameraFov,
+      1,
+      0.08,
+      220,
+    )
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -91,9 +97,25 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     const keys = new Set<string>()
     const occlusionRay = new THREE.Raycaster()
     const playerPosition = new THREE.Vector3()
+    const playerVelocity = new THREE.Vector3()
     const cameraFocus = new THREE.Vector3()
-    const cameraForward = new THREE.Vector3(-CAMERA_OFFSET.x, 0, -CAMERA_OFFSET.z).normalize()
-    const cameraRight = new THREE.Vector3(-cameraForward.z, 0, cameraForward.x)
+    const tempCameraFocus = new THREE.Vector3()
+    const tempCameraAim = new THREE.Vector3()
+    const tempCameraOffset = new THREE.Vector3()
+    const cameraBaseOffset = forgeGameplayCameraOffset(
+      FORGE_WORLD_SCALE.playCameraDistance,
+      new THREE.Vector3(),
+    )
+    const cameraForward = new THREE.Vector3(
+      -cameraBaseOffset.x,
+      0,
+      -cameraBaseOffset.z,
+    ).normalize()
+    const cameraRight = new THREE.Vector3(
+      -cameraForward.z,
+      0,
+      cameraForward.x,
+    )
     const flickerLights: FlickerLight[] = []
     const roomWallNodes: THREE.Object3D[] = []
     const roomWallFactor = new Map<THREE.Object3D, number>()
@@ -142,14 +164,26 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       return atmosphere
     }
 
-    const focusTarget = () => playerPosition.clone().addScaledVector(cameraForward, CAMERA_LOOK_AHEAD).add(new THREE.Vector3(0, 0.82, 0))
     const spawnPlayer = (current: DungeonWithProps) => {
       const checkpoint = current.markers.find((item) => item.type === 'checkpoint')
       const entrance = current.rooms.find((room) => room.type === 'entrance') ?? current.rooms[0]
       if (!entrance) return
-      playerPosition.set(checkpoint?.x ?? entrance.x, entrance.floorLevel, checkpoint?.z ?? entrance.z)
-      avatar.position.copy(playerPosition); avatar.visible = true
-      cameraFocus.copy(focusTarget()); camera.position.copy(playerPosition).add(CAMERA_OFFSET); camera.lookAt(cameraFocus); playerInitialized = true
+      playerPosition.set(
+        checkpoint?.x ?? entrance.x,
+        entrance.floorLevel,
+        checkpoint?.z ?? entrance.z,
+      )
+      playerVelocity.set(0, 0, 0)
+      avatar.position.copy(playerPosition)
+      avatar.visible = true
+      forgeSnapGameplayCamera({
+        camera,
+        focus: cameraFocus,
+        playerPosition,
+        distance: FORGE_WORLD_SCALE.playCameraDistance,
+        tempOffset: tempCameraOffset,
+      })
+      playerInitialized = true
     }
 
     const chooseCharacterAsset = (encounter: DungeonEncounter) => {
@@ -330,11 +364,61 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp); window.addEventListener('blur', onBlur); renderer.domElement.addEventListener('pointerdown', onPointerDown)
 
     const updatePlayer = (dt: number) => {
-      const current = valueRef.current, forwardAmount = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), rightAmount = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0)
-      if (forwardAmount || rightAmount) { const move = cameraForward.clone().multiplyScalar(forwardAmount).add(cameraRight.clone().multiplyScalar(rightAmount)); if (move.lengthSq() > 1) move.normalize(); move.multiplyScalar((keys.has('ShiftLeft') || keys.has('ShiftRight') ? SPRINT_SPEED : WALK_SPEED) * dt); const resolved=resolveDungeonSlideV3(playerPosition.x,playerPosition.z,move.x,move.z,(x,z)=>canWalkAt(current,x,z,brokenPropIds,runtimeLockedDoorIds)); playerPosition.x=resolved.x; playerPosition.z=resolved.z; avatar.rotation.y = Math.atan2(move.x, move.z) }
-      playerPosition.y = floorHeightAt(current, playerPosition.x, playerPosition.z); avatar.position.lerp(playerPosition, 1 - Math.exp(-20 * dt)); camera.position.lerp(playerPosition.clone().add(CAMERA_OFFSET), 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt))
-      if (cameraShake > 0.001) { camera.position.x += (Math.random() - 0.5) * cameraShake; camera.position.y += (Math.random() - 0.5) * cameraShake * 0.55; camera.position.z += (Math.random() - 0.5) * cameraShake; cameraShake *= Math.exp(-15 * dt) }
-      cameraFocus.lerp(focusTarget(), 1 - Math.exp(-CAMERA_FOCUS_RATE * dt)); camera.lookAt(cameraFocus)
+      const current = valueRef.current
+      const forwardAmount =
+        (keys.has('KeyW') ? 1 : 0) -
+        (keys.has('KeyS') ? 1 : 0)
+      const rightAmount =
+        (keys.has('KeyD') ? 1 : 0) -
+        (keys.has('KeyA') ? 1 : 0)
+      const beforeX = playerPosition.x
+      const beforeZ = playerPosition.z
+
+      if (forwardAmount || rightAmount) {
+        const move = cameraForward
+          .clone()
+          .multiplyScalar(forwardAmount)
+          .add(cameraRight.clone().multiplyScalar(rightAmount))
+        if (move.lengthSq() > 1) move.normalize()
+        move.multiplyScalar(
+          (keys.has('ShiftLeft') || keys.has('ShiftRight')
+            ? SPRINT_SPEED
+            : WALK_SPEED) * dt,
+        )
+        const resolved = resolveDungeonSlideV3(
+          playerPosition.x,
+          playerPosition.z,
+          move.x,
+          move.z,
+          (x, z) =>
+            canWalkAt(
+              current,
+              x,
+              z,
+              brokenPropIds,
+              runtimeLockedDoorIds,
+            ),
+        )
+        playerPosition.x = resolved.x
+        playerPosition.z = resolved.z
+        avatar.rotation.y = Math.atan2(move.x, move.z)
+      }
+
+      playerPosition.y = floorHeightAt(
+        current,
+        playerPosition.x,
+        playerPosition.z,
+      )
+      const safeDt = Math.max(.001, dt)
+      playerVelocity.set(
+        (playerPosition.x - beforeX) / safeDt,
+        0,
+        (playerPosition.z - beforeZ) / safeDt,
+      )
+      avatar.position.lerp(
+        playerPosition,
+        1 - Math.exp(-20 * dt),
+      )
     }
 
     const activateEncounters = (current: DungeonWithProps) => {
@@ -479,7 +563,30 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       if (signature !== lastSignature) { lastSignature = signature; rebuild() }
       if (!playerInitialized) spawnPlayer(current)
       const frozen = now < freezeUntil
-      if (!frozen) { updatePlayer(dt); updateEnemies(dt, now); updateDestruction(dt); updateDoors() }
+      if (!frozen) {
+        updatePlayer(dt)
+        updateEnemies(dt, now)
+        updateDestruction(dt)
+        updateDoors()
+      } else {
+        playerVelocity.multiplyScalar(Math.exp(-16 * dt))
+      }
+
+      cameraShake *= Math.exp(-15 * dt)
+      forgeUpdateGameplayCamera({
+        camera,
+        focus: cameraFocus,
+        playerPosition,
+        playerVelocity,
+        distance: FORGE_WORLD_SCALE.playCameraDistance,
+        delta: dt,
+        shake: cameraShake,
+        tempFocus: tempCameraFocus,
+        tempAim: tempCameraAim,
+        tempOffset: tempCameraOffset,
+        now,
+      })
+
       const seconds = now * 0.001
       for (const entry of flickerLights) { const noise = Math.sin(seconds * entry.speed + entry.phase) * 0.09 + Math.sin(seconds * entry.speed * 2.17 + entry.phase * 0.41) * 0.035; entry.light.intensity = entry.base * (1 + noise) }
       updateRoomCutaway(dt); updateOcclusion(dt); updateHud(now); renderer.render(scene, camera); frame = requestAnimationFrame(tick)
