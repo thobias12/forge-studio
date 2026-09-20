@@ -1,3 +1,4 @@
+import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -805,11 +806,7 @@ function buildTerrain(region: GeneratedRegion) {
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
 
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 1,
-    metalness: 0,
-  })
+  const material = forestFloorMaterial()
   const mesh = new THREE.Mesh(geometry, material)
   mesh.name = 'GeneratedTerrain'
   mesh.receiveShadow = true
@@ -1502,28 +1499,28 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       trees.filter((item) => item.variant === variant)
     )
     const lowerGeometries: THREE.BufferGeometry[] = [
-      new THREE.ConeGeometry(1.52, 2.75, 7),
-      new THREE.ConeGeometry(1.72, 2.35, 8),
-      new THREE.DodecahedronGeometry(1.18, 0),
-      new THREE.ConeGeometry(1.34, 2.95, 7),
+      forestCrown(1.52, 2.75, 7),
+      forestCrown(1.72, 2.35, 8),
+      forestBroadleaf(1.18),
+      forestCrown(1.34, 2.95, 7),
     ]
     const middleGeometries: THREE.BufferGeometry[] = [
-      new THREE.ConeGeometry(1.18, 2.45, 7),
-      new THREE.ConeGeometry(1.32, 2.15, 8),
-      new THREE.DodecahedronGeometry(1.04, 0),
-      new THREE.ConeGeometry(1.04, 2.55, 7),
+      forestCrown(1.18, 2.45, 7),
+      forestCrown(1.32, 2.15, 8),
+      forestBroadleaf(1.04),
+      forestCrown(1.04, 2.55, 7),
     ]
     const upperGeometries: THREE.BufferGeometry[] = [
-      new THREE.ConeGeometry(.82, 2.15, 7),
-      new THREE.ConeGeometry(.9, 1.92, 8),
-      new THREE.DodecahedronGeometry(.82, 0),
-      new THREE.ConeGeometry(.7, 2.2, 7),
+      forestCrown(.82, 2.15, 7),
+      forestCrown(.9, 1.92, 8),
+      forestBroadleaf(.82),
+      forestCrown(.7, 2.2, 7),
     ]
     const accentGeometries: THREE.BufferGeometry[] = [
-      new THREE.ConeGeometry(.78, .88, 6),
-      new THREE.ConeGeometry(.92, .72, 7),
-      new THREE.DodecahedronGeometry(.66, 0),
-      new THREE.ConeGeometry(.7, .96, 6),
+      forestCrown(.78, .88, 6),
+      forestCrown(.92, .72, 7),
+      forestBroadleaf(.66),
+      forestCrown(.7, .96, 6),
     ]
     buckets.forEach((items, variant) => {
       if (!items.length) return
@@ -1840,7 +1837,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (rocks.length) {
-    const geometry = new THREE.DodecahedronGeometry(.7, 0)
+    const geometry = forestRock(.7)
     const material = new THREE.MeshStandardMaterial({ color: palette.rock, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, rocks.length)
     setInstances(mesh, rocks, (item) => ({
@@ -1854,14 +1851,14 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (ferns.length) {
-    const geometry = new THREE.ConeGeometry(.38, .72, 5)
+    const geometry = forestFern()
     const material = markWorldWindMaterial(
-      new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: groundCoverColors.fern, side: THREE.DoubleSide, roughness: 1 }),
       .72,
     )
     const mesh = new THREE.InstancedMesh(geometry, material, ferns.length)
     setInstances(mesh, ferns, (item) => ({
-      position: new THREE.Vector3(item.x, item.y + .31 * item.scale, item.z),
+      position: new THREE.Vector3(item.x, item.y + .015, item.z),
       rotation: new THREE.Euler(0, item.rotation, 0),
       scale: new THREE.Vector3(item.scale, item.scale, item.scale),
     }))
@@ -1869,9 +1866,9 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (logs.length) {
-    const geometry = new THREE.CylinderGeometry(.25, .32, 2.4, 7)
+    const geometry = forestLog()
     geometry.rotateZ(Math.PI / 2)
-    const material = new THREE.MeshStandardMaterial({ color: 0x443328, roughness: 1 })
+    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1 })
     const mesh = new THREE.InstancedMesh(geometry, material, logs.length)
     setInstances(mesh, logs, (item) => ({
       position: new THREE.Vector3(item.x, item.y + .22, item.z),
@@ -1896,14 +1893,14 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (grasses.length) {
-    const geometry = new THREE.ConeGeometry(.22, .62, 5)
+    const geometry = forestGrass()
     const material = markWorldWindMaterial(
-      new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: groundCoverColors.grass, vertexColors: true, side: THREE.DoubleSide, roughness: 1 }),
       .9,
     )
     const mesh = new THREE.InstancedMesh(geometry, material, grasses.length)
     setInstances(mesh, grasses, (item) => ({
-      position: new THREE.Vector3(item.x, item.y + .23 * item.scale, item.z),
+      position: new THREE.Vector3(item.x, item.y + .015, item.z),
       rotation: new THREE.Euler(0, item.rotation, 0),
       scale: new THREE.Vector3(item.scale * .9, item.scale, item.scale * .9),
     }))
@@ -3138,10 +3135,10 @@ function editorMoodStyle(mood: GeneratedRegion['mood']) {
       fill: .68,
       terrainTint: 0x443f2f,
       terrainTintStrength: .12,
-      terrainBrightness: .86,
-      colorBrightness: .84,
+      terrainBrightness: 1.04,
+      colorBrightness: 1.15,
       colorTint: 0x4a4332,
-      colorTintStrength: .1,
+      colorTintStrength: .045,
     }
   }
   if (mood === 'bleak') {

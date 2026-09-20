@@ -1,3 +1,4 @@
+import { forestGrass } from './forestGeometry'
 import * as THREE from 'three'
 import {
   buildRiverOccupancyMask,
@@ -317,7 +318,7 @@ function buildAmbientAnchors(region: GeneratedRegion) {
     region,
     anchors,
     'grass',
-    Math.round(grassBase * areaScale * moodGrass),
+    Math.min(6500, Math.round(grassBase * areaScale * moodGrass * 48)),
     random,
     1.15,
     .45,
@@ -618,23 +619,25 @@ function addGrass(
             0x4d7147
   const moodScalar =
     region.mood === 'dark' ? .7 :
-      region.mood === 'deadwood' ? .68 :
+      region.mood === 'deadwood' ? .92 :
         region.mood === 'bleak' ? .76 :
           1
   const material = markWorldWindMaterial(
     new THREE.MeshStandardMaterial({
       color: new THREE.Color(baseColor).multiplyScalar(moodScalar),
+      vertexColors: true, side: THREE.DoubleSide,
       roughness: 1,
     }),
     .92,
   )
-  const geometry = new THREE.ConeGeometry(.065, .62, 4)
-  const bladesPerCluster = 4
+  const geometry = forestGrass()
+  const bladesPerCluster = 1
   const mesh = new THREE.InstancedMesh(
     geometry,
     material,
     anchors.length * bladesPerCluster,
   )
+  mesh.name = 'Forest grass ground cover'
   const matrix = new THREE.Matrix4()
   const quaternion = new THREE.Quaternion()
   const scale = new THREE.Vector3()
@@ -654,14 +657,14 @@ function addGrass(
         ),
       )
       scale.set(
-        item.scale * (.78 + (blade % 2) * .1),
+        item.scale * 1.4,
         height,
-        item.scale * (.82 + (blade % 3) * .07),
+        item.scale * 1.4,
       )
       matrix.compose(
         new THREE.Vector3(
           item.x + Math.cos(angle) * radius,
-          y + .28 * height,
+          y + .015,
           item.z + Math.sin(angle) * radius,
         ),
         quaternion,

@@ -829,14 +829,14 @@ function moodBase(mood: WorldMood): MoodBase {
       dayFog: 0x25291f,
       nightFog: 0x181d16,
       fogDensity: .0082,
-      exposure: 1,
-      daySky: 0xc4c7b8,
+      exposure: 1.2,
+      daySky: 0xd6dfcd,
       nightSky: 0x59645a,
       ground: 0x2d2a23,
       daySun: 0xd8c3a4,
       duskSun: 0xd77f49,
       nightLight: 0xa4acb6,
-      fill: 0x7b806c,
+      fill: 0x9aaa94,
     }
   }
   if (mood === 'bleak') {
