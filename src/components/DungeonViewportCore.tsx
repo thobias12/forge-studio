@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -1401,7 +1401,7 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
 function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
   const inside = value.theme === 'crypt'
-    ? dungeonContainsPointV3(value, x, z, radius + 0.06)
+    ? dungeonNavigationContainsV3(value, x, z)
     : value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) || pointInsideCorridor(value, x, z, radius)
   if (!inside) return false
   if (value.theme === 'crypt' && dungeonArtCollidesV3(value, x, z, radius)) return false
