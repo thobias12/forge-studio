@@ -135,7 +135,7 @@ function addWalls(group:THREE.Group,room:DungeonRoom,openings:CryptOpening[],thi
     const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),mats.wall,blocks.length)
     const dummy=new THREE.Object3D(), white=new THREE.Color(0xffffff)
     blocks.forEach((b,i)=>{place(dummy,room,side,b.a,b.y,thickness/2+.105);dummy.scale.set(b.w,b.h,.115);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);mesh.setColorAt(i,white.clone().multiplyScalar(b.s))})
-    mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.roomId=room.id;mesh.userData.arpgOccluder=true;group.add(mesh)
+    mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.roomId=room.id;mesh.userData.wallSide=side;mesh.userData.arpgOccluder=true;group.add(mesh)
   }
 }
 
