@@ -511,32 +511,9 @@ function createTorsoTemplate(
             sideEase * .00055) +
         hemFlare
 
-      const lateralShoulderT =
-        THREE.MathUtils.clamp(
-          (v - .86) / .14,
-          0,
-          1,
-        )
-      const sideAmount =
-        Math.abs(
-          Math.sin(angle),
-        )
-      const lateralShoulder =
-        lateralShoulderT *
-        THREE.MathUtils.smoothstep(
-          sideAmount,
-          .68,
-          1,
-        )
-      const lateralClearance =
-        frame.height *
-        .0022 *
-        lateralShoulder
-
       position.addScaledVector(
         radialNormal,
-        extra +
-          lateralClearance,
+        extra,
       )
 
       ringPositions.push(position)
