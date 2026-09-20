@@ -20,6 +20,7 @@ export function addCryptRoomSurfacePass(
   group.position.set(room.x, room.floorLevel, room.z)
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
   group.userData.roomId = room.id
+  group.userData.roomRoot = true
   parent.add(group)
 
   const mats = createCryptMaterialSet(atmosphere)
