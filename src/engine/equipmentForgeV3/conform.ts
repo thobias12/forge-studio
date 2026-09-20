@@ -625,6 +625,101 @@ function createTorsoTemplate(
     influences,
   )
   geometry.computeVertexNormals()
+
+  // The front-center neckline is both the circular grid seam and the
+  // apex of the V. Blend its upper normals toward a stable lower chest
+  // ring with a smooth vertical/angular falloff so the seam does not
+  // shade as an X while preserving the surrounding fitted torso light.
+  const torsoNormals =
+    geometry.getAttribute(
+      'normal',
+    ) as THREE.BufferAttribute
+  const normalStartRing =
+    rings - 6
+
+  for (
+    let ring = normalStartRing;
+    ring <= rings;
+    ring += 1
+  ) {
+    const ringT =
+      THREE.MathUtils.smoothstep(
+        ring,
+        normalStartRing,
+        rings,
+      )
+
+    for (
+      let offset = -6;
+      offset <= 6;
+      offset += 1
+    ) {
+      const segment =
+        (offset +
+          segments) %
+        segments
+      const sideT =
+        1 -
+        THREE.MathUtils.smoothstep(
+          Math.abs(offset),
+          0,
+          6,
+        )
+      const strength =
+        ringT *
+        sideT *
+        .82
+
+      if (strength <= 0) {
+        continue
+      }
+
+      const index =
+        ring * segments +
+        segment
+      const currentNormal =
+        new THREE.Vector3(
+          torsoNormals.getX(index),
+          torsoNormals.getY(index),
+          torsoNormals.getZ(index),
+        ).normalize()
+      const referenceIndex =
+        Math.max(
+          0,
+          normalStartRing - 1,
+        ) *
+          segments +
+        segment
+      const targetNormal =
+        new THREE.Vector3(
+          torsoNormals.getX(
+            referenceIndex,
+          ),
+          torsoNormals.getY(
+            referenceIndex,
+          ),
+          torsoNormals.getZ(
+            referenceIndex,
+          ),
+        ).normalize()
+      const blended =
+        currentNormal
+          .lerp(
+            targetNormal,
+            strength * .88,
+          )
+          .normalize()
+
+      torsoNormals.setXYZ(
+        index,
+        blended.x,
+        blended.y,
+        blended.z,
+      )
+    }
+  }
+  torsoNormals.needsUpdate =
+    true
   geometry.computeBoundingSphere()
 
   return makeSkinnedTemplate(
