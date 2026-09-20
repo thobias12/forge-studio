@@ -46,16 +46,21 @@ That folder is ignored by Git.
 
 Setup:
 
-1. finds a compatible Python runtime (Python 3.11 preferred)
-2. clones the official VAST-AI-Research/TripoSR repository
-3. creates an isolated virtual environment
-4. installs PyTorch CUDA 12.8 on Windows
-5. installs TripoSR requirements
-6. verifies whether CUDA/NVIDIA GPU access is available
+1. detects any existing Python 3.8+ runtime
+2. if that Python is newer than TripoSR supports (for example Python 3.13), Forge creates a private bootstrap virtual environment
+3. installs uv inside that private bootstrap
+4. uv downloads and manages Python 3.11 for Forge only
+5. clones the official VAST-AI-Research/TripoSR repository
+6. creates the isolated generator environment
+7. installs PyTorch CUDA 12.8 on Windows
+8. installs TripoSR requirements
+9. verifies whether CUDA/NVIDIA GPU access is available
+
+The Forge-managed Python lives under `tools/equipment-processor/work/generators/.forge-python`. It does not replace, downgrade or modify the user's normal Python installation.
 
 TripoSR model weights are downloaded locally on first generation.
 
-If Python is missing, install Python 3.11 and retry. Some Windows Python packages may require Microsoft Visual C++ build tools.
+If no Python runtime exists at all, install any current Python release once and retry. Some Windows Python packages may require Microsoft Visual C++ build tools.
 
 ## Blender processing
 
