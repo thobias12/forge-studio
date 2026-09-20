@@ -43,7 +43,7 @@ export type EquipmentProcessorHealth = {
 
 export type EquipmentGeneratorJob = {
   id: string
-  kind: 'setup' | 'generate'
+  kind: 'setup' | 'generate' | 'procedural'
   status: 'queued' | 'running' | 'completed' | 'failed'
   progress: number
   message: string
@@ -114,6 +114,50 @@ export async function saveGeneratorAccessToken(
         'Could not save the local generator access token.',
       ),
     )
+  }
+}
+
+export async function startProceduralEquipmentGeneration(
+  options: {
+    bodyType: EquipmentLabBody
+    slot: EquipmentLabSlot
+    style:
+      | 'ranger'
+      | 'traveler'
+      | 'acolyte'
+    seed?: number
+  },
+) {
+  const query =
+    new URLSearchParams({
+      body: options.bodyType,
+      slot: options.slot,
+      style: options.style,
+      seed: String(
+        options.seed ?? 0,
+      ),
+    })
+
+  const response = await fetch(
+    EQUIPMENT_PROCESSOR_URL +
+      '/procedural/generate?' +
+      query.toString(),
+    {
+      method: 'POST',
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await readProcessorError(
+        response,
+        'Could not start procedural equipment generation.',
+      ),
+    )
+  }
+
+  return await response.json() as {
+    jobId: string
   }
 }
 
