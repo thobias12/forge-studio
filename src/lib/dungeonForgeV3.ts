@@ -806,6 +806,103 @@ function samplePathAtDistance(path: DungeonPoint[], distance: number) {
   return { x: b.x, z: b.z, yaw: Math.atan2(b.x - a.x, b.z - a.z) }
 }
 
+function addFlameVfx(
+  parent: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  atmosphere: DungeonAtmosphere,
+  seed: number,
+  light?: THREE.PointLight,
+  scale = 1,
+) {
+  const root = new THREE.Group()
+  root.position.set(x, y, z)
+  parent.add(root)
+
+  const outerMaterial = new THREE.MeshBasicMaterial({
+    color: atmosphere.torch,
+    transparent: true,
+    opacity: 0.88,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+  const innerMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffe2a3,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffa05b,
+    transparent: true,
+    opacity: 0.12,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+
+  const outer = new THREE.Mesh(new THREE.ConeGeometry(0.105 * scale, 0.32 * scale, 9), outerMaterial)
+  outer.position.y = 0.15 * scale
+  root.add(outer)
+
+  const inner = new THREE.Mesh(new THREE.ConeGeometry(0.052 * scale, 0.2 * scale, 8), innerMaterial)
+  inner.position.y = 0.105 * scale
+  root.add(inner)
+
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.23 * scale, 10, 7), glowMaterial)
+  glow.scale.y = 1.15
+  glow.position.y = 0.11 * scale
+  root.add(glow)
+
+  const emberCount = 6
+  const emberPositions = new Float32Array(emberCount * 3)
+  const emberGeometry = new THREE.BufferGeometry()
+  emberGeometry.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3))
+  const emberMaterial = new THREE.PointsMaterial({
+    color: 0xffb06c,
+    size: 0.035 * scale,
+    transparent: true,
+    opacity: 0.78,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  })
+  const embers = new THREE.Points(emberGeometry, emberMaterial)
+  root.add(embers)
+
+  const phase = (seed % 997) / 997 * Math.PI * 2
+  const speed = 6.1 + (seed % 7) * 0.14
+  outer.onBeforeRender = () => {
+    const t = performance.now() * 0.001
+    const n = Math.sin(t * speed + phase) * 0.08 + Math.sin(t * speed * 2.23 + phase * 0.37) * 0.035
+    outer.scale.set(1 - n * 0.35, 1 + n, 1 - n * 0.35)
+    outer.rotation.y = Math.sin(t * 2.7 + phase) * 0.12
+    inner.scale.set(0.94 + n * 0.18, 1.04 + n * 0.5, 0.94 + n * 0.18)
+    glow.scale.setScalar(1 + n * 0.55)
+    glow.scale.y = 1.15 + n * 0.35
+    if (light) light.intensity = Math.max(0, light.userData.baseIntensity * (1 + n * 0.42))
+
+    for (let index = 0; index < emberCount; index += 1) {
+      const offset = index * 3
+      const localPhase = phase + index * 1.913
+      const cycle = (t * (0.34 + index * 0.025) + index / emberCount + (seed % 31) * 0.013) % 1
+      const spread = (0.035 + cycle * 0.085) * scale
+      emberPositions[offset] = Math.sin(localPhase + t * 1.2) * spread
+      emberPositions[offset + 1] = (0.24 + cycle * 0.72) * scale
+      emberPositions[offset + 2] = Math.cos(localPhase * 1.17 + t * 0.9) * spread
+    }
+    ;(emberGeometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
+    emberMaterial.opacity = 0.55 + Math.sin(t * 3.1 + phase) * 0.16
+  }
+
+  return root
+}
+
 function addCorridorFixtures(
   root: THREE.Group,
   value: DungeonWithProps,
@@ -817,25 +914,25 @@ function addCorridorFixtures(
   for (const edge of value.corridors) {
     const path = dungeonCorridorPath(value, edge)
     const total = pathLength(path)
-    if (path.length < 2 || total < 10) continue
-    const count = Math.max(1, Math.floor(total / 10))
+    if (path.length < 2 || total < 9) continue
+    const count = Math.max(1, Math.floor(total / 13))
     for (let index = 1; index <= count; index += 1) {
       const sample = samplePathAtDistance(path, index * total / (count + 1))
       if (!sample) continue
-      if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.1))) continue
+      if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.15))) continue
       const side = index % 2 ? 1 : -1
-      const offset = Math.max(1.25, edge.width / 2 - 0.5)
+      const offset = Math.max(1.22, edge.width / 2 - 0.34)
       const px = -Math.cos(sample.yaw) * side
       const pz = Math.sin(sample.yaw) * side
       const x = sample.x + px * offset
       const z = sample.z + pz * offset
       const y = dungeonFloorHeightV3(value, sample.x, sample.z)
-      addFreestandingTorch(root, x, y, z, sample.yaw, atmosphere, materials, flickerLights, mode, stringHash(edge.id) + index * 31, index % 2 === 0)
+      addWallSconce(root, x, y, z, sample.yaw, atmosphere, materials, flickerLights, mode, stringHash(edge.id) + index * 31)
     }
   }
 }
 
-function addFreestandingTorch(
+function addWallSconce(
   root: THREE.Group,
   x: number,
   y: number,
@@ -846,45 +943,39 @@ function addFreestandingTorch(
   flickerLights: DungeonV3FlickerLight[],
   mode: DungeonRenderMode,
   seed: number,
-  castsLight: boolean,
 ) {
-  const height = mode === 'walk' ? 1.9 : 1.08
+  const flameY = mode === 'walk' ? 1.88 : 0.98
   const group = new THREE.Group()
   group.position.set(x, y, z)
   group.rotation.y = yaw
   root.add(group)
 
-  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, height, 0.12), materials.metal)
-  post.position.y = height / 2
-  post.castShadow = true
-  group.add(post)
-  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.42), materials.dark)
-  foot.position.y = 0.05
-  group.add(foot)
-  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.1, 0.1, 8), materials.metal)
-  bowl.position.y = height + 0.02
-  group.add(bowl)
-  const flameMaterial = new THREE.MeshStandardMaterial({
-    color: atmosphere.torch,
-    emissive: atmosphere.torch,
-    emissiveIntensity: 3.4,
-    roughness: 0.25,
-  })
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.28, 7), flameMaterial)
-  flame.position.y = height + 0.22
-  group.add(flame)
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.36, 0.055), materials.metal)
+  plate.position.set(0, flameY - 0.21, -0.035)
+  plate.castShadow = true
+  group.add(plate)
 
-  if (castsLight) {
-    const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.46, 9.8, 1.6)
-    light.position.copy(flame.position)
-    group.add(light)
-    flickerLights.push({
-      light,
-      base: light.intensity,
-      phase: (seed % 628) / 100,
-      speed: 6.1 + (seed % 7) * 0.12,
-    })
-  }
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.3), materials.metal)
+  arm.position.set(0, flameY - 0.18, 0.13)
+  arm.rotation.x = -0.2
+  group.add(arm)
+
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.075, 0.09, 9), materials.metal)
+  cup.position.set(0, flameY - 0.01, 0.27)
+  cup.castShadow = true
+  group.add(cup)
+
+  const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.68, 8.6, 2.05)
+  light.position.set(0, flameY + 0.16, 0.27)
+  light.userData.baseIntensity = light.intensity
+  group.add(light)
+  flickerLights.push({
+    light,
+    base: light.intensity,
+    phase: (seed % 628) / 100,
+    speed: 5.8 + (seed % 5) * 0.18,
+  })
+  addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
 }
 
 function addRoomFixtures(
@@ -894,14 +985,16 @@ function addRoomFixtures(
   flickerLights: DungeonV3FlickerLight[],
   mode: DungeonRenderMode,
 ) {
-  const fixtureY = mode === 'walk' ? 2.05 : 1.18
+  const fixtureY = mode === 'walk' ? 2.0 : 1.05
   for (const room of value.rooms) {
-    const positions: Array<{ x: number; z: number; yaw: number }> = [
-      roomWallPoint(room, 'north', -0.26, 0.3),
-      roomWallPoint(room, 'east', 0.22, 0.3),
-      roomWallPoint(room, 'south', 0.26, 0.3),
-      roomWallPoint(room, 'west', -0.22, 0.3),
+    const allPositions: Array<{ x: number; z: number; yaw: number }> = [
+      roomWallPoint(room, 'north', -0.24, 0.28),
+      roomWallPoint(room, 'east', 0.2, 0.28),
+      roomWallPoint(room, 'south', 0.24, 0.28),
+      roomWallPoint(room, 'west', -0.2, 0.28),
     ]
+    const largeRoom = room.type === 'boss' || room.type === 'elite' || room.width * room.depth >= 520
+    const positions = largeRoom ? allPositions : [allPositions[0], allPositions[2]]
 
     positions.forEach((position, index) => {
       const fixture = new THREE.Group()
@@ -909,38 +1002,38 @@ function addRoomFixtures(
       fixture.rotation.y = position.yaw
       root.add(fixture)
 
-      const bracketMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.82, metalness: 0.22 })
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.34), bracketMaterial)
-      arm.position.set(0, fixtureY - 0.12, 0.14)
-      arm.rotation.x = -0.18
+      const bracketMaterial = new THREE.MeshStandardMaterial({ color: 0x242728, roughness: 0.76, metalness: 0.34 })
+      const backplate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.055), bracketMaterial)
+      backplate.position.set(0, fixtureY - 0.21, -0.035)
+      backplate.castShadow = true
+      fixture.add(backplate)
+
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.3), bracketMaterial)
+      arm.position.set(0, fixtureY - 0.18, 0.13)
+      arm.rotation.x = -0.2
       fixture.add(arm)
 
-      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.08, 0.09, 8), bracketMaterial)
-      cup.position.set(0, fixtureY, 0.29)
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.075, 0.09, 9), bracketMaterial)
+      cup.position.set(0, fixtureY - 0.01, 0.27)
       fixture.add(cup)
 
-      const flameMaterial = new THREE.MeshStandardMaterial({
-        color: atmosphere.torch,
-        emissive: atmosphere.torch,
-        emissiveIntensity: 3.15,
-        roughness: 0.28,
+      const seed = stringHash(room.id) + index * 17
+      const light = new THREE.PointLight(
+        atmosphere.torch,
+        atmosphere.torchIntensity * (room.type === 'boss' ? 0.86 : 0.72),
+        room.type === 'boss' ? 10.8 : 8.8,
+        2.02,
+      )
+      light.position.set(0, fixtureY + 0.16, 0.27)
+      light.userData.baseIntensity = light.intensity
+      fixture.add(light)
+      flickerLights.push({
+        light,
+        base: light.intensity,
+        phase: (seed % 628) / 100,
+        speed: 5.25 + index * 0.3,
       })
-      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.28, 8), flameMaterial)
-      flame.position.set(0, fixtureY + 0.18, 0.29)
-      fixture.add(flame)
-
-      const castsLight = room.type === 'boss' || index % 2 === 0
-      if (castsLight) {
-        const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.58, room.type === 'boss' ? 13.5 : 11.8, 1.55)
-        light.position.copy(flame.position)
-        fixture.add(light)
-        flickerLights.push({
-          light,
-          base: light.intensity,
-          phase: ((stringHash(room.id) + index * 17) % 628) / 100,
-          speed: 5.4 + index * 0.35,
-        })
-      }
+      addFlameVfx(fixture, 0, fixtureY + 0.02, 0.27, atmosphere, seed, light, room.type === 'boss' ? 1.08 : 1)
     })
   }
 }
