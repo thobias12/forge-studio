@@ -51,7 +51,7 @@ createServer(async (req, res) => {
       const generator = await sparGeneratorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 11,
+        version: 12,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -59,6 +59,12 @@ createServer(async (req, res) => {
           male: await exists(mannequinPath('male')),
         },
         generator,
+        procedural: {
+          engine: 'equipment-grammar-v1',
+          slots: ['chest'],
+          styles: ['ranger', 'traveler', 'acolyte'],
+          variations: 4,
+        },
       })
       return
     }
