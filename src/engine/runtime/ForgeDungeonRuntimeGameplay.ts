@@ -656,7 +656,7 @@ export const dungeonGameplayMethods = {
   canWalkAt(x: number, z: number, radius: number) {
     const cryptV3 = this.dungeon.theme === 'crypt'
     if (cryptV3) {
-      if (!dungeonNavigationContainsV3(this.runtimeDungeon, x, z)) return false
+      if (!dungeonNavigationContainsV3(this.runtimeDungeon, x, z, Math.min(0.34, radius * 0.62))) return false
       if (dungeonArtCollidesV3(this.runtimeDungeon, x, z, radius)) return false
     } else {
       const roomOk = this.dungeon.rooms.some((room) => pointInsideRoom(room, x, z, radius))
@@ -678,10 +678,6 @@ export const dungeonGameplayMethods = {
     }
     for (const wall of this.dungeon.walls ?? []) {
       if (distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2) <= radius + Math.max(0.08, wall.thickness / 2)) return false
-    }
-    for (const marker of this.dungeon.markers.filter((candidate) => candidate.type === 'door')) {
-      const locked = Boolean(marker.data.locked) || this.lockedDoorIds.has(marker.id)
-      if (locked && Math.hypot(x - marker.x, z - marker.z) < radius + 0.72) return false
     }
     return true
   },
