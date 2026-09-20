@@ -614,7 +614,11 @@ export default function EquipmentLab() {
               </header>
               <div className="equipment-lab-preview">
                 {rawUrl ? (
-                  <EquipmentLabViewer equipmentSrc={rawUrl} rawOnly />
+                  <EquipmentLabViewer
+                    equipmentSrc={rawUrl}
+                    rawOnly
+                    slot={slot}
+                  />
                 ) : (
                   <PreviewEmpty
                     icon={<HardDriveUpload size={24} />}

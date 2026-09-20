@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.79.4`  
+> **Current Forge version:** `v1.79.5`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -339,6 +339,8 @@ From **Characters → Equipment Lab**:
 The manual raw-GLB route remains available as a fallback.
 
 Local generation currently uses the open-source **TripoSR** backend. The companion runs it as a background job and reports setup/generation progress back to Forge. The first generation may take longer because model weights are downloaded locally.
+
+Forge v1.79.5 adds a chest-specific orientation and torso-fit solver for locally generated meshes. Equipment Lab now tests axis-aligned 90-degree orientations, measures the real Skillbound torso while ignoring arm outliers, chooses the orientation whose proportions best match the torso, then independently targets chest height, width and depth before shrink-fitting and weight transfer. The raw chest preview also auto-orients generated results upright for inspection.
 
 Forge v1.79.4 also fixes rembg runtime setup on Windows by installing its CPU ONNX backend explicitly. The TripoSR requirements only request plain rembg, while rembg treats ONNX Runtime as an optional backend. Forge now rewrites that dependency to rembg[cpu], validates onnxruntime directly, and repairs incomplete local environments automatically.
 
