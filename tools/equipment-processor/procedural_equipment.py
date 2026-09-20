@@ -920,6 +920,51 @@ def refine_frame_from_torso_mask(
         frame["height"] * 0.08,
     )
 
+    # Imported glTF axis conversion can make depth extent an unreliable
+    # way to decide which side is the character's front. Female Skillbound
+    # bodies provide dedicated breast weights, so use their weighted
+    # surface position as a semantic forward landmark when available.
+    group_names = {
+        group.index:
+            group.name.lower()
+        for group
+        in body.vertex_groups
+    }
+    breast_depths = []
+    for vertex in body.data.vertices:
+        breast_weight = sum(
+            assignment.weight
+            for assignment
+            in vertex.groups
+            if "breast"
+            in group_names.get(
+                assignment.group,
+                "",
+            )
+        )
+        if breast_weight >= 0.20:
+            point = (
+                source_world
+                @ vertex.co
+            )
+            breast_depths.append(
+                point[depth_axis]
+            )
+
+    if len(breast_depths) >= 12:
+        breast_depth = percentile(
+            breast_depths,
+            0.5,
+        )
+        frame["front_sign"] = (
+            1.0
+            if breast_depth
+            >= frame["center"][
+                depth_axis
+            ]
+            else -1.0
+        )
+
     print(
         "FORGE_TORSO_REFINED "
         + json.dumps({
@@ -930,6 +975,12 @@ def refine_frame_from_torso_mask(
             "depth": round(
                 frame["torso_depth"],
                 5,
+            ),
+            "frontSign": frame[
+                "front_sign"
+            ],
+            "breastSamples": len(
+                breast_depths,
             ),
         }),
         flush=True,
