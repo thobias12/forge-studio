@@ -160,28 +160,8 @@ export function maskBodyUnderTunic(
         center.x,
         center.z,
       )
-    // Preserve more of the real chest directly behind the front
-    // neckline. Without this, the body mask removes the chest too high
-    // and the camera sees the dark far/interior wall of the tunic through
-    // the V opening.
-    const frontAmount =
-      Math.max(
-        0,
-        Math.cos(angle),
-      )
-    const frontNeckT =
-      THREE.MathUtils.smoothstep(
-        frontAmount,
-        .72,
-        .98,
-      )
     const topInset =
-      frame.height *
-      THREE.MathUtils.lerp(
-        .024,
-        .055,
-        frontNeckT,
-      )
+      frame.height * .024
     const bottomInset =
       frame.height * .018
     const torsoCovered =
