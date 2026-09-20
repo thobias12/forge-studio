@@ -683,9 +683,24 @@ def build_torso_vertex_mask(
         in body.vertex_groups
     }
 
+    source_world = (
+        body.matrix_world.copy()
+    )
     keep = set()
-    torso_weights = []
+    spatial_added = 0
 
+    width_axis = frame["width"]
+    depth_axis = frame["depth"]
+    vertical_axis = frame["vertical"]
+    center = frame["center"]
+    height = frame["height"]
+
+    # The skin weights remain the first safety filter, but a pure
+    # torso-dominance test is too conservative around breasts, ribs and
+    # armpits because those vertices commonly blend with clavicle/arm
+    # groups. Expand the mask inside a strict central torso volume so the
+    # garment can cover the actual chest without ever reaching hands,
+    # forearms, thighs or the head.
     for vertex in body.data.vertices:
         torso_score = 0.0
         limb_score = 0.0
@@ -712,52 +727,98 @@ def build_torso_vertex_mask(
                     assignment.weight
                 )
 
-        # Require the vertex to be genuinely torso-driven. This cuts out
-        # arms/hands/legs even when they share the same height band.
-        if (
-            torso_score >= 0.28
-            and torso_score
-            >= limb_score * 1.10
-        ):
-            keep.add(vertex.index)
-            torso_weights.append(
-                torso_score,
-            )
-
-    if len(keep) < 400:
-        # Safe fallback for unexpected rig naming: keep a strict central
-        # spatial torso region rather than reintroducing the full T-pose.
-        source_world = (
-            body.matrix_world.copy()
+        point = (
+            source_world
+            @ vertex.co
         )
+        signed_v = (
+            point[vertical_axis]
+            * frame["vertical_sign"]
+        )
+        v = (
+            signed_v
+            - frame["vertical_min"]
+        ) / height
+        width_distance = abs(
+            point[width_axis]
+            - center[width_axis]
+        )
+        depth_distance = abs(
+            point[depth_axis]
+            - center[depth_axis]
+        )
+
+        inside_torso_volume = (
+            0.435 <= v <= 0.845
+            and width_distance
+            <= height * 0.195
+            and depth_distance
+            <= height * 0.175
+        )
+
+        strongly_torso_driven = (
+            inside_torso_volume
+            and torso_score >= 0.20
+            and torso_score
+            >= limb_score * 0.72
+        )
+
+        safe_spatial_fill = (
+            inside_torso_volume
+            and (
+                torso_score >= 0.055
+                or limb_score < 0.62
+            )
+            and not (
+                limb_score >= 0.82
+                and torso_score < 0.10
+            )
+        )
+
+        if (
+            strongly_torso_driven
+            or safe_spatial_fill
+        ):
+            keep.add(
+                vertex.index,
+            )
+            if (
+                safe_spatial_fill
+                and not strongly_torso_driven
+            ):
+                spatial_added += 1
+
+    if len(keep) < 900:
+        # Unexpected rig naming should still produce a torso rather than
+        # falling back to the whole T-pose. This fallback is intentionally
+        # spatially strict and cannot reach distal limbs.
         for vertex in body.data.vertices:
             point = (
                 source_world
                 @ vertex.co
             )
             signed_v = (
-                point[
-                    frame["vertical"]
-                ]
-                * frame[
-                    "vertical_sign"
-                ]
+                point[vertical_axis]
+                * frame["vertical_sign"]
             )
             v = (
                 signed_v
                 - frame["vertical_min"]
-            ) / frame["height"]
+            ) / height
             width_distance = abs(
-                point[frame["width"]]
-                - frame["center"][
-                    frame["width"]
-                ]
+                point[width_axis]
+                - center[width_axis]
+            )
+            depth_distance = abs(
+                point[depth_axis]
+                - center[depth_axis]
             )
             if (
-                0.43 <= v <= 0.82
+                0.45 <= v <= 0.83
                 and width_distance
-                <= frame["height"]
-                * 0.18
+                <= height * 0.18
+                and depth_distance
+                <= height * 0.16
             ):
                 keep.add(
                     vertex.index,
@@ -769,6 +830,8 @@ def build_torso_vertex_mask(
         + str(len(keep))
         + "/"
         + str(len(body.data.vertices))
+        + " spatialAdded="
+        + str(spatial_added)
         + " groups="
         + ",".join(
             sorted({
