@@ -103,3 +103,9 @@ It is not required for the body-aware procedural Chest generator.
 TripoSR remains as a legacy fallback only.
 
 The procedural equipment workflow requires only the normal Equipment Processor + Blender connection.
+
+## v1.81.1 Skillbound axis / torso fix
+
+The first live procedural Chest attempt exposed a bad assumption in the Blender generator: it inferred the vertical axis from whichever overall mannequin dimension was largest. On a T-pose character the arm span can exceed body height, causing X to be mistaken for vertical and every torso cut to miss the garment region.
+
+The generator now uses the official SkillboundHumanoidV1 convention directly: X = left/right, Y = up, +Z = forward. It uses pelvis/spine and upper-arm/clavicle bones for torso/shoulder measurements, excludes most arm vertices from torso width/depth sampling, cleans up rejected layer copies without forcing Blender mesh user counts, and prints `FORGE_FRAME` / `FORGE_LAYER` diagnostics to the processor console.
