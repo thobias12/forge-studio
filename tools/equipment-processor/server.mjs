@@ -302,6 +302,496 @@ function publicJob(job) {
   }
 }
 
+async function getHfToken() {
+  if (process.env.HF_TOKEN) {
+    return process.env.HF_TOKEN.trim()
+  }
+  try {
+    return (await readFile(hfTokenPath, 'utf8')).trim()
+  } catch {
+    return ''
+  }
+}
+
+async function setupSpar3D(job) {
+  try {
+    job.status = 'running'
+    job.progress = 4
+    job.message = 'Preparing Better Local 3D…'
+
+    const token = await getHfToken()
+    if (!token) {
+      throw new Error(
+        'SPAR3D model access needs a free Hugging Face read token. Open the Stability AI SPAR3D model page, accept its license, create a read token, then paste that token into Equipment Lab. Do not send the token in chat.',
+      )
+    }
+
+    if (!await exists(join(sparRepo, 'run.py'))) {
+      job.progress = 8
+      job.message = 'Downloading SPAR3D source…'
+      await runCommand(
+        'git',
+        [
+          'clone',
+          '--depth', '1',
+          'https://github.com/Stability-AI/stable-point-aware-3d.git',
+          sparRepo,
+        ],
+        { label: 'SPAR3D clone' },
+      )
+    }
+
+    const venvPython = sparPythonPath()
+    if (!await exists(venvPython)) {
+      await ensureSparPython(job)
+    }
+
+    job.progress = 25
+    job.message = 'Preparing Python packages…'
+    await ensurePipAvailable(venvPython)
+    await runCommand(
+      venvPython,
+      [
+        '-m', 'pip', 'install',
+        '--upgrade',
+        'pip',
+        'wheel',
+        'setuptools==69.5.1',
+      ],
+      { label: 'SPAR3D pip bootstrap' },
+    )
+
+    job.progress = 35
+    job.message = 'Installing NVIDIA PyTorch runtime…'
+    if (process.platform === 'win32') {
+      await runCommand(
+        venvPython,
+        [
+          '-m', 'pip', 'install',
+          'torch==2.11.0',
+          'torchvision==0.26.0',
+          '--index-url',
+          'https://download.pytorch.org/whl/cu128',
+        ],
+        { label: 'SPAR3D PyTorch CUDA 12.8' },
+      )
+    } else {
+      await runCommand(
+        venvPython,
+        ['-m', 'pip', 'install', 'torch', 'torchvision'],
+        { label: 'SPAR3D PyTorch' },
+      )
+    }
+
+    job.progress = 52
+    job.message = 'Preparing portable SPAR3D dependencies…'
+    const requirements = await prepareForgeSparRequirements()
+    await runCommand(
+      venvPython,
+      ['-m', 'pip', 'install', '-r', requirements],
+      { label: 'SPAR3D requirements' },
+    )
+
+    job.progress = 72
+    job.message = 'Installing Blender-friendly geometry shims…'
+    await installSparShims()
+
+    job.progress = 80
+    job.message = 'Validating SPAR3D runtime…'
+    const smoke = await validateSparRuntime(
+      venvPython,
+      token,
+    )
+
+    job.progress = 88
+    job.message = 'Checking Stability AI model access…'
+    await validateSparModelAccess(
+      venvPython,
+      token,
+    )
+
+    await writeFile(
+      sparReadyMarker,
+      JSON.stringify(
+        {
+          validatedAt: new Date().toISOString(),
+          python: '3.11',
+          backend: 'SPAR3D',
+          geometryMode: 'forge-portable',
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+
+    job.status = 'completed'
+    job.progress = 100
+    job.message = smoke.stdout.includes('FORGE_CUDA=True')
+      ? 'Better Local 3D installed and NVIDIA GPU detected.'
+      : 'Better Local 3D installed, but CUDA was not detected.'
+  } catch (error) {
+    await rm(sparReadyMarker, { force: true })
+    job.status = 'failed'
+    job.error = error instanceof Error ? error.message : String(error)
+    job.message = 'Better Local 3D setup failed.'
+  }
+}
+
+async function generateSpar3D(job) {
+  try {
+    job.status = 'running'
+    job.progress = 4
+    job.message = 'Validating Better Local 3D…'
+
+    const token = await getHfToken()
+    const venvPython = sparPythonPath()
+    await validateSparRuntime(
+      venvPython,
+      token,
+    )
+
+    job.progress = 8
+    job.message = 'Loading SPAR3D point-aware model…'
+
+    const run = await runCommand(
+      venvPython,
+      [
+        sparGeneratorScript,
+        '--input', job.inputPath,
+        '--output', join(job.outputDir, 'mesh.glb'),
+        '--quality', job.quality || 'standard',
+        '--low-vram',
+      ],
+      {
+        cwd: sparRepo,
+        label: 'SPAR3D generation',
+        env: sparRuntimeEnv(token),
+        onLine: (line) => updateSparProgress(job, line),
+      },
+    )
+
+    const result = join(job.outputDir, 'mesh.glb')
+    if (!await exists(result)) {
+      throw new Error(
+        'SPAR3D finished without creating mesh.glb.\n'
+        + run.stdout.slice(-2200),
+      )
+    }
+
+    validGlb(await readFile(result), 'SPAR3D equipment')
+    job.resultPath = result
+    job.status = 'completed'
+    job.progress = 100
+    job.message = 'Higher-quality raw 3D generated. Ready for Skillbound fitting.'
+  } catch (error) {
+    job.status = 'failed'
+    job.error = error instanceof Error ? error.message : String(error)
+    job.message = 'Better local image-to-3D generation failed.'
+  }
+}
+
+function updateSparProgress(job, line) {
+  const value = line.toLowerCase()
+  if (value.includes('forge_stage background')) {
+    job.progress = Math.max(job.progress, 16)
+    job.message = 'Removing background and framing equipment…'
+  } else if (value.includes('forge_stage model')) {
+    job.progress = Math.max(job.progress, 28)
+    job.message = 'Loading SPAR3D model…'
+  } else if (value.includes('forge_stage pointcloud')) {
+    job.progress = Math.max(job.progress, 48)
+    job.message = 'Inferring full 3D point cloud…'
+  } else if (value.includes('forge_stage mesh')) {
+    job.progress = Math.max(job.progress, 70)
+    job.message = 'Reconstructing equipment geometry…'
+  } else if (value.includes('forge_stage color')) {
+    job.progress = Math.max(job.progress, 86)
+    job.message = 'Transferring generated colors…'
+  } else if (value.includes('forge_stage export')) {
+    job.progress = Math.max(job.progress, 94)
+    job.message = 'Exporting raw GLB…'
+  }
+}
+
+async function sparGeneratorHealth() {
+  const activeSetup = [...backgroundJobs.values()].find(
+    (job) =>
+      job.kind === 'setup'
+      && job.backend === 'spar3d'
+      && (job.status === 'queued' || job.status === 'running'),
+  )
+  const python = await findAnyPythonLauncher()
+  const installed = await exists(join(sparRepo, 'run.py'))
+  const token = await getHfToken()
+  const ready = await isSparReady()
+
+  return {
+    backend: 'spar3d',
+    label: 'Better Local 3D · SPAR3D',
+    installed,
+    ready,
+    setupRunning: Boolean(activeSetup),
+    pythonAvailable: Boolean(python),
+    needsAccessToken: !Boolean(token),
+    modelAccessUrl: 'https://huggingface.co/stabilityai/stable-point-aware-3d',
+    tokenUrl: 'https://huggingface.co/settings/tokens',
+    license: 'Stability AI Community License',
+    message: ready
+      ? 'Point-aware local image-to-3D is ready.'
+      : activeSetup
+        ? activeSetup.message
+        : !token
+          ? 'One-time free Stability AI model access is required.'
+          : installed
+            ? 'SPAR3D files exist and can be repaired/finished by setup.'
+            : 'Install Better Local 3D for higher-quality equipment geometry.',
+    legacy: {
+      backend: 'triposr',
+      ready: await isGeneratorReady(),
+    },
+  }
+}
+
+async function isSparReady() {
+  const token = await getHfToken()
+  return Boolean(token)
+    && await exists(join(sparRepo, 'run.py'))
+    && await exists(sparPythonPath())
+    && await exists(sparReadyMarker)
+}
+
+function sparPythonPath() {
+  return process.platform === 'win32'
+    ? join(sparVenv, 'Scripts', 'python.exe')
+    : join(sparVenv, 'bin', 'python')
+}
+
+async function ensureSparPython(job) {
+  const compatible = await findCompatiblePythonLauncher()
+  if (compatible) {
+    job.progress = 16
+    job.message = 'Creating isolated SPAR3D Python environment…'
+    await runCommand(
+      compatible.command,
+      [
+        ...compatible.prefix,
+        '-m', 'venv',
+        sparVenv,
+      ],
+      { label: 'SPAR3D Python venv' },
+    )
+    return
+  }
+
+  const bootstrap = await findAnyPythonLauncher()
+  if (!bootstrap) {
+    throw new Error(
+      'No Python runtime was found. Install Python once; Forge will manage the SPAR3D Python 3.11 environment itself.',
+    )
+  }
+
+  job.progress = 12
+  job.message = 'Preparing Forge-managed Python 3.11 for SPAR3D…'
+
+  const bootstrapPython = bootstrapPythonPath()
+  if (!await exists(bootstrapPython)) {
+    await runCommand(
+      bootstrap.command,
+      [
+        ...bootstrap.prefix,
+        '-m', 'venv',
+        bootstrapVenv,
+      ],
+      { label: 'Forge Python bootstrap' },
+    )
+  }
+
+  await runCommand(
+    bootstrapPython,
+    [
+      '-m', 'pip', 'install',
+      '--upgrade',
+      'pip',
+      'uv',
+    ],
+    { label: 'Forge uv bootstrap' },
+  )
+
+  const uv = uvExecutablePath()
+  await mkdir(managedPythonDir, { recursive: true })
+  await runCommand(
+    uv,
+    [
+      'venv',
+      '--python', '3.11',
+      '--managed-python',
+      '--seed',
+      sparVenv,
+    ],
+    {
+      label: 'SPAR3D managed Python 3.11',
+      env: {
+        UV_PYTHON_INSTALL_DIR: managedPythonDir,
+      },
+    },
+  )
+}
+
+async function prepareForgeSparRequirements() {
+  const upstream = await readFile(
+    join(sparRepo, 'requirements.txt'),
+    'utf8',
+  )
+  const forgePath = join(
+    sparRepo,
+    '.forge-requirements.txt',
+  )
+  const filtered = upstream
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !line.startsWith('./texture_baker')
+        && !line.startsWith('./uv_unwrapper'),
+    )
+
+  filtered.push(
+    'transparent-background==1.3.3',
+    'rembg[cpu]',
+    'onnxruntime',
+    'Pillow',
+  )
+
+  await writeFile(
+    forgePath,
+    filtered.join('\n') + '\n',
+    'utf8',
+  )
+  return forgePath
+}
+
+async function installSparShims() {
+  const textureDir = join(
+    sparShims,
+    'texture_baker',
+  )
+  const uvDir = join(
+    sparShims,
+    'uv_unwrapper',
+  )
+  await mkdir(textureDir, { recursive: true })
+  await mkdir(uvDir, { recursive: true })
+
+  await writeFile(
+    join(textureDir, '__init__.py'),
+    [
+      'class TextureBaker:',
+      '    """Forge geometry-only shim: native texture baking is delegated away from SPAR3D."""',
+      '    def __init__(self, *args, **kwargs):',
+      '        pass',
+      '    def __getattr__(self, name):',
+      '        raise RuntimeError("TextureBaker is disabled in Forge geometry-only SPAR3D mode.")',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+
+  await writeFile(
+    join(uvDir, '__init__.py'),
+    [
+      'class Unwrapper:',
+      '    """Forge geometry-only shim: Blender handles final game asset processing."""',
+      '    def __init__(self, *args, **kwargs):',
+      '        pass',
+      '    def __call__(self, *args, **kwargs):',
+      '        raise RuntimeError("UV unwrapping is disabled in Forge geometry-only SPAR3D mode.")',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+}
+
+function sparRuntimeEnv(token) {
+  const previous = process.env.PYTHONPATH || ''
+  return {
+    HF_TOKEN: token || '',
+    PYTHONPATH: [
+      sparShims,
+      sparRepo,
+      previous,
+    ].filter(Boolean).join(delimiter),
+    SPAR3D_LOW_VRAM: '1',
+  }
+}
+
+async function validateSparRuntime(
+  venvPython,
+  token,
+) {
+  return await runCommand(
+    venvPython,
+    [
+      '-c',
+      [
+        'import torch',
+        'import numpy',
+        'import trimesh',
+        'from spar3d.system import SPAR3D',
+        'print("FORGE_RUNTIME_OK")',
+        'print("FORGE_CUDA=" + str(torch.cuda.is_available()))',
+        'print("FORGE_GPU=" + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"))',
+      ].join('; '),
+    ],
+    {
+      cwd: sparRepo,
+      label: 'SPAR3D runtime validation',
+      env: sparRuntimeEnv(token),
+    },
+  )
+}
+
+async function validateSparModelAccess(
+  venvPython,
+  token,
+) {
+  try {
+    await runCommand(
+      venvPython,
+      [
+        '-c',
+        [
+          'import os',
+          'from huggingface_hub import hf_hub_download',
+          'path=hf_hub_download(repo_id="stabilityai/stable-point-aware-3d", filename="config.yaml", token=os.environ.get("HF_TOKEN"))',
+          'print(path)',
+        ].join('; '),
+      ],
+      {
+        cwd: sparRepo,
+        label: 'SPAR3D model access',
+        env: sparRuntimeEnv(token),
+      },
+    )
+  } catch (error) {
+    throw new Error(
+      'SPAR3D model access was denied. Open https://huggingface.co/stabilityai/stable-point-aware-3d, accept the Stability AI license, then create/paste a Hugging Face read token in Equipment Lab.\n'
+      + (
+        error instanceof Error
+          ? error.message
+          : String(error)
+      ),
+    )
+  }
+}
+
+function generatorBackend(value) {
+  return value === 'triposr'
+    ? 'triposr'
+    : 'spar3d'
+}
+
 async function setupGenerator(job) {
   try {
     job.status = 'running'
