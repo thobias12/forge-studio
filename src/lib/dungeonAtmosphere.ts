@@ -30,7 +30,7 @@ export type DungeonAtmosphere = {
 }
 
 const THEMES: Record<DungeonTheme, DungeonAtmosphere> = {
-  crypt: { background:0x080604,fog:0x1b110b,fogMultiplier:0.62,sky:0x6b5038,ground:0x17100b,ambient:0.78,key:0xb48661,keyIntensity:0.68,exposure:1.16,bloomStrength:0.42,bloomRadius:0.42,bloomThreshold:0.79,floor:0x563d29,wall:0x6c5036,wallDark:0x2c1d13,corridorFloor:0x4b3422,corridorWall:0x5d432d,seam:0x1c1009,torch:0xff9b38,torchIntensity:4.8,dust:0x9b7b5d,mist:0x554033,boss:0x74332a,shrine:0x746b50,treasure:0xbb914c },
+  crypt: { background:0x070605,fog:0x17120e,fogMultiplier:0.58,sky:0x796a58,ground:0x181411,ambient:0.8,key:0xbfa98d,keyIntensity:0.62,exposure:1.16,bloomStrength:0.38,bloomRadius:0.4,bloomThreshold:0.82,floor:0x594839,wall:0x655445,wallDark:0x2b211b,corridorFloor:0x504134,corridorWall:0x5c4c3d,seam:0x1d1712,torch:0xffa24a,torchIntensity:3.55,dust:0x958474,mist:0x54483d,boss:0x70352e,shrine:0x706b56,treasure:0xb28d50 },
   castle: { background:0x0a0d10,fog:0x151b20,fogMultiplier:0.98,sky:0x7e909f,ground:0x141516,ambient:0.98,key:0xd0dbe2,keyIntensity:1.02,exposure:1.08,bloomStrength:0.43,bloomRadius:0.36,bloomThreshold:0.83,floor:0x4d504c,wall:0x606563,wallDark:0x353939,corridorFloor:0x414540,corridorWall:0x4d5350,seam:0x292d2b,torch:0xffaa60,torchIntensity:3.8,dust:0x8b8a83,mist:0x929b9b,boss:0xb64b50,shrine:0x7fb7d8,treasure:0xe9bf5c },
   cave: { background:0x060908,fog:0x0d1312,fogMultiplier:1.02,sky:0x66736e,ground:0x121512,ambient:0.98,key:0xa4aaa0,keyIntensity:0.78,exposure:1.03,bloomStrength:0.45,bloomRadius:0.48,bloomThreshold:0.8,floor:0x363b37,wall:0x454b46,wallDark:0x292d29,corridorFloor:0x303531,corridorWall:0x3d433e,seam:0x1e221f,torch:0xff9252,torchIntensity:3.5,dust:0x6f746c,mist:0x71837c,boss:0xad3b49,shrine:0x61c2b6,treasure:0xd8aa4f },
   cathedral: { background:0x080b12,fog:0x151d2c,fogMultiplier:0.86,sky:0x8499ba,ground:0x13141a,ambient:1.0,key:0xcbd9f2,keyIntensity:1.12,exposure:1.1,bloomStrength:0.62,bloomRadius:0.5,bloomThreshold:0.75,floor:0x464c54,wall:0x5e6672,wallDark:0x333943,corridorFloor:0x3c424a,corridorWall:0x4d5561,seam:0x272d34,torch:0xffc078,torchIntensity:3.4,dust:0x8f9294,mist:0x8e99aa,boss:0xb34f65,shrine:0x8ad4e4,treasure:0xedd07b },
@@ -57,16 +57,24 @@ export type DungeonLightingProfile = {
 
 export function dungeonLightingProfile(atmosphere: DungeonAtmosphere, settings: DungeonLightingSettings): DungeonLightingProfile {
   const brightness = THREE.MathUtils.clamp(settings.brightness ?? DEFAULT_DUNGEON_BRIGHTNESS, 0.55, 2.5)
-  const exposureScale = THREE.MathUtils.lerp(0.72, 1.52, (brightness - 0.55) / 1.95)
-  const lightScale = THREE.MathUtils.lerp(0.72, 1.62, (brightness - 0.55) / 1.95)
+  const normalized = (brightness - 0.55) / 1.95
+
+  // Brightness primarily opens the room/floor fill instead of simply boosting
+  // exposure. This preserves warm torch pools without blowing out wall tops.
+  const ambientScale = THREE.MathUtils.lerp(0.95, 1.95, normalized)
+  const fillScale = THREE.MathUtils.lerp(0.85, 2.15, normalized)
+  const keyScale = THREE.MathUtils.lerp(0.88, 1.28, normalized)
+  const exposureScale = THREE.MathUtils.lerp(0.92, 1.4, normalized)
+  const crypt = atmosphere === THEMES.crypt
+
   return {
     brightness,
-    ambientIntensity: atmosphere.ambient * (1.52 + settings.ambientLight * 0.72) * lightScale,
-    fillIntensity: (atmosphere === THEMES.crypt ? 0.6 : 0.36) * lightScale,
-    keyIntensity: atmosphere.keyIntensity * 1.42 * lightScale,
+    ambientIntensity: atmosphere.ambient * (1.65 + settings.ambientLight * 0.6) * ambientScale,
+    fillIntensity: (crypt ? 0.82 : 0.48) * fillScale,
+    keyIntensity: atmosphere.keyIntensity * 1.35 * keyScale,
     exposure: atmosphere.exposure * exposureScale,
     fogDensity: settings.fogDensity * atmosphere.fogMultiplier,
-    bloomStrength: atmosphere.bloomStrength * THREE.MathUtils.lerp(0.82, 1.08, (brightness - 0.55) / 1.95),
+    bloomStrength: atmosphere.bloomStrength * THREE.MathUtils.lerp(0.9, 1.02, normalized),
   }
 }
 
