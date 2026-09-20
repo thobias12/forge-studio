@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.83.0`  
+> **Current Forge version:** `v1.83.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,20 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.83.1 — Equipment Lab production upgrade
+
+- ports the tested Equipment Lab workflow onto the current v1.83.0 main
+- production flow is Female / Male → Chest → style → variation → Generate Equipment
+- unsupported slots are marked as coming later
+- SPAR3D, reference-image generation and raw-GLB fitting are hidden behind experimental/import tools
+- primary generated-equipment preview expands to a large single Skillbound viewport
+- clean native-model QA renders the generated GLB without legacy V3 armor overlays
+- Female → Chest → Ranger → variation 01 uses an authored procedural garment mesh
+- Ranger construction includes cloth shell, split front leather panels, back panel, diagonal strap, wrap belt, buckle, keepers, neckline/armhole trim and hem trim
+- authored pieces inherit nearby Skillbound skin weights and bind to the official armature
+- procedural generator metadata uses `blender-body-aware-v2`
+
 
 ## v1.77.4 — Authored-looking Ranger construction
 

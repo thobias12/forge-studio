@@ -87,6 +87,7 @@ export default function EquipmentLab() {
     useState<'ranger' | 'traveler' | 'acolyte'>('ranger')
   const [proceduralSeed, setProceduralSeed] = useState(0)
   const [proceduralResult, setProceduralResult] = useState(false)
+  const [showExperimental, setShowExperimental] = useState(false)
   const [generatorToken, setGeneratorToken] = useState('')
   const [savingGeneratorToken, setSavingGeneratorToken] = useState(false)
 
@@ -556,7 +557,7 @@ export default function EquipmentLab() {
         ...(proceduralResult
           ? [
               'generated:procedural',
-              'generator:blender-body-aware-v1',
+              'generator:blender-body-aware-v2',
               'style:' + proceduralStyle,
               'seed:' + proceduralSeed,
             ]
@@ -630,7 +631,14 @@ export default function EquipmentLab() {
               onChange={(event) => setSlot(event.target.value as EquipmentLabSlot)}
             >
               {SLOT_LABELS.map((entry) => (
-                <option value={entry.id} key={entry.id}>{entry.label}</option>
+                <option
+                  value={entry.id}
+                  key={entry.id}
+                  disabled={entry.id !== 'chest'}
+                >
+                  {entry.label}
+                  {entry.id !== 'chest' ? ' · coming later' : ''}
+                </option>
               ))}
             </select>
           </label>
@@ -687,7 +695,7 @@ export default function EquipmentLab() {
               : state === 'generating' && !referenceFile
                 ? 'Building equipment…'
                 : proceduralResult
-                  ? 'Generate Another'
+                  ? 'Regenerate Equipment'
                   : 'Generate Equipment'}
           </button>
 
@@ -702,213 +710,235 @@ export default function EquipmentLab() {
             </div>
           )}
 
-          <div className="equipment-lab-or">
-            <span>EXPERIMENTAL IMAGE → 3D</span>
-          </div>
+          <button
+            className="secondary-button equipment-lab-experimental-toggle"
+            onClick={() => setShowExperimental((value) => !value)}
+            type="button"
+          >
+            {showExperimental
+              ? 'Hide experimental / import tools'
+              : 'Show experimental / import tools'}
+          </button>
 
-          <label className="equipment-lab-reference">
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(event) => selectReference(event.target.files?.[0])}
-            />
-            {referenceUrl ? (
-              <img src={referenceUrl} alt="Equipment reference" />
-            ) : (
-              <ImagePlus size={22} />
-            )}
-            <span>
-              <strong>{referenceFile ? referenceFile.name : 'Choose reference image'}</strong>
-              <small>One clean object on a simple background works best</small>
-            </span>
-          </label>
-
-          <label className="equipment-lab-field">
-            <span>Local generation quality</span>
-            <select
-              value={generationQuality}
-              onChange={(event) =>
-                setGenerationQuality(
-                  event.target.value as 'draft' | 'standard' | 'high',
-                )}
-            >
-              <option value="draft">Draft · fastest</option>
-              <option value="standard">Standard · recommended</option>
-              <option value="high">High · slower</option>
-            </select>
-          </label>
-
-          {health?.generator?.needsAccessToken && (
-            <div className="equipment-lab-access">
-              <strong>One-time SPAR3D model access</strong>
-              <p>
-                SPAR3D is free for this non-commercial workflow, but Stability AI
-                requires accepting its model license on Hugging Face once.
-              </p>
-              <div className="equipment-lab-access-links">
-                {health.generator.modelAccessUrl && (
-                  <a
-                    href={health.generator.modelAccessUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    1. Accept model access
-                  </a>
-                )}
-                {health.generator.tokenUrl && (
-                  <a
-                    href={health.generator.tokenUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    2. Create read token
-                  </a>
-                )}
-              </div>
+          {showExperimental && (
+            <div className="equipment-lab-experimental">
+            <div className="equipment-lab-or">
+              <span>EXPERIMENTAL IMAGE → 3D</span>
+            </div>
+  
+            <label className="equipment-lab-reference">
               <input
-                type="password"
-                value={generatorToken}
-                onChange={(event) => setGeneratorToken(event.target.value)}
-                placeholder="hf_…"
-                autoComplete="off"
-                spellCheck={false}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => selectReference(event.target.files?.[0])}
               />
-              <button
-                className="secondary-button"
-                disabled={!generatorToken.trim() || savingGeneratorToken}
-                onClick={saveSparAccess}
+              {referenceUrl ? (
+                <img src={referenceUrl} alt="Equipment reference" />
+              ) : (
+                <ImagePlus size={22} />
+              )}
+              <span>
+                <strong>{referenceFile ? referenceFile.name : 'Choose reference image'}</strong>
+                <small>One clean object on a simple background works best</small>
+              </span>
+            </label>
+  
+            <label className="equipment-lab-field">
+              <span>Local generation quality</span>
+              <select
+                value={generationQuality}
+                onChange={(event) =>
+                  setGenerationQuality(
+                    event.target.value as 'draft' | 'standard' | 'high',
+                  )}
               >
-                {savingGeneratorToken
-                  ? <LoaderCircle className="spin" size={15} />
-                  : <Save size={15} />}
-                Save token locally
+                <option value="draft">Draft · fastest</option>
+                <option value="standard">Standard · recommended</option>
+                <option value="high">High · slower</option>
+              </select>
+            </label>
+  
+            {health?.generator?.needsAccessToken && (
+              <div className="equipment-lab-access">
+                <strong>One-time SPAR3D model access</strong>
+                <p>
+                  SPAR3D is free for this non-commercial workflow, but Stability AI
+                  requires accepting its model license on Hugging Face once.
+                </p>
+                <div className="equipment-lab-access-links">
+                  {health.generator.modelAccessUrl && (
+                    <a
+                      href={health.generator.modelAccessUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      1. Accept model access
+                    </a>
+                  )}
+                  {health.generator.tokenUrl && (
+                    <a
+                      href={health.generator.tokenUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      2. Create read token
+                    </a>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  value={generatorToken}
+                  onChange={(event) => setGeneratorToken(event.target.value)}
+                  placeholder="hf_…"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  className="secondary-button"
+                  disabled={!generatorToken.trim() || savingGeneratorToken}
+                  onClick={saveSparAccess}
+                >
+                  {savingGeneratorToken
+                    ? <LoaderCircle className="spin" size={15} />
+                    : <Save size={15} />}
+                  Save token locally
+                </button>
+                <small>
+                  The token is written only to the local Equipment Processor work
+                  folder. Do not paste it into chat.
+                </small>
+              </div>
+            )}
+  
+            {!generatorReady ? (
+              <button
+                className="secondary-button equipment-lab-process"
+                disabled={!connected || busy || Boolean(health?.generator?.needsAccessToken)}
+                onClick={installGenerator}
+              >
+                {state === 'installing'
+                  ? <LoaderCircle className="spin" size={16} />
+                  : <HardDriveUpload size={16} />}
+                {state === 'installing'
+                  ? 'Installing local generator…'
+                  : health?.generator?.needsAccessToken
+                    ? 'Add SPAR3D access above'
+                    : 'Install Better Local 3D'}
               </button>
-              <small>
-                The token is written only to the local Equipment Processor work
-                folder. Do not paste it into chat.
-              </small>
+            ) : (
+              <button
+                className="primary-button equipment-lab-process"
+                disabled={!referenceFile || !connected || busy}
+                onClick={generateAndProcess}
+              >
+                {busy
+                  ? <LoaderCircle className="spin" size={16} />
+                  : <WandSparkles size={16} />}
+                {state === 'generating'
+                  ? 'Generating 3D locally…'
+                  : state === 'uploading'
+                    ? 'Preparing mannequin…'
+                    : state === 'processing'
+                      ? 'Blender fitting…'
+                      : 'Generate + Process'}
+              </button>
+            )}
+  
+            {generatorJob && (
+              <div className="equipment-generator-progress">
+                <div>
+                  <strong>{generatorJob.message}</strong>
+                  <span>{Math.round(generatorJob.progress)}%</span>
+                </div>
+                <i>
+                  <b style={{ width: generatorJob.progress + '%' }} />
+                </i>
+              </div>
+            )}
+  
+            <div className="equipment-lab-or"><span>OR IMPORT EXISTING 3D</span></div>
+  
+            <label className="equipment-lab-upload">
+              <input
+                type="file"
+                accept=".glb,model/gltf-binary"
+                onChange={(event) => selectRawFile(event.target.files?.[0])}
+              />
+              <Upload size={20} />
+              <span>
+                <strong>{rawFile ? rawFile.name : 'Choose raw GLB'}</strong>
+                <small>
+                  {rawFile
+                    ? formatBytes(rawFile.size)
+                    : 'Manual fallback for an existing 3D model'}
+                </small>
+              </span>
+            </label>
+  
+  
             </div>
           )}
 
-          {!generatorReady ? (
+          {showExperimental && (
+            <div className="equipment-lab-experimental-fit">
+            <div className="equipment-lab-divider" />
+  
+            <header>
+              <span className="eyebrow">AUTO PROCESS</span>
+              <h2>Fit settings</h2>
+            </header>
+  
+            <label className="equipment-lab-field">
+              <span>Fit</span>
+              <select
+                value={fit}
+                onChange={(event) =>
+                  setFit(event.target.value as 'tight' | 'normal' | 'loose')}
+              >
+                <option value="tight">Tight</option>
+                <option value="normal">Normal</option>
+                <option value="loose">Loose</option>
+              </select>
+            </label>
+  
+            <label className="equipment-lab-field">
+              <span>Surface clearance <b>{clearanceMm} mm</b></span>
+              <input
+                type="range"
+                min="1"
+                max="12"
+                step="1"
+                value={clearanceMm}
+                onChange={(event) => setClearanceMm(Number(event.target.value))}
+              />
+            </label>
+  
+            <label className="equipment-lab-field">
+              <span>Polygon budget</span>
+              <select
+                value={polyLimit}
+                onChange={(event) => setPolyLimit(Number(event.target.value))}
+              >
+                <option value={12000}>12k</option>
+                <option value={25000}>25k</option>
+                <option value={50000}>50k</option>
+              </select>
+            </label>
+  
             <button
               className="secondary-button equipment-lab-process"
-              disabled={!connected || busy || Boolean(health?.generator?.needsAccessToken)}
-              onClick={installGenerator}
+              disabled={!rawFile || !connected || busy}
+              onClick={runProcessor}
             >
-              {state === 'installing'
-                ? <LoaderCircle className="spin" size={16} />
-                : <HardDriveUpload size={16} />}
-              {state === 'installing'
-                ? 'Installing local generator…'
-                : health?.generator?.needsAccessToken
-                  ? 'Add SPAR3D access above'
-                  : 'Install Better Local 3D'}
-            </button>
-          ) : (
-            <button
-              className="primary-button equipment-lab-process"
-              disabled={!referenceFile || !connected || busy}
-              onClick={generateAndProcess}
-            >
-              {busy
+              {state === 'uploading' || state === 'processing'
                 ? <LoaderCircle className="spin" size={16} />
                 : <WandSparkles size={16} />}
-              {state === 'generating'
-                ? 'Generating 3D locally…'
-                : state === 'uploading'
-                  ? 'Preparing mannequin…'
-                  : state === 'processing'
-                    ? 'Blender fitting…'
-                    : 'Generate + Process'}
+              Process Raw GLB Only
             </button>
-          )}
-
-          {generatorJob && (
-            <div className="equipment-generator-progress">
-              <div>
-                <strong>{generatorJob.message}</strong>
-                <span>{Math.round(generatorJob.progress)}%</span>
-              </div>
-              <i>
-                <b style={{ width: generatorJob.progress + '%' }} />
-              </i>
+  
+  
             </div>
           )}
-
-          <div className="equipment-lab-or"><span>OR IMPORT EXISTING 3D</span></div>
-
-          <label className="equipment-lab-upload">
-            <input
-              type="file"
-              accept=".glb,model/gltf-binary"
-              onChange={(event) => selectRawFile(event.target.files?.[0])}
-            />
-            <Upload size={20} />
-            <span>
-              <strong>{rawFile ? rawFile.name : 'Choose raw GLB'}</strong>
-              <small>
-                {rawFile
-                  ? formatBytes(rawFile.size)
-                  : 'Manual fallback for an existing 3D model'}
-              </small>
-            </span>
-          </label>
-
-          <div className="equipment-lab-divider" />
-
-          <header>
-            <span className="eyebrow">AUTO PROCESS</span>
-            <h2>Fit settings</h2>
-          </header>
-
-          <label className="equipment-lab-field">
-            <span>Fit</span>
-            <select
-              value={fit}
-              onChange={(event) =>
-                setFit(event.target.value as 'tight' | 'normal' | 'loose')}
-            >
-              <option value="tight">Tight</option>
-              <option value="normal">Normal</option>
-              <option value="loose">Loose</option>
-            </select>
-          </label>
-
-          <label className="equipment-lab-field">
-            <span>Surface clearance <b>{clearanceMm} mm</b></span>
-            <input
-              type="range"
-              min="1"
-              max="12"
-              step="1"
-              value={clearanceMm}
-              onChange={(event) => setClearanceMm(Number(event.target.value))}
-            />
-          </label>
-
-          <label className="equipment-lab-field">
-            <span>Polygon budget</span>
-            <select
-              value={polyLimit}
-              onChange={(event) => setPolyLimit(Number(event.target.value))}
-            >
-              <option value={12000}>12k</option>
-              <option value={25000}>25k</option>
-              <option value={50000}>50k</option>
-            </select>
-          </label>
-
-          <button
-            className="secondary-button equipment-lab-process"
-            disabled={!rawFile || !connected || busy}
-            onClick={runProcessor}
-          >
-            {state === 'uploading' || state === 'processing'
-              ? <LoaderCircle className="spin" size={16} />
-              : <WandSparkles size={16} />}
-            Process Raw GLB Only
-          </button>
 
           {!mannequinBlob && (
             <div className="equipment-lab-warning">
@@ -939,7 +969,13 @@ export default function EquipmentLab() {
         </aside>
 
         <main className="equipment-lab-workspace">
-          <div className="equipment-lab-view-grid">
+          <div
+            className={
+              'equipment-lab-view-grid ' +
+              (!showExperimental ? 'single' : '')
+            }
+          >
+            {showExperimental && (
             <article className="equipment-lab-preview-card">
               <header>
                 <div><span>RAW</span><strong>Generated / imported mesh</strong></div>
@@ -965,6 +1001,7 @@ export default function EquipmentLab() {
                 )}
               </div>
             </article>
+            )}
 
             <article className="equipment-lab-preview-card processed">
               <header>
@@ -981,7 +1018,7 @@ export default function EquipmentLab() {
                   <PreviewEmpty
                     icon={<Shield size={24} />}
                     title="Waiting for final asset"
-                    detail="After local generation, Blender automatically fits and skins the result to this Skillbound body."
+                    detail="Click Generate Equipment. Blender builds the selected chest directly on this Skillbound body and the finished result appears here."
                   />
                 )}
               </div>
@@ -994,8 +1031,10 @@ export default function EquipmentLab() {
                 <span className="eyebrow">PIPELINE</span>
                 <h2>
                   {proceduralResult
-                    ? 'Recipe → Skillbound'
-                    : 'Reference → Skillbound'}
+                    ? 'Generated chest → Skillbound'
+                    : showExperimental
+                      ? 'Reference → Skillbound'
+                      : 'Equipment generator'}
                 </h2>
               </div>
               {state === 'ready' && (
