@@ -231,6 +231,17 @@ export function dungeonContainsPointV3(value: DungeonWithProps, x: number, z: nu
   return false
 }
 
+/**
+ * Player navigation uses the logical walkable surface itself instead of
+ * shrinking every room/corridor by the player radius. V3 perimeter walls are
+ * rendered outward from this boundary, so the player's centre can move right
+ * up to the floor edge without entering the visible wall or snagging on
+ * inflated concave corners.
+ */
+export function dungeonNavigationContainsV3(value: DungeonWithProps, x: number, z: number) {
+  return dungeonContainsPointV3(value, x, z, 0.015)
+}
+
 export function dungeonFloorHeightV3(value: DungeonWithProps, x: number, z: number) {
   return dungeonRoomAtV3(value, x, z)?.floorLevel ?? 0
 }
