@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "qa:equipment": "node scripts/capture-equipment-qa.mjs",
     "qa:world": "node scripts/qa-world.mjs",
-    "qa:forest": "node scripts/qa-forest.mjs"
+    "qa:forest": "node scripts/qa-forest.mjs",
+    "equipment:processor": "node tools/equipment-processor/server.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
