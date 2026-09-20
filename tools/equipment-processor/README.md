@@ -86,3 +86,7 @@ Forge no longer considers the generator ready merely because the virtual environ
 The upstream TripoSR requirements install torchmcubes from GitHub. Modern torchmcubes must be compiled against the installed PyTorch and requires a C++20 compiler (and CUDA toolkit for its GPU extension). Forge avoids making those developer tools a prerequisite on Windows.
 
 During setup Forge now creates a filtered requirements file without torchmcubes, installs scikit-image from a wheel, and writes a local torchmcubes compatibility module inside the TripoSR checkout. TripoSR inference still uses PyTorch/CUDA on the NVIDIA GPU. Only the final marching-cubes surface extraction runs through the portable scikit-image CPU implementation.
+
+## v1.79.4 rembg / ONNX runtime
+
+The upstream TripoSR requirements include plain `rembg`, while modern rembg packages its inference backend as an optional extra. Forge now rewrites that dependency to `rembg[cpu]`, installs `onnxruntime` explicitly during runtime repair, and validates the ONNX import before marking the local generator ready.

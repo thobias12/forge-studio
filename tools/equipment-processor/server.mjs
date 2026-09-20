@@ -15,7 +15,7 @@ const generatorRepo = join(generatorsDir, 'triposr')
 const generatorVenv = join(generatorRepo, '.forge-venv')
 const bootstrapVenv = join(generatorsDir, '.forge-uv-bootstrap')
 const managedPythonDir = join(generatorsDir, '.forge-python')
-const generatorReadyMarker = join(generatorVenv, '.forge-ready-v3')
+const generatorReadyMarker = join(generatorVenv, '.forge-ready-v4')
 const processor = join(here, 'processor.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
 const backgroundJobs = new Map()
@@ -42,7 +42,7 @@ createServer(async (req, res) => {
       const generator = await generatorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 5,
+        version: 6,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -585,6 +585,12 @@ async function prepareForgeTripoRequirements() {
             ),
       )
       .filter(Boolean)
+      .map(
+        (line) =>
+          line.trim() === 'rembg'
+            ? 'rembg[cpu]'
+            : line,
+      )
 
   // Windows-safe marching-cubes implementation used by Forge's
   // torchmcubes compatibility module.
@@ -649,13 +655,14 @@ async function ensureGeneratorRuntimeDependencies(
   job,
 ) {
   // TripoSR's run.py imports numpy directly, but the upstream
-  // requirements file does not list it. Install it explicitly so
-  // clean Windows environments do not depend on an incidental package.
+  // requirements file does not list it. rembg also requires an
+  // explicit ONNX backend extra. Install both deterministically.
   await runCommand(
     venvPython,
     [
       '-m', 'pip', 'install',
       'numpy==1.26.4',
+      'onnxruntime',
     ],
     { label: 'TripoSR runtime repair' },
   )
@@ -663,7 +670,8 @@ async function ensureGeneratorRuntimeDependencies(
   const packageForModule = {
     numpy: 'numpy==1.26.4',
     PIL: 'Pillow==10.1.0',
-    rembg: 'rembg',
+    rembg: 'rembg[cpu]',
+    onnxruntime: 'onnxruntime',
     xatlas: 'xatlas==0.0.9',
     omegaconf: 'omegaconf==2.3.0',
     einops: 'einops==0.7.0',
@@ -733,6 +741,7 @@ async function validateGeneratorRuntime(
       '-c',
       [
         'import numpy',
+        'import onnxruntime',
         'import rembg',
         'import torch',
         'import xatlas',
