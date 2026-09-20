@@ -41,6 +41,7 @@ type Props = {
 }
 type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension & {
   combatLabInvulnerable?: boolean
+  combatLabTimeScale?: number
 }
 
 const EMPTY_STATE: SkillboundRuntimeState = {
@@ -377,14 +378,23 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
         <button onClick={() => (runtimeRef.current as any)?.spawnCombatLabPack?.('caster')}><strong>Channeler</strong><small>Ground-targeted area attack</small></button>
         <button className="danger" onClick={() => (runtimeRef.current as any)?.clearCombatLab?.()}><strong>Clear Lab</strong><small>Remove all temporary enemies</small></button>
       </div>
-      <footer>
+      <footer className="skillbound-combat-lab-footer">
         <button
           className={snapshot.combatLabInvulnerable ? 'active' : ''}
           onClick={() => (runtimeRef.current as any)?.setCombatLabInvulnerable?.(!snapshot.combatLabInvulnerable)}
         >
           {snapshot.combatLabInvulnerable ? 'Invulnerability ON' : 'Invulnerability OFF'}
         </button>
-        <small>Poise is shown as the gold bar under the targeted enemy health bar.</small>
+        <span className="skillbound-combat-speed">
+          {[1, .5, .25].map((speed) => <button
+            key={speed}
+            className={Math.abs((snapshot.combatLabTimeScale ?? 1) - speed) < .01 ? 'active' : ''}
+            onClick={() => (runtimeRef.current as any)?.setCombatLabTimeScale?.(speed)}
+          >
+            {speed}×
+          </button>)}
+        </span>
+        <small>Gold bar = poise. Use slow motion to inspect telegraphs, dodges and stagger timing.</small>
       </footer>
     </div>}
 
@@ -480,7 +490,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   </div>
 }
 
-function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']> & { role?: string; elite?: boolean; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']> & { role?: string; elite?: boolean; eliteModifier?: string; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
   const poisePercent = target.maxPoise
     ? Math.max(0, Math.min(100, (target.poise ?? 0) / target.maxPoise * 100))
@@ -488,7 +498,7 @@ function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot
   return <div className="skillbound-target-bar" style={style}>
     <div>
       <strong>{target.name}</strong>
-      <span>{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
+      <span>{target.eliteModifier ? `${target.eliteModifier.toUpperCase()} · ` : ''}{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
     </div>
     <i><b style={{ width: `${percent}%` }}/></i>
     {target.maxPoise !== undefined && <i className="skillbound-poise-bar"><b style={{ width: `${poisePercent}%` }}/></i>}
