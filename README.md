@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.85.0`  
+> **Current Forge version:** `v1.85.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,16 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.85.1 — Dungeon Forge V3 visual QA pass
+
+- fixes the huge orange radial/pizza artifacts in the editor by replacing trigger wireframe cylinders with clean radius outlines
+- hides trigger/checkpoint authoring markers from ARPG gameplay
+- brightens the V3 staggered masonry baseline so rooms and curved corridors remain readable between torch pools
+- makes top-down perimeter masonry thicker, taller and easier to read against the void
+- expands torch dressing to four visible wall fixtures per room while keeping real point-light count bounded
+- widens and strengthens warm torch pools without changing the user's brightness control
+
 
 ## v1.85.0 — Dungeon Forge V3 structural remake
 
