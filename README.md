@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.1`  
+> **Current Forge version:** `v1.81.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -302,6 +302,8 @@ The official foundation ZIP can be imported into Forge rather than committing th
 The female body also has support for subtle spring-based secondary motion in the runtime binding.
 
 ## Equipment Lab
+
+Forge v1.81.2 fixes the remaining coordinate conversion bug in procedural Chest generation. Blender's glTF importer converts the Skillbound asset into Blender coordinates, so the generator now derives its imported frame from the actual skeleton: pelvis→head resolves vertical, right-shoulder→left-shoulder resolves width, and the remaining axis becomes depth. Vertical direction is normalized as well, so sign flips are safe. This removes all hard-coded Y-up assumptions from the garment predicates.
 
 Forge v1.81.1 fixes the first body-aware Chest runtime failure. SkillboundHumanoidV1 now uses its canonical axes directly (X left/right, Y up, +Z forward) instead of guessing the vertical axis from overall mannequin dimensions. The old heuristic could mistake a T-pose arm span for character height and cut every garment layer outside the torso. The procedural generator now also measures shoulder width from the real upper-arm/clavicle bones, excludes T-pose arms from torso measurements, removes failed temporary meshes safely, and prints per-layer vertex diagnostics.
 

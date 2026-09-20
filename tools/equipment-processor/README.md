@@ -109,3 +109,7 @@ The procedural equipment workflow requires only the normal Equipment Processor +
 The first live procedural Chest attempt exposed a bad assumption in the Blender generator: it inferred the vertical axis from whichever overall mannequin dimension was largest. On a T-pose character the arm span can exceed body height, causing X to be mistaken for vertical and every torso cut to miss the garment region.
 
 The generator now uses the official SkillboundHumanoidV1 convention directly: X = left/right, Y = up, +Z = forward. It uses pelvis/spine and upper-arm/clavicle bones for torso/shoulder measurements, excludes most arm vertices from torso width/depth sampling, cleans up rejected layer copies without forcing Blender mesh user counts, and prints `FORGE_FRAME` / `FORGE_LAYER` diagnostics to the processor console.
+
+## v1.81.2 imported skeleton frame
+
+The v1.81.1 live log showed that Blender had already converted the glTF coordinate system: the hard-coded Y span was only ~0.43 while the Z span was ~1.62. The procedural generator now derives the imported frame from the rig itself. Pelvis→head selects the vertical axis and direction, shoulder-to-shoulder selects width, and the remaining axis becomes depth. All garment vertical normalization uses the detected signed axis, so the generator no longer depends on the source glTF authoring axes after Blender import.
