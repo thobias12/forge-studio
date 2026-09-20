@@ -530,7 +530,7 @@ function addCorridorArchitecture(
     const total = pathLength(path)
     if (path.length < 2 || total < 5) continue
 
-    const spacing = topDown ? 8.6 : 7.4
+    const spacing = 8.6
     const count = Math.max(0, Math.floor((total - 4) / spacing))
     for (let index = 1; index <= count; index += 1) {
       const sample = samplePathAtDistance(path, index * total / (count + 1))
