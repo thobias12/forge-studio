@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonPropBlocksMovement, dungeonProps, type DungeonDestructible, type DungeonProp, type DungeonWithProps } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../lib/dungeonForgeV3'
 import { getAsset, listAssets } from '../lib/library'
 import { definitionFromMetadata, findDestructibleRoot, isForgeDestructibleMetadata, playDestructibleBreakSound } from '../lib/destructibleAsset'
 import '../arpg-combat.css'
@@ -322,7 +322,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
 
     const updatePlayer = (dt: number) => {
       const current = valueRef.current, forwardAmount = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), rightAmount = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0)
-      if (forwardAmount || rightAmount) { const move = cameraForward.clone().multiplyScalar(forwardAmount).add(cameraRight.clone().multiplyScalar(rightAmount)); if (move.lengthSq() > 1) move.normalize(); move.multiplyScalar((keys.has('ShiftLeft') || keys.has('ShiftRight') ? SPRINT_SPEED : WALK_SPEED) * dt); const nextX = playerPosition.x + move.x, nextZ = playerPosition.z + move.z; if (canWalkAt(current, nextX, playerPosition.z, brokenPropIds, runtimeLockedDoorIds)) playerPosition.x = nextX; if (canWalkAt(current, playerPosition.x, nextZ, brokenPropIds, runtimeLockedDoorIds)) playerPosition.z = nextZ; avatar.rotation.y = Math.atan2(move.x, move.z) }
+      if (forwardAmount || rightAmount) { const move = cameraForward.clone().multiplyScalar(forwardAmount).add(cameraRight.clone().multiplyScalar(rightAmount)); if (move.lengthSq() > 1) move.normalize(); move.multiplyScalar((keys.has('ShiftLeft') || keys.has('ShiftRight') ? SPRINT_SPEED : WALK_SPEED) * dt); const resolved=resolveDungeonSlideV3(playerPosition.x,playerPosition.z,move.x,move.z,(x,z)=>canWalkAt(current,x,z,brokenPropIds,runtimeLockedDoorIds)); playerPosition.x=resolved.x; playerPosition.z=resolved.z; avatar.rotation.y = Math.atan2(move.x, move.z) }
       playerPosition.y = floorHeightAt(current, playerPosition.x, playerPosition.z); avatar.position.lerp(playerPosition, 1 - Math.exp(-20 * dt)); camera.position.lerp(playerPosition.clone().add(CAMERA_OFFSET), 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt))
       if (cameraShake > 0.001) { camera.position.x += (Math.random() - 0.5) * cameraShake; camera.position.y += (Math.random() - 0.5) * cameraShake * 0.55; camera.position.z += (Math.random() - 0.5) * cameraShake; cameraShake *= Math.exp(-15 * dt) }
       cameraFocus.lerp(focusTarget(), 1 - Math.exp(-CAMERA_FOCUS_RATE * dt)); camera.lookAt(cameraFocus)
