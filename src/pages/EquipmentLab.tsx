@@ -166,14 +166,84 @@ export default function EquipmentLab() {
   }
 
   const waitForJob = async (jobId: string) => {
+    let connectionFailures = 0
+
     for (;;) {
-      const next = await getEquipmentProcessorJob(jobId)
-      setGeneratorJob(next)
-      if (next.status === 'completed') return next
-      if (next.status === 'failed') {
-        throw new Error(next.error || next.message || 'Local generator job failed.')
+      try {
+        const next =
+          await getEquipmentProcessorJob(
+            jobId,
+          )
+
+        connectionFailures = 0
+        setGeneratorJob(next)
+
+        if (
+          next.status ===
+          'completed'
+        ) {
+          return next
+        }
+
+        if (
+          next.status ===
+          'failed'
+        ) {
+          throw new Error(
+            next.error ||
+            next.message ||
+            'Local generator job failed.',
+          )
+        }
+      } catch (cause) {
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : String(cause)
+
+        if (
+          !message.includes(
+            'Temporarily lost the local Equipment Processor connection',
+          )
+        ) {
+          throw cause
+        }
+
+        connectionFailures += 1
+
+        setGeneratorJob(
+          (current) => ({
+            id: jobId,
+            kind:
+              current?.kind ??
+              'generate',
+            status: 'running',
+            progress:
+              current?.progress ??
+              0,
+            message:
+              'SPAR3D is still running · reconnecting to the local processor…',
+          }),
+        )
+
+        if (
+          connectionFailures >=
+          30
+        ) {
+          throw new Error(
+            'The local Equipment Processor has been unreachable for about a minute. ' +
+            'Check that the processor CMD window is still open. The SPAR3D job may still be running there.',
+          )
+        }
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 1000))
+
+      await new Promise(
+        (resolve) =>
+          window.setTimeout(
+            resolve,
+            2000,
+          ),
+      )
     }
   }
 

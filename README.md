@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.80.2`  
+> **Current Forge version:** `v1.80.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -302,6 +302,8 @@ The official foundation ZIP can be imported into Forge rather than committing th
 The female body also has support for subtle spring-based secondary motion in the runtime binding.
 
 ## Equipment Lab
+
+Forge v1.80.3 makes long local SPAR3D jobs resilient to temporary browser/localhost disconnects. Equipment Lab now retries health/job/result reads, keeps a running job alive through transient fetch failures, reports reconnecting status instead of immediately failing, and only gives up after about a minute of continuous processor unavailability. The localhost server also explicitly allows browser private-network access.
 
 Forge v1.80.2 removes SPAR3D's runtime dependency on the transparent-background GUI package. Forge now supplies a headless transparent_background shim backed by rembg, so Flet GUI API changes cannot break Equipment Lab startup. Runtime validation checks the headless Remover shim before marking SPAR3D ready.
 

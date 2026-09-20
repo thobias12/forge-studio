@@ -50,7 +50,7 @@ createServer(async (req, res) => {
       const generator = await sparGeneratorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 9,
+        version: 10,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -1632,6 +1632,8 @@ function cors(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-Forge-Filename')
   res.setHeader('Access-Control-Expose-Headers', 'X-Forge-Metadata')
+  res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Private-Network')
   res.setHeader('Cache-Control', 'no-store')
 }
 
