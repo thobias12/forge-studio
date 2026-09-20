@@ -15,6 +15,7 @@ const generatorRepo = join(generatorsDir, 'triposr')
 const generatorVenv = join(generatorRepo, '.forge-venv')
 const bootstrapVenv = join(generatorsDir, '.forge-uv-bootstrap')
 const managedPythonDir = join(generatorsDir, '.forge-python')
+const generatorReadyMarker = join(generatorVenv, '.forge-ready-v2')
 const processor = join(here, 'processor.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
 const backgroundJobs = new Map()
@@ -41,7 +42,7 @@ createServer(async (req, res) => {
       const generator = await generatorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 3,
+        version: 4,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -331,20 +332,39 @@ async function setupGenerator(job) {
       { label: 'TripoSR requirements' },
     )
 
-    job.progress = 92
-    job.message = 'Checking GPU access…'
-    const smoke = await runCommand(
+    job.progress = 80
+    job.message = 'Repairing required runtime packages…'
+    await ensureGeneratorRuntimeDependencies(
       venvPython,
-      [
-        '-c',
-        'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")',
-      ],
-      { label: 'generator smoke test' },
+      job,
+    )
+
+    job.progress = 92
+    job.message = 'Validating TripoSR + GPU access…'
+    const smoke = await validateGeneratorRuntime(
+      venvPython,
+    )
+
+    await writeFile(
+      generatorReadyMarker,
+      JSON.stringify(
+        {
+          validatedAt:
+            new Date().toISOString(),
+          python:
+            '3.11',
+          backend:
+            'TripoSR',
+        },
+        null,
+        2,
+      ),
+      'utf8',
     )
 
     job.status = 'completed'
     job.progress = 100
-    job.message = smoke.stdout.includes('True')
+    job.message = smoke.stdout.includes('FORGE_CUDA=True')
       ? 'Local 3D generator installed and NVIDIA GPU detected.'
       : 'Local 3D generator installed. CUDA was not detected, so generation will use CPU and be much slower.'
   } catch (error) {
@@ -358,9 +378,26 @@ async function generate3D(job) {
   try {
     job.status = 'running'
     job.progress = 5
-    job.message = 'Starting local AI 3D generator…'
+    job.message = 'Validating local 3D generator…'
 
     const venvPython = generatorPythonPath()
+    try {
+      await validateGeneratorRuntime(
+        venvPython,
+      )
+    } catch (error) {
+      throw new Error(
+        'The local 3D generator installation is incomplete. Click Install Free Local Generator to repair it.\n'
+        + (
+          error instanceof Error
+            ? error.message
+            : String(error)
+        ),
+      )
+    }
+
+    job.progress = 8
+    job.message = 'Starting local AI 3D generator…'
     const resolution = {
       draft: '192',
       standard: '256',
@@ -454,12 +491,117 @@ async function generatorHealth() {
 async function isGeneratorReady() {
   return await exists(join(generatorRepo, 'run.py'))
     && await exists(generatorPythonPath())
+    && await exists(generatorReadyMarker)
 }
 
 function generatorPythonPath() {
   return process.platform === 'win32'
     ? join(generatorVenv, 'Scripts', 'python.exe')
     : join(generatorVenv, 'bin', 'python')
+}
+
+async function ensureGeneratorRuntimeDependencies(
+  venvPython,
+  job,
+) {
+  // TripoSR's run.py imports numpy directly, but the upstream
+  // requirements file does not list it. Install it explicitly so
+  // clean Windows environments do not depend on an incidental package.
+  await runCommand(
+    venvPython,
+    [
+      '-m', 'pip', 'install',
+      'numpy==1.26.4',
+    ],
+    { label: 'TripoSR runtime repair' },
+  )
+
+  const packageForModule = {
+    numpy: 'numpy==1.26.4',
+    PIL: 'Pillow==10.1.0',
+    rembg: 'rembg',
+    xatlas: 'xatlas==0.0.9',
+    omegaconf: 'omegaconf==2.3.0',
+    einops: 'einops==0.7.0',
+    transformers: 'transformers==4.35.0',
+    trimesh: 'trimesh==4.0.5',
+    imageio: 'imageio[ffmpeg]',
+    gradio: 'gradio',
+    moderngl: 'moderngl==5.10.0',
+  }
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await validateGeneratorRuntime(
+        venvPython,
+      )
+      return
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error)
+      const missing =
+        message.match(
+          /No module named ['"]([^'"]+)['"]/,
+        )?.[1]?.split('.')?.[0]
+      const pkg =
+        missing
+          ? packageForModule[missing]
+          : undefined
+
+      if (!pkg) {
+        throw error
+      }
+
+      job.message =
+        'Repairing missing Python package: '
+        + missing
+        + '…'
+      await runCommand(
+        venvPython,
+        [
+          '-m', 'pip', 'install',
+          pkg,
+        ],
+        {
+          label:
+            'TripoSR repair '
+            + missing,
+        },
+      )
+    }
+  }
+
+  throw new Error(
+    'TripoSR runtime validation did not stabilize after dependency repair.',
+  )
+}
+
+async function validateGeneratorRuntime(
+  venvPython,
+) {
+  return await runCommand(
+    venvPython,
+    [
+      '-c',
+      [
+        'import numpy',
+        'import rembg',
+        'import torch',
+        'import xatlas',
+        'from PIL import Image',
+        'from tsr.system import TSR',
+        'print("FORGE_RUNTIME_OK")',
+        'print("FORGE_CUDA=" + str(torch.cuda.is_available()))',
+        'print("FORGE_GPU=" + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"))',
+      ].join('; '),
+    ],
+    {
+      cwd: generatorRepo,
+      label: 'TripoSR runtime validation',
+    },
+  )
 }
 
 async function ensureGeneratorPython(job) {
