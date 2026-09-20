@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feat/ranger-procedural-authored-v1820
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
