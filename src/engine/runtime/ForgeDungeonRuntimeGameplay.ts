@@ -2,7 +2,7 @@
 import * as THREE from 'three'
 import { itemVisual } from '../itemPresentation'
 import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
-import { dungeonProps } from '../../lib/dungeonProps'
+import { dungeonPropBlocksMovement, dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
 import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
@@ -672,7 +672,7 @@ export const dungeonGameplayMethods = {
     }
 
     for (const prop of dungeonProps(this.runtimeDungeon)) {
-      if (!prop.collision) continue
+      if (!dungeonPropBlocksMovement(prop)) continue
       const propRadius = Math.max(0.28, prop.scale * (prop.assetRef === 'pillar' || prop.assetRef === 'statue' ? 0.72 : 0.52))
       if (Math.hypot(x - prop.x, z - prop.z) < radius + propRadius) return false
     }
