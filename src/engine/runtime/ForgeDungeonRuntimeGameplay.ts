@@ -5,7 +5,7 @@ import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonPropBlocksMovement, dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
-import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
+import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
@@ -121,31 +121,15 @@ export const dungeonGameplayMethods = {
       const nextX = currentX + stepX
       const nextZ = currentZ + stepZ
 
-      if (this.canWalkAt(nextX, nextZ, PLAYER_RADIUS)) {
-        this.player.position.x = nextX
-        this.player.position.z = nextZ
-        continue
-      }
-
-      const xOpen = this.canWalkAt(nextX, currentZ, PLAYER_RADIUS)
-      const zOpen = this.canWalkAt(currentX, nextZ, PLAYER_RADIUS)
-      if (xOpen && zOpen) {
-        if (Math.abs(stepX) >= Math.abs(stepZ)) {
-          this.player.position.x = nextX
-          if (this.canWalkAt(this.player.position.x, nextZ, PLAYER_RADIUS)) {
-            this.player.position.z = nextZ
-          }
-        } else {
-          this.player.position.z = nextZ
-          if (this.canWalkAt(nextX, this.player.position.z, PLAYER_RADIUS)) {
-            this.player.position.x = nextX
-          }
-        }
-      } else if (xOpen) {
-        this.player.position.x = nextX
-      } else if (zOpen) {
-        this.player.position.z = nextZ
-      }
+      const resolved = resolveDungeonSlideV3(
+        currentX,
+        currentZ,
+        stepX,
+        stepZ,
+        (x, z) => this.canWalkAt(x, z, PLAYER_RADIUS),
+      )
+      this.player.position.x = resolved.x
+      this.player.position.z = resolved.z
     }
 
     this.player.position.y = this.floorHeightAt(
