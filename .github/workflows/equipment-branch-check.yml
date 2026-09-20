@@ -1,0 +1,31 @@
+name: Equipment Generator Branch Check
+
+on:
+  push:
+    branches:
+      - feat/ranger-procedural-authored-v1820
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate procedural generator syntax
+        run: python -m py_compile tools/equipment-processor/procedural_equipment.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Forge Studio
+        run: npm run build
