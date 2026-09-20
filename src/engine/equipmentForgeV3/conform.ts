@@ -605,13 +605,16 @@ function createTorsoTemplate(
           segments +
         next
 
+      // Wind the sleeve tube outward. The previous order produced
+      // inward-facing normals, so the single-sided cloth material culled
+      // most of the short sleeve and left the body arm visibly exposed.
       indices.push(
         a,
-        c,
-        b,
         b,
         c,
+        b,
         d,
+        c,
       )
     }
   }
