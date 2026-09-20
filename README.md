@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.82.1`  
+> **Current Forge version:** `v1.82.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1260,6 +1260,21 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
+## v1.82.2 — Equipment Lab production workflow + authored Ranger chest
+
+- Equipment Lab production path is focused on Female / Male → Chest → style → variation → Generate Equipment
+- unsupported equipment slots are shown as coming later instead of pretending to be production-ready
+- SPAR3D, reference-image generation and imported-GLB processing are collapsed behind experimental/import tools
+- primary Skillbound preview expands to a single large generated-equipment viewport
+- procedural Ranger generation no longer depends on the legacy V3 preview recipe
+- clean native-model QA mode renders the generated GLB without stacking old V3 armor on top
+- Female → Chest → Ranger → variation 01 uses an authored procedural garment topology rather than a copied anatomical body shell
+- Ranger output includes cloth shell, split front leather panels, back panel, diagonal strap, wrap belt, buckle, keepers, neckline/armhole trim and hem trim
+- generated authored pieces inherit weights from the nearest Skillbound body surface and bind to the official armature
+- semantic front direction is resolved from mannequin breast weights on the female rig instead of guessed imported depth
+- procedural generator metadata is now `blender-body-aware-v2`
+
+
 ## v1.77.4 — Authored-looking Ranger construction
 
 - fitted tunic seam refinement
@@ -1376,9 +1391,9 @@ For exact history beyond this point, use Git history.
 
 # Current priorities
 
-The immediate priority is **Equipment Forge V3 visual quality**.
+The immediate priority is **Equipment Lab procedural Ranger chest quality and production usability**.
 
-1. Continue refining the v1.77.4 Ranger reference outfit until it looks authored and game-ready, not like a procedural shell.
+1. Continue refining Female → Chest → Ranger → variation 01 in Equipment Lab until the generated GLB looks authored and game-ready.
 2. Use the built-in 360° + close-up QA views to inspect:
    - body/clothing side clearance
    - shoulders
@@ -1396,7 +1411,7 @@ The immediate priority is **Equipment Forge V3 visual quality**.
    - tabard shaping
    - cape yoke / anchors / borders
    - controlled asymmetry
-4. Preserve the body-conforming/skinned V3 approach. Do not fall back to large detached boxes or floating V2-style primitives.
+4. Preserve the body-aware authored-mesh approach: generated pieces should be constructed from Skillbound body measurements, skinned automatically, and inspected as the native GLB without legacy V3 overlay geometry.
 5. After the Ranger reference reaches the target quality, add the missing procedural equipment families:
    - gloves
    - boots
