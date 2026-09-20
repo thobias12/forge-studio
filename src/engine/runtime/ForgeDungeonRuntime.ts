@@ -12,8 +12,7 @@ import type {
   ForgeProjectDungeonDefinition,
 } from '../forgeProject'
 import { itemVisual } from '../itemPresentation'
-import { withCryptRuntimeCollision } from '../../lib/cryptCollision'
-import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
+import { dungeonAtmosphere, dungeonLightingProfile, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment, type CryptFlickerLight } from '../../lib/cryptEnvironment'
@@ -142,7 +141,10 @@ export class ForgeDungeonRuntime {
   constructor(host: HTMLElement, dungeon: ForgeProjectDungeonDefinition, gameplay: ForgeGameplayContent, initial: ForgeAdventurePlayerState, options: ForgeDungeonRuntimeOptions) {
     this.host = host
     this.dungeon = dungeon
-    this.runtimeDungeon = withCryptRuntimeCollision(dungeon) as ForgeProjectDungeonDefinition
+    // Dungeon Forge V3 owns structural + authored-art collision directly.
+    // Keep the runtime on the exact authored dungeon instead of injecting the
+    // legacy hidden crypt collision helpers used by the pre-V3 renderer.
+    this.runtimeDungeon = dungeon
     this.gameplay = gameplay
     this.options = options
     this.playerHealth = THREE.MathUtils.clamp(initial.health, 1, gameplay.player.maxHealth)
@@ -150,13 +152,14 @@ export class ForgeDungeonRuntime {
     this.equippedWeaponId = initial.equippedWeaponId
 
     const atmosphere = dungeonAtmosphere(dungeon.theme)
+    const lighting = dungeonLightingProfile(atmosphere, dungeon.settings)
     this.scene.background = new THREE.Color(atmosphere.background)
-    this.scene.fog = new THREE.FogExp2(atmosphere.fog, dungeon.settings.fogDensity * atmosphere.fogMultiplier)
+    this.scene.fog = new THREE.FogExp2(atmosphere.fog, lighting.fogDensity)
     this.scene.add(this.world)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = atmosphere.exposure
+    this.renderer.toneMappingExposure = lighting.exposure
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.domElement.className = 'skillbound-runtime-canvas'
