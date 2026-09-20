@@ -41,7 +41,7 @@ createServer(async (req, res) => {
       const generator = await generatorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 2,
+        version: 3,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
