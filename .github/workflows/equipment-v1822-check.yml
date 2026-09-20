@@ -1,0 +1,87 @@
+name: Equipment Lab v1.82.2 Check
+
+on:
+  push:
+    branches:
+      - feat/equipment-lab-v1822
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate procedural generator syntax
+        run: python -m py_compile tools/equipment-processor/procedural_equipment.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare Skillbound female mannequin
+        env:
+          FORGE_QA_FIXTURE_OUTPUT: artifacts/procedural/mannequin.glb
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender python3-numpy
+
+      - name: Generate authored Ranger variation 01
+        run: |
+          mkdir -p artifacts/procedural
+          blender --background \
+            --python-exit-code 1 \
+            --python tools/equipment-processor/procedural_equipment.py \
+            -- \
+            --mannequin artifacts/procedural/mannequin.glb \
+            --output artifacts/procedural/ranger-v1822-qa.glb \
+            --body female \
+            --slot chest \
+            --style ranger \
+            --seed 0 \
+            --include-body
+
+      - name: Build Forge Studio
+        run: npm run build
+
+      - name: Install Equipment QA runtime
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+
+      - name: Capture native Ranger QA
+        env:
+          FORGE_QA_MODEL: artifacts/procedural/ranger-v1822-qa.glb
+          FORGE_QA_BODY: female
+          FORGE_QA_OUTPUT: artifacts/procedural-qa
+          FORGE_QA_SKIP_BUILD: '1'
+          FORGE_QA_HEADLESS: '1'
+          FORGE_QA_NATIVE_MODEL: '1'
+        run: npm run qa:equipment
+
+      - name: Upload procedural Ranger QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ranger-v1822-procedural-qa
+          path: |
+            artifacts/procedural/ranger-v1822-qa.glb
+            artifacts/procedural/ranger-v1822-qa.glb.json
+            artifacts/procedural-qa
+          if-no-files-found: warn
+          retention-days: 7
