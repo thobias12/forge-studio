@@ -377,6 +377,7 @@ declare global {
       bodyType: SkillboundBodyType
       modelUrl: string
       recipe: EquipmentForgeV3Recipe
+      mode: 'native-model' | 'v3-recipe'
       views: string[]
       errors: string[]
       fitDiagnostics?: EquipmentFitDiagnostics
