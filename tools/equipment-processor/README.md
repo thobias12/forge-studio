@@ -105,3 +105,9 @@ It is no longer the primary Equipment Lab generator.
 The upstream SPAR3D requirements install OpenAI CLIP and AlphaCLIP directly from GitHub. AlphaCLIP's setup.py imports `pkg_resources`, but pip's isolated build environment may not include setuptools/pkg_resources, causing metadata generation to fail on Windows.
 
 Forge now removes both Git dependencies from the bulk requirements file, installs OpenAI CLIP first, then installs AlphaCLIP with `--no-build-isolation` after PyTorch and setuptools are already available in the private SPAR3D environment. Runtime validation now checks both `clip` and `alpha_clip` imports before writing the SPAR3D ready marker.
+
+## v1.80.2 headless background removal
+
+SPAR3D imports `Remover` from `transparent_background`, but that package imports its Flet GUI at module import time. Newer Flet releases can break the GUI API even though Equipment Lab never uses it.
+
+Forge now removes `transparent-background` from the SPAR3D requirements and supplies a local `transparent_background.Remover` compatibility shim backed by `rembg`. This keeps background removal fully headless and eliminates Flet from the local generator runtime path.

@@ -17,7 +17,7 @@ const generatorReadyMarker = join(generatorVenv, '.forge-ready-v4')
 
 const sparRepo = join(generatorsDir, 'spar3d')
 const sparVenv = join(sparRepo, '.forge-venv')
-const sparReadyMarker = join(sparVenv, '.forge-ready-v2')
+const sparReadyMarker = join(sparVenv, '.forge-ready-v3')
 const sparShims = join(generatorsDir, 'spar3d-shims')
 const hfTokenPath = join(generatorsDir, '.hf-token')
 
@@ -50,7 +50,7 @@ createServer(async (req, res) => {
       const generator = await sparGeneratorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 8,
+        version: 9,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -690,11 +690,11 @@ async function prepareForgeSparRequirements() {
         !line.startsWith('./texture_baker')
         && !line.startsWith('./uv_unwrapper')
         && !line.includes('github.com/openai/CLIP')
-        && !line.includes('github.com/SunzeY/AlphaCLIP'),
+        && !line.includes('github.com/SunzeY/AlphaCLIP')
+        && !line.startsWith('transparent-background'),
     )
 
   filtered.push(
-    'transparent-background==1.3.3',
     'rembg[cpu]',
     'onnxruntime',
     'Pillow',
@@ -717,8 +717,13 @@ async function installSparShims() {
     sparShims,
     'uv_unwrapper',
   )
+  const backgroundDir = join(
+    sparShims,
+    'transparent_background',
+  )
   await mkdir(textureDir, { recursive: true })
   await mkdir(uvDir, { recursive: true })
+  await mkdir(backgroundDir, { recursive: true })
 
   await writeFile(
     join(textureDir, '__init__.py'),
@@ -743,6 +748,33 @@ async function installSparShims() {
       '        pass',
       '    def __call__(self, *args, **kwargs):',
       '        raise RuntimeError("UV unwrapping is disabled in Forge geometry-only SPAR3D mode.")',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+
+  await writeFile(
+    join(backgroundDir, '__init__.py'),
+    [
+      '"""Headless Forge replacement for transparent-background."""',
+      'from io import BytesIO',
+      'from PIL import Image',
+      'from rembg import remove',
+      '',
+      'class Remover:',
+      '    def __init__(self, device=None, *args, **kwargs):',
+      '        self.device = device',
+      '',
+      '    def process(self, image, **kwargs):',
+      '        if not isinstance(image, Image.Image):',
+      '            image = Image.open(image)',
+      '        rgba = image.convert("RGBA")',
+      '        result = remove(rgba)',
+      '        if isinstance(result, Image.Image):',
+      '            return result.convert("RGBA")',
+      '        if isinstance(result, (bytes, bytearray)):',
+      '            return Image.open(BytesIO(result)).convert("RGBA")',
+      '        raise RuntimeError("rembg returned an unsupported result type")',
       '',
     ].join('\n'),
     'utf8',
@@ -774,8 +806,11 @@ async function validateSparRuntime(
         'import torch',
         'import numpy',
         'import trimesh',
+        'import rembg',
         'import clip',
         'import alpha_clip',
+        'from transparent_background import Remover',
+        'assert callable(Remover)',
         'from spar3d.system import SPAR3D',
         'print("FORGE_RUNTIME_OK")',
         'print("FORGE_CUDA=" + str(torch.cuda.is_available()))',
