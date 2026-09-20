@@ -101,6 +101,29 @@ export function maskBodyUnderTunic(
             Boolean(value),
         )
 
+  // The authored short sleeve is intentionally rooted from the clavicle
+  // for broad shoulder coverage. Add a second, tightly bounded mask based
+  // on the real upper-arm axis so body triangles cannot show through the
+  // inner shoulder transition from steep/top-down cameras.
+  const shoulderOcclusionRanges =
+    sleeve === 'short'
+      ? [
+          createShoulderOcclusionRange(
+            source,
+            'L',
+          ),
+          createShoulderOcclusionRange(
+            source,
+            'R',
+          ),
+        ].filter(
+          (
+            value,
+          ): value is ShoulderOcclusionRange =>
+            Boolean(value),
+        )
+      : []
+
   for (
     let triangle = 0;
     triangle < triangleCount;
@@ -137,8 +160,28 @@ export function maskBodyUnderTunic(
         center.x,
         center.z,
       )
+    // Preserve more of the real chest directly behind the front
+    // neckline. Without this, the body mask removes the chest too high
+    // and the camera sees the dark far/interior wall of the tunic through
+    // the V opening.
+    const frontAmount =
+      Math.max(
+        0,
+        Math.cos(angle),
+      )
+    const frontNeckT =
+      THREE.MathUtils.smoothstep(
+        frontAmount,
+        .72,
+        .98,
+      )
     const topInset =
-      frame.height * .024
+      frame.height *
+      THREE.MathUtils.lerp(
+        .024,
+        .055,
+        frontNeckT,
+      )
     const bottomInset =
       frame.height * .018
     const torsoCovered =
@@ -161,10 +204,19 @@ export function maskBodyUnderTunic(
             range,
           ),
       )
+    const shoulderCovered =
+      shoulderOcclusionRanges.some(
+        (range) =>
+          pointInsideShoulderOcclusion(
+            center,
+            range,
+          ),
+      )
 
     if (
       !torsoCovered &&
-      !sleeveCovered
+      !sleeveCovered &&
+      !shoulderCovered
     ) {
       kept.push(a, b, c)
     }
@@ -182,6 +234,126 @@ export function maskBodyUnderTunic(
     }
     geometry.dispose()
   }
+}
+
+
+type ShoulderOcclusionRange = {
+  start: THREE.Vector3
+  direction: THREE.Vector3
+  length: number
+  startDistance: number
+  endDistance: number
+  radius: number
+  sideSign: number
+  maxOutwardX: number
+}
+
+function createShoulderOcclusionRange(
+  source: THREE.SkinnedMesh,
+  side: 'L' | 'R',
+): ShoulderOcclusionRange | undefined {
+  const upper =
+    findBone(
+      source,
+      `upperarm_${side}`,
+    )
+  const lower =
+    findBone(
+      source,
+      `lowerarm_${side}`,
+    ) ??
+    findBone(
+      source,
+      `forearm_${side}`,
+    )
+
+  if (!upper || !lower) {
+    return undefined
+  }
+
+  const start =
+    objectPositionInMesh(
+      source,
+      upper,
+    )
+  const end =
+    objectPositionInMesh(
+      source,
+      lower,
+    )
+  const vector =
+    end.clone().sub(start)
+  const length =
+    vector.length()
+
+  if (length < .05) {
+    return undefined
+  }
+
+  return {
+    start,
+    direction:
+      vector.clone().normalize(),
+    length,
+    startDistance:
+      length * -.18,
+    endDistance:
+      length * .46,
+    radius:
+      length * .235,
+    sideSign:
+      Math.sign(start.x) ||
+      (side === 'L' ? 1 : -1),
+    maxOutwardX:
+      Math.abs(start.x) +
+      length * .2,
+  }
+}
+
+function pointInsideShoulderOcclusion(
+  point: THREE.Vector3,
+  range: ShoulderOcclusionRange,
+) {
+  const signedX =
+    point.x * range.sideSign
+
+  if (
+    signedX <
+      Math.abs(range.start.x) * .88 ||
+    signedX >
+      range.maxOutwardX
+  ) {
+    return false
+  }
+
+  const offset =
+    point
+      .clone()
+      .sub(range.start)
+  const projected =
+    offset.dot(range.direction)
+
+  if (
+    projected <
+      range.startDistance ||
+    projected >
+      range.endDistance
+  ) {
+    return false
+  }
+
+  const closest =
+    range.start
+      .clone()
+      .addScaledVector(
+        range.direction,
+        projected,
+      )
+
+  return (
+    point.distanceTo(closest) <=
+    range.radius
+  )
 }
 
 
