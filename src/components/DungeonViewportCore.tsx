@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomAtV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -1405,7 +1405,7 @@ function pointNearWall(wall: DungeonWall, x: number, z: number, margin: number) 
   return Math.hypot(x - px, z - pz) <= wall.thickness / 2 + margin
 }
 function propCollisionRadius(prop: DungeonProp) { const base = prop.assetRef === 'pillar' ? 0.45 : prop.assetRef === 'statue' ? 0.5 : prop.assetRef === 'rubble' ? 0.25 : prop.assetRef === 'spikes' ? 0.55 : 0.45; return base * prop.scale }
-function pointInsideRoom(room: DungeonRoom, x: number, z: number, margin: number) { const dx = x - room.x, dz = z - room.z, angle = -THREE.MathUtils.degToRad(room.rotation), cos = Math.cos(angle), sin = Math.sin(angle), localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos; return Math.abs(localX) <= Math.max(0.2, room.width / 2 - margin) && Math.abs(localZ) <= Math.max(0.2, room.depth / 2 - margin) }
+function pointInsideRoom(room: DungeonRoom, x: number, z: number, margin: number) { return dungeonRoomContainsV3(room, x, z, margin) }
 function pointInsideCorridor(value: DungeonWithProps, x: number, z: number, margin: number) { const map = new Map(value.rooms.map((room) => [room.id, room])); for (const edge of value.corridors) { const a = map.get(edge.fromRoomId), b = map.get(edge.toRoomId); if (!a || !b) continue; const from = getRoomConnection(a, b, edge.width), to = getRoomConnection(b, a, edge.width), midX = to.x, midZ = from.z; if (pointInsideAxisSegment(x, z, from.x, from.z, midX, midZ, edge.width, margin) || pointInsideAxisSegment(x, z, midX, midZ, to.x, to.z, edge.width, margin)) return true } return false }
 function pointInsideAxisSegment(x: number, z: number, x1: number, z1: number, x2: number, z2: number, width: number, margin: number) { const halfWidth = Math.max(0.25, width / 2 - margin), pad = margin + 0.28; if (Math.abs(z2 - z1) < 0.05) return x >= Math.min(x1, x2) - pad && x <= Math.max(x1, x2) + pad && Math.abs(z - z1) <= halfWidth; if (Math.abs(x2 - x1) < 0.05) return z >= Math.min(z1, z2) - pad && z <= Math.max(z1, z2) + pad && Math.abs(x - x1) <= halfWidth; return false }
 function pointInsideDoor(item: DungeonMarker, x: number, z: number, margin: number) { const dx = x - item.x, dz = z - item.z, angle = -THREE.MathUtils.degToRad(Number(item.data.yaw ?? 0)), cos = Math.cos(angle), sin = Math.sin(angle), localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos; return Math.abs(localX) <= 0.2 + margin && Math.abs(localZ) <= 0.9 + margin }
