@@ -12,6 +12,26 @@ const FLOOR_BRICK_D = 0.62
 const WALL_SAMPLE = 0.82
 const FLOOR_Y = 0.045
 
+type GeometryCache = {
+  corridors: Array<{ edge: DungeonCorridor; path: DungeonPoint[]; radius: number }>
+}
+
+const geometryCaches = new WeakMap<object, GeometryCache>()
+
+function geometryCache(value: DungeonWithProps): GeometryCache {
+  const cached = geometryCaches.get(value)
+  if (cached) return cached
+  const next: GeometryCache = {
+    corridors: value.corridors.map((edge) => ({
+      edge,
+      path: dungeonCorridorPath(value, edge),
+      radius: Math.max(0.3, edge.width / 2),
+    })),
+  }
+  geometryCaches.set(value, next)
+  return next
+}
+
 /**
  * Dungeon Forge V3 structural renderer.
  *
@@ -190,19 +210,21 @@ export function dungeonCorridorPath(value: DungeonWithProps, edge: DungeonCorrid
 }
 
 export function dungeonCorridorContainsV3(value: DungeonWithProps, edge: DungeonCorridor, x: number, z: number, margin = 0) {
-  const path = dungeonCorridorPath(value, edge)
+  const entry = geometryCache(value).corridors.find((item) => item.edge.id === edge.id)
+  const path = entry?.path ?? dungeonCorridorPath(value, edge)
   if (path.length < 2) return false
-  const radius = Math.max(0.3, edge.width / 2 - margin)
-  const radiusSq = radius * radius
-  for (let index = 1; index < path.length; index += 1) {
-    if (distanceToSegmentSquared(x, z, path[index - 1], path[index]) <= radiusSq) return true
-  }
-  return false
+  const radius = Math.max(0.3, (entry?.radius ?? edge.width / 2) - margin)
+  return pathContains(path, x, z, radius)
 }
 
 export function dungeonContainsPointV3(value: DungeonWithProps, x: number, z: number, margin = 0) {
   if (value.rooms.some((room) => dungeonRoomContainsV3(room, x, z, margin))) return true
-  return value.corridors.some((edge) => dungeonCorridorContainsV3(value, edge, x, z, margin))
+  const cache = geometryCache(value)
+  for (const corridor of cache.corridors) {
+    const radius = Math.max(0.3, corridor.radius - margin)
+    if (pathContains(corridor.path, x, z, radius)) return true
+  }
+  return false
 }
 
 export function dungeonFloorHeightV3(value: DungeonWithProps, x: number, z: number) {
@@ -531,6 +553,15 @@ function localToWorld(room: DungeonRoom, x: number, z: number) {
   const cos = Math.cos(angle)
   const sin = Math.sin(angle)
   return { x: room.x + x * cos - z * sin, z: room.z + x * sin + z * cos }
+}
+
+function pathContains(path: DungeonPoint[], x: number, z: number, radius: number) {
+  if (path.length < 2) return false
+  const radiusSq = radius * radius
+  for (let index = 1; index < path.length; index += 1) {
+    if (distanceToSegmentSquared(x, z, path[index - 1], path[index]) <= radiusSq) return true
+  }
+  return false
 }
 
 function distanceToSegmentSquared(x: number, z: number, a: DungeonPoint, b: DungeonPoint) {
