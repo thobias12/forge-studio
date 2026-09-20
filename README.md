@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.88.2`  
+> **Current Forge version:** `v1.88.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,10 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.88.3 refines reward feedback around the latest dungeon-lighting build. Gold now drops as one stylized four-coin pile per defeated enemy instead of three separate pickup objects. The pile uses overlapping embossed coins, bright additive rims, a warm ground aura, small glints, a compact launch/settle and a fast magnet pull so it reads clearly and feels more valuable on dark terrain.
+
+Gold audio plays only when the pile is actually collected. The cue is a short softer bell-like chime and is no longer delayed until the HUD arrival. XP is fully silent: kills still grant XP immediately and keep the violet world/HUD animation, but routine XP feedback does not play pickup or level-up audio from this reward path.
 
 Forge v1.88.1 refines reward feel after the v1.88.0 gameplay overhaul. XP is no longer a physical world pickup: kills grant XP immediately, show a short violet ring/mote burst at the defeated enemy, emit the HUD XP feedback immediately and preserve level-up handling/save persistence. Gold remains physical but now uses three cleaner coins, a tighter low scatter, at most one tiny bounce and an early high-acceleration magnet snap instead of the previous float-heavy drop.
 
