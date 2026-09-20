@@ -59,6 +59,7 @@ export function addDungeonMasonryV3(
 
   const bounds = dungeonWorldBoundsV3(value, 3)
   addFloor(root, value, atmosphere, bounds)
+  addFloorAtmosphere(root, value, atmosphere, bounds)
   addPerimeterWalls(root, value, atmosphere, bounds, mode)
   addCorridorArchitecture(root, value, atmosphere, mode)
   addRoomArchitecture(root, value, atmosphere, mode)
@@ -347,6 +348,57 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   }
 }
 
+function addFloorAtmosphere(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  bounds: ReturnType<typeof dungeonWorldBoundsV3>,
+) {
+  const patches: Array<{ x: number; z: number; y: number; sx: number; sz: number; yaw: number; shade: number }> = []
+  const cell = 5.8
+  const startX = Math.floor(bounds.minX / cell) * cell
+  const startZ = Math.floor(bounds.minZ / cell) * cell
+  for (let z = startZ; z <= bounds.maxZ; z += cell) {
+    for (let x = startX; x <= bounds.maxX; x += cell) {
+      const hash = numberHash(Math.round(x * 7), Math.round(z * 11), value.seed ^ 0x4a3d)
+      if (hash % 4 !== 0) continue
+      const px = x + ((hash >>> 8) % 100) / 100 * cell
+      const pz = z + ((hash >>> 16) % 100) / 100 * cell
+      if (!dungeonContainsPointV3(value, px, pz, 0.9)) continue
+      patches.push({
+        x: px,
+        z: pz,
+        y: dungeonFloorHeightV3(value, px, pz) + 0.096,
+        sx: 0.7 + ((hash >>> 4) % 11) / 10,
+        sz: 0.32 + ((hash >>> 12) % 8) / 10,
+        yaw: ((hash >>> 20) % 628) / 100,
+        shade: 0.55 + (hash % 15) / 100,
+      })
+    }
+  }
+  if (!patches.length) return
+
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(atmosphere.wallDark).multiplyScalar(0.8),
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 18), material, patches.length)
+  mesh.name = 'DungeonV3DampPatches'
+  const dummy = new THREE.Object3D()
+  patches.forEach((patch, index) => {
+    dummy.position.set(patch.x, patch.y, patch.z)
+    dummy.rotation.set(-Math.PI / 2, 0, patch.yaw)
+    dummy.scale.set(patch.sx, patch.sz, 1)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index, dummy.matrix)
+  })
+  mesh.renderOrder = 3
+  root.add(mesh)
+}
+
 type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean }
 
 function addPerimeterWalls(
@@ -489,8 +541,23 @@ function addCorridorArchitecture(
       const pz = Math.sin(sample.yaw)
       const left = { x: sample.x + px * half, z: sample.z + pz * half }
       const right = { x: sample.x - px * half, z: sample.z - pz * half }
-      addSupportPillar(root, left.x, dungeonFloorHeightV3(value, sample.x, sample.z), left.z, sample.yaw, materials, mode, index % 3 === 0)
-      addSupportPillar(root, right.x, dungeonFloorHeightV3(value, sample.x, sample.z), right.z, sample.yaw, materials, mode, index % 3 === 1)
+      const floorY = dungeonFloorHeightV3(value, sample.x, sample.z)
+      addSupportPillar(root, left.x, floorY, left.z, sample.yaw, materials, mode, index % 3 === 0)
+      addSupportPillar(root, right.x, floorY, right.z, sample.yaw, materials, mode, index % 3 === 1)
+      if (index % 3 === 0) {
+        const recessSide = index % 2 ? left : right
+        const recess = new THREE.Group()
+        recess.position.set(recessSide.x, floorY, recessSide.z)
+        recess.rotation.y = sample.yaw
+        root.add(recess)
+        const back = new THREE.Mesh(new THREE.BoxGeometry(1.25, topDown ? 0.72 : 1.9, 0.18), materials.dark)
+        back.position.y = topDown ? 0.42 : 1.05
+        back.castShadow = true
+        recess.add(back)
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.38), materials.cap)
+        shelf.position.set(0, topDown ? 0.72 : 1.78, 0.06)
+        recess.add(shelf)
+      }
       if (!topDown && index % 2 === 1) {
         addArchLintel(root, sample.x, dungeonFloorHeightV3(value, sample.x, sample.z), sample.z, sample.yaw, edge.width, materials, 3.2)
       }
