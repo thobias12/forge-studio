@@ -213,14 +213,6 @@ export function buildConformedTunic(
       ),
     )
     meshes.push(
-      ...createVestPanelDetails(
-        source,
-        vest.geometry,
-        leather,
-        trim,
-      ),
-    )
-    meshes.push(
       ...createShoulderReinforcements(
         source,
         torso.geometry,
@@ -667,25 +659,60 @@ function createTorsoTemplate(
           torsoNormals.getY(index),
           torsoNormals.getZ(index),
         ).normalize()
-      const referenceIndex =
+      const referenceRing =
         Math.max(
           0,
           normalStartRing - 2,
-        ) *
-          segments +
-        segment
+        )
       const targetNormal =
-        new THREE.Vector3(
-          torsoNormals.getX(
-            referenceIndex,
+        new THREE.Vector3()
+      let targetWeight = 0
+
+      for (
+        let sampleOffset = -2;
+        sampleOffset <= 2;
+        sampleOffset += 1
+      ) {
+        const sampleSegment =
+          (segment +
+            sampleOffset +
+            segments) %
+          segments
+        const referenceIndex =
+          referenceRing *
+            segments +
+          sampleSegment
+        const weight =
+          3 -
+          Math.abs(
+            sampleOffset,
+          )
+        targetNormal.addScaledVector(
+          new THREE.Vector3(
+            torsoNormals.getX(
+              referenceIndex,
+            ),
+            torsoNormals.getY(
+              referenceIndex,
+            ),
+            torsoNormals.getZ(
+              referenceIndex,
+            ),
           ),
-          torsoNormals.getY(
-            referenceIndex,
-          ),
-          torsoNormals.getZ(
-            referenceIndex,
-          ),
-        ).normalize()
+          weight,
+        )
+        targetWeight += weight
+      }
+
+      targetNormal
+        .multiplyScalar(
+          1 /
+            Math.max(
+              1,
+              targetWeight,
+            ),
+        )
+        .normalize()
       const coreApex =
         ring >= rings - 2 &&
         Math.abs(offset) <= 2
@@ -2943,7 +2970,7 @@ function createTunicSeamDetails(
       'EFV3_TunicSideSeam_L',
       'radial',
       .0016,
-      .32,
+      .22,
     ),
     createGridColumnStrip(
       source,
@@ -2956,7 +2983,7 @@ function createTunicSeamDetails(
       'EFV3_TunicSideSeam_R',
       'radial',
       .0016,
-      .32,
+      .22,
     ),
   ]
 }
@@ -3022,97 +3049,6 @@ function createShoulderReinforcements(
       'EFV3_ShoulderReinforcementSeam_R',
       'radial',
       .0044,
-    ),
-  ]
-}
-
-function createVestPanelDetails(
-  source: THREE.SkinnedMesh,
-  vestGeometry: THREE.BufferGeometry,
-  leather: THREE.Material,
-  trim: THREE.Material,
-) {
-  return [
-    // Narrow, mirrored side reinforcements. Keep the center chest clean
-    // so the leather reads as garment construction rather than two
-    // blocky plates stuck onto the front.
-    createGridAreaPatch(
-      source,
-      vestGeometry,
-      48,
-      2,
-      8,
-      8,
-      11,
-      leather,
-      'EFV3_VestPanel_L',
-      'radial',
-      .0052,
-    ),
-    createGridAreaPatch(
-      source,
-      vestGeometry,
-      48,
-      2,
-      8,
-      37,
-      40,
-      leather,
-      'EFV3_VestPanel_R',
-      'radial',
-      .0052,
-    ),
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      10,
-      48,
-      11,
-      12,
-      trim,
-      'EFV3_VestPanelSeam_L',
-      'radial',
-      .0059,
-      .28,
-    ),
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      10,
-      48,
-      36,
-      37,
-      trim,
-      'EFV3_VestPanelSeam_R',
-      'radial',
-      .0059,
-      .28,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      48,
-      2,
-      3,
-      8,
-      11,
-      trim,
-      'EFV3_VestPanelBase_L',
-      'radial',
-      .0059,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      48,
-      2,
-      3,
-      37,
-      40,
-      trim,
-      'EFV3_VestPanelBase_R',
-      'radial',
-      .0059,
     ),
   ]
 }
@@ -3657,7 +3593,7 @@ function createVestDetailTrim(
       'EFV3_VestEdge_L',
       'radial',
       .0022,
-      .3,
+      .2,
     ),
     createGridColumnStrip(
       source,
@@ -3670,7 +3606,7 @@ function createVestDetailTrim(
       'EFV3_VestEdge_R',
       'radial',
       .0022,
-      .3,
+      .2,
     ),
     createGridRowStrip(
       source,
