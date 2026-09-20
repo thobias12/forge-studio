@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.5`  
+> **Current Forge version:** `v1.81.6`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,8 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.81.6 fixes cursor-to-skill alignment in the playable runtime. Pointer projection now resolves against the actual generated terrain while staying on the camera ray, ranged/area impacts use the clamped terrain aim point, and untargeted Chain Lightning terminates at the cursor instead of one meter above it.
 
 This is the playable Skillbound runtime using the same authored Forge project data.
 
