@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.86.1`  
+> **Current Forge version:** `v1.87.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.87.0 — Dungeon Forge × Play Project live runtime
+
+- adds a new **Play Project** button directly to Dungeon Forge; it launches the currently-authored dungeon through the same Skillbound dungeon gameplay runtime used by the real Play Project
+- uses the active Skillbound player profile/Character Forge blueprint instead of the grey Dungeon Forge capsule, including the actual body/character binding and equipped weapon runtime
+- uses the role-resolved Play Project gameplay loadout, real primary attack, 1–5 skill hotbar, mana, dodge, encounter/boss combat, loot, inventory and equipment runtime
+- renders the real Skillbound HUD theme/layout in the Dungeon Forge live test, including health/resource orbs, hotbar, XP, gold, target bars, interaction prompts and inventory modules
+- live tests use an isolated test state with the active character's configured starting loadout so Dungeon Forge testing does not overwrite the player's adventure save
+- the Play Project dungeon runtime now consumes the same Dungeon Forge V3 crypt geometry, room shapes, curved corridors, authored art collision and brightness profile as Editor/Quick ARPG
+- removes the legacy hidden crypt collision injection from the real dungeon runtime
+- adds V3 art collision/manual wall collision to real Play Project dungeon movement and uses V3 floor heights/room silhouettes for player and enemy movement
+- Dungeon Forge expands to a full-width gameplay test surface while Play Project live test is active; Exit Live Test returns immediately to authoring without discarding edits
+
 
 ## v1.86.1 — Dungeon V3 art collision pass
 
