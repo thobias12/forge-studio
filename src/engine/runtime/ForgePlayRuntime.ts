@@ -1,4 +1,5 @@
-import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial } from '../forestGeometry'
+import { forestPathMaterial, forestWaterMaterial } from '../forestAtmosphere'
+import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../forestGeometry'
 import * as THREE from 'three'
 import type {
   ForgeAbilityDefinition,
@@ -2788,22 +2789,7 @@ function makeGeneratedStream(region: GeneratedRegion) {
   }
   const water = new THREE.Mesh(
     makeRuntimeTerrainSafeWaterGeometry(region),
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-      emissive: 0x123f40,
-      emissiveIntensity: .12,
-      roughness: .46,
-      metalness: 0,
-      transparent: false,
-      opacity: 1,
-      depthTest: true,
-      depthWrite: true,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      side: THREE.DoubleSide,
-    }),
+    forestWaterMaterial(),
   )
   water.name = 'GeneratedWaterSurface'
   water.castShadow = false
@@ -2818,13 +2804,7 @@ function makeGeneratedPath(region: GeneratedRegion, path: GeneratedWorldPath) {
   const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
   const road = new THREE.Mesh(
     makeRuntimeRibbon(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + (path.kind === 'main' ? .054 : .049)),
-    new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x5b4d38 : 0x4b4938,
-      roughness: 1,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
+    forestPathMaterial(path.kind === 'main'),
   )
   road.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
   road.receiveShadow = true
@@ -2838,9 +2818,11 @@ function makeRuntimeRibbon(
 ) {
   const sections = buildRuntimeRibbonSections(points, widths)
   const positions: number[] = []
+  const uvs: number[] = []
   const indices: number[] = []
 
   sections.forEach((section, index) => {
+    uvs.push(0,index/Math.max(1,sections.length-1),1,index/Math.max(1,sections.length-1))
     const lx = section.x + section.offsetX
     const lz = section.z + section.offsetZ
     const rx = section.x - section.offsetX
@@ -2855,6 +2837,7 @@ function makeRuntimeRibbon(
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
@@ -2868,19 +2851,21 @@ function makeRuntimeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const uvs: number[] = []
   const colors: number[] = []
   const indices: number[] = []
-  const deepWater = new THREE.Color(0x377c7d)
+  const deepWater = new THREE.Color(0x245962)
   const moodPalette = runtimeMoodPalette(
     runtimeBiomePalette(region.biome),
     region.mood,
   )
   const bankWater = new THREE.Color(moodPalette.low).lerp(new THREE.Color(0x668f83), .58)
-  const sheenWater = new THREE.Color(0x78aaa2)
+  const sheenWater = new THREE.Color(0x8bc5bd)
   const waterColor = new THREE.Color()
 
+  let flowDistance = 0
   rows.forEach((row, rowIndex) => {
+    if (rowIndex) flowDistance += Math.hypot(row.x-rows[rowIndex-1].x,row.z-rows[rowIndex-1].z)
     row.points.forEach((point, laneIndex) => {
       const u = laneIndex / Math.max(1, lanes - 1)
-      const v = rowIndex / Math.max(1, rows.length - 1)
+      const v = flowDistance
       const edge = Math.pow(Math.abs(u * 2 - 1), 1.55)
       const flowWave = Math.sin(rowIndex * .31 + laneIndex * .46)
         + Math.sin(rowIndex * .12 - laneIndex * .24 + 1.35)
@@ -3206,7 +3191,7 @@ function addGeneratedDressing(
     polygonOffsetUnits: -1,
   })
 
-  const treeTrunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
+  const treeTrunkGeometry = forestTrunk()
   const treeTrunkMaterial = markWorldWindMaterial(
     new THREE.MeshStandardMaterial({
       color: 0x382c22,
@@ -3219,7 +3204,7 @@ function addGeneratedDressing(
       markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: new THREE.Color(color).multiplyScalar(.9),
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .48,
       ),
@@ -3229,7 +3214,7 @@ function addGeneratedDressing(
       markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color,
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .68,
       ),
@@ -3239,45 +3224,37 @@ function addGeneratedDressing(
       markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: new THREE.Color(color).multiplyScalar(1.1),
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .9,
       ),
   )
   const treeLowerGeometries: THREE.BufferGeometry[] = [
-    forestCrown(1.52, 2.75, 7),
-    forestCrown(1.72, 2.35, 8),
-    forestBroadleaf(1.18),
-    forestCrown(1.34, 2.95, 7),
+    forestSpeciesCrown(1.52, 2.75, 0, 0),
+    forestSpeciesCrown(1.72, 2.35, 1, 0),
+    forestSpeciesCrown(1.18, 1.77, 2, 0),
+    forestSpeciesCrown(1.34, 2.95, 3, 0),
   ]
   const treeMiddleGeometries: THREE.BufferGeometry[] = [
-    forestCrown(1.18, 2.45, 7),
-    forestCrown(1.32, 2.15, 8),
-    forestBroadleaf(1.04),
-    forestCrown(1.04, 2.55, 7),
+    forestSpeciesCrown(1.18, 2.45, 0, 1),
+    forestSpeciesCrown(1.32, 2.15, 1, 1),
+    forestSpeciesCrown(1.04, 1.56, 2, 1),
+    forestSpeciesCrown(1.04, 2.55, 3, 1),
   ]
   const treeUpperGeometries: THREE.BufferGeometry[] = [
-    forestCrown(.82, 2.15, 7),
-    forestCrown(.9, 1.92, 8),
-    forestBroadleaf(.82),
-    forestCrown(.7, 2.2, 7),
+    forestSpeciesCrown(.82, 2.15, 0, 2),
+    forestSpeciesCrown(.9, 1.92, 1, 2),
+    forestSpeciesCrown(.82, 1.23, 2, 2),
+    forestSpeciesCrown(.7, 2.2, 3, 2),
   ]
   const treeAccentGeometries: THREE.BufferGeometry[] = [
-    forestCrown(.78, .88, 6),
-    forestCrown(.92, .72, 7),
-    forestBroadleaf(.66),
-    forestCrown(.7, .96, 6),
+    forestSpeciesCrown(.78, .88, 0, 3),
+    forestSpeciesCrown(.92, .72, 1, 3),
+    forestSpeciesCrown(.66, 0.99, 2, 3),
+    forestSpeciesCrown(.7, .96, 3, 3),
   ]
-  const deadTreeLowerGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
-  const deadTreeUpperGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
-  const deadTreeBranchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
-  const deadTreeMaterial = markWorldWindMaterial(
-    new THREE.MeshStandardMaterial({
-      color: 0x493b31,
-      roughness: 1,
-    }),
-    .24,
-  )
+  const deadTreeGeometries=[0,1,2,3].map(forestDeadTree)
+  const deadTreeMaterial=new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:true,roughness:1})
 
   const signaturePatchGeometry = new THREE.CircleGeometry(1, 9)
   signaturePatchGeometry.rotateX(-Math.PI / 2)
@@ -3651,61 +3628,11 @@ function addGeneratedDressing(
       tree.rotation.y = item.rotation
       tree.scale.setScalar(item.scale)
 
-      const leanYaw = .5 + item.variant * .43
-      const lowerLean = .035 + item.variant * .012
-      const lower = new THREE.Mesh(deadTreeLowerGeometry, deadTreeMaterial)
-      lower.position.y = 1.18
-      lower.rotation.set(
-        Math.sin(leanYaw) * lowerLean,
-        0,
-        Math.cos(leanYaw) * lowerLean,
-      )
-      lower.castShadow = true
-      lower.receiveShadow = true
-      tree.add(lower)
-
-      const bend = .16 + item.variant * .025
-      const upper = new THREE.Mesh(deadTreeUpperGeometry, deadTreeMaterial)
-      upper.position.set(
-        Math.cos(leanYaw) * bend,
-        3.18,
-        Math.sin(leanYaw) * bend,
-      )
-      upper.rotation.set(
-        Math.sin(leanYaw) * (.1 + item.variant * .014),
-        .08 * (item.variant - 1.5),
-        Math.cos(leanYaw) * (.1 + item.variant * .014),
-      )
-      upper.castShadow = true
-      upper.receiveShadow = true
-      tree.add(upper)
-
-      const aYaw = .42 + item.variant * .31
-      const branchA = new THREE.Mesh(deadTreeBranchGeometry, deadTreeMaterial)
-      branchA.position.set(
-        Math.cos(leanYaw) * bend + Math.cos(aYaw) * .24,
-        2.68,
-        Math.sin(leanYaw) * bend + Math.sin(aYaw) * .24,
-      )
-      branchA.rotation.set(.08, aYaw, .72 + item.variant * .035)
-      branchA.scale.setScalar(.82 + item.variant * .04)
-      branchA.castShadow = true
-      tree.add(branchA)
-
-      const bYaw = 2.08 - item.variant * .17
-      const branchB = new THREE.Mesh(deadTreeBranchGeometry, deadTreeMaterial)
-      branchB.position.set(
-        Math.cos(leanYaw) * bend + Math.cos(bYaw) * .18,
-        3.68,
-        Math.sin(leanYaw) * bend + Math.sin(bYaw) * .18,
-      )
-      branchB.rotation.set(-.06, bYaw, -1.02 + item.variant * .045)
-      branchB.scale.set(.72, .88, .72)
-      branchB.castShadow = true
-      tree.add(branchB)
+      const wood = new THREE.Mesh(deadTreeGeometries[item.variant%4],deadTreeMaterial)
+      wood.castShadow=true;wood.receiveShadow=true;tree.add(wood)
 
       tree.userData.forgeCameraOccluder = true
-      tree.userData.forgeOcclusionRadius = .72 * item.scale
+      tree.userData.forgeOcclusionRadius = 1.3 * item.scale
       tree.userData.forgeOcclusionHeight = 5.15 * item.scale
       tree.userData.forgeOcclusionOpacity = 1
       cameraOccluders.push(tree)

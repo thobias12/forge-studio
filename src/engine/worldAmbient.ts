@@ -1,3 +1,4 @@
+import { forestGlow } from './forestAtmosphere'
 import { forestGrass } from './forestGeometry'
 import * as THREE from 'three'
 import {
@@ -96,8 +97,10 @@ export function buildWorldAmbientVisuals(
       kind: 'lantern', x: sanctuary.x + side * 3, z: sanctuary.z + sanctuary.radius * .55,
       scale: .85, rotation: 0, variant: 0,
     })
-    addShelteredMist(group, actors, region)
+
   }
+
+  if (/forest|wood|marsh/i.test(region.biome)) addShelteredMist(group, actors, region)
 
   addGrass(group, region, anchors.filter((item) => item.kind === 'grass'))
   addFlowers(group, region, anchors.filter((item) => item.kind === 'flower'))
@@ -132,7 +135,7 @@ export function updateWorldAmbientVisuals(
     }
 
     if (kind === 'firefly') {
-      const activity = environment?.fireflyActivity ?? 1
+      const activity = Math.max(.32, environment?.fireflyActivity ?? 1)
       actor.visible = activity > .025
       if (!actor.visible) continue
       actor.rotation.y = phase + time * .18
@@ -491,6 +494,20 @@ function buildAmbientAnchors(region: GeneratedRegion) {
     }
   }
 
+  const trail = region.paths.find(p => p.kind === 'main')
+  if (trail && /forest|wood/i.test(region.biome)) {
+    for (let i = 1; i <= 3; i++) {
+      const index = Math.min(trail.points.length - 2, Math.floor(trail.points.length * i / 4))
+      const p = trail.points[index], q = trail.points[index + 1]
+      if (!p || !q) continue
+      const length = Math.max(.01, Math.hypot(q.x-p.x,q.z-p.z))
+      const offset = (trail.widths[index] ?? trail.width)*.5+.8
+      const x = p.x-(q.z-p.z)/length*offset, z = p.z+(q.x-p.x)/length*offset
+      if (!ambientGroundAllowed(region,x,z,.6,.9)) continue
+      if (anchors.some(a => a.kind === 'lantern' && Math.hypot(a.x-x,a.z-z)<6)) continue
+      anchors.push({kind:'lantern',x,z,scale:1.25,rotation:0,variant:i})
+    }
+  }
   return anchors
 }
 
@@ -857,9 +874,9 @@ function addLanterns(
     post.position.y = .36
 
     const housing = new THREE.Mesh(
-      new THREE.BoxGeometry(.22, .27, .22),
+      new THREE.CylinderGeometry(.15, .15, .27, 4, 1, true),
       new THREE.MeshStandardMaterial({
-        color: 0x5b4a35,
+        color: 0x5b4a35, wireframe: true,
         roughness: .9,
         metalness: .1,
       }),
@@ -885,7 +902,9 @@ function addLanterns(
     glow.name = 'AmbientLanternGlow'
     glow.position.y = .82
 
-    root.add(post, housing, flame, glow)
+    const halo = forestGlow(0xffbc68, 2.6)
+    halo.position.y = .84
+    root.add(post, housing, flame, glow, halo)
     group.add(root)
     actors.push(root)
   }
@@ -901,7 +920,7 @@ function addFireflies(
   const color =
     biome.includes('corrupt') ? 0xbca0ec :
       biome.includes('marsh') || biome.includes('swamp') || biome.includes('drowned') ? 0xa5e8ad :
-        0xf2db78
+        0x74d8ce
 
   for (const item of anchors) {
     const y = sampleTerrainHeight(region, item.x, item.z)
@@ -930,6 +949,7 @@ function addFireflies(
       mote.userData.baseX = mote.position.x
       mote.userData.baseY = mote.position.y
       mote.userData.baseZ = mote.position.z
+      if (dot === 0) mote.add(forestGlow(color, 1.2))
       root.add(mote)
     }
 

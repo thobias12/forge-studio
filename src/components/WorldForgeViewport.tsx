@@ -1,4 +1,5 @@
-import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial } from '../engine/forestGeometry'
+import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
+import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -826,22 +827,7 @@ function buildStream(region: GeneratedRegion) {
 
   const water = new THREE.Mesh(
     makeTerrainSafeWaterGeometry(region),
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-      emissive: 0x123f40,
-      emissiveIntensity: .12,
-      roughness: .46,
-      metalness: 0,
-      transparent: false,
-      opacity: 1,
-      depthTest: true,
-      depthWrite: true,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      side: THREE.DoubleSide,
-    }),
+    forestWaterMaterial(),
   )
   water.name = 'GeneratedWaterSurface'
   water.castShadow = false
@@ -856,14 +842,7 @@ function makePathRibbon(region: GeneratedRegion, path: GeneratedWorldPath) {
   const widths = path.widths.length === path.points.length ? path.widths : path.points.map(() => path.width)
   const road = new THREE.Mesh(
     makeRibbonGeometry(path.points, widths, (x, z) => sampleTerrainHeight(region, x, z) + (path.kind === 'main' ? .052 : .047)),
-    new THREE.MeshStandardMaterial({
-      color: path.kind === 'main' ? 0x5b4d38 : 0x4b4938,
-      roughness: 1,
-      metalness: 0,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
+    forestPathMaterial(path.kind === 'main'),
   )
   road.name = path.kind === 'main' ? 'MainRoad' : 'SideTrail'
   road.receiveShadow = true
@@ -915,15 +894,17 @@ function makeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const uvs: number[] = []
   const colors: number[] = []
   const indices: number[] = []
-  const deepWater = new THREE.Color(0x377c7d)
+  const deepWater = new THREE.Color(0x245962)
   const bankWater = new THREE.Color(editorBiomePalette(region.biome).low).lerp(new THREE.Color(0x668f83), .58)
-  const sheenWater = new THREE.Color(0x78aaa2)
+  const sheenWater = new THREE.Color(0x8bc5bd)
   const waterColor = new THREE.Color()
 
+  let flowDistance = 0
   rows.forEach((row, rowIndex) => {
+    if (rowIndex) flowDistance += Math.hypot(row.x-rows[rowIndex-1].x,row.z-rows[rowIndex-1].z)
     row.points.forEach((point, laneIndex) => {
       const u = laneIndex / Math.max(1, lanes - 1)
-      const v = rowIndex / Math.max(1, rows.length - 1)
+      const v = flowDistance
       const edge = Math.pow(Math.abs(u * 2 - 1), 1.55)
       const flowWave = Math.sin(rowIndex * .31 + laneIndex * .46)
         + Math.sin(rowIndex * .12 - laneIndex * .24 + 1.35)
@@ -1460,7 +1441,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (trees.length) {
-    const trunkGeometry = new THREE.CylinderGeometry(.19, .34, 3.45, 7)
+    const trunkGeometry = forestTrunk()
     const trunkMaterial = markWorldWindMaterial(
       new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
       .16,
@@ -1499,28 +1480,28 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       trees.filter((item) => item.variant === variant)
     )
     const lowerGeometries: THREE.BufferGeometry[] = [
-      forestCrown(1.52, 2.75, 7),
-      forestCrown(1.72, 2.35, 8),
-      forestBroadleaf(1.18),
-      forestCrown(1.34, 2.95, 7),
+      forestSpeciesCrown(1.52, 2.75, 0, 0),
+      forestSpeciesCrown(1.72, 2.35, 1, 0),
+      forestSpeciesCrown(1.18, 1.77, 2, 0),
+      forestSpeciesCrown(1.34, 2.95, 3, 0),
     ]
     const middleGeometries: THREE.BufferGeometry[] = [
-      forestCrown(1.18, 2.45, 7),
-      forestCrown(1.32, 2.15, 8),
-      forestBroadleaf(1.04),
-      forestCrown(1.04, 2.55, 7),
+      forestSpeciesCrown(1.18, 2.45, 0, 1),
+      forestSpeciesCrown(1.32, 2.15, 1, 1),
+      forestSpeciesCrown(1.04, 1.56, 2, 1),
+      forestSpeciesCrown(1.04, 2.55, 3, 1),
     ]
     const upperGeometries: THREE.BufferGeometry[] = [
-      forestCrown(.82, 2.15, 7),
-      forestCrown(.9, 1.92, 8),
-      forestBroadleaf(.82),
-      forestCrown(.7, 2.2, 7),
+      forestSpeciesCrown(.82, 2.15, 0, 2),
+      forestSpeciesCrown(.9, 1.92, 1, 2),
+      forestSpeciesCrown(.82, 1.23, 2, 2),
+      forestSpeciesCrown(.7, 2.2, 3, 2),
     ]
     const accentGeometries: THREE.BufferGeometry[] = [
-      forestCrown(.78, .88, 6),
-      forestCrown(.92, .72, 7),
-      forestBroadleaf(.66),
-      forestCrown(.7, .96, 6),
+      forestSpeciesCrown(.78, .88, 0, 3),
+      forestSpeciesCrown(.92, .72, 1, 3),
+      forestSpeciesCrown(.66, 0.99, 2, 3),
+      forestSpeciesCrown(.7, .96, 3, 3),
     ]
     buckets.forEach((items, variant) => {
       if (!items.length) return
@@ -1530,21 +1511,21 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       const lowerMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: variantColor.clone().multiplyScalar(.9),
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .48,
       )
       const middleMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: variantColor,
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .68,
       )
       const upperMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: variantColor.clone().multiplyScalar(1.1),
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .9,
       )
@@ -1717,123 +1698,15 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (deadTrees.length) {
-    const lowerTrunkGeometry = new THREE.CylinderGeometry(.18, .34, 2.55, 6)
-    const upperTrunkGeometry = new THREE.CylinderGeometry(.11, .22, 2.35, 6)
-    const branchGeometry = new THREE.CylinderGeometry(.045, .11, 1.15, 5)
-    const deadWood = markWorldWindMaterial(
-      new THREE.MeshStandardMaterial({
-        color: 0x493b31,
-        roughness: 1,
-      }),
-      .24,
-    )
-    const lowerTrunks = new THREE.InstancedMesh(
-      lowerTrunkGeometry,
-      deadWood,
-      deadTrees.length,
-    )
-    const upperTrunks = new THREE.InstancedMesh(
-      upperTrunkGeometry,
-      deadWood,
-      deadTrees.length,
-    )
-    const branchA = new THREE.InstancedMesh(
-      branchGeometry,
-      deadWood,
-      deadTrees.length,
-    )
-    const branchB = new THREE.InstancedMesh(
-      branchGeometry,
-      deadWood,
-      deadTrees.length,
-    )
-    const matrix = new THREE.Matrix4()
-    const quaternion = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
-
-    deadTrees.forEach((item, index) => {
-      const leanYaw = item.rotation + .5 + item.variant * .43
-      const lowerLean = .035 + item.variant * .012
-      quaternion.setFromEuler(
-        new THREE.Euler(
-          Math.sin(leanYaw) * lowerLean,
-          item.rotation,
-          Math.cos(leanYaw) * lowerLean,
-        ),
-      )
-      scale.set(item.scale, item.scale, item.scale)
-      matrix.compose(
-        new THREE.Vector3(item.x, item.y + 1.18 * item.scale, item.z),
-        quaternion,
-        scale,
-      )
-      lowerTrunks.setMatrixAt(index, matrix)
-
-      const bend = .16 + item.variant * .025
-      const upperX = Math.cos(leanYaw) * bend * item.scale
-      const upperZ = Math.sin(leanYaw) * bend * item.scale
-      quaternion.setFromEuler(
-        new THREE.Euler(
-          Math.sin(leanYaw) * (.1 + item.variant * .014),
-          item.rotation + .08 * (item.variant - 1.5),
-          Math.cos(leanYaw) * (.1 + item.variant * .014),
-        ),
-      )
-      matrix.compose(
-        new THREE.Vector3(
-          item.x + upperX,
-          item.y + 3.18 * item.scale,
-          item.z + upperZ,
-        ),
-        quaternion,
-        scale,
-      )
-      upperTrunks.setMatrixAt(index, matrix)
-
-      const aYaw = item.rotation + .42 + item.variant * .31
-      quaternion.setFromEuler(
-        new THREE.Euler(.08, aYaw, .72 + item.variant * .035),
-      )
-      scale.set(
-        item.scale * (.82 + item.variant * .04),
-        item.scale,
-        item.scale * (.82 + item.variant * .04),
-      )
-      matrix.compose(
-        new THREE.Vector3(
-          item.x + upperX + Math.cos(aYaw) * .24 * item.scale,
-          item.y + 2.68 * item.scale,
-          item.z + upperZ + Math.sin(aYaw) * .24 * item.scale,
-        ),
-        quaternion,
-        scale,
-      )
-      branchA.setMatrixAt(index, matrix)
-
-      const bYaw = item.rotation + 2.08 - item.variant * .17
-      quaternion.setFromEuler(
-        new THREE.Euler(-.06, bYaw, -1.02 + item.variant * .045),
-      )
-      scale.set(item.scale * .72, item.scale * .88, item.scale * .72)
-      matrix.compose(
-        new THREE.Vector3(
-          item.x + upperX + Math.cos(bYaw) * .18 * item.scale,
-          item.y + 3.68 * item.scale,
-          item.z + upperZ + Math.sin(bYaw) * .18 * item.scale,
-        ),
-        quaternion,
-        scale,
-      )
-      branchB.setMatrixAt(index, matrix)
-    })
-
-    lowerTrunks.castShadow = true
-    lowerTrunks.receiveShadow = true
-    upperTrunks.castShadow = true
-    upperTrunks.receiveShadow = true
-    branchA.castShadow = true
-    branchB.castShadow = true
-    group.add(lowerTrunks, upperTrunks, branchA, branchB)
+    const material = new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:true,roughness:1})
+    for(let variant=0;variant<4;variant++) {
+      const items=deadTrees.filter(item=>item.variant%4===variant)
+      if(!items.length) continue
+      const mesh=new THREE.InstancedMesh(forestDeadTree(variant),material,items.length)
+      setInstances(mesh,items,item=>({position:new THREE.Vector3(item.x,item.y,item.z),
+        rotation:new THREE.Euler(0,item.rotation,0),scale:new THREE.Vector3(item.scale,item.scale,item.scale)}))
+      mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh)
+    }
   }
 
   if (rocks.length) {

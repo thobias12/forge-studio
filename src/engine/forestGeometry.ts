@@ -25,26 +25,149 @@ export function forestFloorMaterial() {
 }
 
 // Original, deterministic silhouettes shared by the editor and playable world.
-export function forestCrown(radius: number, height: number, seed = 0) {
-  const pieces: THREE.BufferGeometry[] = []
-  for (let tier = 0; tier < 3; tier++) {
-    const r = radius * (1 - tier * .24)
-    const g = new THREE.ConeGeometry(r, height * .58, 11, 2)
-    const p = g.attributes.position
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i)
-      const angle = Math.atan2(z, x)
-      const ripple = 1 + .13 * Math.sin(angle * 5 + seed) + .07 * Math.cos(angle * 3 + tier)
-      p.setXYZ(i, x * ripple, y + .07 * height * Math.sin(angle * 4 + seed) * Math.hypot(x,z) / radius, z * ripple)
-    }
-    g.translate(Math.sin(seed + tier) * radius * .08, height * (-.21 + tier * .25), 0)
-    pieces.push(g.toNonIndexed())
-    g.dispose()
+// Folded leaf clusters, not spheres: closed leaf volumes work with shadow maps
+// and camera fading without alpha-sorted cards or downloaded textures.
+function leafCanopy(radius: number, height: number, seed: number, pine: boolean) {
+  const p: number[]=[], colors: number[]=[]
+  const add=(a:THREE.Vector3,b:THREE.Vector3,c:THREE.Vector3,tone:number)=>{
+    p.push(...a.toArray(),...b.toArray(),...c.toArray())
+    for(let i=0;i<3;i++) colors.push(tone*.86,tone,tone*.78)
   }
-  const result = mergeGeometries(pieces)!
-  pieces.forEach(g => g.dispose())
-  result.computeVertexNormals()
-  return result
+  for(let leaf=0;leaf<80;leaf++) {
+    const angle=leaf*2.399+seed
+    const layer=(leaf%8)/7
+    const reach=radius*(pine ? (.88-layer*.66) : Math.sqrt(1-Math.pow(layer*1.7-.85,2)))*(.48+(leaf%5)*.105)
+    const center=new THREE.Vector3(Math.cos(angle)*reach,(layer-.5)*height*.9,Math.sin(angle)*reach)
+    const length=radius*(pine?.36:.30)*( .8+(leaf%3)*.15 )
+    const width=length*(pine?.44:.65)
+    const forward=new THREE.Vector3(Math.cos(angle),.15+Math.sin(leaf)*.25,Math.sin(angle)).normalize()
+    const side=new THREE.Vector3(-Math.sin(angle),0,Math.cos(angle))
+    const base=center.clone().addScaledVector(forward,-length*.65)
+    const tip=center.clone().addScaledVector(forward,length)
+    const left=center.clone().addScaledVector(side,width)
+    const right=center.clone().addScaledVector(side,-width)
+    const ridge=center.clone().add(new THREE.Vector3(0,length*.24,0))
+    const underside=center.clone().add(new THREE.Vector3(0,-length*.08,0))
+    const tone=.92+layer*.28+(leaf%4)*.055
+    const rim=[base,base.clone().lerp(left,.68),left.clone().lerp(tip,.25),tip,tip.clone().lerp(right,.7),right.clone().lerp(base,.3)]
+    for(let j=0;j<rim.length;j++) {
+      add(rim[j],rim[(j+1)%rim.length],ridge,tone*(j%2?1:.94))
+      add(rim[(j+1)%rim.length],rim[j],underside,tone*.78)
+    }
+  }
+  const g=new THREE.BufferGeometry()
+  g.setAttribute('position',new THREE.Float32BufferAttribute(p,3))
+  g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+  g.computeVertexNormals();return g
+}
+export function forestCrown(radius:number,height:number,seed=0) {
+  return leafCanopy(radius,height,seed,true)
+}
+
+export function forestSpeciesCrown(radius:number,height:number,variant:number,tier:number) {
+  const broad = variant === 1 || variant === 2
+  const g = leafCanopy(radius,height,variant*1.73+tier*.49,!broad)
+  if (variant === 0) g.scale(.84,1.12,.84) // slender fir
+  if (variant === 1) g.scale(1.24,.57,1.16) // spreading oak
+  if (variant === 2) g.scale(.94,.88,1.04) // upright leafy crown
+  if (variant === 3) {
+    g.scale(1.08,.75,.78) // windswept pine
+    const p=g.attributes.position
+    for(let i=0;i<p.count;i++) p.setX(i,p.getX(i)+Math.max(0,p.getY(i)+height*.5)*.23)
+    g.computeVertexNormals()
+  }
+  return g
+}
+
+// One connected trunk and attached limbs, all expressed in the same local frame.
+// Four deterministic silhouettes avoid repeating identical smooth gray poles.
+export function forestDeadTree(variant:number) {
+  const pieces:THREE.BufferGeometry[]=[]
+  const bark = new THREE.Color([0x4a3b30,0x39342e,0x665749,0x302b28][variant%4])
+  const tube=(points:THREE.Vector3[],radii:number[],broken=false)=>{
+    const p:number[]=[], c:number[]=[], indices:number[]=[], sides=7
+    points.forEach((point,row)=>{
+      for(let j=0;j<sides;j++) {
+        const a=j/sides*Math.PI*2
+        const groove=1+.10*Math.sin(j*2.7+variant)
+        const jagged=broken && row===points.length-1 ? Math.sin(j*2.4+variant)*.08 : 0
+        p.push(point.x+Math.cos(a)*radii[row]*groove,point.y+jagged,point.z+Math.sin(a)*radii[row]*groove)
+        const col=bark.clone().multiplyScalar(.78+(j%3)*.15)
+        c.push(col.r,col.g,col.b)
+        if(row<points.length-1) {
+          const k=row*sides+j,next=row*sides+(j+1)%sides
+          indices.push(k,k+sides,next,next,k+sides,next+sides)
+        }
+      }
+    })
+    for(let j=1;j<sides-1;j++) {
+      indices.push(0,j,j+1)
+      const k=(points.length-1)*sides
+      indices.push(k,k+j+1,k+j)
+    }
+    const g=new THREE.BufferGeometry()
+    g.setAttribute('position',new THREE.Float32BufferAttribute(p,3))
+    g.setAttribute('color',new THREE.Float32BufferAttribute(c,3))
+    g.setIndex(indices);g.computeVertexNormals();pieces.push(g.toNonIndexed());g.dispose()
+  }
+  const lean=variant%2?-.22:.2
+  const h=[4.5,3.65,4.85,3.95][variant%4]
+  const trunk=[new THREE.Vector3(0,0,0),new THREE.Vector3(.04,.7,.04),
+    new THREE.Vector3(lean,h*.42,-.04),new THREE.Vector3(lean*.6,h*.7,.12),new THREE.Vector3(lean*2,h,.18)]
+  tube(trunk,[.34,.23,.16,.10,.035],true)
+  for(let i=0;i<6;i++) {
+    const t=.28+i*.105, a=i*2.399+variant*.8
+    const levels=[0,.7/h,.42,.7,1]
+    const row=t<.42?1:t<.7?2:3
+    const start=trunk[row].clone().lerp(trunk[row+1],(t-levels[row])/(levels[row+1]-levels[row]))
+    const length=.62+(i%3)*.2, mid=start.clone().add(new THREE.Vector3(Math.cos(a)*length*.65,.17,Math.sin(a)*length*.65))
+    const tip=mid.clone().add(new THREE.Vector3(Math.cos(a+.3)*length*.45,.45,Math.sin(a+.3)*length*.45))
+    tube([start,mid,tip],[.07-i*.006,.035,.009])
+    if(i%2===0) tube([mid,mid.clone().add(new THREE.Vector3(Math.cos(a-1)*.32,.44,Math.sin(a-1)*.32))],[.026,.005])
+  }
+  const result=mergeGeometries(pieces)!;pieces.forEach(g=>g.dispose());return result
+}
+
+export function forestTrunk() {
+  const pieces:THREE.BufferGeometry[]=[]
+  const trunk=new THREE.CylinderGeometry(.11,.31,3.45,9,6)
+  const p=trunk.attributes.position
+  for(let i=0;i<p.count;i++) {
+    const y=p.getY(i),x=p.getX(i),z=p.getZ(i),t=(y+1.725)/3.45
+    const a=Math.atan2(z,x),root=1+Math.pow(1-t,6)*.8
+    p.setXYZ(i,x*root+Math.sin(t*3)*.12,y,z*root+Math.sin(t*5)*.06)
+    if(t<.1) p.setXYZ(i,p.getX(i)*(1+.2*Math.cos(a*5)),y,p.getZ(i)*(1+.2*Math.cos(a*5)))
+  }
+  trunk.computeVertexNormals();pieces.push(trunk.toNonIndexed());trunk.dispose()
+  for(let i=0;i<6;i++) {
+    const a=i*2.399,base=new THREE.Vector3(.07,.1+i*.23,0)
+    const tip=new THREE.Vector3(Math.cos(a)*(.7-i*.055),1.05+i*.18,Math.sin(a)*(.7-i*.055))
+    const d=tip.clone().sub(base)
+    const g=new THREE.CylinderGeometry(.018,.07,d.length(),6)
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()))
+    g.translate((base.x+tip.x)/2,(base.y+tip.y)/2,(base.z+tip.z)/2)
+    pieces.push(g.toNonIndexed());g.dispose()
+  }
+  const result=mergeGeometries(pieces)!;pieces.forEach(g=>g.dispose());return result
+}
+
+export function forestBranch() {
+  const pieces: THREE.BufferGeometry[]=[]
+  const segment=(a: THREE.Vector3,b: THREE.Vector3,r:number)=>{
+    const d=b.clone().sub(a)
+    const g=new THREE.CylinderGeometry(r*.22,r,d.length(),5)
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()))
+    g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2)
+    pieces.push(g.toNonIndexed());g.dispose()
+  }
+  segment(new THREE.Vector3(0,-.58,0),new THREE.Vector3(.08,.58,0),.11)
+  for(let i=0;i<5;i++) {
+    const y=-.2+i*.15,side=i%2?1:-1
+    const end=new THREE.Vector3(side*(.26+i*.03),y+.3,Math.sin(i*2)*.14)
+    segment(new THREE.Vector3(.03,y,0),end,.036)
+    segment(end.clone().lerp(new THREE.Vector3(.03,y,0),.35),end.clone().add(new THREE.Vector3(-side*.13,.2,.1)),.018)
+  }
+  const result=mergeGeometries(pieces)!;pieces.forEach(g=>g.dispose());return result
 }
 
 export function forestRock(radius = .7) {
@@ -59,18 +182,8 @@ export function forestRock(radius = .7) {
   return g
 }
 
-export function forestBroadleaf(radius: number) {
-  const pieces: THREE.BufferGeometry[] = []
-  for (let lobe = 0; lobe < 5; lobe++) {
-    const a = lobe * 2.399
-    const g = new THREE.IcosahedronGeometry(radius * .67, 1)
-    g.scale(1, .82, 1)
-    g.translate(Math.cos(a)*radius*.4, Math.sin(a*2)*radius*.17, Math.sin(a)*radius*.4)
-    pieces.push(g)
-  }
-  const result = mergeGeometries(pieces)!
-  pieces.forEach(g => g.dispose())
-  return result
+export function forestBroadleaf(radius:number) {
+  return leafCanopy(radius,radius*1.3,2.17,false)
 }
 
 export function forestFern() {
