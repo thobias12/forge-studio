@@ -1067,7 +1067,7 @@ function addWallSconce(
   cup.castShadow = true
   group.add(cup)
 
-  const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.68, 8.6, 2.05)
+  const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.7, 9.4, 2.0)
   light.position.set(0, flameY + 0.16, 0.27)
   light.userData.baseIntensity = light.intensity
   group.add(light)
@@ -1077,8 +1077,12 @@ function addWallSconce(
     phase: (seed % 628) / 100,
     speed: 5.8 + (seed % 5) * 0.18,
   })
+  const bounce = new THREE.PointLight(0xffc18a, 0.64, 13.5, 1.7)
+  bounce.position.set(0, 0.82, 1.15)
+  bounce.castShadow = false
+  group.add(bounce)
   addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
-  addWarmLightPool(group, 0, 0.105, 1.12, 4.4, 3.2, 0.12)
+  addWarmLightPool(group, 0, 0.105, 1.38, 6.6, 4.7, 0.15)
 }
 
 function addRoomFixtures(
@@ -1123,13 +1127,22 @@ function addRoomFixtures(
       const seed = stringHash(room.id) + index * 17
       const light = new THREE.PointLight(
         atmosphere.torch,
-        atmosphere.torchIntensity * (room.type === 'boss' ? 0.86 : 0.72),
-        room.type === 'boss' ? 10.8 : 8.8,
-        2.02,
+        atmosphere.torchIntensity * (room.type === 'boss' ? 0.9 : 0.74),
+        room.type === 'boss' ? 11.8 : 9.7,
+        1.98,
       )
       light.position.set(0, fixtureY + 0.16, 0.27)
       light.userData.baseIntensity = light.intensity
       fixture.add(light)
+      const bounce = new THREE.PointLight(
+        0xffc18a,
+        room.type === 'boss' ? 0.82 : 0.68,
+        room.type === 'boss' ? 15.5 : 13.8,
+        1.68,
+      )
+      bounce.position.set(0, 0.86, 1.22)
+      bounce.castShadow = false
+      fixture.add(bounce)
       flickerLights.push({
         light,
         base: light.intensity,
@@ -1137,7 +1150,7 @@ function addRoomFixtures(
         speed: 5.25 + index * 0.3,
       })
       addFlameVfx(fixture, 0, fixtureY + 0.02, 0.27, atmosphere, seed, light, room.type === 'boss' ? 1.08 : 1)
-      addWarmLightPool(fixture, 0, 0.105, 1.18, room.type === 'boss' ? 5.8 : 4.8, room.type === 'boss' ? 4.4 : 3.6, room.type === 'boss' ? 0.14 : 0.115)
+      addWarmLightPool(fixture, 0, 0.105, 1.42, room.type === 'boss' ? 8.2 : 6.9, room.type === 'boss' ? 6.2 : 5.1, room.type === 'boss' ? 0.18 : 0.155)
     })
   }
 }
