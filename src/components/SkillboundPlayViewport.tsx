@@ -17,6 +17,7 @@ import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
 import '../engine/runtime/ForgeInventoryRuntime'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
+import { installOverworldEnemyCombatRuntime } from '../engine/runtime/ForgeEnemyCombatRuntime'
 import { installForgeRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
 import type { ForgeSkillSnapshotExtension } from '../engine/runtime/ForgeSkillRuntime'
@@ -28,6 +29,7 @@ import '../skillbound-runtime.css'
 import '../skillbound-adventure.css'
 import '../hud-runtime-rewards.css'
 
+installOverworldEnemyCombatRuntime(ForgePlayRuntime)
 installForgeRewardPickupRuntime(ForgePlayRuntime)
 installPlayerProfileRuntime(ForgePlayRuntime)
 
@@ -449,11 +451,18 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   </div>
 }
 
-function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']>; style?: CSSProperties }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']> & { role?: string; elite?: boolean; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
+  const poisePercent = target.maxPoise
+    ? Math.max(0, Math.min(100, (target.poise ?? 0) / target.maxPoise * 100))
+    : 0
   return <div className="skillbound-target-bar" style={style}>
-    <div><strong>{target.name}</strong><span>{Math.ceil(target.health)} / {target.maxHealth}</span></div>
+    <div>
+      <strong>{target.name}</strong>
+      <span>{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
+    </div>
     <i><b style={{ width: `${percent}%` }}/></i>
+    {target.maxPoise !== undefined && <i className="skillbound-poise-bar"><b style={{ width: `${poisePercent}%` }}/></i>}
   </div>
 }
 
