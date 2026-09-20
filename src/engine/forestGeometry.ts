@@ -64,6 +64,70 @@ export function forestCrown(radius:number,height:number,seed=0) {
   return leafCanopy(radius,height,seed,true)
 }
 
+export function forestSpeciesCrown(radius:number,height:number,variant:number,tier:number) {
+  const broad = variant === 1 || variant === 2
+  const g = leafCanopy(radius,height,variant*1.73+tier*.49,!broad)
+  if (variant === 0) g.scale(.84,1.12,.84) // slender fir
+  if (variant === 1) g.scale(1.24,.57,1.16) // spreading oak
+  if (variant === 2) g.scale(.94,.88,1.04) // upright leafy crown
+  if (variant === 3) {
+    g.scale(1.08,.75,.78) // windswept pine
+    const p=g.attributes.position
+    for(let i=0;i<p.count;i++) p.setX(i,p.getX(i)+Math.max(0,p.getY(i)+height*.5)*.23)
+    g.computeVertexNormals()
+  }
+  return g
+}
+
+// One connected trunk and attached limbs, all expressed in the same local frame.
+// Four deterministic silhouettes avoid repeating identical smooth gray poles.
+export function forestDeadTree(variant:number) {
+  const pieces:THREE.BufferGeometry[]=[]
+  const bark = new THREE.Color([0x4a3b30,0x39342e,0x665749,0x302b28][variant%4])
+  const tube=(points:THREE.Vector3[],radii:number[],broken=false)=>{
+    const p:number[]=[], c:number[]=[], indices:number[]=[], sides=7
+    points.forEach((point,row)=>{
+      for(let j=0;j<sides;j++) {
+        const a=j/sides*Math.PI*2
+        const groove=1+.10*Math.sin(j*2.7+variant)
+        const jagged=broken && row===points.length-1 ? Math.sin(j*2.4+variant)*.08 : 0
+        p.push(point.x+Math.cos(a)*radii[row]*groove,point.y+jagged,point.z+Math.sin(a)*radii[row]*groove)
+        const col=bark.clone().multiplyScalar(.78+(j%3)*.15)
+        c.push(col.r,col.g,col.b)
+        if(row<points.length-1) {
+          const k=row*sides+j,next=row*sides+(j+1)%sides
+          indices.push(k,k+sides,next,next,k+sides,next+sides)
+        }
+      }
+    })
+    for(let j=1;j<sides-1;j++) {
+      indices.push(0,j,j+1)
+      const k=(points.length-1)*sides
+      indices.push(k,k+j+1,k+j)
+    }
+    const g=new THREE.BufferGeometry()
+    g.setAttribute('position',new THREE.Float32BufferAttribute(p,3))
+    g.setAttribute('color',new THREE.Float32BufferAttribute(c,3))
+    g.setIndex(indices);g.computeVertexNormals();pieces.push(g.toNonIndexed());g.dispose()
+  }
+  const lean=variant%2?-.22:.2
+  const h=[4.5,3.65,4.85,3.95][variant%4]
+  const trunk=[new THREE.Vector3(0,0,0),new THREE.Vector3(.04,.7,.04),
+    new THREE.Vector3(lean,h*.42,-.04),new THREE.Vector3(lean*.6,h*.7,.12),new THREE.Vector3(lean*2,h,.18)]
+  tube(trunk,[.34,.23,.16,.10,.035],true)
+  for(let i=0;i<6;i++) {
+    const t=.28+i*.105, a=i*2.399+variant*.8
+    const levels=[0,.7/h,.42,.7,1]
+    const row=t<.42?1:t<.7?2:3
+    const start=trunk[row].clone().lerp(trunk[row+1],(t-levels[row])/(levels[row+1]-levels[row]))
+    const length=.62+(i%3)*.2, mid=start.clone().add(new THREE.Vector3(Math.cos(a)*length*.65,.17,Math.sin(a)*length*.65))
+    const tip=mid.clone().add(new THREE.Vector3(Math.cos(a+.3)*length*.45,.45,Math.sin(a+.3)*length*.45))
+    tube([start,mid,tip],[.07-i*.006,.035,.009])
+    if(i%2===0) tube([mid,mid.clone().add(new THREE.Vector3(Math.cos(a-1)*.32,.44,Math.sin(a-1)*.32))],[.026,.005])
+  }
+  const result=mergeGeometries(pieces)!;pieces.forEach(g=>g.dispose());return result
+}
+
 export function forestTrunk() {
   const pieces:THREE.BufferGeometry[]=[]
   const trunk=new THREE.CylinderGeometry(.11,.31,3.45,9,6)

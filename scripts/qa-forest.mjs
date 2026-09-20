@@ -12,6 +12,19 @@ for (const geometry of [f.forestTrunk(), f.forestBranch(), f.forestCrown(1.5,2.7
   geometry.dispose()
 }
 assert.deepEqual(f.forestCrown(1.5,2.7).attributes.position.array, f.forestCrown(1.5,2.7).attributes.position.array)
+const silhouettes = new Set()
+for (let variant=0;variant<4;variant++) {
+  const g=f.forestDeadTree(variant)
+  assert.ok([...g.attributes.position.array].every(Number.isFinite))
+  assert.ok([...g.attributes.normal.array].every(Number.isFinite))
+  assert.ok(g.attributes.position.count < 3200)
+  g.computeBoundingBox()
+  assert.ok(g.boundingBox.min.y >= 0 && g.boundingBox.max.y < 5.2)
+  assert.deepEqual(g.attributes.position.array,f.forestDeadTree(variant).attributes.position.array)
+  silhouettes.add(JSON.stringify(Array.from(f.forestSpeciesCrown(1.5,2.7,variant,0).attributes.position.array)))
+  g.dispose()
+}
+assert.equal(silhouettes.size,4,'Tree species share identical silhouettes')
 const preset = JSON.parse(fs.readFileSync('public/projects/skillbound/regions/deadwood.region.json','utf8'))
 for (const seed of [8472152,7319]) {
   const region = f.generateGuidedRegion(preset,seed,1)
