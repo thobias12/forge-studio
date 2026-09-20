@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.88.4`  
+> **Current Forge version:** `v1.89.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,10 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.89.0 introduces the first Combat v2 foundation pass. Primary melee now chains through three mechanically distinct hits instead of repeating one cadence: each step has its own windup, active frame, recovery, arc width, forward lunge, damage weight, knockback, hit-stop and stagger, with the third swing acting as the finisher. The combo resets after a short pause and uses a wider buffered-input window for cleaner click chaining.
+
+Melee damage resolves on the active/contact frame after the lunge. Dodge can cancel once a hit has committed (active/recovery) but cannot erase the windup commitment. Enemy reactions now include directional recoil, stagger windows, explicit post-attack recovery, and clearer growing telegraphs. Dungeon elites and bosses resist stagger/knockback so they cannot be permanently locked down, and dungeon enemy hits now add player recoil plus a short hit-stop. Overworld and dungeon runtimes share the same Combat v2 tuning in `ForgeGameplayFeel.ts`.
 
 Forge v1.88.3 refines reward feedback around the latest dungeon-lighting build. Gold now drops as one stylized four-coin pile per defeated enemy instead of three separate pickup objects. The pile uses overlapping embossed coins, bright additive rims, a warm ground aura, small glints, a compact launch/settle and a fast magnet pull so it reads clearly and feels more valuable on dark terrain.
 
