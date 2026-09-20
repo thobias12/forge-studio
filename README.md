@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.86.0`  
+> **Current Forge version:** `v1.86.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,16 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.86.1 — Dungeon V3 art collision pass
+
+- derives gameplay collision from the same deterministic room/corridor placements used by the V3 art renderer instead of a separate partial obstacle list
+- sarcophagi, reliquaries, shrine altars, boss dais pieces, statues, crate stacks and crossroads plinths now block player movement
+- modular room corner supports, doorway posts and corridor support pillars now have matching collision
+- freestanding corridor torches receive small physical collision so visible fixtures can no longer be walked through
+- corridor support spacing is now identical in ARPG and Walk so visible architecture and collision stay one-to-one
+- collision data is cached per dungeon state to keep movement checks inexpensive
+
 
 ## v1.86.0 — Dungeon Forge V3 art pass
 
