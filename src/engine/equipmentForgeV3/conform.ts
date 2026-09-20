@@ -162,15 +162,6 @@ export function buildConformedTunic(
         ),
       )
       meshes.push(
-        createShoulderBridge(
-          source,
-          torso.geometry,
-          left.geometry,
-          cloth,
-          'L',
-        ),
-      )
-      meshes.push(
         createSkinnedRowBand(
           source,
           left.geometry,
@@ -197,15 +188,6 @@ export function buildConformedTunic(
           'EFV3_ArmholeTrim_R',
           .58,
           .0021,
-        ),
-      )
-      meshes.push(
-        createShoulderBridge(
-          source,
-          torso.geometry,
-          right.geometry,
-          cloth,
-          'R',
         ),
       )
       meshes.push(
@@ -1842,9 +1824,9 @@ function createShoulderBridge(
     sleeveSamples.filter(
       (sample) =>
         side === 'L'
-          ? sample.point.x <=
+          ? sample.point.x >=
             sleeveCenter.x
-          : sample.point.x >=
+          : sample.point.x <=
             sleeveCenter.x,
     )
 
