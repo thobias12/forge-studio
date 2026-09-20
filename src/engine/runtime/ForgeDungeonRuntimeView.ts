@@ -163,9 +163,18 @@ export const dungeonViewMethods = {
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
     const sprite = new THREE.Sprite(material)
-    sprite.position.set(position.x, 2.4, position.z); sprite.scale.set(2.1, 1.05, 1)
+    const sequence = ++this.damageNumberSequence
+    const angle = sequence * 2.399963229728653
+    const lane = sequence % 4
+    const spread = .12 + lane * .045
+    sprite.position.set(
+      position.x + Math.cos(angle) * spread,
+      2.24 + (lane % 3) * .11,
+      position.z + Math.sin(angle) * spread,
+    )
+    sprite.scale.set(1.76, .88, 1)
     this.scene.add(sprite)
-    this.textEffects.push({ sprite, age: 0, duration: 0.68 })
+    this.textEffects.push({ sprite, age: 0, duration: .56 })
   },
 
   async spawnBoundVfx(assetId: string | undefined, position: THREE.Vector3) {

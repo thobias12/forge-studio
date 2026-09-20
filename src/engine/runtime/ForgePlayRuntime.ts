@@ -278,6 +278,7 @@ export class ForgePlayRuntime {
   private readonly tempActorNext = new THREE.Vector3()
   private readonly tempEnemyDirection = new THREE.Vector3()
   private readonly tempEnemySeparation = new THREE.Vector3()
+  private readonly tempCombatSpacing = new THREE.Vector3()
   private navigation!: ForgeNavigationGrid
   private playerVisual?: ForgeCharacterVisualBinding
   private ambientVisuals?: WorldAmbientVisuals
@@ -318,6 +319,7 @@ export class ForgePlayRuntime {
   private primaryHeld = false
   private meleeComboStep = -1
   private meleeComboResetRemaining = 0
+  private damageNumberSequence = 0
   private activeInteractionId: string | undefined
   private interactionHeld = false
   private interactionHoldProgress = 0
@@ -1463,10 +1465,16 @@ export class ForgePlayRuntime {
           action.ability.kind === 'melee'
         ) {
           const combo = forgeMeleeComboProfile(action.comboStep)
-          this.tempMove
-            .copy(action.aim)
-            .multiplyScalar(combo.lunge)
-          this.moveActor(this.player, this.tempMove, PLAYER_RADIUS)
+          const lungeDistance = this.meleeLungeDistance(
+            action.aim,
+            combo.lunge,
+          )
+          if (lungeDistance > .001) {
+            this.tempMove
+              .copy(action.aim)
+              .multiplyScalar(lungeDistance)
+            this.moveActor(this.player, this.tempMove, PLAYER_RADIUS)
+          }
           this.playerVelocity.multiplyScalar(.42)
         }
         this.resolveAbilityImpact(
@@ -1487,6 +1495,43 @@ export class ForgePlayRuntime {
     this.playerAction = undefined
     if (this.playerMoving) this.playerVisual?.play('move')
     else this.playerVisual?.play('idle')
+  }
+
+  private meleeLungeDistance(
+    aim: THREE.Vector3,
+    requested: number,
+  ) {
+    let nearest = Infinity
+    for (const enemy of this.enemies) {
+      if (enemy.health <= 0) continue
+      const toEnemy = this.tempActorNext
+        .copy(enemy.group.position)
+        .sub(this.player.position)
+        .setY(0)
+      const distanceSq = toEnemy.lengthSq()
+      if (distanceSq <= 1e-6) {
+        nearest = 0
+        continue
+      }
+      const distance = Math.sqrt(distanceSq)
+      const forward = toEnemy.dot(aim)
+      if (forward <= 0) continue
+      const facing = forward / distance
+      if (facing < .6) continue
+      const lateralSq = Math.max(
+        0,
+        distanceSq - forward * forward,
+      )
+      if (lateralSq > 1.05 * 1.05) continue
+      nearest = Math.min(nearest, distance)
+    }
+
+    if (!Number.isFinite(nearest)) return requested
+    return THREE.MathUtils.clamp(
+      nearest - FORGE_GAMEPLAY_FEEL.combat.lungeContactDistance,
+      0,
+      requested,
+    )
   }
 
   private resolveAbilityImpact(
@@ -1513,7 +1558,18 @@ export class ForgePlayRuntime {
         aim,
         Math.max(1, ability.range * .5),
       )
-      this.spawnPulse(impact, ability.color, ability.radius, .24)
+      const impactScale =
+        combo?.step === 2
+          ? 1.18
+          : combo?.step === 1
+            ? .96
+            : .8
+      this.spawnPulse(
+        impact,
+        ability.color,
+        ability.radius * impactScale,
+        combo?.step === 2 ? .18 : .13,
+      )
       void this.spawnBoundVfx(ability.vfxAssetId, impact)
       for (const enemy of [...this.enemies]) {
         const toEnemy = enemy.group.position.clone().sub(this.player.position).setY(0)
@@ -1767,10 +1823,10 @@ export class ForgePlayRuntime {
     enemy.bodyMaterial.emissive.set(
       presentation === 'chain'
         ? new THREE.Color(color)
-        : new THREE.Color(0xffffff),
+        : new THREE.Color(0xf0cfa8),
     )
     enemy.bodyMaterial.emissiveIntensity =
-      presentation === 'chain' ? .72 : 1
+      presentation === 'chain' ? .46 : .34
     const ratio = Math.max(0.001, enemy.health / enemy.definition.maxHealth)
     enemy.healthFill.scale.x = ratio
     enemy.healthFill.position.x = -(1 - ratio) * 0.64
@@ -2064,7 +2120,7 @@ export class ForgePlayRuntime {
 
       // Avoid allocating a new Color for every enemy every frame.
       enemy.bodyMaterial.emissive.multiplyScalar(
-        Math.max(0, 1 - delta * 22),
+        Math.max(0, 1 - delta * 46),
       )
 
       const dx = playerX - enemy.group.position.x
@@ -2114,6 +2170,8 @@ export class ForgePlayRuntime {
           Math.max(0, 1 - delta * 8.5),
         )
       }
+
+      this.resolveEnemyCombatSpacing(enemy, delta)
 
       if (enemy.staggerRemaining > 0) {
         this.setEnemyMoving(enemy, false)
@@ -2205,7 +2263,7 @@ export class ForgePlayRuntime {
           enemy,
           this.tempEnemySeparation,
         ),
-        .7,
+        1.05,
       )
       .normalize()
 
@@ -2222,6 +2280,67 @@ export class ForgePlayRuntime {
       direction,
       ENEMY_RADIUS,
     )
+  }
+
+  private resolveEnemyCombatSpacing(
+    enemy: RuntimeEnemy,
+    delta: number,
+  ) {
+    const force = this.tempCombatSpacing.set(0, 0, 0)
+    const x = enemy.group.position.x
+    const z = enemy.group.position.z
+
+    let playerDx = x - this.player.position.x
+    let playerDz = z - this.player.position.z
+    let playerDistance = Math.hypot(playerDx, playerDz)
+    if (playerDistance < FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing) {
+      if (playerDistance < 1e-4) {
+        const angle = hashUnit(`${enemy.id}:player-spacing`) * Math.PI * 2
+        playerDx = Math.cos(angle)
+        playerDz = Math.sin(angle)
+        playerDistance = 1
+      }
+      const weight =
+        (FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing -
+          playerDistance) /
+        FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing
+      force.x += (playerDx / playerDistance) * weight * 2.4
+      force.z += (playerDz / playerDistance) * weight * 2.4
+    }
+
+    for (const other of this.enemies) {
+      if (other === enemy || other.health <= 0) continue
+      let dx = x - other.group.position.x
+      let dz = z - other.group.position.z
+      let distance = Math.hypot(dx, dz)
+      if (
+        distance >= FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
+      ) {
+        continue
+      }
+      if (distance < 1e-4) {
+        const angle =
+          hashUnit(`${enemy.id}:${other.id}:spacing`) *
+          Math.PI *
+          2
+        dx = Math.cos(angle)
+        dz = Math.sin(angle)
+        distance = 1
+      }
+      const weight =
+        (FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing -
+          distance) /
+        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
+      force.x += (dx / distance) * weight * 1.45
+      force.z += (dz / distance) * weight * 1.45
+    }
+
+    const strength = force.length()
+    if (strength <= .001) return
+    force.multiplyScalar(
+      Math.min(.14, strength * delta * 8.5) / strength,
+    )
+    this.moveActor(enemy.group, force, ENEMY_RADIUS)
   }
 
   private enemySeparation(
@@ -2242,16 +2361,20 @@ export class ForgePlayRuntime {
         dx * dx + dz * dz
       if (
         distanceSq <= 1e-6 ||
-        distanceSq >= 3.24
+        distanceSq >=
+          FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing *
+          FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
       ) {
         continue
       }
 
       const distance =
         Math.sqrt(distanceSq)
+      const spacing =
+        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
       const weight =
-        (1.8 - distance) /
-        (1.8 * distance)
+        (spacing - distance) /
+        (spacing * distance)
       force.x += dx * weight
       force.z += dz * weight
     }
@@ -2622,13 +2745,21 @@ export class ForgePlayRuntime {
       depthTest: false,
     })
     const sprite = new THREE.Sprite(material)
-    sprite.position.set(position.x, 2.4, position.z)
-    sprite.scale.set(2.1, 1.05, 1)
+    const sequence = ++this.damageNumberSequence
+    const angle = sequence * 2.399963229728653
+    const lane = sequence % 4
+    const spread = .12 + lane * .045
+    sprite.position.set(
+      position.x + Math.cos(angle) * spread,
+      2.24 + (lane % 3) * .11,
+      position.z + Math.sin(angle) * spread,
+    )
+    sprite.scale.set(1.76, .88, 1)
     this.scene.add(sprite)
     this.textEffects.push({
       sprite,
       age: 0,
-      duration: 0.68,
+      duration: .56,
     })
   }
 
