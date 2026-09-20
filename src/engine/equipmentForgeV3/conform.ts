@@ -395,11 +395,43 @@ function createTorsoTemplate(
         u * Math.PI * 2
       const targetTop =
         tunicTopY(frame, angle)
-      const targetY =
+      const linearTargetY =
         THREE.MathUtils.lerp(
           bottomY,
           targetTop,
           v,
+        )
+      const collarT =
+        THREE.MathUtils.smoothstep(
+          v,
+          .7,
+          1,
+        )
+      const collarTargetY =
+        THREE.MathUtils.lerp(
+          bottomY,
+          frame.shoulderY,
+          v,
+        ) +
+        (targetTop -
+          frame.shoulderY) *
+          collarT
+      const frontAmount =
+        Math.max(
+          0,
+          Math.cos(angle),
+        )
+      const frontNecklineT =
+        THREE.MathUtils.smoothstep(
+          frontAmount,
+          .42,
+          .94,
+        )
+      const targetY =
+        THREE.MathUtils.lerp(
+          linearTargetY,
+          collarTargetY,
+          frontNecklineT,
         )
 
       const nearest =
@@ -575,32 +607,14 @@ function createTorsoTemplate(
           segments +
         next
 
-      if (
-        segment === segments - 1 &&
-        ring >= rings - 6
-      ) {
-        // The circular grid closes at the center-front V. Using the
-        // default diagonal here stacks the upper seam triangles into a
-        // visible dark kite. Flip only these seam quads so the diagonal
-        // follows the chest surface instead of crossing the V apex.
-        indices.push(
-          a,
-          c,
-          d,
-          a,
-          d,
-          b,
-        )
-      } else {
-        indices.push(
-          a,
-          c,
-          b,
-          b,
-          c,
-          d,
-        )
-      }
+      indices.push(
+        a,
+        c,
+        b,
+        b,
+        c,
+        d,
+      )
     }
   }
 
