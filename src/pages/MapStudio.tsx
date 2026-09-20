@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Box, BoxSelect, ChevronRight, CircleDot, DoorOpen, Download, Gem, Grid3X3, Lightbulb,
+  Box, BoxSelect, ChevronRight, CircleDot, Download, Gem, Grid3X3, Lightbulb,
   Gamepad2, Map as MapIcon, MousePointer2, Network, Play, RotateCcw, Save, ShieldAlert, Skull, Sparkles, X,
   Spline, Square, Trash2, WandSparkles, Waypoints,
 } from 'lucide-react'
@@ -33,7 +33,7 @@ import '../skillbound-orbs.css'
 const tools: Array<{ id: DungeonTool; label: string; icon: typeof MousePointer2 }> = [
   { id: 'select', label: 'Select', icon: MousePointer2 }, { id: 'room', label: 'Room', icon: Square },
   { id: 'wall', label: 'Wall', icon: Grid3X3 }, { id: 'corridor', label: 'Corridor', icon: Spline }, { id: 'prop', label: 'Prop', icon: Box },
-  { id: 'door', label: 'Door', icon: DoorOpen }, { id: 'enemy', label: 'Enemy', icon: Skull },
+  { id: 'enemy', label: 'Enemy', icon: Skull },
   { id: 'loot', label: 'Loot', icon: Gem }, { id: 'checkpoint', label: 'Checkpoint', icon: CircleDot },
   { id: 'portal', label: 'Portal', icon: Waypoints }, { id: 'trigger', label: 'Trigger', icon: BoxSelect },
   { id: 'light', label: 'Light', icon: Lightbulb }, { id: 'erase', label: 'Erase', icon: Trash2 },
@@ -44,7 +44,7 @@ const roomTypes: Array<{ id: DungeonRoomType; label: string }> = [
   { id: 'secret', label: 'Secret' }, { id: 'utility', label: 'Utility' },
 ]
 const themes: DungeonTheme[] = ['crypt', 'castle', 'cave', 'cathedral', 'mine', 'sewer', 'void']
-const triggerActions: DungeonTriggerAction[] = ['start-encounter','open-door','close-door','spawn-enemies','grant-loot','activate-shrine','set-checkpoint','exit-dungeon']
+const triggerActions: DungeonTriggerAction[] = ['start-encounter','spawn-enemies','grant-loot','activate-shrine','set-checkpoint','exit-dungeon']
 type PropBrush = { source: 'builtin' | 'library'; assetRef: string; name: string }
 
 export default function MapStudio() {
