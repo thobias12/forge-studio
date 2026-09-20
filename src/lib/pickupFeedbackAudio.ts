@@ -5,8 +5,10 @@ type WebkitAudioWindow = Window & typeof globalThis & {
 }
 
 let audioContext: AudioContext | undefined
+let master: GainNode | undefined
+let compressor: DynamicsCompressorNode | undefined
 let primed = false
-let soundSequence = 0
+let goldPhrase = 0
 const lastScheduledAt: Record<PickupFeedbackKind, number> = {
   gold: 0,
   xp: 0,
@@ -16,7 +18,7 @@ export function primePickupFeedbackAudio() {
   if (primed || typeof window === 'undefined') return
   primed = true
   const unlock = () => {
-    const context = ensureAudioContext()
+    const context = ensureAudioGraph()
     if (context?.state === 'suspended') {
       void context.resume().catch(() => undefined)
     }
@@ -32,286 +34,183 @@ export function playPickupFeedbackSound(
   amount = 1,
   delaySeconds = 0,
 ) {
-  const context = ensureAudioContext()
-  if (!context) return
+  const context = ensureAudioGraph()
+  if (!context || !master) return
   if (context.state === 'suspended') {
     void context.resume().catch(() => undefined)
   }
 
-  const spacing = kind === 'gold' ? .048 : .062
+  const spacing = kind === 'gold' ? .072 : .11
   const requested = context.currentTime + Math.max(0, delaySeconds)
   const when = Math.max(requested, lastScheduledAt[kind] + spacing)
+  const separated =
+    when - lastScheduledAt[kind] > (kind === 'gold' ? .72 : .8)
   lastScheduledAt[kind] = when
 
-  const intensity = Math.min(
-    1.35,
-    .86 + Math.log10(Math.max(1, amount) + 1) * .19,
-  )
-  const sequence = soundSequence++
-  if (kind === 'gold') playGoldPickup(context, when, intensity, sequence)
-  else playXpPickup(context, when, intensity, sequence)
+  if (kind === 'gold') {
+    if (separated) goldPhrase = 0
+    else goldPhrase = (goldPhrase + 1) % 5
+    playGoldClink(context, when, goldPhrase, amount)
+  } else {
+    playXpGain(context, when, amount)
+  }
 }
 
 export function playLevelUpFeedbackSound(delaySeconds = 0) {
-  const context = ensureAudioContext()
-  if (!context) return
+  const context = ensureAudioGraph()
+  if (!context || !master) return
   if (context.state === 'suspended') {
     void context.resume().catch(() => undefined)
   }
+
   const when = context.currentTime + Math.max(0, delaySeconds)
-  const notes = [659.25, 830.61, 987.77]
-  notes.forEach((frequency, index) => {
-    playBellPartial(
-      context,
-      when + index * .065,
-      frequency,
-      .07 - index * .008,
-      .28,
-      1.7,
-    )
-  })
+  playTone(context, 392, 392, .38, .045, when, 'sine', .014)
+  playTone(context, 523.25, 523.25, .42, .065, when + .045, 'sine', .012)
+  playTone(context, 659.25, 659.25, .36, .052, when + .115, 'sine', .012)
+  playTone(context, 783.99, 783.99, .32, .035, when + .18, 'sine', .014)
 }
 
 export function previewPickupFeedbackSound(kind: PickupFeedbackKind) {
-  const context = ensureAudioContext()
+  const context = ensureAudioGraph()
   if (!context) return
   if (context.state === 'suspended') {
     void context.resume().catch(() => undefined)
   }
-  playPickupFeedbackSound(kind, kind === 'gold' ? 42 : 186, .08)
+  playPickupFeedbackSound(kind, kind === 'gold' ? 42 : 186, .02)
 }
 
-function ensureAudioContext() {
+function ensureAudioGraph() {
   if (audioContext) return audioContext
   if (typeof window === 'undefined') return undefined
+
   const AudioContextCtor =
-    window.AudioContext ?? (window as WebkitAudioWindow).webkitAudioContext
+    window.AudioContext ??
+    (window as WebkitAudioWindow).webkitAudioContext
   if (!AudioContextCtor) return undefined
+
   audioContext = new AudioContextCtor({ latencyHint: 'interactive' })
+
+  compressor = audioContext.createDynamicsCompressor()
+  compressor.threshold.value = -18
+  compressor.knee.value = 10
+  compressor.ratio.value = 3.2
+  compressor.attack.value = .002
+  compressor.release.value = .08
+
+  master = audioContext.createGain()
+  master.gain.value = .72
+  master.connect(compressor)
+  compressor.connect(audioContext.destination)
+
   return audioContext
 }
 
-function playGoldPickup(
+function playGoldClink(
   context: AudioContext,
   when: number,
-  intensity: number,
-  sequence: number,
+  phrase: number,
+  amount: number,
 ) {
-  const pitch = 1 + ((sequence % 5) - 2) * .018
-  const bus = createImpactBus(context, when, .22, .9)
+  const notes = [1, 1.125, 1.25, 1.5, 1.667]
+  const note = notes[phrase] ?? 1
+  const weight = Math.min(1.12, .88 + Math.log10(Math.max(1, amount) + 1) * .08)
 
-  const bodyGain = context.createGain()
-  bodyGain.gain.setValueAtTime(.0001, when)
-  bodyGain.gain.exponentialRampToValueAtTime(.11 * intensity, when + .003)
-  bodyGain.gain.exponentialRampToValueAtTime(.0001, when + .11)
-  bodyGain.connect(bus.input)
-  const body = context.createOscillator()
-  body.type = 'triangle'
-  body.frequency.setValueAtTime(620 * pitch, when)
-  body.frequency.exponentialRampToValueAtTime(405 * pitch, when + .095)
-  body.connect(bodyGain)
-  body.start(when)
-  body.stop(when + .12)
-
-  const partials = [
-    { frequency: 1320, gain: .62, decay: .16 },
-    { frequency: 1975, gain: .42, decay: .13 },
-    { frequency: 2860, gain: .22, decay: .1 },
-  ]
-  partials.forEach((partial, index) => {
-    const gain = context.createGain()
-    gain.gain.setValueAtTime(.0001, when)
-    gain.gain.exponentialRampToValueAtTime(
-      partial.gain * .085 * intensity,
-      when + .003 + index * .001,
-    )
-    gain.gain.exponentialRampToValueAtTime(
-      .0001,
-      when + partial.decay,
-    )
-    gain.connect(bus.input)
-
-    const oscillator = context.createOscillator()
-    oscillator.type = index === 0 ? 'triangle' : 'sine'
-    oscillator.frequency.setValueAtTime(partial.frequency * pitch, when)
-    oscillator.frequency.exponentialRampToValueAtTime(
-      partial.frequency * pitch * .93,
-      when + partial.decay,
-    )
-    oscillator.connect(gain)
-    oscillator.start(when)
-    oscillator.stop(when + partial.decay + .01)
-  })
-
-  addTransientNoise(
+  playTone(
     context,
-    bus.input,
+    1750 * note,
+    1640 * note,
+    .18,
+    .07 * weight,
     when,
-    .038,
-    1750,
-    4800,
-    .042 * intensity,
+    'sine',
+    .002,
   )
-
-  playBellPartial(
+  playTone(
     context,
+    2860 * note,
+    2750 * note,
+    .12,
+    .03 * weight,
     when + .022,
-    1540 * pitch,
-    .026 * intensity,
-    .09,
-    .96,
-    bus.input,
+    'sine',
+    .002,
   )
-}
-
-function playXpPickup(
-  context: AudioContext,
-  when: number,
-  intensity: number,
-  sequence: number,
-) {
-  const pitch = 1 + ((sequence % 4) - 1.5) * .012
-  const bus = createImpactBus(context, when, .3, .92)
-
-  const lowGain = context.createGain()
-  lowGain.gain.setValueAtTime(.0001, when)
-  lowGain.gain.exponentialRampToValueAtTime(.075 * intensity, when + .012)
-  lowGain.gain.exponentialRampToValueAtTime(.0001, when + .25)
-  lowGain.connect(bus.input)
-  const low = context.createOscillator()
-  low.type = 'sine'
-  low.frequency.setValueAtTime(620 * pitch, when)
-  low.frequency.exponentialRampToValueAtTime(825 * pitch, when + .19)
-  low.connect(lowGain)
-  low.start(when)
-  low.stop(when + .27)
-
-  const upperGain = context.createGain()
-  upperGain.gain.setValueAtTime(.0001, when)
-  upperGain.gain.exponentialRampToValueAtTime(.048 * intensity, when + .018)
-  upperGain.gain.exponentialRampToValueAtTime(.0001, when + .22)
-  upperGain.connect(bus.input)
-  const upper = context.createOscillator()
-  upper.type = 'triangle'
-  upper.frequency.setValueAtTime(930 * pitch, when)
-  upper.frequency.exponentialRampToValueAtTime(1315 * pitch, when + .18)
-  upper.connect(upperGain)
-  upper.start(when)
-  upper.stop(when + .24)
-
-  const shimmerGain = context.createGain()
-  shimmerGain.gain.setValueAtTime(.0001, when + .018)
-  shimmerGain.gain.exponentialRampToValueAtTime(.026 * intensity, when + .04)
-  shimmerGain.gain.exponentialRampToValueAtTime(.0001, when + .2)
-  shimmerGain.connect(bus.input)
-  const shimmer = context.createOscillator()
-  shimmer.type = 'sine'
-  shimmer.frequency.setValueAtTime(1860 * pitch, when + .018)
-  shimmer.frequency.exponentialRampToValueAtTime(2440 * pitch, when + .17)
-  shimmer.connect(shimmerGain)
-  shimmer.start(when + .018)
-  shimmer.stop(when + .21)
-
-  addTransientNoise(
+  playTone(
     context,
-    bus.input,
-    when + .01,
-    .055,
-    2900,
-    6200,
-    .015 * intensity,
+    1100 * note,
+    1080 * note,
+    .085,
+    .012 * weight,
+    when + .052,
+    'triangle',
+    .003,
   )
 }
 
-function createImpactBus(
+function playXpGain(
   context: AudioContext,
   when: number,
-  duration: number,
-  peak: number,
+  amount: number,
 ) {
-  const compressor = context.createDynamicsCompressor()
-  compressor.threshold.setValueAtTime(-20, when)
-  compressor.knee.setValueAtTime(16, when)
-  compressor.ratio.setValueAtTime(3, when)
-  compressor.attack.setValueAtTime(.003, when)
-  compressor.release.setValueAtTime(.08, when)
+  const weight = Math.min(
+    1.08,
+    .9 + Math.log10(Math.max(1, amount) + 1) * .055,
+  )
 
-  const master = context.createGain()
-  master.gain.setValueAtTime(.0001, when)
-  master.gain.exponentialRampToValueAtTime(peak, when + .004)
-  master.gain.exponentialRampToValueAtTime(.0001, when + duration)
-  master.connect(compressor)
-  compressor.connect(context.destination)
-
-  return { input: master }
+  playTone(
+    context,
+    610,
+    980,
+    .19,
+    .034 * weight,
+    when,
+    'sine',
+    .018,
+  )
+  playTone(
+    context,
+    1120,
+    1380,
+    .13,
+    .016 * weight,
+    when + .052,
+    'sine',
+    .014,
+  )
 }
 
-function playBellPartial(
+function playTone(
   context: AudioContext,
-  when: number,
-  frequency: number,
-  gainValue: number,
+  startFrequency: number,
+  endFrequency: number,
   duration: number,
-  endPitchMultiplier: number,
-  destination: AudioNode = context.destination,
+  volume: number,
+  when: number,
+  type: OscillatorType,
+  attack: number,
 ) {
+  if (!master) return
+
   const gain = context.createGain()
   gain.gain.setValueAtTime(.0001, when)
-  gain.gain.exponentialRampToValueAtTime(Math.max(.0002, gainValue), when + .004)
-  gain.gain.exponentialRampToValueAtTime(.0001, when + duration)
-  gain.connect(destination)
+  gain.gain.exponentialRampToValueAtTime(
+    Math.max(.0002, volume),
+    when + Math.max(.002, attack),
+  )
+  gain.gain.exponentialRampToValueAtTime(
+    .0001,
+    when + duration,
+  )
+  gain.connect(master)
 
   const oscillator = context.createOscillator()
-  oscillator.type = 'sine'
-  oscillator.frequency.setValueAtTime(frequency, when)
+  oscillator.type = type
+  oscillator.frequency.setValueAtTime(startFrequency, when)
   oscillator.frequency.exponentialRampToValueAtTime(
-    frequency * endPitchMultiplier,
+    Math.max(20, endFrequency),
     when + duration,
   )
   oscillator.connect(gain)
   oscillator.start(when)
   oscillator.stop(when + duration + .01)
-}
-
-function addTransientNoise(
-  context: AudioContext,
-  destination: AudioNode,
-  when: number,
-  duration: number,
-  lowCut: number,
-  highCut: number,
-  gainValue: number,
-) {
-  const frames = Math.max(1, Math.floor(context.sampleRate * duration))
-  const buffer = context.createBuffer(1, frames, context.sampleRate)
-  const data = buffer.getChannelData(0)
-  for (let index = 0; index < frames; index += 1) {
-    const envelope = 1 - index / frames
-    data[index] = (Math.random() * 2 - 1) * envelope
-  }
-
-  const source = context.createBufferSource()
-  source.buffer = buffer
-
-  const highpass = context.createBiquadFilter()
-  highpass.type = 'highpass'
-  highpass.frequency.setValueAtTime(lowCut, when)
-  const lowpass = context.createBiquadFilter()
-  lowpass.type = 'lowpass'
-  lowpass.frequency.setValueAtTime(highCut, when)
-
-  const gain = context.createGain()
-  gain.gain.setValueAtTime(.0001, when)
-  gain.gain.exponentialRampToValueAtTime(
-    Math.max(.0002, gainValue),
-    when + .002,
-  )
-  gain.gain.exponentialRampToValueAtTime(.0001, when + duration)
-
-  source.connect(highpass)
-  highpass.connect(lowpass)
-  lowpass.connect(gain)
-  gain.connect(destination)
-  source.start(when)
-  source.stop(when + duration)
 }

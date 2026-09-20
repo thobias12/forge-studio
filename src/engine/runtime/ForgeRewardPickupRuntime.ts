@@ -20,17 +20,31 @@ export type ForgeRewardSnapshotExtension = {
 
 type RewardPickup = {
   id: string
-  kind: 'gold' | 'xp'
   amount: number
   group: THREE.Group
   floorY: number
   age: number
-  phase: number
   velocity: THREE.Vector3
   spin: THREE.Vector3
   settled: boolean
   magnet: boolean
   magnetAge: number
+  bounces: number
+}
+
+type RewardXpParticle = {
+  mesh: THREE.Mesh
+  angle: number
+  radius: number
+  lift: number
+}
+
+type RewardXpFx = {
+  group: THREE.Group
+  ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>
+  particles: RewardXpParticle[]
+  age: number
+  duration: number
 }
 
 type RewardRuntime = {
@@ -56,6 +70,7 @@ type RewardRuntime = {
   __forgeRewardEventId?: number
   __forgeRewardEvents?: ForgeRewardPickupEvent[]
   __forgeRewardPickups?: RewardPickup[]
+  __forgeRewardXpFx?: RewardXpFx[]
 }
 
 let overworldInstalled = false
@@ -145,12 +160,15 @@ function wrapCombatRewards(proto: any) {
   const originalUpdateLoot = proto.updateLoot
   proto.updateLoot = function (delta: number) {
     const result = originalUpdateLoot.call(this, delta)
-    updateRewardPickups(this as RewardRuntime, delta)
+    updateRewardPresentation(this as RewardRuntime, delta)
     return result
   }
 }
 
-function withRewardSnapshot<T extends object>(base: T, runtime: RewardRuntime): T & ForgeRewardSnapshotExtension {
+function withRewardSnapshot<T extends object>(
+  base: T,
+  runtime: RewardRuntime,
+): T & ForgeRewardSnapshotExtension {
   return {
     ...base,
     gold: runtime.__forgeGold ?? 0,
@@ -171,12 +189,17 @@ function ensureRewardState(runtime: RewardRuntime) {
   runtime.__forgeRewardEventId = runtime.__forgeRewardEventId ?? 0
   runtime.__forgeRewardEvents = runtime.__forgeRewardEvents ?? []
   runtime.__forgeRewardPickups = runtime.__forgeRewardPickups ?? []
+  runtime.__forgeRewardXpFx = runtime.__forgeRewardXpFx ?? []
 }
 
 function clearRewardState(runtime: RewardRuntime) {
   for (const pickup of runtime.__forgeRewardPickups ?? []) {
     pickup.group.parent?.remove(pickup.group)
     disposeGroup(pickup.group)
+  }
+  for (const effect of runtime.__forgeRewardXpFx ?? []) {
+    effect.group.parent?.remove(effect.group)
+    disposeGroup(effect.group)
   }
   runtime.__forgeRewardInit = true
   runtime.__forgeGold = 0
@@ -185,235 +208,344 @@ function clearRewardState(runtime: RewardRuntime) {
   runtime.__forgeRewardEventId = 0
   runtime.__forgeRewardEvents = []
   runtime.__forgeRewardPickups = []
+  runtime.__forgeRewardXpFx = []
 }
 
-function spawnRewardBurst(runtime: RewardRuntime, enemyId: string, maxHealth: number, position: THREE.Vector3) {
-  ensureRewardState(runtime)
-  const goldTotal = Math.max(4, Math.round(6 + maxHealth * .035 + hashUnit(`${enemyId}:gold`) * 12))
-  const xpTotal = Math.max(10, Math.round(12 + maxHealth * .16))
-  spawnPieces(runtime, enemyId, 'gold', goldTotal, 5, position)
-  spawnPieces(runtime, enemyId, 'xp', xpTotal, 6, position)
-}
-
-function spawnPieces(
+function spawnRewardBurst(
   runtime: RewardRuntime,
   enemyId: string,
-  kind: 'gold' | 'xp',
-  total: number,
-  count: number,
+  maxHealth: number,
   position: THREE.Vector3,
 ) {
-  const pieces = splitAmount(total, count)
+  ensureRewardState(runtime)
+  const goldTotal = Math.max(
+    4,
+    Math.round(6 + maxHealth * .035 + hashUnit(`${enemyId}:gold`) * 12),
+  )
+  const xpTotal = Math.max(10, Math.round(12 + maxHealth * .16))
+
+  spawnGoldPieces(runtime, enemyId, goldTotal, position)
+  awardXpImmediately(runtime, xpTotal, position, enemyId)
+}
+
+function spawnGoldPieces(
+  runtime: RewardRuntime,
+  enemyId: string,
+  total: number,
+  position: THREE.Vector3,
+) {
+  const pieces = splitAmount(total, 3)
   pieces.forEach((amount, index) => {
-    const angle = hashUnit(`${enemyId}:${kind}:angle:${index}`) * Math.PI * 2
-    const launch = 2.2 + hashUnit(`${enemyId}:${kind}:launch:${index}`) * 2.7
-    const lift = 3.8 + hashUnit(`${enemyId}:${kind}:lift:${index}`) * 2.3
-    const phase = hashUnit(`${enemyId}:${kind}:phase:${index}`) * Math.PI * 2
-    const group = kind === 'gold'
-      ? buildGoldPickupVisual(amount, phase)
-      : buildXpPickupVisual(phase)
-    const floorY = position.y + (kind === 'gold' ? .12 : .25)
+    const angle =
+      hashUnit(`${enemyId}:gold:angle:${index}`) * Math.PI * 2
+    const phase =
+      hashUnit(`${enemyId}:gold:phase:${index}`) * Math.PI * 2
+    const launch =
+      3.2 + hashUnit(`${enemyId}:gold:launch:${index}`) * 1.35
+    const lift =
+      4.8 + hashUnit(`${enemyId}:gold:lift:${index}`) * .95
+    const group = buildGoldPickupVisual(phase)
+    const floorY = position.y + .11
 
     group.position.set(
-      position.x + Math.cos(angle) * .12,
-      position.y + (kind === 'gold' ? .62 : .78),
-      position.z + Math.sin(angle) * .12,
+      position.x + Math.cos(angle) * .08,
+      position.y + .52,
+      position.z + Math.sin(angle) * .08,
     )
-    group.scale.setScalar(.28)
+    group.scale.setScalar(.72)
     ;(runtime.world ?? runtime.scene).add(group)
 
     runtime.__forgeRewardPickups!.push({
-      id: `${enemyId}:${kind}:${index}`,
-      kind,
+      id: `${enemyId}:gold:${index}`,
       amount,
       group,
       floorY,
-      age: index * -.035,
-      phase,
+      age: index * -.018,
       velocity: new THREE.Vector3(
         Math.cos(angle) * launch,
         lift,
         Math.sin(angle) * launch,
       ),
       spin: new THREE.Vector3(
-        5 + phase % 2.5,
-        7 + phase % 4,
-        3.5 + phase % 3,
+        8 + phase % 2,
+        12 + phase % 4,
+        6 + phase % 3,
       ),
       settled: false,
       magnet: false,
       magnetAge: 0,
+      bounces: 0,
     })
   })
 }
 
-function buildGoldPickupVisual(amount: number, phase: number) {
+function buildGoldPickupVisual(phase: number) {
   const group = new THREE.Group()
-  const visibleCoins = Math.max(2, Math.min(4, 2 + Math.floor(Math.log2(amount + 1) / 2)))
-  for (let index = 0; index < visibleCoins; index += 1) {
-    const coin = new THREE.Mesh(
-      new THREE.CylinderGeometry(.135, .135, .052, 18),
-      new THREE.MeshStandardMaterial({
-        color: 0xe1b653,
-        emissive: 0x7c5317,
-        emissiveIntensity: .72,
-        roughness: .28,
-        metalness: .82,
-      }),
-    )
-    const angle = phase + index * 2.399
-    const spread = index === 0 ? 0 : .07 + index * .025
-    coin.position.set(
-      Math.cos(angle) * spread,
-      index * .032,
-      Math.sin(angle) * spread * .72,
-    )
-    coin.rotation.y = angle
-    coin.rotation.z = (index - 1) * .08
-    coin.castShadow = true
-    group.add(coin)
-  }
-  return group
-}
-
-function buildXpPickupVisual(phase: number) {
-  const group = new THREE.Group()
-  const core = new THREE.Mesh(
-    new THREE.OctahedronGeometry(.15, 0),
+  const coin = new THREE.Mesh(
+    new THREE.CylinderGeometry(.14, .14, .055, 20),
     new THREE.MeshStandardMaterial({
-      color: 0xdccfff,
-      emissive: 0x745bb8,
-      emissiveIntensity: 1.5,
-      roughness: .18,
-      metalness: .06,
+      color: 0xe2b951,
+      emissive: 0x745016,
+      emissiveIntensity: .62,
+      roughness: .26,
+      metalness: .86,
     }),
   )
-  core.rotation.y = phase
-  group.add(core)
+  coin.rotation.y = phase
+  coin.castShadow = true
+  group.add(coin)
 
-  const halo = new THREE.Mesh(
-    new THREE.TorusGeometry(.21, .018, 8, 24),
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(.145, .011, 6, 20),
     new THREE.MeshBasicMaterial({
-      color: 0xbba0f3,
+      color: 0xffe59a,
       transparent: true,
-      opacity: .68,
+      opacity: .56,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }),
   )
-  halo.rotation.x = Math.PI / 2
-  halo.rotation.z = phase
-  group.add(halo)
+  rim.rotation.x = Math.PI / 2
+  group.add(rim)
   return group
 }
 
-function updateRewardPickups(runtime: RewardRuntime, delta: number) {
+function awardXpImmediately(
+  runtime: RewardRuntime,
+  amount: number,
+  position: THREE.Vector3,
+  enemyId: string,
+) {
+  runtime.__forgeXp = (runtime.__forgeXp ?? 0) + amount
+  let leveled = false
+  while ((runtime.__forgeXp ?? 0) >= xpRequired(runtime.__forgeLevel ?? 1)) {
+    runtime.__forgeXp =
+      (runtime.__forgeXp ?? 0) - xpRequired(runtime.__forgeLevel ?? 1)
+    runtime.__forgeLevel = (runtime.__forgeLevel ?? 1) + 1
+    leveled = true
+  }
+
+  spawnXpGainFx(runtime, position, enemyId)
+  runtime.spawnPulse?.(position, '#a98aef', 1.15, .2)
+  pushRewardEvent(runtime, {
+    kind: 'xp',
+    amount,
+    position: position.clone().add(new THREE.Vector3(0, .75, 0)),
+    levelUp: leveled,
+  })
+
+  if (leveled) {
+    runtime.setMessage(
+      `Level ${runtime.__forgeLevel}! Your experience carried you forward.`,
+      2.8,
+    )
+  }
+  runtime.saveGame?.(false)
+}
+
+function spawnXpGainFx(
+  runtime: RewardRuntime,
+  position: THREE.Vector3,
+  enemyId: string,
+) {
+  const group = new THREE.Group()
+  group.position.copy(position)
+  group.position.y += .12
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(.36, .026, 8, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0xb89bf0,
+      transparent: true,
+      opacity: .74,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  )
+  ring.rotation.x = Math.PI / 2
+  ring.position.y = .12
+  group.add(ring)
+
+  const particles: RewardXpParticle[] = []
+  for (let index = 0; index < 7; index += 1) {
+    const angle =
+      hashUnit(`${enemyId}:xp:angle:${index}`) * Math.PI * 2
+    const radius =
+      .38 + hashUnit(`${enemyId}:xp:radius:${index}`) * .48
+    const lift =
+      .7 + hashUnit(`${enemyId}:xp:lift:${index}`) * .7
+    const mesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(.048 + (index % 2) * .012, 0),
+      new THREE.MeshBasicMaterial({
+        color: index % 3 === 0 ? 0xf4edff : 0xb89bf0,
+        transparent: true,
+        opacity: .9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    mesh.position.y = .35
+    group.add(mesh)
+    particles.push({ mesh, angle, radius, lift })
+  }
+
+  ;(runtime.world ?? runtime.scene).add(group)
+  runtime.__forgeRewardXpFx!.push({
+    group,
+    ring,
+    particles,
+    age: 0,
+    duration: .34,
+  })
+}
+
+function updateRewardPresentation(runtime: RewardRuntime, delta: number) {
+  updateGoldPickups(runtime, delta)
+  updateXpEffects(runtime, delta)
+}
+
+function updateGoldPickups(runtime: RewardRuntime, delta: number) {
   ensureRewardState(runtime)
   for (const pickup of [...runtime.__forgeRewardPickups!]) {
     pickup.age += delta
     if (pickup.age < 0) continue
 
-    const appear = Math.min(1, pickup.age * 10)
-    if (!pickup.settled) {
-      pickup.velocity.y -= 14.5 * delta
-      pickup.group.position.addScaledVector(pickup.velocity, delta)
-      pickup.group.rotation.x += pickup.spin.x * delta
-      pickup.group.rotation.y += pickup.spin.y * delta
-      pickup.group.rotation.z += pickup.spin.z * delta
-      pickup.group.scale.setScalar(.28 + appear * .72)
-
-      if (pickup.group.position.y <= pickup.floorY) {
-        pickup.group.position.y = pickup.floorY
-        if (Math.abs(pickup.velocity.y) > 1.05 && pickup.age < .78) {
-          pickup.velocity.y = Math.abs(pickup.velocity.y) * .3
-          pickup.velocity.x *= .68
-          pickup.velocity.z *= .68
-          pickup.spin.multiplyScalar(.72)
-        } else {
-          pickup.velocity.set(0, 0, 0)
-          pickup.settled = true
-          pickup.group.rotation.x = 0
-          pickup.group.rotation.z = 0
-        }
-      }
-      if (!pickup.settled) continue
-    }
-
     const dx = runtime.player.position.x - pickup.group.position.x
     const dz = runtime.player.position.z - pickup.group.position.z
     const horizontalDistance = Math.hypot(dx, dz)
-    if (pickup.age >= .24 && horizontalDistance < 5.25) pickup.magnet = true
+
+    if (pickup.age >= .11 && horizontalDistance < 6.3) {
+      pickup.magnet = true
+    }
 
     if (!pickup.magnet) {
-      const bob = pickup.kind === 'xp'
-        ? Math.sin(pickup.age * 4.8 + pickup.phase) * .085
-        : Math.max(0, Math.sin(pickup.age * 2.4 + pickup.phase)) * .018
-      pickup.group.position.y = pickup.floorY + bob
-      pickup.group.rotation.y += delta * (pickup.kind === 'xp' ? 2.8 : 1.35)
-      const idlePulse = pickup.kind === 'xp'
-        ? 1 + Math.sin(pickup.age * 5.2 + pickup.phase) * .08
-        : 1
-      pickup.group.scale.setScalar(idlePulse)
+      if (!pickup.settled) {
+        pickup.velocity.y -= 25 * delta
+        pickup.group.position.addScaledVector(pickup.velocity, delta)
+        pickup.group.rotation.x += pickup.spin.x * delta
+        pickup.group.rotation.y += pickup.spin.y * delta
+        pickup.group.rotation.z += pickup.spin.z * delta
+
+        const appear = Math.min(1, pickup.age * 18)
+        pickup.group.scale.setScalar(.72 + appear * .28)
+
+        if (pickup.group.position.y <= pickup.floorY) {
+          pickup.group.position.y = pickup.floorY
+          if (pickup.bounces === 0 && pickup.age < .46) {
+            pickup.bounces = 1
+            pickup.velocity.y = Math.min(1.55, Math.abs(pickup.velocity.y) * .16)
+            pickup.velocity.x *= .42
+            pickup.velocity.z *= .42
+            pickup.spin.multiplyScalar(.48)
+          } else {
+            pickup.velocity.set(0, 0, 0)
+            pickup.settled = true
+            pickup.group.rotation.x = 0
+            pickup.group.rotation.z = 0
+          }
+        }
+      } else {
+        pickup.group.rotation.y += delta * 1.35
+      }
       continue
     }
 
     pickup.magnetAge += delta
-    const target = runtime.player.position.clone().add(new THREE.Vector3(0, .88, 0))
+    const target = runtime.player.position.clone().add(new THREE.Vector3(0, .82, 0))
     const toTarget = target.sub(pickup.group.position)
     const distance = toTarget.length()
-    const inward = Math.max(0, 5.25 - Math.min(5.25, horizontalDistance))
-    const acceleration = Math.min(15, pickup.magnetAge * 22)
-    const speed = 4.2 + inward * 7.2 + acceleration
+    const speed =
+      10.5 +
+      Math.min(22, pickup.magnetAge * 54) +
+      Math.max(0, 6.3 - Math.min(6.3, horizontalDistance)) * 4.6
     const travel = Math.min(distance, speed * delta)
-    if (distance > .0001) pickup.group.position.addScaledVector(toTarget, travel / distance)
 
-    pickup.group.rotation.x += delta * (pickup.kind === 'gold' ? 11 : 7)
-    pickup.group.rotation.y += delta * (pickup.kind === 'gold' ? 16 : 12)
-    const squeeze = THREE.MathUtils.clamp(distance / 1.7, .2, 1)
-    pickup.group.scale.setScalar(.28 + squeeze * .72)
+    if (distance > .0001) {
+      pickup.group.position.addScaledVector(toTarget, travel / distance)
+    }
+    pickup.group.rotation.x += delta * 17
+    pickup.group.rotation.y += delta * 24
+    pickup.group.scale.setScalar(
+      THREE.MathUtils.clamp(.38 + distance * .28, .38, 1),
+    )
 
-    if (distance > .34) continue
-    collectReward(runtime, pickup)
+    if (distance <= .28) collectGold(runtime, pickup)
   }
 }
 
-function collectReward(runtime: RewardRuntime, pickup: RewardPickup) {
-  const screen = projectToScreen(runtime, pickup.group.position)
+function updateXpEffects(runtime: RewardRuntime, delta: number) {
+  for (let index = runtime.__forgeRewardXpFx!.length - 1; index >= 0; index -= 1) {
+    const effect = runtime.__forgeRewardXpFx![index]
+    effect.age += delta
+    const t = Math.min(1, effect.age / effect.duration)
+    const fade = Math.pow(1 - t, 1.7)
+
+    effect.ring.scale.setScalar(.45 + t * 1.35)
+    effect.ring.material.opacity = fade * .72
+
+    effect.particles.forEach((particle, particleIndex) => {
+      const spread = particle.radius * (.18 + t * .82)
+      particle.mesh.position.set(
+        Math.cos(particle.angle) * spread,
+        .28 + particle.lift * t + Math.sin(t * Math.PI) * .18,
+        Math.sin(particle.angle) * spread,
+      )
+      particle.mesh.rotation.y += delta * (8 + particleIndex)
+      particle.mesh.scale.setScalar(.55 + fade * .65)
+      ;(particle.mesh.material as THREE.MeshBasicMaterial).opacity = fade
+    })
+
+    if (t < 1) continue
+    effect.group.parent?.remove(effect.group)
+    disposeGroup(effect.group)
+    runtime.__forgeRewardXpFx!.splice(index, 1)
+  }
+}
+
+function collectGold(runtime: RewardRuntime, pickup: RewardPickup) {
+  const position = pickup.group.position.clone()
   const index = runtime.__forgeRewardPickups!.indexOf(pickup)
   if (index >= 0) runtime.__forgeRewardPickups!.splice(index, 1)
+
+  runtime.__forgeGold = (runtime.__forgeGold ?? 0) + pickup.amount
+  runtime.spawnPulse?.(position, '#f0c45e', .62, .12)
+
   pickup.group.parent?.remove(pickup.group)
   disposeGroup(pickup.group)
 
-  let leveled = false
-  if (pickup.kind === 'gold') {
-    runtime.__forgeGold = (runtime.__forgeGold ?? 0) + pickup.amount
-  } else {
-    runtime.__forgeXp = (runtime.__forgeXp ?? 0) + pickup.amount
-    while ((runtime.__forgeXp ?? 0) >= xpRequired(runtime.__forgeLevel ?? 1)) {
-      runtime.__forgeXp = (runtime.__forgeXp ?? 0) - xpRequired(runtime.__forgeLevel ?? 1)
-      runtime.__forgeLevel = (runtime.__forgeLevel ?? 1) + 1
-      leveled = true
-    }
-  }
-
-  runtime.spawnPulse?.(
-    pickup.group.position,
-    pickup.kind === 'gold' ? '#f0c45e' : '#bba0f3',
-    pickup.kind === 'gold' ? .72 : .9,
-    .16,
-  )
-
-  const event: ForgeRewardPickupEvent = {
-    id: (runtime.__forgeRewardEventId = (runtime.__forgeRewardEventId ?? 0) + 1),
-    kind: pickup.kind,
+  pushRewardEvent(runtime, {
+    kind: 'gold',
     amount: pickup.amount,
+    position,
+  })
+}
+
+function pushRewardEvent(
+  runtime: RewardRuntime,
+  reward: {
+    kind: 'gold' | 'xp'
+    amount: number
+    position: THREE.Vector3
+    levelUp?: boolean
+  },
+) {
+  const screen = projectToScreen(runtime, reward.position)
+  const event: ForgeRewardPickupEvent = {
+    id: (runtime.__forgeRewardEventId =
+      (runtime.__forgeRewardEventId ?? 0) + 1),
+    kind: reward.kind,
+    amount: reward.amount,
     screenX: screen.x,
     screenY: screen.y,
-    levelUp: leveled || undefined,
+    levelUp: reward.levelUp || undefined,
   }
   runtime.__forgeRewardEvents!.push(event)
-  if (runtime.__forgeRewardEvents!.length > 10) runtime.__forgeRewardEvents!.splice(0, runtime.__forgeRewardEvents!.length - 10)
-  if (leveled) runtime.setMessage(`Level ${runtime.__forgeLevel}! Your experience carried you forward.`, 2.8)
+  if (runtime.__forgeRewardEvents!.length > 10) {
+    runtime.__forgeRewardEvents!.splice(
+      0,
+      runtime.__forgeRewardEvents!.length - 10,
+    )
+  }
   runtime.emitState()
 }
 
@@ -428,7 +560,9 @@ function projectToScreen(runtime: RewardRuntime, position: THREE.Vector3) {
 function splitAmount(total: number, count: number) {
   const base = Math.floor(total / count)
   let remainder = total - base * count
-  return Array.from({ length: count }).map(() => base + (remainder-- > 0 ? 1 : 0)).filter((value) => value > 0)
+  return Array.from({ length: count })
+    .map(() => base + (remainder-- > 0 ? 1 : 0))
+    .filter((value) => value > 0)
 }
 
 export function grantForgeRewardTotals(
@@ -441,21 +575,14 @@ export function grantForgeRewardTotals(
 
   const goldAdded = Math.max(0, Math.round(gold))
   const xpAdded = Math.max(0, Math.round(xp))
-  runtime.__forgeGold =
-    (runtime.__forgeGold ?? 0) + goldAdded
-  runtime.__forgeXp =
-    (runtime.__forgeXp ?? 0) + xpAdded
+  runtime.__forgeGold = (runtime.__forgeGold ?? 0) + goldAdded
+  runtime.__forgeXp = (runtime.__forgeXp ?? 0) + xpAdded
 
   let levelsGained = 0
-  while (
-    (runtime.__forgeXp ?? 0) >=
-    xpRequired(runtime.__forgeLevel ?? 1)
-  ) {
+  while ((runtime.__forgeXp ?? 0) >= xpRequired(runtime.__forgeLevel ?? 1)) {
     runtime.__forgeXp =
-      (runtime.__forgeXp ?? 0) -
-      xpRequired(runtime.__forgeLevel ?? 1)
-    runtime.__forgeLevel =
-      (runtime.__forgeLevel ?? 1) + 1
+      (runtime.__forgeXp ?? 0) - xpRequired(runtime.__forgeLevel ?? 1)
+    runtime.__forgeLevel = (runtime.__forgeLevel ?? 1) + 1
     levelsGained += 1
   }
 
@@ -485,7 +612,9 @@ function disposeGroup(group: THREE.Object3D) {
   group.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry.dispose()
-    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material]
     materials.forEach((material) => material.dispose())
   })
 }

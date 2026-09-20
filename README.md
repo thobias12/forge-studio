@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.88.0`  
+> **Current Forge version:** `v1.88.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,10 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.88.1 refines reward feel after the v1.88.0 gameplay overhaul. XP is no longer a physical world pickup: kills grant XP immediately, show a short violet ring/mote burst at the defeated enemy, emit the HUD XP feedback immediately and preserve level-up handling/save persistence. Gold remains physical but now uses three cleaner coins, a tighter low scatter, at most one tiny bounce and an early high-acceleration magnet snap instead of the previous float-heavy drop.
+
+Reward HUD flights are shorter and more responsive. XP gain text appears immediately at the kill location while the XP-bar arrival follows quickly; gold counter impacts land in roughly half the previous time. Pickup audio was simplified around the Evergrow reward philosophy: gold uses a restrained ascending metallic phrase across rapid pickups, XP uses a quiet rising two-tone cue, and noisy transient/body layers were removed.
 
 Forge v1.88.0 is a full gameplay-feel pass for Skillbound's playable runtime. Overworld and dungeon play now share fast acceleration/deceleration, stepped collision sliding, attack input buffering, held-primary repeat, explicit windup/impact/recovery phases, attack-phase movement, predictive velocity/aim camera look-ahead, and smooth target-based wheel zoom. Dodge can cancel recovery but not an uncommitted attack, keeping actions readable without making movement feel locked.
 
