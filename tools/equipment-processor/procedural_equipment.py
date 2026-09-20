@@ -4385,6 +4385,7 @@ def main():
         body,
         rig,
         frame,
+        config.style,
         style,
         config.seed,
     )
@@ -4410,7 +4411,7 @@ def main():
 
     metadata = {
         "format": "forge-procedural-equipment",
-        "version": 1,
+        "version": 2,
         "body": config.body,
         "slot": config.slot,
         "style": config.style,
@@ -4422,7 +4423,17 @@ def main():
         "bodyMask": ["CHEST", "BACK", "SHOULDER_L", "SHOULDER_R"],
         "armature": rig.name,
         "bodyMesh": body.name,
-        "generator": "blender-body-aware-v2",
+        "generator": "blender-equipment-grammar-v1",
+        "recipe": {
+            "id": config.style,
+            "description": CHEST_RECIPES.get(
+                config.style,
+                CHEST_RECIPES["ranger"],
+            )["description"],
+            "variation": int(
+                config.seed
+            ) % 4,
+        },
         "qaIncludesBody": bool(
             config.include_body,
         ),
