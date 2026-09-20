@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.88.3`  
+> **Current Forge version:** `v1.88.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1274,7 +1274,7 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
-## v1.88.3 — High-readability crypt lighting without losing atmosphere
+## v1.88.4 — High-readability crypt lighting without losing atmosphere
 
 - significantly raises the physical albedo of crypt floor/wall/corridor stone instead of relying only on stronger global lights, preventing black-crushed masonry while preserving warm/cool separation
 - keeps the outside void nearly black so the dungeon silhouette and exploration mood remain intact
