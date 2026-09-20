@@ -7,6 +7,7 @@ export type ForgeRewardPickupEvent = {
   amount: number
   screenX: number
   screenY: number
+  levelUp?: boolean
 }
 
 export type ForgeRewardSnapshotExtension = {
@@ -22,9 +23,14 @@ type RewardPickup = {
   kind: 'gold' | 'xp'
   amount: number
   group: THREE.Group
-  baseY: number
+  floorY: number
   age: number
+  phase: number
+  velocity: THREE.Vector3
+  spin: THREE.Vector3
+  settled: boolean
   magnet: boolean
+  magnetAge: number
 }
 
 type RewardRuntime = {
@@ -37,6 +43,12 @@ type RewardRuntime = {
   emitState: () => void
   setMessage: (message: string, seconds: number) => void
   saveGame?: (manual?: boolean) => void
+  spawnPulse?: (
+    position: THREE.Vector3,
+    color: string,
+    radius: number,
+    duration: number,
+  ) => void
   __forgeRewardInit?: boolean
   __forgeGold?: number
   __forgeXp?: number
@@ -183,38 +195,116 @@ function spawnRewardBurst(runtime: RewardRuntime, enemyId: string, maxHealth: nu
   spawnPieces(runtime, enemyId, 'xp', xpTotal, 6, position)
 }
 
-function spawnPieces(runtime: RewardRuntime, enemyId: string, kind: 'gold' | 'xp', total: number, count: number, position: THREE.Vector3) {
+function spawnPieces(
+  runtime: RewardRuntime,
+  enemyId: string,
+  kind: 'gold' | 'xp',
+  total: number,
+  count: number,
+  position: THREE.Vector3,
+) {
   const pieces = splitAmount(total, count)
   pieces.forEach((amount, index) => {
     const angle = hashUnit(`${enemyId}:${kind}:angle:${index}`) * Math.PI * 2
-    const radius = .35 + hashUnit(`${enemyId}:${kind}:radius:${index}`) * .95
-    const group = new THREE.Group()
-    const mesh = kind === 'gold'
-      ? new THREE.Mesh(
-          new THREE.CylinderGeometry(.14, .14, .05, 16),
-          new THREE.MeshStandardMaterial({ color: 0xd8aa3e, emissive: 0x6d4912, emissiveIntensity: .55, roughness: .35, metalness: .72 }),
-        )
-      : new THREE.Mesh(
-          new THREE.OctahedronGeometry(.13, 0),
-          new THREE.MeshStandardMaterial({ color: 0x7de0c9, emissive: 0x2b8d83, emissiveIntensity: .8, roughness: .28, metalness: .08 }),
-        )
-    mesh.castShadow = true
-    if (kind === 'gold') mesh.rotation.x = Math.PI / 2
-    group.add(mesh)
-    const baseY = position.y + (kind === 'gold' ? .18 : .38)
-    group.position.set(position.x + Math.cos(angle) * radius, baseY, position.z + Math.sin(angle) * radius)
-    group.scale.setScalar(.55)
+    const launch = 2.2 + hashUnit(`${enemyId}:${kind}:launch:${index}`) * 2.7
+    const lift = 3.8 + hashUnit(`${enemyId}:${kind}:lift:${index}`) * 2.3
+    const phase = hashUnit(`${enemyId}:${kind}:phase:${index}`) * Math.PI * 2
+    const group = kind === 'gold'
+      ? buildGoldPickupVisual(amount, phase)
+      : buildXpPickupVisual(phase)
+    const floorY = position.y + (kind === 'gold' ? .12 : .25)
+
+    group.position.set(
+      position.x + Math.cos(angle) * .12,
+      position.y + (kind === 'gold' ? .62 : .78),
+      position.z + Math.sin(angle) * .12,
+    )
+    group.scale.setScalar(.28)
     ;(runtime.world ?? runtime.scene).add(group)
+
     runtime.__forgeRewardPickups!.push({
       id: `${enemyId}:${kind}:${index}`,
       kind,
       amount,
       group,
-      baseY,
-      age: index * -.025,
+      floorY,
+      age: index * -.035,
+      phase,
+      velocity: new THREE.Vector3(
+        Math.cos(angle) * launch,
+        lift,
+        Math.sin(angle) * launch,
+      ),
+      spin: new THREE.Vector3(
+        5 + phase % 2.5,
+        7 + phase % 4,
+        3.5 + phase % 3,
+      ),
+      settled: false,
       magnet: false,
+      magnetAge: 0,
     })
   })
+}
+
+function buildGoldPickupVisual(amount: number, phase: number) {
+  const group = new THREE.Group()
+  const visibleCoins = Math.max(2, Math.min(4, 2 + Math.floor(Math.log2(amount + 1) / 2)))
+  for (let index = 0; index < visibleCoins; index += 1) {
+    const coin = new THREE.Mesh(
+      new THREE.CylinderGeometry(.135, .135, .052, 18),
+      new THREE.MeshStandardMaterial({
+        color: 0xe1b653,
+        emissive: 0x7c5317,
+        emissiveIntensity: .72,
+        roughness: .28,
+        metalness: .82,
+      }),
+    )
+    const angle = phase + index * 2.399
+    const spread = index === 0 ? 0 : .07 + index * .025
+    coin.position.set(
+      Math.cos(angle) * spread,
+      index * .032,
+      Math.sin(angle) * spread * .72,
+    )
+    coin.rotation.y = angle
+    coin.rotation.z = (index - 1) * .08
+    coin.castShadow = true
+    group.add(coin)
+  }
+  return group
+}
+
+function buildXpPickupVisual(phase: number) {
+  const group = new THREE.Group()
+  const core = new THREE.Mesh(
+    new THREE.OctahedronGeometry(.15, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0xdccfff,
+      emissive: 0x745bb8,
+      emissiveIntensity: 1.5,
+      roughness: .18,
+      metalness: .06,
+    }),
+  )
+  core.rotation.y = phase
+  group.add(core)
+
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(.21, .018, 8, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xbba0f3,
+      transparent: true,
+      opacity: .68,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  )
+  halo.rotation.x = Math.PI / 2
+  halo.rotation.z = phase
+  group.add(halo)
+  return group
 }
 
 function updateRewardPickups(runtime: RewardRuntime, delta: number) {
@@ -222,26 +312,67 @@ function updateRewardPickups(runtime: RewardRuntime, delta: number) {
   for (const pickup of [...runtime.__forgeRewardPickups!]) {
     pickup.age += delta
     if (pickup.age < 0) continue
+
+    const appear = Math.min(1, pickup.age * 10)
+    if (!pickup.settled) {
+      pickup.velocity.y -= 14.5 * delta
+      pickup.group.position.addScaledVector(pickup.velocity, delta)
+      pickup.group.rotation.x += pickup.spin.x * delta
+      pickup.group.rotation.y += pickup.spin.y * delta
+      pickup.group.rotation.z += pickup.spin.z * delta
+      pickup.group.scale.setScalar(.28 + appear * .72)
+
+      if (pickup.group.position.y <= pickup.floorY) {
+        pickup.group.position.y = pickup.floorY
+        if (Math.abs(pickup.velocity.y) > 1.05 && pickup.age < .78) {
+          pickup.velocity.y = Math.abs(pickup.velocity.y) * .3
+          pickup.velocity.x *= .68
+          pickup.velocity.z *= .68
+          pickup.spin.multiplyScalar(.72)
+        } else {
+          pickup.velocity.set(0, 0, 0)
+          pickup.settled = true
+          pickup.group.rotation.x = 0
+          pickup.group.rotation.z = 0
+        }
+      }
+      if (!pickup.settled) continue
+    }
+
     const dx = runtime.player.position.x - pickup.group.position.x
     const dz = runtime.player.position.z - pickup.group.position.z
     const horizontalDistance = Math.hypot(dx, dz)
-    if (horizontalDistance < 3.6) pickup.magnet = true
+    if (pickup.age >= .24 && horizontalDistance < 5.25) pickup.magnet = true
 
     if (!pickup.magnet) {
-      pickup.group.position.y = pickup.baseY + Math.sin(pickup.age * 6.2) * (pickup.kind === 'xp' ? .08 : .03)
-      pickup.group.rotation.y += delta * (pickup.kind === 'xp' ? 4.8 : 6.8)
-      const appear = Math.min(1, pickup.age * 7)
-      pickup.group.scale.setScalar(.55 + appear * .45)
+      const bob = pickup.kind === 'xp'
+        ? Math.sin(pickup.age * 4.8 + pickup.phase) * .085
+        : Math.max(0, Math.sin(pickup.age * 2.4 + pickup.phase)) * .018
+      pickup.group.position.y = pickup.floorY + bob
+      pickup.group.rotation.y += delta * (pickup.kind === 'xp' ? 2.8 : 1.35)
+      const idlePulse = pickup.kind === 'xp'
+        ? 1 + Math.sin(pickup.age * 5.2 + pickup.phase) * .08
+        : 1
+      pickup.group.scale.setScalar(idlePulse)
       continue
     }
 
-    const target = runtime.player.position.clone().add(new THREE.Vector3(0, .9, 0))
-    const distance = pickup.group.position.distanceTo(target)
-    const attraction = 1 - Math.exp(-delta * (12.5 + Math.min(12, distance * 3.2)))
-    pickup.group.position.lerp(target, attraction)
-    pickup.group.rotation.y += delta * 13
-    pickup.group.scale.multiplyScalar(Math.max(.86, 1 - delta * 1.4))
-    if (pickup.group.position.distanceTo(target) > .38) continue
+    pickup.magnetAge += delta
+    const target = runtime.player.position.clone().add(new THREE.Vector3(0, .88, 0))
+    const toTarget = target.sub(pickup.group.position)
+    const distance = toTarget.length()
+    const inward = Math.max(0, 5.25 - Math.min(5.25, horizontalDistance))
+    const acceleration = Math.min(15, pickup.magnetAge * 22)
+    const speed = 4.2 + inward * 7.2 + acceleration
+    const travel = Math.min(distance, speed * delta)
+    if (distance > .0001) pickup.group.position.addScaledVector(toTarget, travel / distance)
+
+    pickup.group.rotation.x += delta * (pickup.kind === 'gold' ? 11 : 7)
+    pickup.group.rotation.y += delta * (pickup.kind === 'gold' ? 16 : 12)
+    const squeeze = THREE.MathUtils.clamp(distance / 1.7, .2, 1)
+    pickup.group.scale.setScalar(.28 + squeeze * .72)
+
+    if (distance > .34) continue
     collectReward(runtime, pickup)
   }
 }
@@ -265,12 +396,20 @@ function collectReward(runtime: RewardRuntime, pickup: RewardPickup) {
     }
   }
 
+  runtime.spawnPulse?.(
+    pickup.group.position,
+    pickup.kind === 'gold' ? '#f0c45e' : '#bba0f3',
+    pickup.kind === 'gold' ? .72 : .9,
+    .16,
+  )
+
   const event: ForgeRewardPickupEvent = {
     id: (runtime.__forgeRewardEventId = (runtime.__forgeRewardEventId ?? 0) + 1),
     kind: pickup.kind,
     amount: pickup.amount,
     screenX: screen.x,
     screenY: screen.y,
+    levelUp: leveled || undefined,
   }
   runtime.__forgeRewardEvents!.push(event)
   if (runtime.__forgeRewardEvents!.length > 10) runtime.__forgeRewardEvents!.splice(0, runtime.__forgeRewardEvents!.length - 10)
