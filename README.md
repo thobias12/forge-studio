@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.87.0`  
+> **Current Forge version:** `v1.87.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,18 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.87.1 — Live dungeon VFX + wall collision
+
+- fixes Play Project skill effects being hidden inside the V3 brick floor by lifting bound VFX and fallback pulses above the authored masonry surface
+- preloads ability/enemy VFX in the real dungeon runtime so the first cast/hit does not wait on library parsing
+- preloads VFX referenced by Animation Studio events on the active character
+- authored Dodge/Dash animation VFX/SFX events now fire through the shared player runtime in both normal Play Project and Dungeon Forge live testing
+- brings the shared Chain Lightning runtime into dungeons, including animated chained bolts, impact timing, branching arcs and linked impact VFX
+- Dungeon Play now uses semantic Animation V3 attack/cast actions just like the outdoor Play runtime
+- adds extra perimeter clearance for the player capsule so V3 room/corridor walls cannot be visually entered or crossed
+- applies the same V3 wall-thickness clearance to Quick ARPG and Walk tests for consistent collision between all Dungeon Forge test modes
+
 
 ## v1.87.0 — Dungeon Forge × Play Project live runtime
 
