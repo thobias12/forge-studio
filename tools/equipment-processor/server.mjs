@@ -17,7 +17,7 @@ const generatorReadyMarker = join(generatorVenv, '.forge-ready-v4')
 
 const sparRepo = join(generatorsDir, 'spar3d')
 const sparVenv = join(sparRepo, '.forge-venv')
-const sparReadyMarker = join(sparVenv, '.forge-ready-v1')
+const sparReadyMarker = join(sparVenv, '.forge-ready-v2')
 const sparShims = join(generatorsDir, 'spar3d-shims')
 const hfTokenPath = join(generatorsDir, '.hf-token')
 
@@ -50,7 +50,7 @@ createServer(async (req, res) => {
       const generator = await sparGeneratorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 7,
+        version: 8,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -383,7 +383,13 @@ async function setupSpar3D(job) {
       )
     }
 
-    job.progress = 52
+    job.progress = 50
+    job.message = 'Installing SPAR3D Git dependencies…'
+    await installSparGitDependencies(
+      venvPython,
+    )
+
+    job.progress = 58
     job.message = 'Preparing portable SPAR3D dependencies…'
     const requirements = await prepareForgeSparRequirements()
     await runCommand(
@@ -638,6 +644,34 @@ async function ensureSparPython(job) {
   )
 }
 
+async function installSparGitDependencies(
+  venvPython,
+) {
+  // Install these outside pip build isolation. AlphaCLIP's setup.py
+  // imports pkg_resources, which is supplied by setuptools in the
+  // already-prepared Forge environment but is not present in pip's
+  // temporary isolated build environment.
+  await runCommand(
+    venvPython,
+    [
+      '-m', 'pip', 'install',
+      '--no-build-isolation',
+      'git+https://github.com/openai/CLIP.git',
+    ],
+    { label: 'SPAR3D OpenAI CLIP' },
+  )
+
+  await runCommand(
+    venvPython,
+    [
+      '-m', 'pip', 'install',
+      '--no-build-isolation',
+      'git+https://github.com/SunzeY/AlphaCLIP.git',
+    ],
+    { label: 'SPAR3D AlphaCLIP' },
+  )
+}
+
 async function prepareForgeSparRequirements() {
   const upstream = await readFile(
     join(sparRepo, 'requirements.txt'),
@@ -654,7 +688,9 @@ async function prepareForgeSparRequirements() {
     .filter(
       (line) =>
         !line.startsWith('./texture_baker')
-        && !line.startsWith('./uv_unwrapper'),
+        && !line.startsWith('./uv_unwrapper')
+        && !line.includes('github.com/openai/CLIP')
+        && !line.includes('github.com/SunzeY/AlphaCLIP'),
     )
 
   filtered.push(
@@ -738,6 +774,8 @@ async function validateSparRuntime(
         'import torch',
         'import numpy',
         'import trimesh',
+        'import clip',
+        'import alpha_clip',
         'from spar3d.system import SPAR3D',
         'print("FORGE_RUNTIME_OK")',
         'print("FORGE_CUDA=" + str(torch.cuda.is_available()))',

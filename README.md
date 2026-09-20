@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.80.0`  
+> **Current Forge version:** `v1.80.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -302,6 +302,8 @@ The official foundation ZIP can be imported into Forge rather than committing th
 The female body also has support for subtle spring-based secondary motion in the runtime binding.
 
 ## Equipment Lab
+
+Forge v1.80.1 fixes SPAR3D's Git dependency installation on Windows. OpenAI CLIP and AlphaCLIP are now installed separately after PyTorch/setuptools are available, and AlphaCLIP is installed with pip build isolation disabled because its setup.py imports pkg_resources from the active setuptools environment. Forge validates both clip and alpha_clip imports before marking SPAR3D ready.
 
 Forge v1.80.0 changes the recommended local image-to-3D backend from TripoSR to **SPAR3D (Stable Point-Aware 3D)**.
 

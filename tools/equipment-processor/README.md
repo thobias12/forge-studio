@@ -99,3 +99,9 @@ Forge's TripoSR compatibility work includes:
 - automatic invalidation of incomplete installations.
 
 It is no longer the primary Equipment Lab generator.
+
+## v1.80.1 CLIP / AlphaCLIP installation
+
+The upstream SPAR3D requirements install OpenAI CLIP and AlphaCLIP directly from GitHub. AlphaCLIP's setup.py imports `pkg_resources`, but pip's isolated build environment may not include setuptools/pkg_resources, causing metadata generation to fail on Windows.
+
+Forge now removes both Git dependencies from the bulk requirements file, installs OpenAI CLIP first, then installs AlphaCLIP with `--no-build-isolation` after PyTorch and setuptools are already available in the private SPAR3D environment. Runtime validation now checks both `clip` and `alpha_clip` imports before writing the SPAR3D ready marker.
