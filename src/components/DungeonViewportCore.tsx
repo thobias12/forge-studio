@@ -913,14 +913,19 @@ function addCornerStonework(group: THREE.Group, room: DungeonRoom, material: THR
     [-room.width / 2 + inset, room.depth / 2 - inset], [room.width / 2 - inset, room.depth / 2 - inset],
   ]
   for (const [x, z] of corners) {
+    const wallSides: ResizeSide[] = [x < 0 ? 'west' : 'east', z < 0 ? 'north' : 'south']
     const column = new THREE.Mesh(new THREE.BoxGeometry(0.38, room.height, 0.38), material)
     column.position.set(x, room.height / 2, z)
+    column.userData.roomId = room.id
+    column.userData.wallSides = wallSides
     column.castShadow = true
     column.receiveShadow = true
     group.add(column)
     for (const y of [0.16, room.height - 0.18]) {
       const block = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.24, 0.55), darkMaterial)
       block.position.set(x, y, z)
+      block.userData.roomId = room.id
+      block.userData.wallSides = wallSides
       group.add(block)
     }
   }
