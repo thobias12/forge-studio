@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
+import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomAtV3 } from '../lib/dungeonForgeV3'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -304,7 +304,7 @@ export default function DungeonViewport(props: Props) {
         lastFrameKey = frameKey
         fitEditorCamera(current)
       }
-      const crypt = current.theme === 'crypt'
+      const useV3 = current.theme === 'crypt'
       const roomMap = new Map(current.rooms.map((item) => [item.id, item]))
       const openings = new Map<string, RoomOpening[]>()
       const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
@@ -317,11 +317,23 @@ export default function DungeonViewport(props: Props) {
         const to = getRoomConnection(toRoom, fromRoom, edge.width)
         addOpening(fromRoom.id, { ...from, corridorId: edge.id })
         addOpening(toRoom.id, { ...to, corridorId: edge.id })
-        addCorridor(dungeonGroup, from, to, edge.width, atmosphere, immersive)
-        if (crypt) addCryptCorridorEnvironment(dungeonGroup, from, to, edge.width, atmosphere, `${edge.id}-${current.seed}`, immersive)
+        if (!useV3) addCorridor(dungeonGroup, from, to, edge.width, atmosphere, immersive)
+      }
+
+      if (useV3) {
+        addDungeonMasonryV3(dungeonGroup, current, atmosphere, flickerLights, immersive ? 'walk' : 'editor')
       }
 
       for (const roomValue of current.rooms) {
+        if (useV3) {
+          if (!immersive) addDungeonRoomOverlayV3(
+            dungeonGroup,
+            roomValue,
+            roomValue.id === state.selectedRoomId,
+            roomValue.id === state.corridorStartId,
+          )
+          continue
+        }
         const roomOpenings = openings.get(roomValue.id) ?? []
         addRoom(
           dungeonGroup,
@@ -333,9 +345,8 @@ export default function DungeonViewport(props: Props) {
           immersive,
           atmosphere,
           flickerLights,
-          crypt,
+          false,
         )
-        if (crypt) addCryptRoomEnvironment(dungeonGroup, roomValue, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, immersive)
       }
       for (const wallValue of current.walls ?? []) {
         addManualWall(
@@ -518,7 +529,10 @@ export default function DungeonViewport(props: Props) {
       const preferredProp = state.tool === 'select' ? getPreferredPropHit(hits) : undefined
       const hit = preferredProp ?? hits.find((candidate) => candidate.object.userData.propId || candidate.object.userData.wallId || candidate.object.userData.roomId || candidate.object.userData.markerId || candidate.object.name === '__ground')
       if (!hit) return
-      const roomId = hit.object.userData.roomId as string | undefined
+      const surfaceRoom = hit.object.userData.dungeonSurface
+        ? dungeonRoomAtV3(state.value, hit.point.x, hit.point.z)
+        : undefined
+      const roomId = (hit.object.userData.roomId as string | undefined) ?? surfaceRoom?.id
       const markerId = hit.object.userData.markerId as string | undefined
       const propId = hit.object.userData.propId as string | undefined
       const wallId = hit.object.userData.wallId as string | undefined
@@ -580,8 +594,10 @@ export default function DungeonViewport(props: Props) {
       updatePointer(event)
       const hits = raycaster.intersectObjects(dungeonGroup.children, true)
       const propHit = getPreferredPropHit(hits)
+      const surfaceHit = hits.find((hit) => hit.object.userData.dungeonSurface)
+      const surfaceRoom = surfaceHit ? dungeonRoomAtV3(propsRef.current.value, surfaceHit.point.x, surfaceHit.point.z) : undefined
       if (hits.some((hit) => hit.object.userData.resizeSide)) renderer.domElement.style.cursor = 'nwse-resize'
-      else if (propsRef.current.tool === 'select' && (propHit || hits.some((hit) => hit.object.userData.roomId || hit.object.userData.wallId))) renderer.domElement.style.cursor = 'grab'
+      else if (propsRef.current.tool === 'select' && (propHit || surfaceRoom || hits.some((hit) => hit.object.userData.roomId || hit.object.userData.wallId))) renderer.domElement.style.cursor = 'grab'
       else renderer.domElement.style.cursor = propsRef.current.tool === 'select' ? 'default' : 'crosshair'
     }
     const onPointerUp = (event: PointerEvent) => {
@@ -1370,7 +1386,10 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
 
 function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
-  if (!value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) && !pointInsideCorridor(value, x, z, radius)) return false
+  const inside = value.theme === 'crypt'
+    ? dungeonContainsPointV3(value, x, z, radius)
+    : value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) || pointInsideCorridor(value, x, z, radius)
+  if (!inside) return false
   for (const item of value.markers) if (item.type === 'door' && Boolean(item.data.locked) && pointInsideDoor(item, x, z, radius)) return false
   for (const wall of value.walls ?? []) if (pointNearWall(wall, x, z, radius)) return false
   for (const prop of dungeonProps(value)) if (prop.collision && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
@@ -1390,7 +1409,7 @@ function pointInsideRoom(room: DungeonRoom, x: number, z: number, margin: number
 function pointInsideCorridor(value: DungeonWithProps, x: number, z: number, margin: number) { const map = new Map(value.rooms.map((room) => [room.id, room])); for (const edge of value.corridors) { const a = map.get(edge.fromRoomId), b = map.get(edge.toRoomId); if (!a || !b) continue; const from = getRoomConnection(a, b, edge.width), to = getRoomConnection(b, a, edge.width), midX = to.x, midZ = from.z; if (pointInsideAxisSegment(x, z, from.x, from.z, midX, midZ, edge.width, margin) || pointInsideAxisSegment(x, z, midX, midZ, to.x, to.z, edge.width, margin)) return true } return false }
 function pointInsideAxisSegment(x: number, z: number, x1: number, z1: number, x2: number, z2: number, width: number, margin: number) { const halfWidth = Math.max(0.25, width / 2 - margin), pad = margin + 0.28; if (Math.abs(z2 - z1) < 0.05) return x >= Math.min(x1, x2) - pad && x <= Math.max(x1, x2) + pad && Math.abs(z - z1) <= halfWidth; if (Math.abs(x2 - x1) < 0.05) return z >= Math.min(z1, z2) - pad && z <= Math.max(z1, z2) + pad && Math.abs(x - x1) <= halfWidth; return false }
 function pointInsideDoor(item: DungeonMarker, x: number, z: number, margin: number) { const dx = x - item.x, dz = z - item.z, angle = -THREE.MathUtils.degToRad(Number(item.data.yaw ?? 0)), cos = Math.cos(angle), sin = Math.sin(angle), localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos; return Math.abs(localX) <= 0.2 + margin && Math.abs(localZ) <= 0.9 + margin }
-function floorHeightAt(value: DungeonWithProps, x: number, z: number) { return value.rooms.find((room) => pointInsideRoom(room, x, z, 0))?.floorLevel ?? 0 }
+function floorHeightAt(value: DungeonWithProps, x: number, z: number) { return value.theme === 'crypt' ? dungeonFloorHeightV3(value, x, z) : value.rooms.find((room) => pointInsideRoom(room, x, z, 0))?.floorLevel ?? 0 }
 function dungeonWorldBounds(value: DungeonWithProps) {
   const minX = Math.min(
     ...value.rooms.map((room) => room.x - room.width / 2),
