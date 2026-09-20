@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonDestructible, type DungeonProp, type DungeonWithProps } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
+import { addDungeonMasonryV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
 import { getAsset, listAssets } from '../lib/library'
 import { definitionFromMetadata, findDestructibleRoot, isForgeDestructibleMetadata, playDestructibleBreakSound } from '../lib/destructibleAsset'
 import '../arpg-combat.css'
@@ -238,20 +238,20 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       for (const fx of attackFx.splice(0)) disposeObject(fx.mesh)
       while (world.children.length) disposeObject(world.children.pop()!)
       flickerLights.length = 0
-      const current = valueRef.current, atmosphere = applyAtmosphere(current), crypt = current.theme === 'crypt'
+      const current = valueRef.current, atmosphere = applyAtmosphere(current), useV3 = current.theme === 'crypt'
       const roomMap = new Map(current.rooms.map((room) => [room.id, room])), openings = new Map<string, RoomOpening[]>()
       const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
       for (const edge of current.corridors) {
         const fromRoom = roomMap.get(edge.fromRoomId), toRoom = roomMap.get(edge.toRoomId); if (!fromRoom || !toRoom) continue
         const from = getRoomConnection(fromRoom, toRoom, edge.width), to = getRoomConnection(toRoom, fromRoom, edge.width)
         addOpening(fromRoom.id, { ...from, corridorId: edge.id }); addOpening(toRoom.id, { ...to, corridorId: edge.id })
-        addBaseCorridor(world, from, to, edge.width, atmosphere)
-        if (crypt) addCryptCorridorEnvironment(world, from, to, edge.width, atmosphere, `${edge.id}-${current.seed}`, false)
+        if (!useV3) addBaseCorridor(world, from, to, edge.width, atmosphere)
       }
+      if (useV3) addDungeonMasonryV3(world, current, atmosphere, flickerLights, 'arpg')
       for (const room of current.rooms) {
+        if (useV3) continue
         const roomOpenings = openings.get(room.id) ?? []
-        addBaseRoom(world, room, current.settings.wallThickness, roomOpenings, atmosphere, flickerLights, crypt)
-        if (crypt) addCryptRoomEnvironment(world, room, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, false)
+        addBaseRoom(world, room, current.settings.wallThickness, roomOpenings, atmosphere, flickerLights, false)
       }
       for (const wall of current.walls ?? []) addRuntimeWall(world, wall, atmosphere)
       world.traverse((object) => {
@@ -586,14 +586,14 @@ function spawnHitFx(parent:THREE.Group,position:THREE.Vector3){const mesh=new TH
 function spawnAttackArc(parent:THREE.Group,output:AttackFx[],position:THREE.Vector3,yaw:number){const mesh=new THREE.Mesh(new THREE.RingGeometry(.7,1.45,26,1,-Math.PI*.38,Math.PI*.76),new THREE.MeshBasicMaterial({color:0xcfe9f7,transparent:true,opacity:.62,side:THREE.DoubleSide,depthWrite:false}));mesh.rotation.x=-Math.PI/2;mesh.rotation.z=-yaw;mesh.position.copy(position);mesh.position.y+=.08;parent.add(mesh);output.push({mesh,life:.18})}
 function createAvatar(){const group=new THREE.Group();group.visible=false;const bodyMaterial=new THREE.MeshStandardMaterial({color:0x55636d,roughness:.66,metalness:.05,emissive:0x1a252c,emissiveIntensity:.34}),accentMaterial=new THREE.MeshStandardMaterial({color:0xb2c6d1,roughness:.5,metalness:.08,emissive:0x25343d,emissiveIntensity:.3}),body=new THREE.Mesh(new THREE.CapsuleGeometry(.28,.72,5,9),bodyMaterial);body.position.y=.86;const head=new THREE.Mesh(new THREE.SphereGeometry(.22,12,9),accentMaterial);head.position.y=1.55;const ring=new THREE.Mesh(new THREE.RingGeometry(.38,.5,28),new THREE.MeshBasicMaterial({color:0xb8dff1,transparent:true,opacity:.56,side:THREE.DoubleSide,depthWrite:false}));ring.rotation.x=-Math.PI/2;ring.position.y=.025;body.castShadow=true;head.castShadow=true;group.add(body,head,ring);return group}
 function mergeIntervals(intervals:Array<{start:number;end:number}>){const sorted=intervals.filter((item)=>item.end>item.start).sort((a,b)=>a.start-b.start),result:Array<{start:number;end:number}>=[];for(const interval of sorted){const last=result[result.length-1];if(!last||interval.start>last.end+.05)result.push({...interval});else last.end=Math.max(last.end,interval.end)}return result}
-function canWalkAt(value:DungeonWithProps,x:number,z:number,broken:Set<string>,runtimeLocked:Set<string>){const radius=.3;if(!value.rooms.some((room)=>pointInsideRoom(room,x,z,radius))&&!pointInsideCorridor(value,x,z,radius))return false;for(const item of value.markers)if(item.type==='door'&&(Boolean(item.data.locked)||runtimeLocked.has(item.id))&&pointInsideDoor(item,x,z,radius))return false;for(const wall of value.walls??[])if(pointNearWall(wall,x,z,radius))return false;for(const prop of dungeonProps(value))if(prop.collision&&!broken.has(prop.id)&&Math.hypot(x-prop.x,z-prop.z)<propCollisionRadius(prop)+radius)return false;return true}
+function canWalkAt(value:DungeonWithProps,x:number,z:number,broken:Set<string>,runtimeLocked:Set<string>){const radius=.3;const inside=value.theme==='crypt'?dungeonContainsPointV3(value,x,z,radius):value.rooms.some((room)=>pointInsideRoom(room,x,z,radius))||pointInsideCorridor(value,x,z,radius);if(!inside)return false;for(const item of value.markers)if(item.type==='door'&&(Boolean(item.data.locked)||runtimeLocked.has(item.id))&&pointInsideDoor(item,x,z,radius))return false;for(const wall of value.walls??[])if(pointNearWall(wall,x,z,radius))return false;for(const prop of dungeonProps(value))if(prop.collision&&!broken.has(prop.id)&&Math.hypot(x-prop.x,z-prop.z)<propCollisionRadius(prop)+radius)return false;return true}
 function pointNearWall(wall:DungeonWall,x:number,z:number,margin:number){const dx=wall.x2-wall.x1,dz=wall.z2-wall.z1,lenSq=dx*dx+dz*dz,t=lenSq>.0001?Math.max(0,Math.min(1,((x-wall.x1)*dx+(z-wall.z1)*dz)/lenSq)):0,px=wall.x1+dx*t,pz=wall.z1+dz*t;return Math.hypot(x-px,z-pz)<=wall.thickness/2+margin}
 function propCollisionRadius(prop:DungeonProp){const base=prop.assetRef==='pillar'?.45:prop.assetRef==='statue'?.5:prop.assetRef==='rubble'?.25:prop.assetRef==='spikes'?.55:prop.destructible?.enabled?.56:.45;return base*prop.scale}
-function pointInsideRoom(room:DungeonRoom,x:number,z:number,margin:number){const dx=x-room.x,dz=z-room.z,angle=-THREE.MathUtils.degToRad(room.rotation),cos=Math.cos(angle),sin=Math.sin(angle),localX=dx*cos-dz*sin,localZ=dx*sin+dz*cos;return Math.abs(localX)<=Math.max(.2,room.width/2-margin)&&Math.abs(localZ)<=Math.max(.2,room.depth/2-margin)}
+function pointInsideRoom(room:DungeonRoom,x:number,z:number,margin:number){return dungeonRoomContainsV3(room,x,z,margin)}
 function pointInsideCorridor(value:DungeonWithProps,x:number,z:number,margin:number){const rooms=new Map(value.rooms.map((room)=>[room.id,room]));for(const edge of value.corridors){const a=rooms.get(edge.fromRoomId),b=rooms.get(edge.toRoomId);if(!a||!b)continue;const from=getRoomConnection(a,b,edge.width),to=getRoomConnection(b,a,edge.width),midX=to.x,midZ=from.z;if(pointInsideAxisSegment(x,z,from.x,from.z,midX,midZ,edge.width,margin)||pointInsideAxisSegment(x,z,midX,midZ,to.x,to.z,edge.width,margin))return true}return false}
 function pointInsideAxisSegment(x:number,z:number,x1:number,z1:number,x2:number,z2:number,width:number,margin:number){const halfWidth=Math.max(.25,width/2-margin),pad=margin+.28;if(Math.abs(z2-z1)<.05)return x>=Math.min(x1,x2)-pad&&x<=Math.max(x1,x2)+pad&&Math.abs(z-z1)<=halfWidth;if(Math.abs(x2-x1)<.05)return z>=Math.min(z1,z2)-pad&&z<=Math.max(z1,z2)+pad&&Math.abs(x-x1)<=halfWidth;return false}
 function pointInsideDoor(item:DungeonMarker,x:number,z:number,margin:number){const dx=x-item.x,dz=z-item.z,angle=-THREE.MathUtils.degToRad(Number(item.data.yaw??0)),cos=Math.cos(angle),sin=Math.sin(angle),localX=dx*cos-dz*sin,localZ=dx*sin+dz*cos;return Math.abs(localX)<=.2+margin&&Math.abs(localZ)<=.9+margin}
-function floorHeightAt(value:DungeonWithProps,x:number,z:number){return value.rooms.find((room)=>pointInsideRoom(room,x,z,0))?.floorLevel??0}
+function floorHeightAt(value:DungeonWithProps,x:number,z:number){return value.theme==='crypt'?dungeonFloorHeightV3(value,x,z):value.rooms.find((room)=>pointInsideRoom(room,x,z,0))?.floorLevel??0}
 function seededRandom(seed:number){let state=seed>>>0;return()=>{state+=0x6D2B79F5;let next=state;next=Math.imul(next^next>>>15,next|1);next^=next+Math.imul(next^next>>>7,next|61);return((next^next>>>14)>>>0)/4294967296}}
 function stringSeed(value:string){let seed=2166136261;for(let i=0;i<value.length;i++)seed=Math.imul(seed^value.charCodeAt(i),16777619);return seed>>>0}
 function disposeMaterial(material:THREE.Material){const withMaps=material as THREE.Material&{map?:THREE.Texture|null;alphaMap?:THREE.Texture|null;emissiveMap?:THREE.Texture|null};withMaps.map?.dispose();withMaps.alphaMap?.dispose();withMaps.emissiveMap?.dispose();material.dispose()}
