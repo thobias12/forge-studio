@@ -3,7 +3,7 @@ import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promise
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { dirname, extname, join, resolve } from 'node:path'
+import { delimiter, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -13,10 +13,18 @@ const jobsDir = join(work, 'jobs')
 const generatorsDir = join(work, 'generators')
 const generatorRepo = join(generatorsDir, 'triposr')
 const generatorVenv = join(generatorRepo, '.forge-venv')
+const generatorReadyMarker = join(generatorVenv, '.forge-ready-v4')
+
+const sparRepo = join(generatorsDir, 'spar3d')
+const sparVenv = join(sparRepo, '.forge-venv')
+const sparReadyMarker = join(sparVenv, '.forge-ready-v1')
+const sparShims = join(generatorsDir, 'spar3d-shims')
+const hfTokenPath = join(generatorsDir, '.hf-token')
+
 const bootstrapVenv = join(generatorsDir, '.forge-uv-bootstrap')
 const managedPythonDir = join(generatorsDir, '.forge-python')
-const generatorReadyMarker = join(generatorVenv, '.forge-ready-v4')
 const processor = join(here, 'processor.py')
+const sparGeneratorScript = join(here, 'spar3d_geometry.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
 const backgroundJobs = new Map()
 
@@ -39,10 +47,10 @@ createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      const generator = await generatorHealth()
+      const generator = await sparGeneratorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 6,
+        version: 7,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -54,18 +62,37 @@ createServer(async (req, res) => {
       return
     }
 
+    if (req.method === 'POST' && url.pathname === '/generator/access-token') {
+      const tokenBytes = await bodyBytes(req, 8192)
+      const token = tokenBytes.toString('utf8').trim()
+      if (!token || !token.startsWith('hf_')) {
+        throw new HttpError(400, 'Paste a Hugging Face read token that starts with hf_.')
+      }
+      await writeFile(hfTokenPath, token, { encoding: 'utf8', mode: 0o600 })
+      sendJson(res, 200, { ok: true })
+      return
+    }
+
     if (req.method === 'POST' && url.pathname === '/generator/setup') {
+      const backend = generatorBackend(url.searchParams.get('backend'))
       const active = [...backgroundJobs.values()].find(
-        (job) => job.kind === 'setup' && (job.status === 'queued' || job.status === 'running'),
+        (job) =>
+          job.kind === 'setup'
+          && job.backend === backend
+          && (job.status === 'queued' || job.status === 'running'),
       )
       if (active) {
         sendJson(res, 202, { jobId: active.id })
         return
       }
 
-      const ready = await isGeneratorReady()
+      const ready = backend === 'spar3d'
+        ? await isSparReady()
+        : await isGeneratorReady()
+
       if (ready) {
         const job = createJob('setup', 'Local 3D generator is already installed.')
+        job.backend = backend
         job.status = 'completed'
         job.progress = 100
         backgroundJobs.set(job.id, job)
@@ -74,17 +101,31 @@ createServer(async (req, res) => {
       }
 
       const job = createJob('setup', 'Preparing local 3D generator…')
+      job.backend = backend
       backgroundJobs.set(job.id, job)
-      void setupGenerator(job)
+
+      if (backend === 'spar3d') {
+        void setupSpar3D(job)
+      } else {
+        void setupGenerator(job)
+      }
+
       sendJson(res, 202, { jobId: job.id })
       return
     }
 
     if (req.method === 'POST' && url.pathname === '/generator/generate') {
-      if (!await isGeneratorReady()) {
+      const backend = generatorBackend(url.searchParams.get('backend'))
+      const ready = backend === 'spar3d'
+        ? await isSparReady()
+        : await isGeneratorReady()
+
+      if (!ready) {
         throw new HttpError(
           409,
-          'The local 3D generator is not installed yet. Use Install Local Generator in Equipment Lab first.',
+          backend === 'spar3d'
+            ? 'SPAR3D is not ready yet. Complete Better Local 3D setup in Equipment Lab first.'
+            : 'The legacy TripoSR generator is not installed yet.',
         )
       }
 
@@ -104,11 +145,17 @@ createServer(async (req, res) => {
 
       const job = createJob('generate', 'Queued local image-to-3D generation.')
       job.id = id
+      job.backend = backend
       job.quality = quality
       job.inputPath = input
       job.outputDir = outputDir
       backgroundJobs.set(job.id, job)
-      void generate3D(job)
+
+      if (backend === 'spar3d') {
+        void generateSpar3D(job)
+      } else {
+        void generate3D(job)
+      }
 
       sendJson(res, 202, { jobId: job.id })
       return
@@ -225,7 +272,7 @@ createServer(async (req, res) => {
   console.log('Forge Equipment Processor')
   console.log('http://127.0.0.1:' + port)
   console.log('Blender: ' + (blender || 'NOT FOUND'))
-  console.log('Local 3D: TripoSR adapter')
+  console.log('Local 3D: SPAR3D recommended · TripoSR legacy fallback')
   console.log('Keep this window open while using Forge Equipment Lab.')
   console.log('')
 })
