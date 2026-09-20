@@ -37,6 +37,7 @@ jobs:
         run: |
           node --check tools/equipment-processor/server.mjs
           python -m py_compile tools/equipment-processor/processor.py
+          python -m py_compile tools/equipment-processor/procedural_equipment.py
           python -m py_compile tools/equipment-processor/spar3d_geometry.py
 
       - name: Install fast QA runtime

@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.80.3`  
+> **Current Forge version:** `v1.81.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -303,70 +303,94 @@ The female body also has support for subtle spring-based secondary motion in the
 
 ## Equipment Lab
 
-Forge v1.80.3 makes long local SPAR3D jobs resilient to temporary browser/localhost disconnects. Equipment Lab now retries health/job/result reads, keeps a running job alive through transient fetch failures, reports reconnecting status instead of immediately failing, and only gives up after about a minute of continuous processor unavailability. The localhost server also explicitly allows browser private-network access.
+Forge v1.81.0 changes Equipment Lab from an image-to-3D-first experiment into a **body-aware automatic equipment factory**.
 
-Forge v1.80.2 removes SPAR3D's runtime dependency on the transparent-background GUI package. Forge now supplies a headless transparent_background shim backed by rembg, so Flet GUI API changes cannot break Equipment Lab startup. Runtime validation checks the headless Remover shim before marking SPAR3D ready.
+The default armor path no longer asks for a concept image or external 3D generation. Instead Blender receives the exact Skillbound mannequin and constructs the garment directly from the skinned body surface.
 
-Forge v1.80.1 fixes SPAR3D's Git dependency installation on Windows. OpenAI CLIP and AlphaCLIP are now installed separately after PyTorch/setuptools are available, and AlphaCLIP is installed with pip build isolation disabled because its setup.py imports pkg_resources from the active setuptools environment. Forge validates both clip and alpha_clip imports before marking SPAR3D ready.
-
-Forge v1.80.0 changes the recommended local image-to-3D backend from TripoSR to **SPAR3D (Stable Point-Aware 3D)**.
-
-The reason is practical: the first real Ranger-chest tests proved that TripoSR can complete the pipeline but often reconstructs a single-view armor reference as a coarse closed torso/bust volume. Blender can align and skin that result, but it cannot recover missing garment structure that the generator never created.
-
-The primary Equipment Lab pipeline is now:
+Current production proof:
 
 ```text
-reference PNG / JPG / WEBP
+Skillbound body
     ↓
-local SPAR3D point-aware reconstruction
+slot + style + variation
     ↓
-raw GLB
+Blender duplicates/cuts the real skinned body surface
     ↓
-headless Blender orientation / torso fitting
+outward clearance + garment thickness
     ↓
-Skillbound weight transfer
+cloth / leather / trim / tabard layers
     ↓
-processed GLB
+inherited Skillbound vertex groups + armature
     ↓
-Forge QA preview / Asset Library
+game-ready GLB
+    ↓
+Forge preview / Asset Library
 ```
 
-SPAR3D is used in Forge's **geometry-only portable mode**. Forge deliberately bypasses SPAR3D's native texture-baker / UV-unwrapper extensions on Windows so Equipment Lab does not require Visual Studio Build Tools or a local CUDA compiler. The neural reconstruction still runs on the NVIDIA GPU. Forge transfers generated point-cloud color to mesh vertices, then Blender handles the game-side cleanup/fitting pipeline.
+### Current automatic template
 
-The workflow remains local and does not use a paid generation API.
+The first production template is **Chest**.
 
-### One-time SPAR3D access
+Available style presets:
 
-Stability AI distributes the SPAR3D weights through a gated Hugging Face repository. For non-commercial use, Equipment Lab provides a one-time setup card:
+- Ranger
+- Traveler
+- Acolyte
 
-1. open the SPAR3D model page and accept the Stability AI license;
-2. create a Hugging Face **read** token;
-3. paste the token into Equipment Lab;
-4. Forge stores it only in the ignored local Equipment Processor work directory;
-5. click **Install Better Local 3D**.
+The body-aware chest generator currently creates:
 
-Do not put Hugging Face tokens into Git, screenshots, issues, or ChatGPT messages.
+- fitted cloth torso shell
+- real neckline opening
+- real arm openings
+- layered leather vest shell
+- fitted waist belt
+- hem trim
+- neckline trim
+- optional front tabard
+- material colors per style
+- deterministic variation presets
+- inherited body weights from the official Skillbound rig
+- body-mask metadata for Chest / Back / Shoulders
+- GLB export ready for Forge Library
 
-### Equipment Lab capabilities
+Because the garment is cut from the actual Skillbound body mesh, it starts at the correct scale, orientation, proportions and skeleton instead of reconstructing a detached object and trying to force-fit it afterward.
 
-- Female / Male Skillbound foundation selection
-- Chest / Head / Legs / Boots / Gloves / Waist / Back / Main Hand / Off Hand slots
-- reference-image upload
-- local SPAR3D setup and generation
-- Draft / Standard / High generation presets
-- raw generated GLB preview
-- chest-specific auto-orientation
-- robust Skillbound torso measurement
-- independent chest height / width / depth normalization
-- configurable fit and clearance
-- polygon budget
-- Skillbound weight transfer
-- processed preview
-- body-mask metadata
-- save processed GLB to Shared Asset Library
-- manual raw-GLB import fallback
+### Equipment Lab UI
 
-TripoSR remains in the local processor only as a **legacy fallback**, not the recommended equipment generator.
+The primary controls are now:
+
+- Skillbound body
+- Equipment slot
+- Style
+- Variation
+- **Generate Equipment**
+
+No reference image is required for the primary path.
+
+The current proof intentionally enables body-aware generation only for **Chest** until the generated chest passes visual QA. The same architecture is intended to expand to:
+
+- Head
+- Legs
+- Boots
+- Gloves
+- Waist
+- Back / Cape
+- Main Hand
+- Off Hand
+
+### Experimental image-to-3D
+
+SPAR3D and the existing manual raw-GLB import remain available below the automatic workflow as experimental/fallback paths.
+
+SPAR3D is no longer the recommended armor path after real Ranger tests showed that generic single-image reconstruction can produce closed torso/bust-like meshes that are unsuitable as wearable garments even when the downstream fitting code is correct.
+
+### Important source
+
+- `src/pages/EquipmentLab.tsx`
+- `src/lib/equipmentProcessorClient.ts`
+- `tools/equipment-processor/server.mjs`
+- `tools/equipment-processor/procedural_equipment.py`
+- `tools/equipment-processor/processor.py`
 
 ## Equipment Forge
 
