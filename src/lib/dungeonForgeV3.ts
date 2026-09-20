@@ -399,7 +399,7 @@ function addFloorAtmosphere(
   root.add(mesh)
 }
 
-type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean }
+type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean; nx: number; nz: number }
 
 function addPerimeterWalls(
   root: THREE.Group,
@@ -409,7 +409,7 @@ function addPerimeterWalls(
   mode: DungeonRenderMode,
 ) {
   const topDown = mode !== 'walk'
-  const wallHeight = topDown ? 1.42 : Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
+  const wallHeight = topDown ? 0.98 : Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
   const rowHeight = 0.46
   const rows = Math.max(2, Math.ceil(wallHeight / rowHeight))
   const samples: BoundaryBrick[] = []
@@ -423,11 +423,11 @@ function addPerimeterWalls(
       if (!dungeonContainsPointV3(value, cx, cz, 0)) continue
       const floorY = dungeonFloorHeightV3(value, cx, cz)
 
-      const edges: Array<{ open: boolean; x: number; z: number; yaw: number }> = [
-        { open: !dungeonContainsPointV3(value, cx, cz - WALL_SAMPLE, 0), x: cx, z, yaw: 0 },
-        { open: !dungeonContainsPointV3(value, cx, cz + WALL_SAMPLE, 0), x: cx, z: z + WALL_SAMPLE, yaw: 0 },
-        { open: !dungeonContainsPointV3(value, cx - WALL_SAMPLE, cz, 0), x, z: cz, yaw: Math.PI / 2 },
-        { open: !dungeonContainsPointV3(value, cx + WALL_SAMPLE, cz, 0), x: x + WALL_SAMPLE, z: cz, yaw: Math.PI / 2 },
+      const edges: Array<{ open: boolean; x: number; z: number; yaw: number; nx: number; nz: number }> = [
+        { open: !dungeonContainsPointV3(value, cx, cz - WALL_SAMPLE, 0), x: cx, z, yaw: 0, nx: 0, nz: -1 },
+        { open: !dungeonContainsPointV3(value, cx, cz + WALL_SAMPLE, 0), x: cx, z: z + WALL_SAMPLE, yaw: 0, nx: 0, nz: 1 },
+        { open: !dungeonContainsPointV3(value, cx - WALL_SAMPLE, cz, 0), x, z: cz, yaw: Math.PI / 2, nx: -1, nz: 0 },
+        { open: !dungeonContainsPointV3(value, cx + WALL_SAMPLE, cz, 0), x: x + WALL_SAMPLE, z: cz, yaw: Math.PI / 2, nx: 1, nz: 0 },
       ]
 
       for (const edge of edges) {
@@ -446,10 +446,12 @@ function addPerimeterWalls(
             y: floorY + row * rowHeight + actualHeight / 2 - (damaged ? 0.025 : 0),
             length: WALL_SAMPLE * (damaged ? 0.82 : cap ? 1.08 : 1.03),
             yaw: edge.yaw,
-            shade: (damaged ? 0.71 : 0.84) + (hash % 13) / 100,
+            shade: (damaged ? 0.74 : 0.88) + (hash % 9) / 100,
             cap,
             base,
             damaged,
+            nx: edge.nx,
+            nz: edge.nz,
           })
         }
       }
@@ -472,12 +474,13 @@ function addPerimeterWalls(
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
   samples.forEach((sample, index) => {
-    dummy.position.set(sample.x, sample.y, sample.z)
-    dummy.rotation.set(0, sample.yaw, 0)
-    const heightScale = rowHeight * (sample.cap ? 0.68 : sample.base ? 0.94 : sample.damaged ? 0.72 : 0.86)
+    const heightScale = rowHeight * (sample.cap ? 0.64 : sample.base ? 0.88 : sample.damaged ? 0.68 : 0.8)
     const depthScale = topDown
-      ? sample.cap ? 0.66 : sample.base ? 0.58 : 0.46
-      : sample.cap ? 0.7 : sample.base ? 0.62 : 0.5
+      ? sample.cap ? 0.42 : sample.base ? 0.38 : 0.3
+      : sample.cap ? 0.58 : sample.base ? 0.52 : 0.42
+    const outward = depthScale * 0.52
+    dummy.position.set(sample.x + sample.nx * outward, sample.y, sample.z + sample.nz * outward)
+    dummy.rotation.set(0, sample.yaw, 0)
     dummy.scale.set(sample.length, heightScale, depthScale)
     dummy.updateMatrix()
     mesh.setMatrixAt(index, dummy.matrix)
@@ -552,6 +555,7 @@ function addCorridorArchitecture(
 ) {
   const materials = createArtMaterials(atmosphere)
   const topDown = mode !== 'walk'
+  if (topDown) return
   for (const edge of value.corridors) {
     const path = dungeonCorridorPath(value, edge)
     const total = pathLength(path)
@@ -620,8 +624,10 @@ function addRoomArchitecture(
   const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
 
   for (const room of value.rooms) {
-    for (const support of roomStructuralSupports(room)) {
-      addWallButtress(root, support.x, room.floorLevel, support.z, support.yaw, materials, mode, support.damaged)
+    if (!topDown) {
+      for (const support of roomStructuralSupports(room)) {
+        addWallButtress(root, support.x, room.floorLevel, support.z, support.yaw, materials, mode, support.damaged)
+      }
     }
 
     // Doors are architectural objects, not holes in giant room boxes. Every
@@ -632,6 +638,7 @@ function addRoomArchitecture(
       if (!otherId) continue
       const other = roomMap.get(otherId)
       if (!other) continue
+      if (topDown) continue
       const connection = getRoomConnection(room, other, edge.width)
       const yaw = THREE.MathUtils.degToRad(connection.yaw)
       const doorway = new THREE.Group()
