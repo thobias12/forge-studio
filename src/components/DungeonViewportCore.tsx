@@ -59,8 +59,8 @@ export default function DungeonViewport(props: Props) {
     scene.background = new THREE.Color(initialAtmosphere.background)
     scene.fog = new THREE.FogExp2(initialAtmosphere.fog, props.value.settings.fogDensity * initialAtmosphere.fogMultiplier)
 
-    const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 300)
-    camera.position.set(26, 30, 32)
+    const camera = new THREE.PerspectiveCamera(46, 1, 0.05, 520)
+    camera.position.set(38, 46, 44)
     camera.rotation.order = 'YXZ'
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
@@ -84,7 +84,7 @@ export default function DungeonViewport(props: Props) {
     controls.target.set(4, 0, 0)
     controls.maxPolarAngle = Math.PI * 0.49
     controls.minDistance = 5
-    controls.maxDistance = 90
+    controls.maxDistance = 175
     controls.update()
 
     const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialAtmosphere.ambient)
@@ -93,18 +93,18 @@ export default function DungeonViewport(props: Props) {
     key.position.set(16, 24, 10)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
-    key.shadow.camera.left = -45
-    key.shadow.camera.right = 45
-    key.shadow.camera.top = 45
-    key.shadow.camera.bottom = -45
+    key.shadow.camera.left = -85
+    key.shadow.camera.right = 85
+    key.shadow.camera.top = 85
+    key.shadow.camera.bottom = -85
     key.shadow.camera.near = 1
-    key.shadow.camera.far = 90
+    key.shadow.camera.far = 150
     key.shadow.bias = -0.0005
     scene.add(key)
 
-    const grid = new THREE.GridHelper(100, 100, 0x385064, 0x1b2833)
+    const grid = new THREE.GridHelper(200, 200, 0x385064, 0x1b2833)
     scene.add(grid)
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }))
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }))
     ground.rotation.x = -Math.PI / 2
     ground.name = '__ground'
     scene.add(ground)
@@ -455,7 +455,7 @@ export default function DungeonViewport(props: Props) {
       camera.fov = 48
       camera.updateProjectionMatrix()
       camera.rotation.set(0, 0, 0)
-      camera.position.set(26, 30, 32)
+      camera.position.set(38, 46, 44)
       controls.target.set(4, 0, 0)
       controls.enabled = true
       controls.update()
@@ -515,7 +515,7 @@ export default function DungeonViewport(props: Props) {
       } else {
         if (state.topDown && !drag) {
           const center = dungeonCenter(state.value.rooms)
-          camera.position.lerp(new THREE.Vector3(center.x, 42, center.z + 0.01), 0.09)
+          camera.position.lerp(new THREE.Vector3(center.x, 68, center.z + 0.01), 0.09)
           controls.target.lerp(new THREE.Vector3(center.x, 0, center.z), 0.09)
         }
         controls.enabled = !drag
