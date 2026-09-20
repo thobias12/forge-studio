@@ -264,7 +264,11 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
         roomWallNodes.push(object)
       })
       for (const prop of dungeonProps(current)) { const group = addBuiltinProp(world, prop, atmosphere, flickerLights); if (prop.source === 'library') registerLibraryProp(prop, group, atmosphere) }
-      for (const item of current.markers) if (item.type !== 'enemy' && !(item.type === 'loot' && Boolean(item.data.requiresClear))) addMarker(world, item, doors)
+      for (const item of current.markers) {
+        if (['enemy', 'trigger', 'checkpoint'].includes(item.type)) continue
+        if (item.type === 'loot' && Boolean(item.data.requiresClear)) continue
+        addMarker(world, item, doors)
+      }
       buildEncounters(current)
       if (!playerInitialized || !canWalkAt(current, playerPosition.x, playerPosition.z, brokenPropIds, runtimeLockedDoorIds)) spawnPlayer(current)
     }
