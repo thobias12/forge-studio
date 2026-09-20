@@ -501,6 +501,17 @@ function inheritedRuntimeData(object: THREE.Object3D, key: string) {
   }
   return undefined
 }
+function runtimeWallSides(object: THREE.Object3D | null): Side[] {
+  let current = object
+  while (current) {
+    const many = current.userData.wallSides
+    if (Array.isArray(many) && many.length) return many as Side[]
+    const single = current.userData.wallSide as Side | undefined
+    if (single) return [single]
+    current = current.parent
+  }
+  return []
+}
 function roomSidesFacingCamera(room: DungeonRoom, cameraPosition: THREE.Vector3) {
   const dx = cameraPosition.x - room.x, dz = cameraPosition.z - room.z
   const angle = -THREE.MathUtils.degToRad(room.rotation), cos = Math.cos(angle), sin = Math.sin(angle)
