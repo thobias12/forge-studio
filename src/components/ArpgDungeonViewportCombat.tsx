@@ -82,14 +82,9 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
 
     const world = new THREE.Group(); scene.add(world)
     const avatar = createAvatar(); avatar.scale.setScalar(1.08); scene.add(avatar)
-    const readabilityTarget = new THREE.Object3D()
-    readabilityTarget.name = 'DungeonReadabilityTarget'
-    readabilityTarget.position.set(0, 0.8, 0)
-    avatar.add(readabilityTarget)
-    const readabilityLight = new THREE.SpotLight(initialAtmosphere.sky, 0.58, 8.6, Math.PI / 3.15, 0.9, 1.55)
+    const readabilityLight = new THREE.PointLight(initialAtmosphere.sky, 0.34, 5.6, 2.15)
     readabilityLight.name = 'DungeonReadabilityLight'
-    readabilityLight.position.set(0, 5.2, 1.8)
-    readabilityLight.target = readabilityTarget
+    readabilityLight.position.set(0, 2.7, 0)
     readabilityLight.castShadow = false
     avatar.add(readabilityLight)
     const loader = new GLTFLoader()
@@ -141,7 +136,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       key.intensity = lighting.keyIntensity
       readabilityLight.color.setHex(atmosphere.sky)
       readabilityLight.intensity = current.theme === 'crypt'
-        ? THREE.MathUtils.lerp(0.5, 0.78, THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1))
+        ? THREE.MathUtils.lerp(0.28, 0.42, THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1))
         : 0
       renderer.toneMappingExposure = lighting.exposure
       return atmosphere
