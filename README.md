@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.89.1`  
+> **Current Forge version:** `v1.89.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1277,6 +1277,18 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.89.2 — Dungeon live-test render stability
+
+- fixes a Play Project live-test failure where the HUD could remain visible while the Three.js dungeon canvas rendered nothing
+- removes the extra real PointLight that v1.89.1 added to every sconce for warm bounce; the same cozy bounce remains represented by the enlarged additive floor/wall glow instead of doubling shader light count
+- adds a hard budget of 10 V3 dynamic torch PointLights so generated dungeons cannot create an unbounded number of real-time lights
+- fixtures beyond the light budget still keep their animated flame, ember VFX and warm additive pool, so visual dressing remains intact without increasing shader complexity
+- replaces the player-follow SpotLight with a small local neutral PointLight to simplify the live shader while keeping character readability
+- Quick ARPG uses the same simplified player readability light
+- live Dungeon Runtime now isolates gameplay/update exceptions from rendering: a frame-update error is logged once, but the already-built dungeon continues to render instead of disappearing behind the HUD
+- keeps the v1.89.1 readable materials, larger soft torch pools and restored scene depth
+
 
 ## v1.89.1 — Cozy depth lighting pass
 

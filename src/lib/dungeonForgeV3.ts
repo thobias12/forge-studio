@@ -5,6 +5,8 @@ import type { DungeonAtmosphere } from './dungeonAtmosphere'
 
 export type DungeonRenderMode = 'editor' | 'arpg' | 'walk'
 export type DungeonV3FlickerLight = { light: THREE.PointLight; base: number; phase: number; speed: number }
+
+const MAX_V3_DYNAMIC_POINT_LIGHTS = 10
 export type DungeonPoint = { x: number; z: number }
 
 const FLOOR_BRICK_W = 1.22
@@ -1067,20 +1069,19 @@ function addWallSconce(
   cup.castShadow = true
   group.add(cup)
 
-  const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.7, 9.4, 2.0)
-  light.position.set(0, flameY + 0.16, 0.27)
-  light.userData.baseIntensity = light.intensity
-  group.add(light)
-  flickerLights.push({
-    light,
-    base: light.intensity,
-    phase: (seed % 628) / 100,
-    speed: 5.8 + (seed % 5) * 0.18,
-  })
-  const bounce = new THREE.PointLight(0xffc18a, 0.64, 13.5, 1.7)
-  bounce.position.set(0, 0.82, 1.15)
-  bounce.castShadow = false
-  group.add(bounce)
+  let light: THREE.PointLight | undefined
+  if (flickerLights.length < MAX_V3_DYNAMIC_POINT_LIGHTS) {
+    light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.72, 10.2, 1.92)
+    light.position.set(0, flameY + 0.16, 0.27)
+    light.userData.baseIntensity = light.intensity
+    group.add(light)
+    flickerLights.push({
+      light,
+      base: light.intensity,
+      phase: (seed % 628) / 100,
+      speed: 5.8 + (seed % 5) * 0.18,
+    })
+  }
   addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
   addWarmLightPool(group, 0, 0.105, 1.38, 6.6, 4.7, 0.15)
 }
@@ -1125,30 +1126,24 @@ function addRoomFixtures(
       fixture.add(cup)
 
       const seed = stringHash(room.id) + index * 17
-      const light = new THREE.PointLight(
-        atmosphere.torch,
-        atmosphere.torchIntensity * (room.type === 'boss' ? 0.9 : 0.74),
-        room.type === 'boss' ? 11.8 : 9.7,
-        1.98,
-      )
-      light.position.set(0, fixtureY + 0.16, 0.27)
-      light.userData.baseIntensity = light.intensity
-      fixture.add(light)
-      const bounce = new THREE.PointLight(
-        0xffc18a,
-        room.type === 'boss' ? 0.82 : 0.68,
-        room.type === 'boss' ? 15.5 : 13.8,
-        1.68,
-      )
-      bounce.position.set(0, 0.86, 1.22)
-      bounce.castShadow = false
-      fixture.add(bounce)
-      flickerLights.push({
-        light,
-        base: light.intensity,
-        phase: (seed % 628) / 100,
-        speed: 5.25 + index * 0.3,
-      })
+      let light: THREE.PointLight | undefined
+      if (flickerLights.length < MAX_V3_DYNAMIC_POINT_LIGHTS) {
+        light = new THREE.PointLight(
+          atmosphere.torch,
+          atmosphere.torchIntensity * (room.type === 'boss' ? 0.92 : 0.76),
+          room.type === 'boss' ? 12.4 : 10.4,
+          1.9,
+        )
+        light.position.set(0, fixtureY + 0.16, 0.27)
+        light.userData.baseIntensity = light.intensity
+        fixture.add(light)
+        flickerLights.push({
+          light,
+          base: light.intensity,
+          phase: (seed % 628) / 100,
+          speed: 5.25 + index * 0.3,
+        })
+      }
       addFlameVfx(fixture, 0, fixtureY + 0.02, 0.27, atmosphere, seed, light, room.type === 'boss' ? 1.08 : 1)
       addWarmLightPool(fixture, 0, 0.105, 1.42, room.type === 'boss' ? 8.2 : 6.9, room.type === 'boss' ? 6.2 : 5.1, room.type === 'boss' ? 0.18 : 0.155)
     })

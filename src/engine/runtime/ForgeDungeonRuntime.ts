@@ -159,6 +159,7 @@ export class ForgeDungeonRuntime {
   private cameraShake = 0
   private totalEnemyCount = 0
   private chainCastSequence = 0
+  private runtimeFrameErrorLogged = false
 
   constructor(host: HTMLElement, dungeon: ForgeProjectDungeonDefinition, gameplay: ForgeGameplayContent, initial: ForgeAdventurePlayerState, options: ForgeDungeonRuntimeOptions) {
     this.host = host
@@ -325,23 +326,30 @@ export class ForgeDungeonRuntime {
     if (this.disposed) return
     const delta = Math.min(0.05, Math.max(0, (now - this.lastFrame) / 1000))
     this.lastFrame = now
-    this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
-    const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
-    this.updateCooldowns(delta)
-    this.activateEncounters()
-    this.updatePlayer(simulationDelta)
-    this.updateEnemies(simulationDelta)
-    this.updateLoot(simulationDelta)
-    this.updateEffects(delta)
-    this.updateTextEffects(delta)
-    this.updateLibraryVfx(delta)
-    this.updateChainLightningEffects(delta)
-    this.updatePortal(delta)
-    this.updateCamera(delta)
-    if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
-    this.updateOcclusion(delta)
-    this.emitElapsed += delta
-    if (this.emitElapsed >= 0.1) { this.emitElapsed = 0; this.emitState() }
+    try {
+      this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
+      const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
+      this.updateCooldowns(delta)
+      this.activateEncounters()
+      this.updatePlayer(simulationDelta)
+      this.updateEnemies(simulationDelta)
+      this.updateLoot(simulationDelta)
+      this.updateEffects(delta)
+      this.updateTextEffects(delta)
+      this.updateLibraryVfx(delta)
+      this.updateChainLightningEffects(delta)
+      this.updatePortal(delta)
+      this.updateCamera(delta)
+      if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
+      this.updateOcclusion(delta)
+      this.emitElapsed += delta
+      if (this.emitElapsed >= 0.1) { this.emitElapsed = 0; this.emitState() }
+    } catch (reason) {
+      if (!this.runtimeFrameErrorLogged) {
+        this.runtimeFrameErrorLogged = true
+        console.error('[ForgeDungeonRuntime] frame update failed; keeping the rendered dungeon alive for diagnosis.', reason)
+      }
+    }
     this.renderer.render(this.scene, this.camera)
     this.frame = requestAnimationFrame(this.animate)
   }
