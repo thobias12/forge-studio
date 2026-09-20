@@ -779,9 +779,20 @@ export const dungeonGameplayMethods = {
       return
     }
     this.playerHealth = Math.max(0, this.playerHealth - enemy.damage)
+    this.playerVisual?.play('hit', false)
     this.spawnDamageNumber(this.player.position, enemy.damage, '#ef776b')
     void this.spawnBoundVfx(enemy.definition.attackVfxAssetId, this.player.position)
-    this.cameraShake = Math.max(this.cameraShake, 0.28)
+
+    const recoil = this.player.position
+      .clone()
+      .sub(enemy.group.position)
+      .setY(0)
+    if (recoil.lengthSq() > .001) {
+      this.movePlayer(recoil.normalize().multiplyScalar(.38))
+    }
+
+    this.hitStopRemaining = Math.max(this.hitStopRemaining, .024)
+    this.cameraShake = Math.max(this.cameraShake, .34)
     if (this.playerHealth <= 0) this.respawnPlayer()
   },
 
