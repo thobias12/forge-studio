@@ -218,7 +218,7 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   </div>
 }
 
-function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeSnapshot['target']> & { role?: string; elite?: boolean; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeSnapshot['target']> & { role?: string; elite?: boolean; eliteModifier?: string; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
   const poisePercent = target.maxPoise
     ? Math.max(0, Math.min(100, (target.poise ?? 0) / target.maxPoise * 100))
@@ -226,7 +226,7 @@ function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeS
   return <div className={`skillbound-target-bar ${target.boss ? 'boss' : ''}`} style={style}>
     <div>
       <strong>{target.name}</strong>
-      <span>{target.elite && !target.boss ? 'ELITE · ' : ''}{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
+      <span>{target.elite && !target.boss ? 'ELITE · ' : ''}{target.eliteModifier ? `${target.eliteModifier.toUpperCase()} · ` : ''}{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
     </div>
     <i><b style={{ width: `${percent}%` }}/></i>
     {target.maxPoise !== undefined && <i className="skillbound-poise-bar"><b style={{ width: `${poisePercent}%` }}/></i>}
