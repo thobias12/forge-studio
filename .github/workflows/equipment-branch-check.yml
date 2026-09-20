@@ -15,6 +15,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -30,5 +31,55 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Prepare Skillbound female mannequin
+        env:
+          FORGE_QA_FIXTURE_OUTPUT: artifacts/procedural/mannequin.glb
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender
+
+      - name: Generate Ranger variation 01 QA model
+        run: |
+          mkdir -p artifacts/procedural
+          blender --background \
+            --python tools/equipment-processor/procedural_equipment.py \
+            -- \
+            --mannequin artifacts/procedural/mannequin.glb \
+            --output artifacts/procedural/ranger-v1820-qa.glb \
+            --body female \
+            --slot chest \
+            --style ranger \
+            --seed 0 \
+            --include-body
+
       - name: Build Forge Studio
         run: npm run build
+
+      - name: Install Equipment QA runtime
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+
+      - name: Capture generated Ranger QA
+        env:
+          FORGE_QA_MODEL: artifacts/procedural/ranger-v1820-qa.glb
+          FORGE_QA_BODY: female
+          FORGE_QA_OUTPUT: artifacts/procedural-qa
+          FORGE_QA_SKIP_BUILD: '1'
+          FORGE_QA_HEADLESS: '1'
+        run: npm run qa:equipment
+
+      - name: Upload procedural Ranger QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ranger-v1820-procedural-qa
+          path: |
+            artifacts/procedural/ranger-v1820-qa.glb
+            artifacts/procedural/ranger-v1820-qa.glb.json
+            artifacts/procedural-qa
+          if-no-files-found: warn
+          retention-days: 7
