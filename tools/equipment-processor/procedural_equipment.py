@@ -612,31 +612,59 @@ def remove_non_armature_modifiers(obj):
 
 
 def ensure_armature(obj, rig):
+    world_matrix = obj.matrix_world.copy()
+
     remove_non_armature_modifiers(obj)
-    armature_modifiers = [mod for mod in obj.modifiers if mod.type == "ARMATURE"]
+    armature_modifiers = [
+        mod
+        for mod in obj.modifiers
+        if mod.type == "ARMATURE"
+    ]
     if not armature_modifiers:
-        mod = obj.modifiers.new("FORGE_Armature", "ARMATURE")
+        mod = obj.modifiers.new(
+            "FORGE_Armature",
+            "ARMATURE",
+        )
         mod.object = rig
     else:
         for mod in armature_modifiers:
             mod.object = rig
+
     obj.parent = rig
-    obj.matrix_parent_inverse = rig.matrix_world.inverted()
+    obj.matrix_parent_inverse = (
+        rig.matrix_world.inverted()
+    )
+    obj.matrix_world = world_matrix
 
 
-def delete_unwanted_vertices(obj, keep_vertex):
-    bpy.ops.object.select_all(action="DESELECT")
+def delete_unwanted_vertices(
+    obj,
+    keep_indices,
+):
+    bpy.ops.object.select_all(
+        action="DESELECT",
+    )
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.mode_set(
+        mode="OBJECT",
+    )
     for vertex in obj.data.vertices:
-        world = obj.matrix_world @ vertex.co
-        vertex.select = not keep_vertex(world)
+        vertex.select = (
+            vertex.index
+            not in keep_indices
+        )
 
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.delete(type="VERT")
-    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.mode_set(
+        mode="EDIT",
+    )
+    bpy.ops.mesh.delete(
+        type="VERT",
+    )
+    bpy.ops.object.mode_set(
+        mode="OBJECT",
+    )
     obj.select_set(False)
 
 
@@ -681,19 +709,61 @@ def outward_shell(obj, clearance, thickness, smooth_iterations=1):
         polygon.use_smooth = True
 
 
-def duplicate_surface(body, rig, name, mat, keep_vertex, clearance, thickness, smooth_iterations=1):
+def duplicate_surface(
+    body,
+    rig,
+    name,
+    mat,
+    keep_vertex,
+    clearance,
+    thickness,
+    smooth_iterations=1,
+):
+    # Decide the garment cut on the untouched source body before copying.
+    # The copied mesh has identical vertex indices, so this avoids any
+    # ambiguity from parent transforms, glTF import transforms or armature
+    # state on the duplicate.
+    source_world = body.matrix_world.copy()
+    keep_indices = {
+        vertex.index
+        for vertex in body.data.vertices
+        if keep_vertex(
+            source_world @ vertex.co
+        )
+    }
+
+    print(
+        "FORGE_SOURCE_CUT "
+        + name
+        + " matched="
+        + str(len(keep_indices))
+        + "/"
+        + str(len(body.data.vertices)),
+        flush=True,
+    )
+
+    if len(keep_indices) < 12:
+        return None
+
     obj = body.copy()
     obj.data = body.data.copy()
     obj.name = name
-    body.users_collection[0].objects.link(obj)
+    body.users_collection[0].objects.link(
+        obj,
+    )
+    obj.matrix_world = source_world
 
     obj.data.materials.clear()
     obj.data.materials.append(mat)
 
-    ensure_armature(obj, rig)
-    delete_unwanted_vertices(obj, keep_vertex)
+    delete_unwanted_vertices(
+        obj,
+        keep_indices,
+    )
 
-    vertex_count = len(obj.data.vertices)
+    vertex_count = len(
+        obj.data.vertices,
+    )
     print(
         "FORGE_LAYER "
         + name
@@ -720,7 +790,10 @@ def duplicate_surface(body, rig, name, mat, keep_vertex, clearance, thickness, s
         thickness,
         smooth_iterations=smooth_iterations,
     )
-    ensure_armature(obj, rig)
+    ensure_armature(
+        obj,
+        rig,
+    )
     return obj
 
 

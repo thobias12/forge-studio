@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.2`  
+> **Current Forge version:** `v1.81.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -302,6 +302,8 @@ The official foundation ZIP can be imported into Forge rather than committing th
 The female body also has support for subtle spring-based secondary motion in the runtime binding.
 
 ## Equipment Lab
+
+Forge v1.81.3 makes procedural garment cutting topology-driven instead of transform-driven. Each layer now evaluates its garment predicate on the untouched Skillbound body first, records the exact matching source vertex indices, then duplicates the body and keeps those same indices. This removes parent/armature/world-transform ambiguity from the cut stage. Armature re-parenting also explicitly preserves the object's world matrix. New FORGE_SOURCE_CUT diagnostics report the number of matched source vertices before any copied mesh is modified.
 
 Forge v1.81.2 fixes the remaining coordinate conversion bug in procedural Chest generation. Blender's glTF importer converts the Skillbound asset into Blender coordinates, so the generator now derives its imported frame from the actual skeleton: pelvis→head resolves vertical, right-shoulder→left-shoulder resolves width, and the remaining axis becomes depth. Vertical direction is normalized as well, so sign flips are safe. This removes all hard-coded Y-up assumptions from the garment predicates.
 

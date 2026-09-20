@@ -113,3 +113,7 @@ The generator now uses the official SkillboundHumanoidV1 convention directly: X 
 ## v1.81.2 imported skeleton frame
 
 The v1.81.1 live log showed that Blender had already converted the glTF coordinate system: the hard-coded Y span was only ~0.43 while the Z span was ~1.62. The procedural generator now derives the imported frame from the rig itself. Pelvis→head selects the vertical axis and direction, shoulder-to-shoulder selects width, and the remaining axis becomes depth. All garment vertical normalization uses the detected signed axis, so the generator no longer depends on the source glTF authoring axes after Blender import.
+
+## v1.81.3 source-index garment cuts
+
+Procedural layer predicates are now evaluated against the untouched Skillbound source body. Forge records the matching vertex indices, duplicates the body mesh, and deletes every copied vertex whose source index was not selected. This avoids any dependence on the duplicate's parenting or evaluated world transform before cutting. Rebinding to the armature preserves the existing world matrix explicitly. The processor console now prints `FORGE_SOURCE_CUT <layer> matched=N/TOTAL` before each layer is created.
