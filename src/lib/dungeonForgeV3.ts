@@ -347,7 +347,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   }
 }
 
-type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean }
+type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean }
 
 function addPerimeterWalls(
   root: THREE.Group,
@@ -385,14 +385,19 @@ function addPerimeterWalls(
           const actualHeight = Math.min(rowHeight * 0.9, wallHeight - row * rowHeight)
           if (actualHeight <= 0.04) continue
           const stagger = row % 2 ? WALL_SAMPLE * 0.08 : 0
+          const cap = row === rows - 1
+          const base = row === 0
+          const damaged = ((hash >>> (row % 16)) + row * 7) % 23 === 0
           samples.push({
             x: edge.x + (edge.yaw === 0 ? stagger : 0),
             z: edge.z + (edge.yaw === 0 ? 0 : stagger),
-            y: floorY + row * rowHeight + actualHeight / 2,
-            length: WALL_SAMPLE * 1.03,
+            y: floorY + row * rowHeight + actualHeight / 2 - (damaged ? 0.025 : 0),
+            length: WALL_SAMPLE * (damaged ? 0.82 : cap ? 1.08 : 1.03),
             yaw: edge.yaw,
-            shade: 0.84 + (hash % 13) / 100,
-            cap: row === rows - 1,
+            shade: (damaged ? 0.71 : 0.84) + (hash % 13) / 100,
+            cap,
+            base,
+            damaged,
           })
         }
       }
@@ -417,10 +422,14 @@ function addPerimeterWalls(
   samples.forEach((sample, index) => {
     dummy.position.set(sample.x, sample.y, sample.z)
     dummy.rotation.set(0, sample.yaw, 0)
-    dummy.scale.set(sample.length, rowHeight * (sample.cap ? 0.7 : 0.88), topDown ? (sample.cap ? 0.52 : 0.44) : (sample.cap ? 0.54 : 0.46))
+    const heightScale = rowHeight * (sample.cap ? 0.68 : sample.base ? 0.94 : sample.damaged ? 0.72 : 0.86)
+    const depthScale = topDown
+      ? sample.cap ? 0.66 : sample.base ? 0.58 : 0.46
+      : sample.cap ? 0.7 : sample.base ? 0.62 : 0.5
+    dummy.scale.set(sample.length, heightScale, depthScale)
     dummy.updateMatrix()
     mesh.setMatrixAt(index, dummy.matrix)
-    const color = white.clone().multiplyScalar(sample.shade + (sample.cap ? 0.08 : 0))
+    const color = white.clone().multiplyScalar(sample.shade + (sample.cap ? 0.1 : sample.base ? -0.03 : 0))
     mesh.setColorAt(index, color)
   })
   mesh.castShadow = true
