@@ -340,6 +340,7 @@ function awardXpImmediately(
       2.8,
     )
   }
+  runtime.saveGame?.(false)
 }
 
 function spawnXpGainFx(
