@@ -362,7 +362,10 @@ export default function DungeonViewport(props: Props) {
       for (const prop of dungeonProps(current)) {
         addDungeonProp(dungeonGroup, prop, assetMap.get(prop.assetRef), prop.id === state.selectedPropId && !immersive, immersive, loader, atmosphere, flickerLights)
       }
-      for (const item of current.markers) addMarker(dungeonGroup, item, item.id === state.selectedMarkerId && !immersive, immersive)
+      for (const item of current.markers) {
+        if (item.type === 'door') continue
+        addMarker(dungeonGroup, item, item.id === state.selectedMarkerId && !immersive, immersive)
+      }
       addAtmosphereParticles(dungeonGroup, current, atmosphere, immersive, atmospherePoints)
       refreshCutawayNodes()
     }
@@ -1401,11 +1404,10 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
 function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
   const inside = value.theme === 'crypt'
-    ? dungeonNavigationContainsV3(value, x, z)
+    ? dungeonNavigationContainsV3(value, x, z, radius)
     : value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) || pointInsideCorridor(value, x, z, radius)
   if (!inside) return false
   if (value.theme === 'crypt' && dungeonArtCollidesV3(value, x, z, radius)) return false
-  for (const item of value.markers) if (item.type === 'door' && Boolean(item.data.locked) && pointInsideDoor(item, x, z, radius)) return false
   for (const wall of value.walls ?? []) if (pointNearWall(wall, x, z, radius)) return false
   for (const prop of dungeonProps(value)) if (prop.collision && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
   return true
