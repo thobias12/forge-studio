@@ -1,6 +1,7 @@
 export type DungeonTheme = 'crypt' | 'castle' | 'cave' | 'cathedral' | 'mine' | 'sewer' | 'void'
 export type DungeonRoomType = 'entrance' | 'combat' | 'treasure' | 'elite' | 'shrine' | 'boss' | 'secret' | 'utility'
 export type DungeonScalePreset = 'standard' | 'grand' | 'massive'
+export const DEFAULT_DUNGEON_BRIGHTNESS = 1.45
 export type DungeonMarkerType = 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light'
 export type DungeonTriggerAction = 'start-encounter' | 'open-door' | 'close-door' | 'spawn-enemies' | 'grant-loot' | 'activate-shrine' | 'set-checkpoint' | 'exit-dungeon'
 
@@ -106,6 +107,7 @@ export type ForgeDungeonPackage = {
   settings: {
     wallThickness: number
     ambientLight: number
+    brightness?: number
     fogDensity: number
     snap: boolean
   }
@@ -187,7 +189,7 @@ export function createStarterDungeon(): ForgeDungeonPackage {
     markers: [checkpoint, combatSpawn, combatTrigger, treasureLoot, bossSpawn, bossReward, bossTrigger, bossDoor, exitPortal],
     logic: { encounters, completionPortalId: exitPortal.id },
     generation: { ...DEFAULT_DUNGEON_GENERATION },
-    settings: { wallThickness: 0.62, ambientLight: 0.12, fogDensity: 0.019, snap: true },
+    settings: { wallThickness: 0.62, ambientLight: 0.12, brightness: DEFAULT_DUNGEON_BRIGHTNESS, fogDensity: 0.019, snap: true },
   }
 }
 
@@ -254,6 +256,10 @@ export function dungeonBlob(value: ForgeDungeonPackage) {
     version: 2,
     walls: value.walls ?? [],
     generation: value.generation ?? { ...DEFAULT_DUNGEON_GENERATION },
+    settings: {
+      ...value.settings,
+      brightness: value.settings.brightness ?? DEFAULT_DUNGEON_BRIGHTNESS,
+    },
     logic: value.logic ?? { encounters: [] },
     updatedAt: new Date().toISOString(),
   }
@@ -543,7 +549,7 @@ export function generateDungeon(
     markers,
     logic: { encounters, completionPortalId },
     generation,
-    settings: { wallThickness: 0.62, ambientLight: 0.12, fogDensity: 0.019, snap: true },
+    settings: { wallThickness: 0.62, ambientLight: 0.12, brightness: DEFAULT_DUNGEON_BRIGHTNESS, fogDensity: 0.019, snap: true },
   }
 }
 
