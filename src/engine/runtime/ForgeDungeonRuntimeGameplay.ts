@@ -2,10 +2,10 @@
 import * as THREE from 'three'
 import { itemVisual } from '../itemPresentation'
 import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
-import { dungeonProps } from '../../lib/dungeonProps'
+import { dungeonPropBlocksMovement, dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
-import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
+import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
@@ -121,31 +121,15 @@ export const dungeonGameplayMethods = {
       const nextX = currentX + stepX
       const nextZ = currentZ + stepZ
 
-      if (this.canWalkAt(nextX, nextZ, PLAYER_RADIUS)) {
-        this.player.position.x = nextX
-        this.player.position.z = nextZ
-        continue
-      }
-
-      const xOpen = this.canWalkAt(nextX, currentZ, PLAYER_RADIUS)
-      const zOpen = this.canWalkAt(currentX, nextZ, PLAYER_RADIUS)
-      if (xOpen && zOpen) {
-        if (Math.abs(stepX) >= Math.abs(stepZ)) {
-          this.player.position.x = nextX
-          if (this.canWalkAt(this.player.position.x, nextZ, PLAYER_RADIUS)) {
-            this.player.position.z = nextZ
-          }
-        } else {
-          this.player.position.z = nextZ
-          if (this.canWalkAt(nextX, this.player.position.z, PLAYER_RADIUS)) {
-            this.player.position.x = nextX
-          }
-        }
-      } else if (xOpen) {
-        this.player.position.x = nextX
-      } else if (zOpen) {
-        this.player.position.z = nextZ
-      }
+      const resolved = resolveDungeonSlideV3(
+        currentX,
+        currentZ,
+        stepX,
+        stepZ,
+        (x, z) => this.canWalkAt(x, z, PLAYER_RADIUS),
+      )
+      this.player.position.x = resolved.x
+      this.player.position.z = resolved.z
     }
 
     this.player.position.y = this.floorHeightAt(
@@ -656,7 +640,7 @@ export const dungeonGameplayMethods = {
   canWalkAt(x: number, z: number, radius: number) {
     const cryptV3 = this.dungeon.theme === 'crypt'
     if (cryptV3) {
-      if (!dungeonNavigationContainsV3(this.runtimeDungeon, x, z)) return false
+      if (!dungeonNavigationContainsV3(this.runtimeDungeon, x, z, Math.min(0.34, radius * 0.62))) return false
       if (dungeonArtCollidesV3(this.runtimeDungeon, x, z, radius)) return false
     } else {
       const roomOk = this.dungeon.rooms.some((room) => pointInsideRoom(room, x, z, radius))
@@ -672,16 +656,12 @@ export const dungeonGameplayMethods = {
     }
 
     for (const prop of dungeonProps(this.runtimeDungeon)) {
-      if (!prop.collision) continue
+      if (!dungeonPropBlocksMovement(prop)) continue
       const propRadius = Math.max(0.28, prop.scale * (prop.assetRef === 'pillar' || prop.assetRef === 'statue' ? 0.72 : 0.52))
       if (Math.hypot(x - prop.x, z - prop.z) < radius + propRadius) return false
     }
     for (const wall of this.dungeon.walls ?? []) {
       if (distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2) <= radius + Math.max(0.08, wall.thickness / 2)) return false
-    }
-    for (const marker of this.dungeon.markers.filter((candidate) => candidate.type === 'door')) {
-      const locked = Boolean(marker.data.locked) || this.lockedDoorIds.has(marker.id)
-      if (locked && Math.hypot(x - marker.x, z - marker.z) < radius + 0.72) return false
     }
     return true
   },

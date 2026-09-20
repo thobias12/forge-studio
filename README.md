@@ -1270,6 +1270,23 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
+## v1.88.1 — Cozy dungeon lighting, door removal and smooth wall sliding
+
+- temporarily removes Door from Dungeon Forge authoring and hides legacy door markers in Editor, Quick ARPG and Play Project live testing while the gate/transition system is redesigned
+- legacy door markers no longer block player movement, and encounter gate UI clearly reports that the old door system is disabled
+- replaces centre-only / margin-shrunk wall collision with a circular 12-point player-footprint check against the unified V3 floor union
+- adds a shared angled slide resolver so Play Project live testing, Quick ARPG and Walk flow naturally along straight, curved and concave walls instead of sticking on corners
+- keeps the collision footprint close to the visible character while still preventing the character from standing inside wall space
+- limits default prop collision to substantial physical props; torches, rubble and floor-detail/spike props are decorative/non-blocking
+- rebalances Crypt lighting so global ambient/fill/key light is darker and more neutral while local warm fixtures provide the atmosphere
+- rebuilds V3 wall lights as dark iron sconces with wall plates, brackets and cups instead of simple primitive torch posts
+- adds animated two-layer flame VFX, additive flame glow, deterministic intensity flicker and rising ember particles to dungeon sconces
+- rotates corridor sconces inward toward the playable path and spaces them more deliberately
+- adds soft radial floor-light pools beneath sconces to create warm local pools and stronger light/dark rhythm inspired by the Evergrow reference
+- adds sparse candle clusters to entrance, reliquary and shrine room templates; candles have animated flame/ember VFX and never add collision
+- preserves the Dungeon Forge brightness control so global readability can still be adjusted without flattening the local torch contrast
+
+
 ## v1.87.4 — Neutral crypt palette + surface wall collision
 
 - replaces the brown/gold crypt wash with a neutral charcoal/grey-brown masonry palette; warmth now comes primarily from local torch light instead of the entire ambient/key/fill rig
