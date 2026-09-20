@@ -98,13 +98,18 @@ function playGoldPickup(
   sequence: number,
 ) {
   const pitch = 1 + ((sequence % 5) - 2) * .018
-  const bus = createImpactBus(context, when, .22, .125 * intensity)
+  const bus = createImpactBus(context, when, .22, .9)
 
+  const bodyGain = context.createGain()
+  bodyGain.gain.setValueAtTime(.0001, when)
+  bodyGain.gain.exponentialRampToValueAtTime(.11 * intensity, when + .003)
+  bodyGain.gain.exponentialRampToValueAtTime(.0001, when + .11)
+  bodyGain.connect(bus.input)
   const body = context.createOscillator()
   body.type = 'triangle'
   body.frequency.setValueAtTime(620 * pitch, when)
   body.frequency.exponentialRampToValueAtTime(405 * pitch, when + .095)
-  body.connect(bus.input)
+  body.connect(bodyGain)
   body.start(when)
   body.stop(when + .12)
 
@@ -166,7 +171,7 @@ function playXpPickup(
   sequence: number,
 ) {
   const pitch = 1 + ((sequence % 4) - 1.5) * .012
-  const bus = createImpactBus(context, when, .3, .09 * intensity)
+  const bus = createImpactBus(context, when, .3, .92)
 
   const lowGain = context.createGain()
   lowGain.gain.setValueAtTime(.0001, when)
