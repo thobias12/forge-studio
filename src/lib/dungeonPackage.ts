@@ -491,7 +491,7 @@ export function generateDungeon(
     markers.push(marker(
       branchType === 'treasure' ? 'loot' : branchType === 'shrine' ? 'checkpoint' : 'light',
       branch.x,
-      branchType === 'light' ? 1.7 : 0.3,
+      branchType === 'treasure' || branchType === 'shrine' ? 0.3 : 1.7,
       branch.z,
       branch.id,
       branchType === 'treasure' ? 'Reliquary Cache' : branchType === 'shrine' ? 'Shrine' : 'Ambient Light',
