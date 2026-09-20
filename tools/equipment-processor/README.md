@@ -117,3 +117,9 @@ The v1.81.1 live log showed that Blender had already converted the glTF coordina
 ## v1.81.3 source-index garment cuts
 
 Procedural layer predicates are now evaluated against the untouched Skillbound source body. Forge records the matching vertex indices, duplicates the body mesh, and deletes every copied vertex whose source index was not selected. This avoids any dependence on the duplicate's parenting or evaluated world transform before cutting. Rebinding to the armature preserves the existing world matrix explicitly. The processor console now prints `FORGE_SOURCE_CUT <layer> matched=N/TOTAL` before each layer is created.
+
+## v1.81.4 deterministic BMesh cuts
+
+Live diagnostics proved the garment predicates were correct (for example 2715 source vertices matched the base chest) while the copied layer still ended with zero vertices. The remaining fault was Blender Edit Mode selection state on duplicated glTF meshes.
+
+Forge now cuts procedural layers with `bmesh` directly: load the copied mesh datablock, delete every BMesh vertex whose original index is not in the source-body keep set, write the BMesh back, and update the mesh. No Edit Mode or selection flags are involved. `FORGE_LAYER` diagnostics now include both vertex and polygon counts.
