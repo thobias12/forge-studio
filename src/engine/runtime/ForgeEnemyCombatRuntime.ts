@@ -107,6 +107,30 @@ function ensureEnemyState(enemy: any) {
   enemy.attackTarget = new THREE.Vector3()
   enemy.attackTargetValid = false
 
+  if (enemy.elite && !enemy.boss) {
+    const roll = hashUnit(`${enemy.id}:elite-modifier`)
+    enemy.eliteModifier =
+      roll < .34 ? 'Bulwark' :
+        roll < .67 ? 'Relentless' :
+          'Swift'
+    if (enemy.eliteModifier === 'Bulwark') {
+      enemy.maxPoise *= 1.48
+      enemy.poise = enemy.maxPoise
+      enemy.poiseRecovery *= 1.18
+    } else if (enemy.eliteModifier === 'Relentless') {
+      if (Number.isFinite(enemy.attackCooldown)) {
+        enemy.attackCooldown *= .8
+      }
+      enemy.damage = Number.isFinite(enemy.damage)
+        ? enemy.damage * 1.08
+        : enemy.damage
+    } else if (enemy.eliteModifier === 'Swift') {
+      if (Number.isFinite(enemy.moveSpeed)) {
+        enemy.moveSpeed *= 1.2
+      }
+    }
+  }
+
   const material = enemy.telegraph?.material
   if (material?.color) material.color.set(combatColor(definition))
 
@@ -509,6 +533,7 @@ function roleTargetSnapshot(runtime: any, snapshot: any, mode: EnemyMode) {
       ...snapshot.target,
       role: enemy.combatRole,
       elite: Boolean(enemy.elite),
+      eliteModifier: enemy.eliteModifier,
       poise: Math.max(0, Math.round(enemy.poise)),
       maxPoise: Math.max(1, Math.round(enemy.maxPoise)),
     },
@@ -545,6 +570,51 @@ function selectOverworldDefinition(runtime: any, enemy: any) {
         roll < .84 ? 'brute' :
           'caster'
   return byRole.get(role) ?? roster[Math.floor(roll * roster.length)] ?? enemy.definition
+}
+
+function registerDungeonDeath(runtime: any, enemy: any) {
+  runtime.__forgeCombatDeaths ??= []
+  const away = enemy.group.position
+    .clone()
+    .sub(runtime.player.position)
+    .setY(0)
+  if (away.lengthSq() < .001) {
+    const angle = hashUnit(`${enemy.id}:death`) * Math.PI * 2
+    away.set(Math.cos(angle), 0, Math.sin(angle))
+  } else {
+    away.normalize()
+  }
+  const side = hashUnit(`${enemy.id}:death-side`) > .5 ? 1 : -1
+  runtime.__forgeCombatDeaths.push({
+    enemy,
+    age: 0,
+    duration: enemy.boss ? 1.05 : .92,
+    velocity: away.multiplyScalar(
+      enemy.boss ? .55 : enemy.elite ? 1.05 : 1.35,
+    ),
+    roll: side * (enemy.boss ? .42 : enemy.elite ? .82 : 1.05),
+  })
+}
+
+function updateDungeonDeaths(runtime: any, delta: number) {
+  const deaths = runtime.__forgeCombatDeaths ?? []
+  for (let index = deaths.length - 1; index >= 0; index -= 1) {
+    const death = deaths[index]
+    death.age += delta
+    const enemy = death.enemy
+    if (!enemy?.group?.parent || death.age >= death.duration) {
+      deaths.splice(index, 1)
+      continue
+    }
+    const drift = death.velocity.clone().multiplyScalar(delta)
+    enemy.group.position.add(drift)
+    death.velocity.multiplyScalar(Math.max(0, 1 - delta * 5.5))
+    enemy.group.rotation.z += death.roll * delta
+    if (death.age > death.duration * .68 && !enemy.boss) {
+      const shrink = 1 - delta * .18
+      enemy.group.scale.multiplyScalar(Math.max(.985, shrink))
+    }
+  }
 }
 
 export function installOverworldEnemyCombatRuntime(Runtime: any) {
@@ -765,6 +835,7 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
   const baseBeginEnemyAttack = proto.beginEnemyAttack
   const baseResolveEnemyAttack = proto.resolveEnemyAttack
   const baseDamageEnemy = proto.damageEnemy
+  const baseKillEnemy = proto.killEnemy
   const baseMakeSnapshot = proto.makeSnapshot
 
   proto.spawnEnemy = function (...args: any[]) {
@@ -783,6 +854,7 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     }
     const result = baseUpdateEnemies.call(this, delta)
     updateProjectiles(this, delta, 'dungeon')
+    updateDungeonDeaths(this, delta)
     return result
   }
 
@@ -831,6 +903,11 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       cameraShake,
       poise?.stagger ?? staggerSeconds,
     )
+  }
+
+  proto.killEnemy = function (enemy: any) {
+    registerDungeonDeath(this, enemy)
+    return baseKillEnemy.call(this, enemy)
   }
 
   proto.makeSnapshot = function (...args: any[]) {
