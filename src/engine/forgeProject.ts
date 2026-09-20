@@ -37,7 +37,7 @@ export type ForgePathStyle = 'direct' | 'winding' | 'meandering'
 export type ForgeDensity = 'low' | 'medium' | 'high' | 'horde'
 export type ForgeRegionSize = 'small' | 'medium' | 'large'
 export type ForgeRegionMood = 'auto' | 'normal' | 'dark' | 'deadwood' | 'bleak'
-export type ForgeRegionWorldGeneration = { size: ForgeRegionSize; mood?: ForgeRegionMood; elevation: number; cliffs: number; water: number; forestDensity: number; openSpace: number; exploration: number; loops: number; secretPaths: number; verticality: number; poiDensity: number; layerSeeds?: { terrain: number; routes: number; pois: number; dressing: number } }
+export type ForgeRegionWorldGeneration = { size: ForgeRegionSize; layout?: 'journey-v1'; mood?: ForgeRegionMood; elevation: number; cliffs: number; water: number; forestDensity: number; openSpace: number; exploration: number; loops: number; secretPaths: number; verticality: number; poiDensity: number; layerSeeds?: { terrain: number; routes: number; pois: number; dressing: number } }
 export type ForgeRegionDefinition = {
   format: 'forge-region'
   version: 1

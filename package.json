@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "qa:equipment": "node scripts/capture-equipment-qa.mjs"
+    "qa:equipment": "node scripts/capture-equipment-qa.mjs",
+    "qa:world": "node scripts/qa-world.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",

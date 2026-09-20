@@ -272,6 +272,11 @@ export default function WorldForgeViewport({
           environment,
           environmentElapsed,
         )
+        // Overview distance should not turn a larger region into an opaque fog sheet.
+        // Runtime atmosphere is unchanged; cap optical depth only in the editor.
+        if (scene.fog instanceof THREE.FogExp2) {
+          scene.fog.density = Math.min(environment.fogDensity, .48 / Math.max(1, camera.position.distanceTo(controls.target)))
+        }
         if (stateRef.current.weather) {
           updateWorldWeatherVisuals(
             stateRef.current.weather,

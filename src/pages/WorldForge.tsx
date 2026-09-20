@@ -411,6 +411,11 @@ export default function WorldForge() {
             {BIOMES.map((biome) => <option value={biome} key={biome}>{biome}</option>)}
           </select>
         </Field>
+        <Field label="Layout">
+          <select value={worldGen.layout ?? 'classic'} onChange={(event) => updateWorldGen({ layout: event.target.value === 'journey-v1' ? 'journey-v1' : undefined })}>
+            <option value="classic">Classic routes</option><option value="journey-v1">Exploration</option>
+          </select>
+        </Field>
         <Field label="Mood">
           <select value={worldGen.mood ?? 'auto'} onChange={(event) => updateWorldGen({ mood: event.target.value as ForgeRegionMood })}>
             {MOODS.map((mood) => <option value={mood.value} key={mood.value}>{mood.label}</option>)}
