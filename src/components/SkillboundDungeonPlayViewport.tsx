@@ -147,7 +147,7 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   return <div className={`skillbound-runtime-host skillbound-dungeon-runtime ${uiClasses}`} ref={hostRef} style={uiStyle}>
     {!profiles && <div className="skillbound-runtime-loading">Loading Encounter Forge + Boss Forge definitions…</div>}
     <div className="skillbound-runtime-hint">
-      <strong>HOLLOW VAULT · SKILLBOUND</strong>
+      <strong>{dungeon.name.toUpperCase()} · {characterBlueprint?.name?.toUpperCase() ?? 'SKILLBOUND HERO'}</strong>
       <span>WASD move · LMB primary · 1–5 skills · Q slot 1 · Space dodge · wheel zoom · E interact · Esc menu</span>
     </div>
 
