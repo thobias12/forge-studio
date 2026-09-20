@@ -115,27 +115,6 @@ export function buildConformedTunic(
 
   const meshes = [torso]
 
-  const necklineTrim =
-    createSkinnedRowBand(
-      source,
-      torso.geometry,
-      18,
-      17,
-      48,
-      trim,
-      'EFV3_NecklineTrim',
-      .3,
-      .0019,
-    )
-  meshes.push(necklineTrim)
-  meshes.push(
-    ...createTunicSeamDetails(
-      source,
-      torso.geometry,
-      trim,
-    ),
-  )
-
   if (recipe.sleeve !== 'none') {
     const left = createSleeveTemplate(
       source,
@@ -219,18 +198,10 @@ export function buildConformedTunic(
       )
     meshes.push(vest)
     meshes.push(
-      ...createVestDetailTrim(
+      ...createShoulderReinforcements(
         source,
-        vest.geometry,
-        trim,
-      ),
-    )
-    meshes.push(
-      ...createVestPanelDetails(
-        source,
-        vest.geometry,
+        torso.geometry,
         leather,
-        trim,
       ),
     )
   }
@@ -424,11 +395,43 @@ function createTorsoTemplate(
         u * Math.PI * 2
       const targetTop =
         tunicTopY(frame, angle)
-      const targetY =
+      const linearTargetY =
         THREE.MathUtils.lerp(
           bottomY,
           targetTop,
           v,
+        )
+      const collarT =
+        THREE.MathUtils.smoothstep(
+          v,
+          .7,
+          1,
+        )
+      const collarTargetY =
+        THREE.MathUtils.lerp(
+          bottomY,
+          frame.shoulderY,
+          v,
+        ) +
+        (targetTop -
+          frame.shoulderY) *
+          collarT
+      const frontAmount =
+        Math.max(
+          0,
+          Math.cos(angle),
+        )
+      const frontNecklineT =
+        THREE.MathUtils.smoothstep(
+          frontAmount,
+          .42,
+          .94,
+        )
+      const targetY =
+        THREE.MathUtils.lerp(
+          linearTargetY,
+          collarTargetY,
+          frontNecklineT,
         )
 
       const nearest =
@@ -449,22 +452,8 @@ function createTorsoTemplate(
       // visible in v1.76.0.
       position.y = targetY
 
-      const bodyNormal =
-        nearest.normal.clone()
-      if (
-        bodyNormal.lengthSq() <
-        1e-5
-      ) {
-        bodyNormal.set(
-          position.x,
-          0,
-          position.z,
-        )
-      }
-      bodyNormal.normalize()
-
       const radialNormal =
-        bodyNormal.clone()
+        nearest.normal.clone()
       radialNormal.y = 0
       if (
         radialNormal.lengthSq() <
@@ -477,36 +466,6 @@ function createTorsoTemplate(
         )
       }
       radialNormal.normalize()
-
-      // Use true surface-normal clearance only around the upper shoulder
-      // shell. This lifts cloth away from upward-facing shoulder polygons
-      // without puffing the waist/chest away from the body.
-      const shoulderTopT =
-        THREE.MathUtils.clamp(
-          (v - .78) / .22,
-          0,
-          1,
-        )
-      const sideAmount =
-        Math.abs(
-          Math.sin(angle),
-        )
-      const shoulderNormalBlend =
-        shoulderTopT *
-        THREE.MathUtils.smoothstep(
-          sideAmount,
-          .35,
-          1,
-        )
-      const fitNormal =
-        radialNormal
-          .clone()
-          .lerp(
-            bodyNormal,
-            shoulderNormalBlend *
-              .9,
-          )
-          .normalize()
 
       const waistFactor =
         1 -
@@ -554,14 +513,32 @@ function createTorsoTemplate(
             sideEase * .00055) +
         hemFlare
 
-      const shoulderClearance =
+      const lateralShoulderT =
+        THREE.MathUtils.clamp(
+          (v - .86) / .14,
+          0,
+          1,
+        )
+      const sideAmount =
+        Math.abs(
+          Math.sin(angle),
+        )
+      const lateralShoulder =
+        lateralShoulderT *
+        THREE.MathUtils.smoothstep(
+          sideAmount,
+          .68,
+          1,
+        )
+      const lateralClearance =
         frame.height *
-        .0035 *
-        shoulderNormalBlend
+        .0042 *
+        lateralShoulder
+
       position.addScaledVector(
-        fitNormal,
+        radialNormal,
         extra +
-          shoulderClearance,
+          lateralClearance,
       )
 
       ringPositions.push(position)
@@ -630,6 +607,26 @@ function createTorsoTemplate(
           segments +
         next
 
+      const frontOpening =
+        (
+          ring === rings - 1 &&
+          (
+            segment <= 1 ||
+            segment >= segments - 2
+          )
+        ) ||
+        (
+          ring === rings - 2 &&
+          (
+            segment === 0 ||
+            segment === segments - 1
+          )
+        )
+
+      if (frontOpening) {
+        continue
+      }
+
       indices.push(
         a,
         c,
@@ -663,6 +660,181 @@ function createTorsoTemplate(
     influences,
   )
   geometry.computeVertexNormals()
+
+  // The front-center neckline is both the circular grid seam and the
+  // apex of the V. Blend its upper normals toward a stable lower chest
+  // ring with a smooth vertical/angular falloff so the seam does not
+  // shade as an X while preserving the surrounding fitted torso light.
+  const torsoNormals =
+    geometry.getAttribute(
+      'normal',
+    ) as THREE.BufferAttribute
+  const normalStartRing =
+    rings - 6
+
+  for (
+    let ring = normalStartRing;
+    ring <= rings;
+    ring += 1
+  ) {
+    const ringT =
+      THREE.MathUtils.smoothstep(
+        ring,
+        normalStartRing,
+        rings,
+      )
+
+    for (
+      let offset = -6;
+      offset <= 6;
+      offset += 1
+    ) {
+      const segment =
+        (offset +
+          segments) %
+        segments
+      const sideT =
+        1 -
+        THREE.MathUtils.smoothstep(
+          Math.abs(offset),
+          0,
+          6,
+        )
+      const strength =
+        ringT *
+        sideT *
+        .82
+
+      if (strength <= 0) {
+        continue
+      }
+
+      const index =
+        ring * segments +
+        segment
+      const currentNormal =
+        new THREE.Vector3(
+          torsoNormals.getX(index),
+          torsoNormals.getY(index),
+          torsoNormals.getZ(index),
+        ).normalize()
+      const referenceIndex =
+        Math.max(
+          0,
+          normalStartRing - 1,
+        ) *
+          segments +
+        segment
+      const targetNormal =
+        new THREE.Vector3(
+          torsoNormals.getX(
+            referenceIndex,
+          ),
+          torsoNormals.getY(
+            referenceIndex,
+          ),
+          torsoNormals.getZ(
+            referenceIndex,
+          ),
+        ).normalize()
+      const blended =
+        currentNormal
+          .lerp(
+            targetNormal,
+            strength * .88,
+          )
+          .normalize()
+
+      torsoNormals.setXYZ(
+        index,
+        blended.x,
+        blended.y,
+        blended.z,
+      )
+    }
+  }
+  // The circular front seam still leaves three low-poly apex rings with
+  // visibly divergent normals once the old crossing trim is removed.
+  // Weld only that tiny core toward symmetric neighboring surface normals.
+  for (
+    let ring = rings - 3;
+    ring <= rings;
+    ring += 1
+  ) {
+    const verticalT =
+      THREE.MathUtils.smoothstep(
+        ring,
+        rings - 3,
+        rings,
+      )
+
+    for (
+      let offset = -1;
+      offset <= 1;
+      offset += 1
+    ) {
+      const segment =
+        (offset +
+          segments) %
+        segments
+      const index =
+        ring * segments +
+        segment
+      const neighborDistance = 3
+      const leftSegment =
+        (segment -
+          neighborDistance +
+          segments) %
+        segments
+      const rightSegment =
+        (segment +
+          neighborDistance) %
+        segments
+      const leftIndex =
+        ring * segments +
+        leftSegment
+      const rightIndex =
+        ring * segments +
+        rightSegment
+      const target =
+        new THREE.Vector3(
+          torsoNormals.getX(leftIndex) +
+            torsoNormals.getX(rightIndex),
+          torsoNormals.getY(leftIndex) +
+            torsoNormals.getY(rightIndex),
+          torsoNormals.getZ(leftIndex) +
+            torsoNormals.getZ(rightIndex),
+        ).normalize()
+      const current =
+        new THREE.Vector3(
+          torsoNormals.getX(index),
+          torsoNormals.getY(index),
+          torsoNormals.getZ(index),
+        ).normalize()
+      const sideT =
+        1 -
+        Math.abs(offset) * .2
+      const welded =
+        current
+          .lerp(
+            target,
+            verticalT *
+              sideT *
+              .78,
+          )
+          .normalize()
+
+      torsoNormals.setXYZ(
+        index,
+        welded.x,
+        welded.y,
+        welded.z,
+      )
+    }
+  }
+
+  torsoNormals.needsUpdate =
+    true
   geometry.computeBoundingSphere()
 
   return makeSkinnedTemplate(
@@ -708,7 +880,7 @@ function createSleeveTemplate(
   const startFraction =
     sleeve === 'long'
       ? -.012
-      : -.028
+      : -.02
   const sleeveStart =
     start.clone().addScaledVector(
       arm,
@@ -845,7 +1017,9 @@ function createSleeveTemplate(
 
       const shoulderEase =
         THREE.MathUtils.lerp(
-          1.2,
+          sleeve === 'short'
+            ? 1.16
+            : 1.2,
           .96,
           v,
         )
@@ -855,10 +1029,14 @@ function createSleeveTemplate(
           4,
         ) *
         armLength *
-        .012
+        (sleeve === 'short'
+          ? .008
+          : .012)
       const extra =
         armLength *
-        (.011 +
+        ((sleeve === 'short'
+          ? .0115
+          : .011) +
           recipe.looseness *
             .008) *
         shoulderEase +
@@ -881,9 +1059,10 @@ function createSleeveTemplate(
     }
 
     const smoothed =
-      smoothCircularRing3D(
+      smoothCircularRingAroundCenter(
         ringPositions,
-        ring === 0 ? 3 : 2,
+        center,
+        ring === 0 ? 2 : 1,
       )
 
     for (
@@ -1286,6 +1465,97 @@ function smoothCircularRing3D(
             .2,
           )
       })
+  }
+
+  return current
+}
+
+function smoothCircularRingAroundCenter(
+  input: THREE.Vector3[],
+  center: THREE.Vector3,
+  passes: number,
+) {
+  let current =
+    input.map((point) =>
+      point.clone(),
+    )
+
+  const radii =
+    input.map((point) =>
+      point.distanceTo(center),
+    )
+
+  for (
+    let pass = 0;
+    pass < passes;
+    pass += 1
+  ) {
+    const next =
+      current.map((point, index) => {
+        const previous =
+          current[
+            (index -
+              1 +
+              current.length) %
+              current.length
+          ]
+        const following =
+          current[
+            (index + 1) %
+              current.length
+          ]
+
+        const averaged =
+          previous
+            .clone()
+            .multiplyScalar(.2)
+            .addScaledVector(
+              point,
+              .6,
+            )
+            .addScaledVector(
+              following,
+              .2,
+            )
+
+        const direction =
+          averaged
+            .clone()
+            .sub(center)
+
+        if (
+          direction.lengthSq() <
+          1e-8
+        ) {
+          return point.clone()
+        }
+
+        const previousRadius =
+          radii[
+            (index -
+              1 +
+              radii.length) %
+              radii.length
+          ]
+        const followingRadius =
+          radii[
+            (index + 1) %
+              radii.length
+          ]
+        const targetRadius =
+          previousRadius * .2 +
+          radii[index] * .6 +
+          followingRadius * .2
+
+        return center
+          .clone()
+          .addScaledVector(
+            direction.normalize(),
+            targetRadius,
+          )
+      })
+
+    current = next
   }
 
   return current
@@ -2067,8 +2337,8 @@ function createVestOverlay(
     ) {
       // Leave a clean split down the front of the leather vest.
       const frontGap =
-        segment <= 7 ||
-        segment >= segments - 7
+        segment <= 10 ||
+        segment >= segments - 10
       if (frontGap) continue
 
       const next =
@@ -2200,7 +2470,7 @@ function createFrontTabard(
     const widthScale =
       THREE.MathUtils.lerp(
         1,
-        1.1,
+        .94,
         v,
       )
 
@@ -2211,16 +2481,28 @@ function createFrontTabard(
     ) {
       const u =
         column / columns
-      const centered =
-        u - .5
-      const edge =
-        Math.abs(centered) * 2
       const tailCenter =
         u < .5 ? .23 : .77
+      const lowerTaper =
+        THREE.MathUtils.smoothstep(
+          v,
+          .46,
+          1,
+        )
+      const shapedU =
+        THREE.MathUtils.lerp(
+          u,
+          tailCenter,
+          lowerTaper * .2,
+        )
+      const centered =
+        shapedU - .5
+      const edge =
+        Math.abs(centered) * 2
       const tailDistance =
         THREE.MathUtils.clamp(
           Math.abs(
-            u - tailCenter,
+            shapedU - tailCenter,
           ) / .23,
           0,
           1,
@@ -2234,7 +2516,7 @@ function createFrontTabard(
           ),
           2,
         ) *
-        .034 *
+        .052 *
         (1 - tailDistance)
       const topIndex =
         topIndices[column]
@@ -2301,7 +2583,7 @@ function createFrontTabard(
       // Open a narrow center slit through the lower third so the tabard
       // reads like a constructed garment instead of a single rectangle.
       if (
-        row >= 5 &&
+        row >= 4 &&
         column === 3
       ) {
         continue
@@ -2768,124 +3050,40 @@ function createCapeLayer(
   )
 }
 
-function createTunicSeamDetails(
+function createShoulderReinforcements(
   source: THREE.SkinnedMesh,
   torsoGeometry: THREE.BufferGeometry,
-  material: THREE.Material,
-) {
-  return [
-    createGridColumnStrip(
-      source,
-      torsoGeometry,
-      19,
-      48,
-      11,
-      12,
-      material,
-      'EFV3_TunicSideSeam_L',
-      'radial',
-      .0016,
-    ),
-    createGridColumnStrip(
-      source,
-      torsoGeometry,
-      19,
-      48,
-      35,
-      36,
-      material,
-      'EFV3_TunicSideSeam_R',
-      'radial',
-      .0016,
-    ),
-  ]
-}
-
-function createVestPanelDetails(
-  source: THREE.SkinnedMesh,
-  vestGeometry: THREE.BufferGeometry,
   leather: THREE.Material,
-  trim: THREE.Material,
 ) {
   return [
-    // Narrow, mirrored side reinforcements. Keep the center chest clean
-    // so the leather reads as garment construction rather than two
-    // blocky plates stuck onto the front.
+    // Thin leather caps follow the real shoulder crown rather than the
+    // lowest point of the arm opening. They are part of the chest piece,
+    // not separate shoulder equipment.
     createGridAreaPatch(
       source,
-      vestGeometry,
+      torsoGeometry,
       48,
-      2,
-      8,
-      7,
-      10,
+      17,
+      18,
+      5,
+      19,
       leather,
-      'EFV3_VestPanel_L',
+      'EFV3_ShoulderReinforcement_L',
       'radial',
-      .0052,
+      .0038,
     ),
     createGridAreaPatch(
       source,
-      vestGeometry,
+      torsoGeometry,
       48,
-      2,
-      8,
-      38,
-      41,
+      17,
+      18,
+      29,
+      43,
       leather,
-      'EFV3_VestPanel_R',
+      'EFV3_ShoulderReinforcement_R',
       'radial',
-      .0052,
-    ),
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      10,
-      48,
-      10,
-      11,
-      trim,
-      'EFV3_VestPanelSeam_L',
-      'radial',
-      .0059,
-    ),
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      10,
-      48,
-      37,
-      38,
-      trim,
-      'EFV3_VestPanelSeam_R',
-      'radial',
-      .0059,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      48,
-      2,
-      3,
-      7,
-      10,
-      trim,
-      'EFV3_VestPanelBase_L',
-      'radial',
-      .0059,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      48,
-      2,
-      3,
-      38,
-      41,
-      trim,
-      'EFV3_VestPanelBase_R',
-      'radial',
-      .0059,
+      .0038,
     ),
   ]
 }
@@ -3038,20 +3236,33 @@ function createTabardDetails(
       .0017,
       .24,
     ),
-    // Small fitted leather hanger instead of the old full-width top slab.
     createGridPatch(
       source,
       tabardGeometry,
       9,
       0,
+      1,
+      1,
       2,
-      3,
-      5,
       leather,
-      'EFV3_TabardTopReinforcement',
+      'EFV3_TabardHanger_L',
       'radial',
       .0028,
-      .42,
+      .7,
+    ),
+    createGridPatch(
+      source,
+      tabardGeometry,
+      9,
+      0,
+      1,
+      6,
+      7,
+      leather,
+      'EFV3_TabardHanger_R',
+      'radial',
+      .0028,
+      .7,
     ),
   ]
 }
@@ -3397,68 +3608,6 @@ function createGridAreaPatch(
   )
 }
 
-function createVestDetailTrim(
-  source: THREE.SkinnedMesh,
-  vestGeometry: THREE.BufferGeometry,
-  material: THREE.Material,
-) {
-  const rowCount = 10
-  const columnCount = 48
-
-  return [
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      rowCount,
-      columnCount,
-      5,
-      6,
-      material,
-      'EFV3_VestEdge_L',
-      'radial',
-      .0022,
-    ),
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      rowCount,
-      columnCount,
-      43,
-      42,
-      material,
-      'EFV3_VestEdge_R',
-      'radial',
-      .0022,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      columnCount,
-      0,
-      1,
-      5,
-      43,
-      material,
-      'EFV3_VestHem',
-      'radial',
-      .0022,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      columnCount,
-      9,
-      8,
-      5,
-      43,
-      material,
-      'EFV3_VestShoulderSeam',
-      'radial',
-      .0022,
-    ),
-  ]
-}
-
 function createBeltBuckle(
   source: THREE.SkinnedMesh,
   torsoGeometry: THREE.BufferGeometry,
@@ -3471,20 +3620,42 @@ function createBeltBuckle(
     )
   const corners = [
     4 * segments + 47,
-    2 * segments + 47,
+    3 * segments + 47,
     4 * segments + 1,
-    2 * segments + 1,
+    3 * segments + 1,
   ]
   const positions: number[] = []
   const influences: SkinInfluence[] = []
+  const buckleSource =
+    corners.map(
+      (index) =>
+        new THREE.Vector3(
+          position.getX(index),
+          position.getY(index),
+          position.getZ(index),
+        ),
+    )
+  const buckleCenter =
+    buckleSource.reduce(
+      (sum, point) =>
+        sum.add(point),
+      new THREE.Vector3(),
+    ).multiplyScalar(.25)
 
-  for (const index of corners) {
+  for (
+    let slot = 0;
+    slot < corners.length;
+    slot += 1
+  ) {
+    const index =
+      corners[slot]
     const point =
-      new THREE.Vector3(
-        position.getX(index),
-        position.getY(index),
-        position.getZ(index),
-      )
+      buckleSource[slot]
+        .clone()
+        .lerp(
+          buckleCenter,
+          .42,
+        )
     offsetDetailPoint(
       point,
       'radial',

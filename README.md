@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.77.11`  
+> **Current Forge version:** `v1.77.12`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -35,6 +35,16 @@ A good opening instruction is:
 10. After a major new Forge feature, update this README so a future conversation can recover the current state quickly.
 
 ---
+
+## v1.77.12 Ranger sleeve-root structural pass
+
+This pass targets the remaining v1.77.11 shoulder/armhole defects visible in the autonomous QA renders.
+
+- preserve the sampled arm radius while smoothing sleeve rings instead of shrinking the sleeve inward
+- overlap short-sleeve roots farther toward the torso
+- add a small amount of short-sleeve root clearance without changing the long-sleeve preset
+- widen/lift the neckline trim to cover the remaining collar micro-cracks
+- validate first with the fast 8-view PR QA, then keep the full 28-view QA as the final gate
 
 # Product direction
 

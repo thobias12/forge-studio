@@ -57,6 +57,28 @@ export function maskBodyUnderTunic(
 
   const center =
     new THREE.Vector3()
+  const skinnedA =
+    new THREE.Vector3()
+  const skinnedB =
+    new THREE.Vector3()
+  const skinnedC =
+    new THREE.Vector3()
+
+  const readSkinnedPosition = (
+    index: number,
+    target: THREE.Vector3,
+  ) => {
+    target.set(
+      position.getX(index),
+      position.getY(index),
+      position.getZ(index),
+    )
+    source.applyBoneTransform(
+      index,
+      target,
+    )
+    return target
+  }
 
   const sleeveRanges =
     sleeve === 'none'
@@ -79,6 +101,29 @@ export function maskBodyUnderTunic(
             Boolean(value),
         )
 
+  // The authored short sleeve is intentionally rooted from the clavicle
+  // for broad shoulder coverage. Add a second, tightly bounded mask based
+  // on the real upper-arm axis so body triangles cannot show through the
+  // inner shoulder transition from steep/top-down cameras.
+  const shoulderOcclusionRanges =
+    sleeve === 'short'
+      ? [
+          createShoulderOcclusionRange(
+            source,
+            'L',
+          ),
+          createShoulderOcclusionRange(
+            source,
+            'R',
+          ),
+        ].filter(
+          (
+            value,
+          ): value is ShoulderOcclusionRange =>
+            Boolean(value),
+        )
+      : []
+
   for (
     let triangle = 0;
     triangle < triangleCount;
@@ -91,31 +136,48 @@ export function maskBodyUnderTunic(
     const c =
       vertexIndex(triangle, 2)
 
-    center.set(
-      (
-        position.getX(a) +
-        position.getX(b) +
-        position.getX(c)
-      ) / 3,
-      (
-        position.getY(a) +
-        position.getY(b) +
-        position.getY(c)
-      ) / 3,
-      (
-        position.getZ(a) +
-        position.getZ(b) +
-        position.getZ(c)
-      ) / 3,
+    readSkinnedPosition(
+      a,
+      skinnedA,
     )
+    readSkinnedPosition(
+      b,
+      skinnedB,
+    )
+    readSkinnedPosition(
+      c,
+      skinnedC,
+    )
+
+    center
+      .copy(skinnedA)
+      .add(skinnedB)
+      .add(skinnedC)
+      .multiplyScalar(1 / 3)
 
     const angle =
       Math.atan2(
         center.x,
         center.z,
       )
+    const frontAmount =
+      Math.max(
+        0,
+        Math.cos(angle),
+      )
+    const frontOpeningT =
+      THREE.MathUtils.smoothstep(
+        frontAmount,
+        .78,
+        .98,
+      )
     const topInset =
-      frame.height * .024
+      frame.height *
+      THREE.MathUtils.lerp(
+        .024,
+        .058,
+        frontOpeningT,
+      )
     const bottomInset =
       frame.height * .018
     const torsoCovered =
@@ -138,10 +200,19 @@ export function maskBodyUnderTunic(
             range,
           ),
       )
+    const shoulderCovered =
+      shoulderOcclusionRanges.some(
+        (range) =>
+          pointInsideShoulderOcclusion(
+            center,
+            range,
+          ),
+      )
 
     if (
       !torsoCovered &&
-      !sleeveCovered
+      !sleeveCovered &&
+      !shoulderCovered
     ) {
       kept.push(a, b, c)
     }
@@ -159,6 +230,126 @@ export function maskBodyUnderTunic(
     }
     geometry.dispose()
   }
+}
+
+
+type ShoulderOcclusionRange = {
+  start: THREE.Vector3
+  direction: THREE.Vector3
+  length: number
+  startDistance: number
+  endDistance: number
+  radius: number
+  sideSign: number
+  maxOutwardX: number
+}
+
+function createShoulderOcclusionRange(
+  source: THREE.SkinnedMesh,
+  side: 'L' | 'R',
+): ShoulderOcclusionRange | undefined {
+  const upper =
+    findBone(
+      source,
+      `upperarm_${side}`,
+    )
+  const lower =
+    findBone(
+      source,
+      `lowerarm_${side}`,
+    ) ??
+    findBone(
+      source,
+      `forearm_${side}`,
+    )
+
+  if (!upper || !lower) {
+    return undefined
+  }
+
+  const start =
+    objectPositionInMesh(
+      source,
+      upper,
+    )
+  const end =
+    objectPositionInMesh(
+      source,
+      lower,
+    )
+  const vector =
+    end.clone().sub(start)
+  const length =
+    vector.length()
+
+  if (length < .05) {
+    return undefined
+  }
+
+  return {
+    start,
+    direction:
+      vector.clone().normalize(),
+    length,
+    startDistance:
+      length * -.18,
+    endDistance:
+      length * .46,
+    radius:
+      length * .235,
+    sideSign:
+      Math.sign(start.x) ||
+      (side === 'L' ? 1 : -1),
+    maxOutwardX:
+      Math.abs(start.x) +
+      length * .2,
+  }
+}
+
+function pointInsideShoulderOcclusion(
+  point: THREE.Vector3,
+  range: ShoulderOcclusionRange,
+) {
+  const signedX =
+    point.x * range.sideSign
+
+  if (
+    signedX <
+      Math.abs(range.start.x) * .88 ||
+    signedX >
+      range.maxOutwardX
+  ) {
+    return false
+  }
+
+  const offset =
+    point
+      .clone()
+      .sub(range.start)
+  const projected =
+    offset.dot(range.direction)
+
+  if (
+    projected <
+      range.startDistance ||
+    projected >
+      range.endDistance
+  ) {
+    return false
+  }
+
+  const closest =
+    range.start
+      .clone()
+      .addScaledVector(
+        range.direction,
+        projected,
+      )
+
+  return (
+    point.distanceTo(closest) <=
+    range.radius
+  )
 }
 
 
@@ -216,8 +407,14 @@ function createSleeveMaskRange(
     direction:
       vector.clone().normalize(),
     length,
+    // The generated short sleeve begins slightly inside the shoulder
+    // root. Mask the body over the same overlap so isolated upper-arm
+    // triangles cannot poke through the bridge from top-down views.
     startDistance:
-      length * .015,
+      length *
+      (sleeve === 'short'
+        ? -.035
+        : .015),
     endDistance:
       length *
       (sleeve === 'long'
