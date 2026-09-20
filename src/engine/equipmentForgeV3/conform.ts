@@ -686,11 +686,18 @@ function createTorsoTemplate(
             referenceIndex,
           ),
         ).normalize()
+      const coreApex =
+        ring >= rings - 2 &&
+        Math.abs(offset) <= 2
+      const blendStrength =
+        coreApex
+          ? 1
+          : strength * .94
       const blended =
         currentNormal
           .lerp(
             targetNormal,
-            strength * .94,
+            blendStrength,
           )
           .normalize()
 
@@ -2936,6 +2943,7 @@ function createTunicSeamDetails(
       'EFV3_TunicSideSeam_L',
       'radial',
       .0016,
+      .32,
     ),
     createGridColumnStrip(
       source,
@@ -2948,6 +2956,7 @@ function createTunicSeamDetails(
       'EFV3_TunicSideSeam_R',
       'radial',
       .0016,
+      .32,
     ),
   ]
 }
@@ -3064,6 +3073,7 @@ function createVestPanelDetails(
       'EFV3_VestPanelSeam_L',
       'radial',
       .0059,
+      .28,
     ),
     createGridColumnStrip(
       source,
@@ -3076,6 +3086,7 @@ function createVestPanelDetails(
       'EFV3_VestPanelSeam_R',
       'radial',
       .0059,
+      .28,
     ),
     createGridRowStrip(
       source,
@@ -3646,6 +3657,7 @@ function createVestDetailTrim(
       'EFV3_VestEdge_L',
       'radial',
       .0022,
+      .3,
     ),
     createGridColumnStrip(
       source,
@@ -3658,6 +3670,7 @@ function createVestDetailTrim(
       'EFV3_VestEdge_R',
       'radial',
       .0022,
+      .3,
     ),
     createGridRowStrip(
       source,
