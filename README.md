@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.88.4`  
+> **Current Forge version:** `v1.88.5`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1273,6 +1273,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.88.5 — Cozy depth lighting pass
+
+- keeps the brighter v1.88.4 crypt stone/material values so floors and walls remain readable
+- reduces broad neutral ambient/fill slightly to restore depth and keep rooms from looking uniformly grey
+- preserves a cool neutral indirect baseline so unlit geometry never collapses back into black
+- increases torch reach modestly and adds a second wide, low-intensity warm bounce light that illuminates nearby floor and wall surfaces without turning the whole dungeon orange
+- expands and softens the visible radial floor-light pools beneath sconces so torch influence reads over a larger area with gentler falloff
+- boss/special-room fixtures get a slightly broader bounce radius while ordinary sconces remain restrained
+- replaces the wide player-follow PointLight with a narrow, soft neutral SpotLight aimed at the character/floor, improving player readability without flattening the surrounding room
+- Quick ARPG uses the same localized player spotlight so Play Project live testing and editor combat preview stay visually aligned
+- animated flames, ember particles, dark iron sconces and black exterior void remain unchanged
+
 
 ## v1.88.4 — High-readability crypt lighting without losing atmosphere
 
