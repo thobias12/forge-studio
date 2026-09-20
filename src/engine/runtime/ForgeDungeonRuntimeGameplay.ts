@@ -13,7 +13,7 @@ import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, mark
 const PLAYER_RADIUS = 0.58
 const ENEMY_RADIUS = 0.58
 const DODGE_DURATION = 0.19
-const V3_WALL_CLEARANCE = 0.3
+const V3_WALL_CLEARANCE = 0.06
 
 function chainLightningTravelDuration(distance: number) {
   return THREE.MathUtils.clamp(0.045 + Math.max(0, distance) * 0.012, 0.055, 0.125)
