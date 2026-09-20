@@ -314,6 +314,7 @@ export default function DungeonViewport(props: Props) {
           immersive,
           atmosphere,
           flickerLights,
+          crypt,
         )
         if (crypt) addCryptRoomEnvironment(dungeonGroup, roomValue, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, immersive)
       }
@@ -766,14 +767,20 @@ function seededWallRandom(seedText: string) {
   }
 }
 
-function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[]) {
+function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[], crypt: boolean) {
   const group = new THREE.Group()
   group.position.set(room.x, room.floorLevel, room.z)
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
   parent.add(group)
 
   const floorColor = selected ? new THREE.Color(0x6f9fba) : corridorStart ? new THREE.Color(0x8f78b6) : tintRoomFloor(atmosphere.floor, room.type, atmosphere)
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: floorColor, roughness: 0.96, metalness: 0.01 })
+  const floorMaterial = new THREE.MeshStandardMaterial({
+    color: floorColor,
+    roughness: 0.96,
+    metalness: 0.01,
+    emissive: crypt ? new THREE.Color(atmosphere.floor).multiplyScalar(0.1) : new THREE.Color(0x000000),
+    emissiveIntensity: crypt ? 0.28 : 0,
+  })
   const floor = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.18, room.depth), floorMaterial)
   floor.position.y = 0.09
   floor.userData.roomId = room.id
@@ -787,7 +794,7 @@ function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, 
   }
   addFloorSeams(group, room, atmosphere)
   addCornerStonework(group, room, wallMaterial, darkMaterial)
-  addRoomMoodLighting(group, room, atmosphere, flickerLights)
+  if (!crypt) addRoomMoodLighting(group, room, atmosphere, flickerLights)
 
   if (immersive) {
     const ceiling = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.16, room.depth), darkMaterial)
