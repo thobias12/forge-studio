@@ -608,7 +608,7 @@ function createTorsoTemplate(
         next
 
       const frontOpening =
-        ring === rings - 1 &&
+        ring >= rings - 4 &&
         (
           segment === 0 ||
           segment === segments - 1
