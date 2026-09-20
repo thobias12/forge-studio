@@ -30,7 +30,7 @@ export type DungeonAtmosphere = {
 }
 
 const THEMES: Record<DungeonTheme, DungeonAtmosphere> = {
-  crypt: { background:0x040506,fog:0x0b0d0e,fogMultiplier:0.52,sky:0x62686a,ground:0x121415,ambient:0.7,key:0x9ca3a4,keyIntensity:0.34,exposure:1.12,bloomStrength:0.42,bloomRadius:0.46,bloomThreshold:0.72,floor:0x3b3a37,wall:0x4a4945,wallDark:0x222321,corridorFloor:0x353532,corridorWall:0x41413d,seam:0x1b1c1b,torch:0xff934d,torchIntensity:4.15,dust:0x77736c,mist:0x424644,boss:0x5b3438,shrine:0x5e6e67,treasure:0x766955 },
+  crypt: { background:0x040506,fog:0x0b0d0e,fogMultiplier:0.5,sky:0x737b7d,ground:0x191b1c,ambient:0.76,key:0xaeb5b6,keyIntensity:0.42,exposure:1.16,bloomStrength:0.4,bloomRadius:0.45,bloomThreshold:0.74,floor:0x54514c,wall:0x5f5c56,wallDark:0x2e302e,corridorFloor:0x4b4944,corridorWall:0x57544f,seam:0x252624,torch:0xff934d,torchIntensity:4.15,dust:0x77736c,mist:0x4a4e4c,boss:0x5b3438,shrine:0x5e6e67,treasure:0x766955 },
   castle: { background:0x0a0d10,fog:0x151b20,fogMultiplier:0.98,sky:0x7e909f,ground:0x141516,ambient:0.98,key:0xd0dbe2,keyIntensity:1.02,exposure:1.08,bloomStrength:0.43,bloomRadius:0.36,bloomThreshold:0.83,floor:0x4d504c,wall:0x606563,wallDark:0x353939,corridorFloor:0x414540,corridorWall:0x4d5350,seam:0x292d2b,torch:0xffaa60,torchIntensity:3.8,dust:0x8b8a83,mist:0x929b9b,boss:0xb64b50,shrine:0x7fb7d8,treasure:0xe9bf5c },
   cave: { background:0x060908,fog:0x0d1312,fogMultiplier:1.02,sky:0x66736e,ground:0x121512,ambient:0.98,key:0xa4aaa0,keyIntensity:0.78,exposure:1.03,bloomStrength:0.45,bloomRadius:0.48,bloomThreshold:0.8,floor:0x363b37,wall:0x454b46,wallDark:0x292d29,corridorFloor:0x303531,corridorWall:0x3d433e,seam:0x1e221f,torch:0xff9252,torchIntensity:3.5,dust:0x6f746c,mist:0x71837c,boss:0xad3b49,shrine:0x61c2b6,treasure:0xd8aa4f },
   cathedral: { background:0x080b12,fog:0x151d2c,fogMultiplier:0.86,sky:0x8499ba,ground:0x13141a,ambient:1.0,key:0xcbd9f2,keyIntensity:1.12,exposure:1.1,bloomStrength:0.62,bloomRadius:0.5,bloomThreshold:0.75,floor:0x464c54,wall:0x5e6672,wallDark:0x333943,corridorFloor:0x3c424a,corridorWall:0x4d5561,seam:0x272d34,torch:0xffc078,torchIntensity:3.4,dust:0x8f9294,mist:0x8e99aa,boss:0xb34f65,shrine:0x8ad4e4,treasure:0xedd07b },
@@ -70,11 +70,11 @@ export function dungeonLightingProfile(atmosphere: DungeonAtmosphere, settings: 
   return {
     brightness,
     ambientIntensity: crypt
-      ? atmosphere.ambient * (1.22 + settings.ambientLight * 0.5) * THREE.MathUtils.lerp(0.95, 1.65, normalized)
+      ? atmosphere.ambient * (1.34 + settings.ambientLight * 0.5) * THREE.MathUtils.lerp(0.98, 1.68, normalized)
       : atmosphere.ambient * (1.65 + settings.ambientLight * 0.6) * ambientScale,
-    fillIntensity: (crypt ? 0.36 : 0.48) * (crypt ? THREE.MathUtils.lerp(0.95, 1.7, normalized) : fillScale),
-    keyIntensity: atmosphere.keyIntensity * (crypt ? 1.0 : 1.35) * keyScale,
-    exposure: atmosphere.exposure * (crypt ? THREE.MathUtils.lerp(1.02, 1.28, normalized) : exposureScale),
+    fillIntensity: (crypt ? 0.44 : 0.48) * (crypt ? THREE.MathUtils.lerp(0.98, 1.68, normalized) : fillScale),
+    keyIntensity: atmosphere.keyIntensity * (crypt ? 1.08 : 1.35) * keyScale,
+    exposure: atmosphere.exposure * (crypt ? THREE.MathUtils.lerp(1.04, 1.3, normalized) : exposureScale),
     fogDensity: settings.fogDensity * atmosphere.fogMultiplier,
     bloomStrength: atmosphere.bloomStrength * THREE.MathUtils.lerp(0.94, 1.06, normalized),
   }
