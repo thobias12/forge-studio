@@ -223,30 +223,7 @@ export function buildConformedTunic(
     }
   }
 
-  if (recipe.layers.vest) {
-    const vest =
-      createVestOverlay(
-        source,
-        torso.geometry,
-        leather,
-      )
-    meshes.push(vest)
-    meshes.push(
-      ...createVestDetailTrim(
-        source,
-        vest.geometry,
-        trim,
-      ),
-    )
-    meshes.push(
-      ...createVestPanelDetails(
-        source,
-        vest.geometry,
-        leather,
-        trim,
-      ),
-    )
-  }
+  // QA isolate: vest block temporarily omitted to trace chest X.
 
   if (recipe.layers.belt) {
     meshes.push(
