@@ -57,6 +57,28 @@ export function maskBodyUnderTunic(
 
   const center =
     new THREE.Vector3()
+  const skinnedA =
+    new THREE.Vector3()
+  const skinnedB =
+    new THREE.Vector3()
+  const skinnedC =
+    new THREE.Vector3()
+
+  const readSkinnedPosition = (
+    index: number,
+    target: THREE.Vector3,
+  ) => {
+    target.set(
+      position.getX(index),
+      position.getY(index),
+      position.getZ(index),
+    )
+    source.applyBoneTransform(
+      index,
+      target,
+    )
+    return target
+  }
 
   const sleeveRanges =
     sleeve === 'none'
@@ -91,23 +113,24 @@ export function maskBodyUnderTunic(
     const c =
       vertexIndex(triangle, 2)
 
-    center.set(
-      (
-        position.getX(a) +
-        position.getX(b) +
-        position.getX(c)
-      ) / 3,
-      (
-        position.getY(a) +
-        position.getY(b) +
-        position.getY(c)
-      ) / 3,
-      (
-        position.getZ(a) +
-        position.getZ(b) +
-        position.getZ(c)
-      ) / 3,
+    readSkinnedPosition(
+      a,
+      skinnedA,
     )
+    readSkinnedPosition(
+      b,
+      skinnedB,
+    )
+    readSkinnedPosition(
+      c,
+      skinnedC,
+    )
+
+    center
+      .copy(skinnedA)
+      .add(skinnedB)
+      .add(skinnedC)
+      .multiplyScalar(1 / 3)
 
     const angle =
       Math.atan2(
@@ -222,7 +245,7 @@ function createSleeveMaskRange(
     startDistance:
       length *
       (sleeve === 'short'
-        ? -.18
+        ? -.035
         : .015),
     endDistance:
       length *
@@ -230,10 +253,7 @@ function createSleeveMaskRange(
         ? .83
         : .39),
     radius:
-      length *
-      (sleeve === 'short'
-        ? .26
-        : .2),
+      length * .2,
     sideSign:
       Math.sign(start.x) ||
       (side === 'L' ? 1 : -1),
