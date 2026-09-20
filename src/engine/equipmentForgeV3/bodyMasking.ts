@@ -170,6 +170,7 @@ type SleeveMaskRange = {
   endDistance: number
   radius: number
   sideSign: number
+  innerShoulderScale: number
 }
 
 function createSleeveMaskRange(
@@ -234,6 +235,10 @@ function createSleeveMaskRange(
     sideSign:
       Math.sign(start.x) ||
       (side === 'L' ? 1 : -1),
+    innerShoulderScale:
+      sleeve === 'short'
+        ? .7
+        : .9,
   }
 }
 
@@ -243,7 +248,8 @@ function pointInsideSleeveMask(
 ) {
   if (
     point.x * range.sideSign <
-    Math.abs(range.start.x) * .9
+    Math.abs(range.start.x) *
+      range.innerShoulderScale
   ) {
     return false
   }
