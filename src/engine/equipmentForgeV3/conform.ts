@@ -311,15 +311,6 @@ export function buildConformedTunic(
         accent,
       )
     meshes.push(cape)
-    meshes.push(
-      ...createCapeDetails(
-        source,
-        cape.geometry,
-        trim,
-        leather,
-        metal,
-      ),
-    )
   }
 
   return { meshes, frame }
