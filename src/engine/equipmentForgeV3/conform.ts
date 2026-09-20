@@ -444,22 +444,8 @@ function createTorsoTemplate(
       // visible in v1.76.0.
       position.y = targetY
 
-      const surfaceNormal =
-        nearest.normal.clone()
-      if (
-        surfaceNormal.lengthSq() <
-        1e-5
-      ) {
-        surfaceNormal.set(
-          position.x,
-          0,
-          position.z,
-        )
-      }
-      surfaceNormal.normalize()
-
       const radialNormal =
-        surfaceNormal.clone()
+        nearest.normal.clone()
       radialNormal.y = 0
       if (
         radialNormal.lengthSq() <
@@ -522,37 +508,6 @@ function createTorsoTemplate(
       position.addScaledVector(
         radialNormal,
         extra,
-      )
-
-      // Keep only the shoulder crown microscopically clear of the source
-      // body. A tiny true-surface-normal lift prevents isolated body
-      // triangles from breaking through in the top-down QA without
-      // puffing the chest or changing the fitted silhouette.
-      const shoulderTop =
-        THREE.MathUtils.smoothstep(
-          v,
-          .78,
-          1,
-        )
-      const shoulderSide =
-        Math.pow(
-          THREE.MathUtils.clamp(
-            1 -
-              Math.abs(
-                radialNormal.z,
-              ),
-            0,
-            1,
-          ),
-          1.55,
-        )
-      const shoulderLift =
-        .0024 *
-        shoulderTop *
-        shoulderSide
-      position.addScaledVector(
-        surfaceNormal,
-        shoulderLift,
       )
 
       ringPositions.push(position)
@@ -697,7 +652,7 @@ function createTorsoTemplate(
       const strength =
         ringT *
         sideT *
-        .82
+        .92
 
       if (strength <= 0) {
         continue
@@ -715,7 +670,7 @@ function createTorsoTemplate(
       const referenceIndex =
         Math.max(
           0,
-          normalStartRing - 1,
+          normalStartRing - 2,
         ) *
           segments +
         segment
@@ -735,7 +690,7 @@ function createTorsoTemplate(
         currentNormal
           .lerp(
             targetNormal,
-            strength * .88,
+            strength * .94,
           )
           .normalize()
 
@@ -2249,38 +2204,10 @@ function createVestOverlay(
       segment < segments;
       segment += 1
     ) {
-      // Shape the split as a real V opening instead of two parallel
-      // rails. The opening widens toward the upper chest so the leather
-      // edges cannot cross at the neckline.
-      const rowGap =
-        Math.max(
-          Math.round(
-            THREE.MathUtils.lerp(
-              7,
-              11,
-              row /
-                Math.max(
-                  1,
-                  localRows,
-                ),
-            ),
-          ),
-          Math.round(
-            THREE.MathUtils.lerp(
-              7,
-              11,
-              (row + 1) /
-                Math.max(
-                  1,
-                  localRows,
-                ),
-            ),
-          ),
-        )
+      // Leave a clean split down the front of the leather vest.
       const frontGap =
-        segment <= rowGap ||
-        segment >=
-          segments - rowGap
+        segment <= 7 ||
+        segment >= segments - 7
       if (frontGap) continue
 
       const next =
@@ -3706,59 +3633,27 @@ function createVestDetailTrim(
 ) {
   const rowCount = 10
   const columnCount = 48
-  const leftEdgePath =
-    Array.from(
-      { length: rowCount },
-      (_, row) => ({
-        row,
-        column:
-          8 +
-          Math.round(
-            (row /
-              Math.max(
-                1,
-                rowCount - 1,
-              )) *
-              4,
-          ),
-      }),
-    )
-  const rightEdgePath =
-    Array.from(
-      { length: rowCount },
-      (_, row) => ({
-        row,
-        column:
-          40 -
-          Math.round(
-            (row /
-              Math.max(
-                1,
-                rowCount - 1,
-              )) *
-              4,
-          ),
-      }),
-    )
 
   return [
-    // Follow the widening split so the front leather reads as two fitted
-    // vest edges instead of straight procedural rails meeting in an X.
-    createGridPathStrip(
+    createGridColumnStrip(
       source,
       vestGeometry,
+      rowCount,
       columnCount,
-      leftEdgePath,
+      8,
+      9,
       material,
       'EFV3_VestEdge_L',
       'radial',
       .0022,
     ),
-    createGridPathStrip(
+    createGridColumnStrip(
       source,
       vestGeometry,
+      rowCount,
       columnCount,
-      rightEdgePath,
+      40,
+      41,
       material,
       'EFV3_VestEdge_R',
       'radial',
@@ -3783,8 +3678,8 @@ function createVestDetailTrim(
       columnCount,
       9,
       8,
-      12,
-      36,
+      8,
+      40,
       material,
       'EFV3_VestShoulderSeam',
       'radial',
