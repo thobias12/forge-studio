@@ -603,8 +603,8 @@ export default function EquipmentLab() {
             <small>
               {connected
                 ? generatorReady
-                  ? 'Blender + Procedural + SPAR3D ready'
-                  : 'Blender + Procedural ready'
+                  ? 'Blender + Equipment Grammar + SPAR3D ready'
+                  : 'Blender + Equipment Grammar ready'
                 : 'localhost:47831'}
             </small>
           </span>
