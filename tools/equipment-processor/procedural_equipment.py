@@ -2851,9 +2851,16 @@ def build_surface_patch(
                 + 1
             )
             d = c - 1
+            # Curved body patches produce non-planar quads. Explicit
+            # triangles avoid Blender choosing a bow-tie diagonal that
+            # opens visible holes across the chest/back panels.
             faces.append((
                 a,
                 b,
+                c,
+            ))
+            faces.append((
+                a,
                 c,
                 d,
             ))
@@ -3132,8 +3139,8 @@ def create_ranger_authored_chest(
             lower + 0.095,
             lower + 0.135,
             lower + 0.172,
-            center_top - 0.065,
-            center_top - 0.032,
+            center_top - 0.045,
+            center_top - 0.006,
         ]
 
         panel_vertices, panel_faces = (
@@ -3185,8 +3192,8 @@ def create_ranger_authored_chest(
                     lower + 0.060,
                     lower + 0.105,
                     lower + 0.150,
-                    center_top - 0.065,
-                    center_top - 0.034,
+                    center_top - 0.050,
+                    center_top - 0.012,
                 ],
                 columns,
                 height * 0.0050,
