@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.85.1`  
+> **Current Forge version:** `v1.85.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,14 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.85.2 — Dungeon V3 gameplay cleanup
+
+- removes the persistent ground ring around the ARPG player that appeared as bright broken streaks while moving across the brick floor
+- moves the melee attack FX off the ground into a short raised forward slash so attacks no longer flash/light the floor
+- ignores legacy hidden `__crypt-collision-*` helper props from pre-V3 saves, removing invisible blockers around rooms
+- visible/user-authored props remain collision-authoritative; V3 structural movement continues to use the visible walkable dungeon surface
+
 
 ## v1.85.1 — Dungeon Forge V3 visual QA pass
 
