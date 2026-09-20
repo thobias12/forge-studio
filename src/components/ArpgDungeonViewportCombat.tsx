@@ -73,7 +73,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
 
     const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialLighting.ambientIntensity)
     scene.add(ambient)
-    const sceneFill = new THREE.AmbientLight(0xb99878, initialLighting.fillIntensity)
+    const sceneFill = new THREE.AmbientLight(initialAtmosphere.sky, initialLighting.fillIntensity)
     scene.add(sceneFill)
     const key = new THREE.DirectionalLight(initialAtmosphere.key, initialLighting.keyIntensity)
     key.position.set(12, 22, 9); key.castShadow = true; key.shadow.mapSize.set(1024, 1024)
@@ -125,6 +125,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
       ambient.intensity = lighting.ambientIntensity
+      sceneFill.color.setHex(atmosphere.sky)
       sceneFill.intensity = lighting.fillIntensity
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
