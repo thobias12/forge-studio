@@ -806,6 +806,56 @@ function samplePathAtDistance(path: DungeonPoint[], distance: number) {
   return { x: b.x, z: b.z, yaw: Math.atan2(b.x - a.x, b.z - a.z) }
 }
 
+let warmPoolTexture: THREE.CanvasTexture | undefined
+
+function getWarmPoolTexture() {
+  if (warmPoolTexture || typeof document === 'undefined') return warmPoolTexture
+  const canvas = document.createElement('canvas')
+  canvas.width = 96
+  canvas.height = 96
+  const context = canvas.getContext('2d')
+  if (!context) return undefined
+  const gradient = context.createRadialGradient(48, 48, 2, 48, 48, 48)
+  gradient.addColorStop(0, 'rgba(255,220,165,0.72)')
+  gradient.addColorStop(0.32, 'rgba(255,170,92,0.34)')
+  gradient.addColorStop(0.72, 'rgba(255,130,64,0.09)')
+  gradient.addColorStop(1, 'rgba(255,110,45,0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 96, 96)
+  warmPoolTexture = new THREE.CanvasTexture(canvas)
+  warmPoolTexture.colorSpace = THREE.SRGBColorSpace
+  warmPoolTexture.needsUpdate = true
+  return warmPoolTexture
+}
+
+function addWarmLightPool(
+  parent: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  depth: number,
+  opacity: number,
+) {
+  const texture = getWarmPoolTexture()
+  if (!texture) return
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: 0xffa666,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  })
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), material)
+  pool.rotation.x = -Math.PI / 2
+  pool.position.set(x, y, z)
+  pool.renderOrder = 4
+  parent.add(pool)
+}
+
 function addFlameVfx(
   parent: THREE.Group,
   x: number,
@@ -927,7 +977,8 @@ function addCorridorFixtures(
       const x = sample.x + px * offset
       const z = sample.z + pz * offset
       const y = dungeonFloorHeightV3(value, sample.x, sample.z)
-      addWallSconce(root, x, y, z, sample.yaw, atmosphere, materials, flickerLights, mode, stringHash(edge.id) + index * 31)
+      const fixtureYaw = sample.yaw + side * Math.PI / 2
+      addWallSconce(root, x, y, z, fixtureYaw, atmosphere, materials, flickerLights, mode, stringHash(edge.id) + index * 31)
     }
   }
 }
@@ -976,6 +1027,7 @@ function addWallSconce(
     speed: 5.8 + (seed % 5) * 0.18,
   })
   addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
+  addWarmLightPool(group, 0, 0.105, 1.12, 4.4, 3.2, 0.12)
 }
 
 function addRoomFixtures(
@@ -1034,6 +1086,7 @@ function addRoomFixtures(
         speed: 5.25 + index * 0.3,
       })
       addFlameVfx(fixture, 0, fixtureY + 0.02, 0.27, atmosphere, seed, light, room.type === 'boss' ? 1.08 : 1)
+      addWarmLightPool(fixture, 0, 0.105, 1.18, room.type === 'boss' ? 5.8 : 4.8, room.type === 'boss' ? 4.4 : 3.6, room.type === 'boss' ? 0.14 : 0.115)
     })
   }
 }
