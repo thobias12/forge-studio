@@ -25,7 +25,7 @@ export function addCryptRoomSurfacePass(
   const mats = createCryptMaterialSet(atmosphere)
   const random = rng(hash(`crypt-surface-${room.id}`))
   addFloor(group, room, mats, random)
-  addWalls(group, room, openings, Math.max(.16, wallThickness), mats, random)
+  addWalls(group, room, openings, Math.max(.16, wallThickness), mats, random, immersive)
   addPillars(group, room, mats)
   if (room.type === 'boss') addBossFloor(group, room, mats, random)
 
@@ -116,11 +116,12 @@ function addFloor(group: THREE.Group, room: DungeonRoom, mats: Mats, random: () 
   }
 }
 
-function addWalls(group:THREE.Group,room:DungeonRoom,openings:CryptOpening[],thickness:number,mats:Mats,random:()=>number){
+function addWalls(group:THREE.Group,room:DungeonRoom,openings:CryptOpening[],thickness:number,mats:Mats,random:()=>number,immersive:boolean){
+  const displayHeight=immersive?room.height:Math.min(room.height,3.05)
   for(const side of ['north','south','west','east'] as Side[]){
     const total=side==='north'||side==='south'?room.width:room.depth
     const sideOpenings=openings.filter(o=>o.side===side)
-    const rows=Math.max(6,Math.floor(room.height/.62)), rowH=room.height/rows
+    const rows=Math.max(4,Math.floor(displayHeight/.62)), rowH=displayHeight/rows
     const blocks:Array<{a:number;y:number;w:number;h:number;s:number}>=[]
     for(let row=0;row<rows;row++){
       let a=-total/2-(row%2?.65:.05)
