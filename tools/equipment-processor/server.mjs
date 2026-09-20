@@ -13,6 +13,8 @@ const jobsDir = join(work, 'jobs')
 const generatorsDir = join(work, 'generators')
 const generatorRepo = join(generatorsDir, 'triposr')
 const generatorVenv = join(generatorRepo, '.forge-venv')
+const bootstrapVenv = join(generatorsDir, '.forge-uv-bootstrap')
+const managedPythonDir = join(generatorsDir, '.forge-python')
 const processor = join(here, 'processor.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
 const backgroundJobs = new Map()
@@ -256,14 +258,7 @@ async function setupGenerator(job) {
   try {
     job.status = 'running'
     job.progress = 4
-    job.message = 'Checking Python 3.11…'
-
-    const python = await findPythonLauncher()
-    if (!python) {
-      throw new Error(
-        'Python 3.11 was not found. Install Python 3.11 from python.org with the Python launcher enabled, then retry.',
-      )
-    }
+    job.message = 'Preparing compatible Python runtime…'
 
     if (!await exists(join(generatorRepo, 'run.py'))) {
       job.progress = 10
@@ -282,17 +277,7 @@ async function setupGenerator(job) {
 
     const venvPython = generatorPythonPath()
     if (!await exists(venvPython)) {
-      job.progress = 22
-      job.message = 'Creating isolated Python environment…'
-      await runCommand(
-        python.command,
-        [
-          ...python.prefix,
-          '-m', 'venv',
-          generatorVenv,
-        ],
-        { label: 'Python venv' },
-      )
+      await ensureGeneratorPython(job)
     }
 
     job.progress = 32
@@ -443,7 +428,7 @@ async function generatorHealth() {
   const activeSetup = [...backgroundJobs.values()].find(
     (job) => job.kind === 'setup' && (job.status === 'queued' || job.status === 'running'),
   )
-  const python = await findPythonLauncher()
+  const python = await findAnyPythonLauncher()
   const installed = await exists(join(generatorRepo, 'run.py'))
   const ready = await isGeneratorReady()
 
@@ -458,9 +443,11 @@ async function generatorHealth() {
       ? 'Free local image-to-3D is ready.'
       : activeSetup
         ? activeSetup.message
-        : installed
-          ? 'Generator files exist but the Python environment is incomplete.'
-          : 'Install once to enable free local image-to-3D.',
+        : python
+          ? 'Forge will prepare its own compatible Python 3.11 runtime automatically.'
+          : installed
+            ? 'Generator files exist but no Python runtime is available to bootstrap them.'
+            : 'Install once to enable free local image-to-3D.',
   }
 }
 
@@ -475,19 +462,161 @@ function generatorPythonPath() {
     : join(generatorVenv, 'bin', 'python')
 }
 
-async function findPythonLauncher() {
+async function ensureGeneratorPython(job) {
+  const compatible = await findCompatiblePythonLauncher()
+  if (compatible) {
+    job.progress = 18
+    job.message = 'Creating isolated Python 3.11 environment…'
+    await runCommand(
+      compatible.command,
+      [
+        ...compatible.prefix,
+        '-m', 'venv',
+        generatorVenv,
+      ],
+      { label: 'Python venv' },
+    )
+    return
+  }
+
+  const bootstrap = await findAnyPythonLauncher()
+  if (!bootstrap) {
+    throw new Error(
+      'No Python runtime was found. Install Python from python.org once, then Forge can manage the compatible 3D-generator runtime itself.',
+    )
+  }
+
+  job.progress = 12
+  job.message = 'Python ' + bootstrap.version + ' detected · preparing private Python 3.11…'
+
+  const bootstrapPython = bootstrapPythonPath()
+  if (!await exists(bootstrapPython)) {
+    await runCommand(
+      bootstrap.command,
+      [
+        ...bootstrap.prefix,
+        '-m', 'venv',
+        bootstrapVenv,
+      ],
+      { label: 'Forge Python bootstrap' },
+    )
+  }
+
+  job.progress = 17
+  job.message = 'Installing private Python runtime manager…'
+  await runCommand(
+    bootstrapPython,
+    [
+      '-m', 'pip', 'install',
+      '--upgrade',
+      'pip',
+      'uv',
+    ],
+    { label: 'Forge uv bootstrap' },
+  )
+
+  const uv = uvExecutablePath()
+  if (!await exists(uv)) {
+    throw new Error(
+      'Forge installed the Python runtime manager but could not locate uv.',
+    )
+  }
+
+  job.progress = 23
+  job.message = 'Downloading Forge-managed Python 3.11…'
+  await mkdir(managedPythonDir, { recursive: true })
+  await runCommand(
+    uv,
+    [
+      'venv',
+      '--python', '3.11',
+      '--managed-python',
+      generatorVenv,
+    ],
+    {
+      label: 'Forge managed Python 3.11',
+      env: {
+        UV_PYTHON_INSTALL_DIR: managedPythonDir,
+      },
+    },
+  )
+
+  if (!await exists(generatorPythonPath())) {
+    throw new Error(
+      'Forge downloaded Python 3.11 but the generator environment was not created correctly.',
+    )
+  }
+}
+
+function bootstrapPythonPath() {
+  return process.platform === 'win32'
+    ? join(bootstrapVenv, 'Scripts', 'python.exe')
+    : join(bootstrapVenv, 'bin', 'python')
+}
+
+function uvExecutablePath() {
+  return process.platform === 'win32'
+    ? join(bootstrapVenv, 'Scripts', 'uv.exe')
+    : join(bootstrapVenv, 'bin', 'uv')
+}
+
+async function findCompatiblePythonLauncher() {
   const candidates = process.platform === 'win32'
     ? [
         { command: 'py', prefix: ['-3.11'] },
         { command: 'py', prefix: ['-3.10'] },
+        { command: 'py', prefix: ['-3.9'] },
+        { command: 'py', prefix: ['-3.8'] },
         { command: 'python', prefix: [] },
       ]
     : [
         { command: 'python3.11', prefix: [] },
         { command: 'python3.10', prefix: [] },
+        { command: 'python3.9', prefix: [] },
+        { command: 'python3.8', prefix: [] },
         { command: 'python3', prefix: [] },
       ]
 
+  return await findPythonFromCandidates(
+    candidates,
+    (major, minor) =>
+      major === 3 &&
+      minor >= 8 &&
+      minor <= 11,
+  )
+}
+
+async function findAnyPythonLauncher() {
+  const candidates = process.platform === 'win32'
+    ? [
+        { command: 'py', prefix: ['-3.14'] },
+        { command: 'py', prefix: ['-3.13'] },
+        { command: 'py', prefix: ['-3.12'] },
+        { command: 'py', prefix: ['-3.11'] },
+        { command: 'py', prefix: ['-3.10'] },
+        { command: 'python', prefix: [] },
+      ]
+    : [
+        { command: 'python3.14', prefix: [] },
+        { command: 'python3.13', prefix: [] },
+        { command: 'python3.12', prefix: [] },
+        { command: 'python3.11', prefix: [] },
+        { command: 'python3.10', prefix: [] },
+        { command: 'python3', prefix: [] },
+      ]
+
+  return await findPythonFromCandidates(
+    candidates,
+    (major, minor) =>
+      major === 3 &&
+      minor >= 8,
+  )
+}
+
+async function findPythonFromCandidates(
+  candidates,
+  accepts,
+) {
   for (const candidate of candidates) {
     try {
       const result = await runCommand(
@@ -495,11 +624,19 @@ async function findPythonLauncher() {
         [...candidate.prefix, '--version'],
         { timeoutMs: 5000, quiet: true },
       )
-      const version = (result.stdout + result.stderr).match(/Python\s+(\d+)\.(\d+)/)
+      const version = (result.stdout + result.stderr).match(/Python\s+(\d+)\.(\d+)(?:\.(\d+))?/)
       if (!version) continue
       const major = Number(version[1])
       const minor = Number(version[2])
-      if (major === 3 && minor >= 8 && minor <= 11) return candidate
+      if (!accepts(major, minor)) continue
+      return {
+        ...candidate,
+        version: [
+          version[1],
+          version[2],
+          version[3],
+        ].filter(Boolean).join('.'),
+      }
     } catch {
       // Try the next Python launcher.
     }
@@ -610,6 +747,7 @@ async function runCommand(
     onLine,
     timeoutMs = 0,
     quiet = false,
+    env,
   } = {},
 ) {
   return await new Promise((resolvePromise, reject) => {
@@ -619,6 +757,7 @@ async function runCommand(
       env: {
         ...process.env,
         PYTHONUNBUFFERED: '1',
+        ...env,
       },
     })
     let stdout = ''
