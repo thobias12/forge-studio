@@ -2067,6 +2067,15 @@ def create_chest(body, rig, frame, style, seed):
     )
 
     objects = []
+    is_ranger = (
+        style["name"]
+        == "Ranger Field Vest"
+    )
+    ranger_surface_indices = (
+        None
+        if is_ranger
+        else torso_indices
+    )
 
     base = duplicate_surface(
         body,
@@ -2080,15 +2089,10 @@ def create_chest(body, rig, frame, style, seed):
         clearance,
         cloth_thickness,
         smooth_iterations=0,
-        allowed_indices=torso_indices,
+        allowed_indices=ranger_surface_indices,
     )
     if base:
         objects.append(base)
-
-    is_ranger = (
-        style["name"]
-        == "Ranger Field Vest"
-    )
 
     if is_ranger:
         main_leather = duplicate_surface(
@@ -2113,7 +2117,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0042,
             overlay_thickness,
             smooth_iterations=0,
-            allowed_indices=torso_indices,
+            allowed_indices=ranger_surface_indices,
         )
         if main_leather:
             objects.append(
@@ -2132,7 +2136,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0058,
             overlay_thickness * 1.06,
             smooth_iterations=0,
-            allowed_indices=torso_indices,
+            allowed_indices=ranger_surface_indices,
         )
         if shoulders:
             objects.append(
@@ -2151,7 +2155,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0072,
             overlay_thickness * 1.12,
             smooth_iterations=0,
-            allowed_indices=torso_indices,
+            allowed_indices=ranger_surface_indices,
         )
         if strap:
             objects.append(
@@ -2184,7 +2188,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0064,
             overlay_thickness * 0.72,
             smooth_iterations=0,
-            allowed_indices=torso_indices,
+            allowed_indices=ranger_surface_indices,
         )
         if trims:
             objects.append(
@@ -2254,7 +2258,7 @@ def create_chest(body, rig, frame, style, seed):
         clearance + height * 0.0074,
         overlay_thickness * 1.22,
         smooth_iterations=0,
-        allowed_indices=torso_indices,
+        allowed_indices=ranger_surface_indices,
     )
     if belt:
         objects.append(belt)
@@ -2272,7 +2276,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0094,
             overlay_thickness * 1.08,
             smooth_iterations=0,
-            allowed_indices=torso_indices,
+            allowed_indices=ranger_surface_indices,
         )
         if buckle:
             objects.append(
@@ -2291,7 +2295,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0085,
             overlay_thickness * 0.88,
             smooth_iterations=0,
-            allowed_indices=torso_indices,
+            allowed_indices=ranger_surface_indices,
         )
         if keepers:
             objects.append(
