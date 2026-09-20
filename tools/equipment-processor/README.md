@@ -14,54 +14,46 @@ npm run equipment:processor
 
 Keep the terminal open while using Equipment Lab.
 
-## v1.81.0 default: body-aware procedural equipment
+## v1.84.0 default: recipe-driven equipment grammar
 
-The primary Equipment Lab armor workflow no longer depends on image-to-3D.
+The production Equipment Lab workflow is now a reusable generator rather than a hand-authored Ranger mesh.
 
 ```text
 Skillbound mannequin
     ↓
-slot + style + variation
+body envelope + rig landmarks
     ↓
-Blender body-aware generator
+style recipe + variation seed
     ↓
-skinned layered garment
+garment shell
+    ↓
+panels / straps / belt / trims / accents
+    ↓
+automatic Skillbound skin weights
     ↓
 GLB
     ↓
 Forge preview / Asset Library
 ```
 
-The first production template is **Chest**.
+The first production slot is **Chest**, but the architecture is intentionally split into reusable stages so the same recipe system can later drive head, legs, boots, gloves, waist, back and weapon slots.
 
-The processor launches:
+`tools/equipment-processor/procedural_equipment.py` now separates:
 
-`tools/equipment-processor/procedural_equipment.py`
+1. **Body Fit Engine** — derives orientation, torso mask, body envelope and rig landmarks from the real Skillbound mannequin.
+2. **Recipe Grammar** — describes silhouette, neckline, armholes, material layers, panel profiles, straps, belt, trim and accent rules.
+3. **Variation Resolver** — deterministically modifies recipe values from the selected seed instead of loading a separately modeled asset.
+4. **Geometry Builder** — interprets the recipe against the sampled body envelope.
+5. **Skinning / Export** — transfers nearby Skillbound weights, binds generated layers to the official armature and exports GLB.
 
-The generator imports the exact Skillbound mannequin uploaded by Forge, identifies the primary body and armature, then builds the garment directly from copies of the real skinned body surface.
+Current Chest recipes:
 
-Current chest construction:
+- **Ranger** — fitted field vest, layered leather panels, diagonal utility strap and narrow belt.
+- **Traveler** — layered travel jerkin, lighter leather coverage and broad utility belt.
+- **Acolyte** — high-neck battle tunic, symmetric framing and central accent panel.
 
-1. measure the real mannequin axes / torso bounds;
-2. cut a fitted torso shell with shaped neckline and arm openings;
-3. push the shell outward for safe body clearance;
-4. add physical garment thickness;
-5. build a second leather-vest surface;
-6. add fitted belt, hem trim and neckline trim;
-7. optionally add a front tabard;
-8. retain the body's real vertex groups;
-9. bind every layer to the official Skillbound armature;
-10. export one GLB.
+All four Equipment Lab variations are generated from the same recipe using deterministic seed changes. They are not separately hand-modeled meshes.
 
-Current style presets:
-
-- Ranger
-- Traveler
-- Acolyte
-
-Variations are deterministic and intentionally small so the fit contract stays stable.
-
-The generated GLB includes body-mask metadata for the Chest workflow.
 
 ## Why this is now the default
 
