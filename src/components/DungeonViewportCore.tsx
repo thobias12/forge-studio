@@ -6,7 +6,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
-import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
+import { dungeonPropBlocksMovement, dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
 import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
 
@@ -1409,7 +1409,7 @@ function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   if (!inside) return false
   if (value.theme === 'crypt' && dungeonArtCollidesV3(value, x, z, radius)) return false
   for (const wall of value.walls ?? []) if (pointNearWall(wall, x, z, radius)) return false
-  for (const prop of dungeonProps(value)) if (prop.collision && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
+  for (const prop of dungeonProps(value)) if (dungeonPropBlocksMovement(prop) && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
   return true
 }
 function pointNearWall(wall: DungeonWall, x: number, z: number, margin: number) {
