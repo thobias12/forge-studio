@@ -7,6 +7,7 @@ import sys
 import bpy
 import bmesh
 from mathutils import Vector
+from mathutils.kdtree import KDTree
 
 
 STYLES = {
@@ -2058,6 +2059,1145 @@ def tabard_predicate(frame, style):
     return keep
 
 
+
+def profile_sample(points, t):
+    t = max(0.0, min(1.0, t))
+    if t <= points[0][0]:
+        return points[0][1]
+    for index in range(1, len(points)):
+        left_t, left_value = points[index - 1]
+        right_t, right_value = points[index]
+        if t <= right_t:
+            span = max(right_t - left_t, 1e-6)
+            blend = (t - left_t) / span
+            return (
+                left_value * (1.0 - blend)
+                + right_value * blend
+            )
+    return points[-1][1]
+
+
+def ranger_profile(
+    frame,
+    style,
+    v,
+):
+    (
+        lower,
+        center_top,
+        _shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    span = max(
+        center_top - lower,
+        0.10,
+    )
+    t = max(
+        0.0,
+        min(
+            1.0,
+            (v - lower) / span,
+        ),
+    )
+
+    height = frame["height"]
+    half_width = max(
+        frame["torso_width"] * 0.5,
+        height * 0.145,
+    )
+    half_depth = max(
+        frame["torso_depth"] * 0.5,
+        height * 0.078,
+    )
+
+    width_scale = profile_sample(
+        (
+            (0.00, 0.98),
+            (0.28, 0.87),
+            (0.58, 0.95),
+            (0.82, 1.03),
+            (1.00, 0.96),
+        ),
+        t,
+    )
+    front_scale = profile_sample(
+        (
+            (0.00, 0.94),
+            (0.28, 0.86),
+            (0.58, 1.08),
+            (0.82, 1.17),
+            (1.00, 0.96),
+        ),
+        t,
+    )
+    back_scale = profile_sample(
+        (
+            (0.00, 0.92),
+            (0.30, 0.87),
+            (0.68, 0.94),
+            (1.00, 0.90),
+        ),
+        t,
+    )
+
+    return (
+        half_width * width_scale,
+        half_depth * front_scale,
+        half_depth * back_scale,
+    )
+
+
+def frame_world_point(
+    frame,
+    v,
+    width_offset,
+    signed_depth,
+):
+    point = frame["center"].copy()
+    point[
+        frame["width"]
+    ] += width_offset
+    point[
+        frame["depth"]
+    ] += (
+        signed_depth
+        * frame["front_sign"]
+    )
+    point[
+        frame["vertical"]
+    ] = (
+        frame["vertical_min"]
+        + v * frame["height"]
+    ) * frame["vertical_sign"]
+    return point
+
+
+def ranger_surface_point(
+    frame,
+    style,
+    v,
+    width_n,
+    side,
+    radial_offset=0.0,
+):
+    (
+        width_radius,
+        front_depth,
+        back_depth,
+    ) = ranger_profile(
+        frame,
+        style,
+        v,
+    )
+    width_n = max(
+        -0.96,
+        min(0.96, width_n),
+    )
+    width_offset = (
+        width_radius
+        * width_n
+    )
+    ellipse = math.sqrt(
+        max(
+            0.02,
+            1.0
+            - width_n * width_n,
+        )
+    )
+
+    if side == "front":
+        signed_depth = (
+            front_depth * ellipse
+            + radial_offset
+        )
+    else:
+        signed_depth = -(
+            back_depth * ellipse
+            + radial_offset
+        )
+
+    return frame_world_point(
+        frame,
+        v,
+        width_offset,
+        signed_depth,
+    )
+
+
+def transfer_nearest_body_weights(
+    body,
+    obj,
+):
+    source_world = (
+        body.matrix_world.copy()
+    )
+    tree = KDTree(
+        len(body.data.vertices),
+    )
+    for vertex in body.data.vertices:
+        tree.insert(
+            source_world
+            @ vertex.co,
+            vertex.index,
+        )
+    tree.balance()
+
+    destination_groups = {}
+    for source_group in body.vertex_groups:
+        destination_groups[
+            source_group.index
+        ] = obj.vertex_groups.new(
+            name=source_group.name,
+        )
+
+    object_world = (
+        obj.matrix_world.copy()
+    )
+    for vertex in obj.data.vertices:
+        (
+            _position,
+            source_index,
+            _distance,
+        ) = tree.find(
+            object_world
+            @ vertex.co,
+        )
+        source_vertex = (
+            body.data.vertices[
+                source_index
+            ]
+        )
+        for assignment in source_vertex.groups:
+            group = (
+                destination_groups.get(
+                    assignment.group,
+                )
+            )
+            if group is not None:
+                group.add(
+                    [vertex.index],
+                    assignment.weight,
+                    "REPLACE",
+                )
+
+
+def create_authored_mesh(
+    body,
+    rig,
+    name,
+    mat,
+    vertices,
+    faces,
+    thickness,
+):
+    if (
+        len(vertices) < 3
+        or not faces
+    ):
+        return None
+
+    mesh = bpy.data.meshes.new(
+        name + "_Mesh",
+    )
+    mesh.from_pydata(
+        [
+            tuple(point)
+            for point
+            in vertices
+        ],
+        [],
+        faces,
+    )
+    mesh.update()
+
+    obj = bpy.data.objects.new(
+        name,
+        mesh,
+    )
+    collection = (
+        body.users_collection[0]
+        if body.users_collection
+        else bpy.context.scene.collection
+    )
+    collection.objects.link(obj)
+    obj.data.materials.append(mat)
+
+    transfer_nearest_body_weights(
+        body,
+        obj,
+    )
+
+    if thickness > 0:
+        solidify = obj.modifiers.new(
+            "FORGE_Thickness",
+            "SOLIDIFY",
+        )
+        solidify.thickness = thickness
+        solidify.offset = 0.0
+        solidify.use_rim = True
+        solidify.use_quality_normals = True
+        apply_modifier(
+            obj,
+            solidify,
+        )
+
+    for polygon in obj.data.polygons:
+        polygon.use_smooth = True
+
+    ensure_armature(
+        obj,
+        rig,
+    )
+    return obj
+
+
+def ranger_top_fraction(
+    frame,
+    style,
+    angle,
+):
+    (
+        _lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    side_n = abs(
+        math.cos(angle)
+    )
+    front_n = max(
+        0.0,
+        math.sin(angle),
+    )
+    back_n = max(
+        0.0,
+        -math.sin(angle),
+    )
+
+    # Tank/vest topology from one clean boundary: low at the front neck,
+    # rises onto the shoulder straps, then dips slightly at the exact
+    # underarm side instead of creating a rigid tube around the arms.
+    shoulder_band = (
+        smoothstep(
+            0.18,
+            0.66,
+            side_n,
+        )
+        * (
+            1.0
+            - smoothstep(
+                0.82,
+                1.0,
+                side_n,
+            )
+        )
+    )
+    underarm_dip = (
+        0.020
+        * smoothstep(
+            0.86,
+            1.0,
+            side_n,
+        )
+    )
+
+    return (
+        center_top
+        + (
+            shoulder_top
+            - center_top
+        ) * shoulder_band
+        + 0.014 * back_n
+        - underarm_dip
+        + 0.003 * front_n
+    )
+
+
+def build_ranger_shell_mesh(
+    frame,
+    style,
+    radial_offset,
+    segments=40,
+):
+    (
+        lower,
+        center_top,
+        _shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    ring_v = [
+        lower,
+        lower + 0.050,
+        lower + 0.105,
+        lower + 0.165,
+        center_top - 0.055,
+        center_top - 0.018,
+    ]
+
+    vertices = []
+    rings = []
+
+    for v in ring_v:
+        (
+            width_radius,
+            front_depth,
+            back_depth,
+        ) = ranger_profile(
+            frame,
+            style,
+            v,
+        )
+        ring = []
+        for segment in range(segments):
+            angle = (
+                2.0
+                * math.pi
+                * segment
+                / segments
+            )
+            width_offset = (
+                math.cos(angle)
+                * (
+                    width_radius
+                    + radial_offset * 0.35
+                )
+            )
+            depth_direction = (
+                math.sin(angle)
+            )
+            depth_radius = (
+                front_depth
+                if depth_direction >= 0
+                else back_depth
+            )
+            signed_depth = (
+                depth_direction
+                * (
+                    depth_radius
+                    + radial_offset
+                )
+            )
+            ring.append(
+                len(vertices)
+            )
+            vertices.append(
+                frame_world_point(
+                    frame,
+                    v,
+                    width_offset,
+                    signed_depth,
+                )
+            )
+        rings.append(ring)
+
+    top_ring = []
+    top_reference = center_top
+    (
+        width_radius,
+        front_depth,
+        back_depth,
+    ) = ranger_profile(
+        frame,
+        style,
+        top_reference,
+    )
+    for segment in range(segments):
+        angle = (
+            2.0
+            * math.pi
+            * segment
+            / segments
+        )
+        v = ranger_top_fraction(
+            frame,
+            style,
+            angle,
+        )
+        width_offset = (
+            math.cos(angle)
+            * (
+                width_radius
+                + radial_offset * 0.35
+            )
+        )
+        depth_direction = (
+            math.sin(angle)
+        )
+        depth_radius = (
+            front_depth
+            if depth_direction >= 0
+            else back_depth
+        )
+        signed_depth = (
+            depth_direction
+            * (
+                depth_radius
+                + radial_offset
+            )
+        )
+        top_ring.append(
+            len(vertices)
+        )
+        vertices.append(
+            frame_world_point(
+                frame,
+                v,
+                width_offset,
+                signed_depth,
+            )
+        )
+    rings.append(top_ring)
+
+    faces = []
+    for ring_index in range(
+        len(rings) - 1
+    ):
+        current = rings[ring_index]
+        next_ring = rings[
+            ring_index + 1
+        ]
+        for segment in range(
+            segments
+        ):
+            following = (
+                segment + 1
+            ) % segments
+            faces.append((
+                current[segment],
+                current[following],
+                next_ring[following],
+                next_ring[segment],
+            ))
+
+    return (
+        vertices,
+        faces,
+    )
+
+
+def build_surface_patch(
+    frame,
+    style,
+    side,
+    rows,
+    columns,
+    radial_offset,
+    top_values=None,
+):
+    vertices = []
+    faces = []
+    column_count = len(columns)
+
+    for row_index, v in enumerate(rows):
+        for column_index, width_n in enumerate(
+            columns
+        ):
+            point_v = v
+            if (
+                top_values is not None
+                and row_index
+                == len(rows) - 1
+            ):
+                point_v = top_values[
+                    column_index
+                ]
+            vertices.append(
+                ranger_surface_point(
+                    frame,
+                    style,
+                    point_v,
+                    width_n,
+                    side,
+                    radial_offset,
+                )
+            )
+
+    for row in range(
+        len(rows) - 1
+    ):
+        for column in range(
+            column_count - 1
+        ):
+            a = (
+                row * column_count
+                + column
+            )
+            b = a + 1
+            c = (
+                (row + 1)
+                * column_count
+                + column
+                + 1
+            )
+            d = c - 1
+            faces.append((
+                a,
+                b,
+                c,
+                d,
+            ))
+
+    return (
+        vertices,
+        faces,
+    )
+
+
+def build_ranger_ring_strip(
+    frame,
+    style,
+    v_low,
+    v_high,
+    radial_offset,
+    segments=40,
+):
+    vertices = []
+    faces = []
+
+    for v in [
+        v_low,
+        v_high,
+    ]:
+        (
+            width_radius,
+            front_depth,
+            back_depth,
+        ) = ranger_profile(
+            frame,
+            style,
+            v,
+        )
+        for segment in range(
+            segments
+        ):
+            angle = (
+                2.0
+                * math.pi
+                * segment
+                / segments
+            )
+            direction = math.sin(
+                angle
+            )
+            depth_radius = (
+                front_depth
+                if direction >= 0
+                else back_depth
+            )
+            vertices.append(
+                frame_world_point(
+                    frame,
+                    v,
+                    math.cos(angle)
+                    * (
+                        width_radius
+                        + radial_offset
+                        * 0.30
+                    ),
+                    direction
+                    * (
+                        depth_radius
+                        + radial_offset
+                    ),
+                )
+            )
+
+    for segment in range(
+        segments
+    ):
+        following = (
+            segment + 1
+        ) % segments
+        faces.append((
+            segment,
+            following,
+            segments + following,
+            segments + segment,
+        ))
+
+    return (
+        vertices,
+        faces,
+    )
+
+
+def build_ranger_top_trim(
+    frame,
+    style,
+    radial_offset,
+    segments=40,
+):
+    vertices = []
+    faces = []
+
+    for row in range(2):
+        for segment in range(
+            segments
+        ):
+            angle = (
+                2.0
+                * math.pi
+                * segment
+                / segments
+            )
+            top_v = ranger_top_fraction(
+                frame,
+                style,
+                angle,
+            )
+            v = (
+                top_v
+                - row * 0.012
+            )
+            (
+                width_radius,
+                front_depth,
+                back_depth,
+            ) = ranger_profile(
+                frame,
+                style,
+                min(
+                    v,
+                    chest_landmark_fractions(
+                        frame,
+                        style,
+                    )[1],
+                ),
+            )
+            direction = math.sin(
+                angle
+            )
+            depth_radius = (
+                front_depth
+                if direction >= 0
+                else back_depth
+            )
+            vertices.append(
+                frame_world_point(
+                    frame,
+                    v,
+                    math.cos(angle)
+                    * (
+                        width_radius
+                        + radial_offset
+                        * 0.30
+                    ),
+                    direction
+                    * (
+                        depth_radius
+                        + radial_offset
+                    ),
+                )
+            )
+
+    for segment in range(
+        segments
+    ):
+        following = (
+            segment + 1
+        ) % segments
+        faces.append((
+            segment,
+            following,
+            segments + following,
+            segments + segment,
+        ))
+
+    return (
+        vertices,
+        faces,
+    )
+
+
+def build_ranger_cross_strap(
+    frame,
+    style,
+    radial_offset,
+):
+    (
+        lower,
+        _center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    vertices = []
+    faces = []
+    samples = 18
+
+    for sample in range(
+        samples
+    ):
+        t = (
+            sample
+            / (samples - 1)
+        )
+        v = (
+            lower + 0.105
+            + t
+            * (
+                shoulder_top
+                - lower
+                - 0.135
+            )
+        )
+        center_w = (
+            -0.56
+            + 1.12 * t
+        )
+        for offset in [
+            -0.045,
+            0.045,
+        ]:
+            vertices.append(
+                ranger_surface_point(
+                    frame,
+                    style,
+                    v,
+                    center_w + offset,
+                    "front",
+                    radial_offset,
+                )
+            )
+
+    for sample in range(
+        samples - 1
+    ):
+        a = sample * 2
+        faces.append((
+            a,
+            a + 1,
+            a + 3,
+            a + 2,
+        ))
+
+    return (
+        vertices,
+        faces,
+    )
+
+
+def create_ranger_authored_chest(
+    body,
+    rig,
+    frame,
+    style,
+    cloth,
+    leather,
+    trim,
+    metal,
+):
+    height = frame["height"]
+    (
+        lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    objects = []
+
+    shell_vertices, shell_faces = (
+        build_ranger_shell_mesh(
+            frame,
+            style,
+            height * 0.0050,
+        )
+    )
+    shell = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerClothShell",
+        cloth,
+        shell_vertices,
+        shell_faces,
+        height * 0.00165,
+    )
+    if shell:
+        objects.append(shell)
+
+    # Two structured leather front panels. Their top outer corners rise
+    # into the shoulder straps while the center remains open to reveal the
+    # cloth underlayer and avoid the old bodysuit silhouette.
+    for side_sign, side_name in [
+        (-1.0, "L"),
+        (1.0, "R"),
+    ]:
+        columns = [
+            side_sign * 0.18,
+            side_sign * 0.43,
+            side_sign * 0.73,
+        ]
+        if side_sign < 0:
+            columns = list(
+                reversed(columns)
+            )
+
+        rows = [
+            lower + 0.060,
+            lower + 0.115,
+            lower + 0.180,
+            center_top - 0.035,
+            center_top,
+        ]
+        top_values = [
+            center_top - 0.006,
+            center_top + 0.018,
+            shoulder_top - 0.006,
+        ]
+        if side_sign < 0:
+            top_values = list(
+                reversed(top_values)
+            )
+
+        panel_vertices, panel_faces = (
+            build_surface_patch(
+                frame,
+                style,
+                "front",
+                rows,
+                columns,
+                height * 0.0100,
+                top_values=top_values,
+            )
+        )
+        panel = create_authored_mesh(
+            body,
+            rig,
+            "FORGE_Chest_RangerFrontPanel_"
+            + side_name,
+            leather,
+            panel_vertices,
+            panel_faces,
+            height * 0.00155,
+        )
+        if panel:
+            objects.append(panel)
+
+    back_vertices, back_faces = (
+        build_surface_patch(
+            frame,
+            style,
+            "back",
+            [
+                lower + 0.065,
+                lower + 0.125,
+                lower + 0.195,
+                center_top - 0.020,
+                center_top + 0.012,
+            ],
+            [
+                -0.72,
+                -0.38,
+                0.0,
+                0.38,
+                0.72,
+            ],
+            height * 0.0090,
+        )
+    )
+    back_panel = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerBackPanel",
+        leather,
+        back_vertices,
+        back_faces,
+        height * 0.00150,
+    )
+    if back_panel:
+        objects.append(back_panel)
+
+    strap_vertices, strap_faces = (
+        build_ranger_cross_strap(
+            frame,
+            style,
+            height * 0.0140,
+        )
+    )
+    strap = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerCrossStrap",
+        leather,
+        strap_vertices,
+        strap_faces,
+        height * 0.00180,
+    )
+    if strap:
+        objects.append(strap)
+
+    belt_center = (
+        lower + 0.048
+    )
+    belt_vertices, belt_faces = (
+        build_ranger_ring_strip(
+            frame,
+            style,
+            belt_center - 0.014,
+            belt_center + 0.014,
+            height * 0.0120,
+        )
+    )
+    belt = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerBelt",
+        leather,
+        belt_vertices,
+        belt_faces,
+        height * 0.00195,
+    )
+    if belt:
+        objects.append(belt)
+
+    top_trim_vertices, top_trim_faces = (
+        build_ranger_top_trim(
+            frame,
+            style,
+            height * 0.0080,
+        )
+    )
+    top_trim = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerNeckArmTrim",
+        trim,
+        top_trim_vertices,
+        top_trim_faces,
+        height * 0.00115,
+    )
+    if top_trim:
+        objects.append(top_trim)
+
+    hem_vertices, hem_faces = (
+        build_ranger_ring_strip(
+            frame,
+            style,
+            lower,
+            lower + 0.012,
+            height * 0.0070,
+        )
+    )
+    hem = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerHemTrim",
+        trim,
+        hem_vertices,
+        hem_faces,
+        height * 0.00110,
+    )
+    if hem:
+        objects.append(hem)
+
+    buckle_vertices, buckle_faces = (
+        build_surface_patch(
+            frame,
+            style,
+            "front",
+            [
+                belt_center - 0.027,
+                belt_center + 0.027,
+            ],
+            [
+                -0.115,
+                0.115,
+            ],
+            height * 0.0180,
+        )
+    )
+    buckle = create_authored_mesh(
+        body,
+        rig,
+        "FORGE_Chest_RangerBuckle",
+        metal,
+        buckle_vertices,
+        buckle_faces,
+        height * 0.00220,
+    )
+    if buckle:
+        objects.append(buckle)
+
+    # Small belt keepers read much more reliably as authored patches than
+    # as sparse selections from the mannequin triangulation.
+    for side_sign, side_name in [
+        (-1.0, "L"),
+        (1.0, "R"),
+    ]:
+        keeper_center = (
+            side_sign * 0.43
+        )
+        keeper_vertices, keeper_faces = (
+            build_surface_patch(
+                frame,
+                style,
+                "front",
+                [
+                    belt_center - 0.024,
+                    belt_center + 0.026,
+                ],
+                [
+                    keeper_center - 0.035,
+                    keeper_center + 0.035,
+                ],
+                height * 0.0160,
+            )
+        )
+        keeper = create_authored_mesh(
+            body,
+            rig,
+            "FORGE_Chest_RangerBeltKeeper_"
+            + side_name,
+            trim,
+            keeper_vertices,
+            keeper_faces,
+            height * 0.00145,
+        )
+        if keeper:
+            objects.append(keeper)
+
+    if not objects:
+        raise RuntimeError(
+            "Authored Ranger chest generation produced no geometry."
+        )
+
+    print(
+        "FORGE_RANGER_AUTHORED "
+        + json.dumps({
+            "objects": [
+                obj.name
+                for obj
+                in objects
+            ],
+            "vertices": sum(
+                len(obj.data.vertices)
+                for obj
+                in objects
+            ),
+            "polygons": sum(
+                len(obj.data.polygons)
+                for obj
+                in objects
+            ),
+        }),
+        flush=True,
+    )
+
+    return objects
+
+
 def create_chest(body, rig, frame, style, seed):
     style = dict(style)
     variant = int(seed) % 4
@@ -2124,15 +3264,26 @@ def create_chest(body, rig, frame, style, seed):
         metallic=0.72,
     )
 
-    objects = []
     is_ranger = (
         style["name"]
         == "Ranger Field Vest"
     )
+
+    if is_ranger:
+        return create_ranger_authored_chest(
+            body,
+            rig,
+            frame,
+            style,
+            cloth,
+            leather,
+            trim,
+            metal,
+        )
+
+    objects = []
     ranger_surface_indices = (
-        None
-        if is_ranger
-        else torso_indices
+        torso_indices
     )
 
     base = duplicate_surface(
@@ -2152,7 +3303,7 @@ def create_chest(body, rig, frame, style, seed):
     if base:
         objects.append(base)
 
-    if is_ranger:
+    if False:
         main_leather = duplicate_surface(
             body,
             rig,
