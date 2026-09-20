@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.3`  
+> **Current Forge version:** `v1.81.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -302,6 +302,8 @@ The official foundation ZIP can be imported into Forge rather than committing th
 The female body also has support for subtle spring-based secondary motion in the runtime binding.
 
 ## Equipment Lab
+
+Forge v1.81.4 fixes the actual Blender deletion bug exposed by the v1.81.3 diagnostics. The source-body predicates were matching thousands of correct vertices, but the copied glTF mesh entered Edit Mode with selection state that caused the operator-based delete step to remove every vertex. Procedural layer cutting now uses Blender's low-level BMesh API to delete non-matching vertices directly by source index, with no UI/edit-mode selection dependency. Layer diagnostics now report both surviving vertices and polygons.
 
 Forge v1.81.3 makes procedural garment cutting topology-driven instead of transform-driven. Each layer now evaluates its garment predicate on the untouched Skillbound body first, records the exact matching source vertex indices, then duplicates the body and keeps those same indices. This removes parent/armature/world-transform ambiguity from the cut stage. Armature re-parenting also explicitly preserves the object's world matrix. New FORGE_SOURCE_CUT diagnostics report the number of matched source vertices before any copied mesh is modified.
 

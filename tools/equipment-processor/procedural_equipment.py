@@ -5,6 +5,7 @@ import os
 import sys
 
 import bpy
+import bmesh
 from mathutils import Vector
 
 
@@ -641,31 +642,35 @@ def delete_unwanted_vertices(
     obj,
     keep_indices,
 ):
-    bpy.ops.object.select_all(
-        action="DESELECT",
-    )
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
+    # Do not use edit-mode selection + bpy.ops.mesh.delete here.
+    # A duplicated glTF mesh can carry selection state into Edit Mode,
+    # causing Blender to delete every vertex regardless of the object-mode
+    # vertex.select flags. BMesh edits the mesh datablock directly and is
+    # deterministic in background/headless Blender.
+    mesh = obj.data
+    bm = bmesh.new()
 
-    bpy.ops.object.mode_set(
-        mode="OBJECT",
-    )
-    for vertex in obj.data.vertices:
-        vertex.select = (
-            vertex.index
+    try:
+        bm.from_mesh(mesh)
+        bm.verts.ensure_lookup_table()
+
+        delete_verts = [
+            vertex
+            for vertex in bm.verts
+            if vertex.index
             not in keep_indices
+        ]
+
+        bmesh.ops.delete(
+            bm,
+            geom=delete_verts,
+            context="VERTS",
         )
 
-    bpy.ops.object.mode_set(
-        mode="EDIT",
-    )
-    bpy.ops.mesh.delete(
-        type="VERT",
-    )
-    bpy.ops.object.mode_set(
-        mode="OBJECT",
-    )
-    obj.select_set(False)
+        bm.to_mesh(mesh)
+        mesh.update()
+    finally:
+        bm.free()
 
 
 def apply_modifier(obj, modifier):
@@ -764,11 +769,16 @@ def duplicate_surface(
     vertex_count = len(
         obj.data.vertices,
     )
+    polygon_count = len(
+        obj.data.polygons,
+    )
     print(
         "FORGE_LAYER "
         + name
         + " vertices="
-        + str(vertex_count),
+        + str(vertex_count)
+        + " polygons="
+        + str(polygon_count),
         flush=True,
     )
 
