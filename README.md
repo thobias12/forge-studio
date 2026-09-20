@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.85.2`  
+> **Current Forge version:** `v1.86.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,22 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.86.0 — Dungeon Forge V3 art pass
+
+- turns the V3 structural remake into an authored crypt kit instead of a bare procedural blockout
+- generated rooms now carry explicit art templates: Threshold, Burial Chamber, Crossroads, Ossuary Gallery, Warden Hall, Reliquary, Shrine Hall, Warden Sanctum, Sealed Ossuary, and Storage Vault
+- room templates are editable directly from the Dungeon Forge inspector alongside room shape
+- perimeter masonry now has heavier base courses, brighter cap stones, seeded damaged/broken segments, and clearer silhouette layering
+- doorway connections get modular posts, capitals, frames and walk-mode lintels instead of reading as holes cut into generic walls
+- room/corridor edges gain modular support pillars, damaged supports, corridor recesses and periodic arch structure
+- corridors receive seeded freestanding torch fixtures and bounded point-light coverage, matching the authored lighting rhythm used in Evergrow-style crypt spaces
+- floor masonry now has chipped/dropped stones, subtle rotation/height variation, seeded cracks and damp patches while remaining instanced
+- room dressing is template-aware: sarcophagi, bone piles, reliquaries, shrine altars, statues, banners, boss dais pieces, urns, rubble and storage stacks
+- large visible dressing pieces share deterministic ARPG/Walk collision so visible art and movement agree
+- central shrine/reward/boss interaction spaces stay approachable rather than being blocked by decoration collision
+- all dressing remains deterministic from dungeon seed/room id and does not require authored external assets
+
 
 ## v1.85.2 — Dungeon V3 gameplay cleanup
 

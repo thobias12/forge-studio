@@ -1,5 +1,16 @@
 export type DungeonTheme = 'crypt' | 'castle' | 'cave' | 'cathedral' | 'mine' | 'sewer' | 'void'
 export type DungeonRoomType = 'entrance' | 'combat' | 'treasure' | 'elite' | 'shrine' | 'boss' | 'secret' | 'utility'
+export type DungeonRoomTemplate =
+  | 'threshold'
+  | 'burial-chamber'
+  | 'crossroads'
+  | 'ossuary-gallery'
+  | 'warden-hall'
+  | 'reliquary'
+  | 'shrine-hall'
+  | 'warden-sanctum'
+  | 'sealed-ossuary'
+  | 'storage-vault'
 export type DungeonScalePreset = 'standard' | 'grand' | 'massive'
 export const DEFAULT_DUNGEON_BRIGHTNESS = 1.35
 export type DungeonMarkerType = 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light'
@@ -17,6 +28,7 @@ export type DungeonRoom = {
   rotation: 0 | 90 | 180 | 270
   floorLevel: number
   shape?: 'rect' | 'cross' | 'octagon'
+  template?: DungeonRoomTemplate
   tags: string[]
 }
 
@@ -153,6 +165,10 @@ export function createStarterDungeon(): ForgeDungeonPackage {
   combat.shape = 'cross'
   treasure.shape = 'rect'
   boss.shape = 'octagon'
+  entrance.template = 'threshold'
+  combat.template = 'crossroads'
+  treasure.template = 'reliquary'
+  boss.template = 'warden-sanctum'
   const entranceEdge = corridor(entrance.id, combat.id)
   const treasureEdge = corridor(combat.id, treasure.id)
   const bossEdge = corridor(combat.id, boss.id)
@@ -396,6 +412,7 @@ export function generateDungeon(
     entranceBase.depth * scale,
   )
   entrance.shape = 'rect'
+  entrance.template = 'threshold'
   rooms.push(entrance)
   markers.push(marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance Checkpoint', { checkpointId: 'entrance' }))
 
@@ -441,6 +458,7 @@ export function generateDungeon(
         depth,
       )
       candidate.shape = generatedRoomShape(type, random)
+      candidate.template = generatedRoomTemplate(type, candidate.shape, random)
       if (!rooms.some((existing) => roomBoundsOverlap(existing, candidate, 5.5 * scale))) {
         direction = candidateDirection
         next = candidate
@@ -458,6 +476,7 @@ export function generateDungeon(
         depth,
       )
       next.shape = generatedRoomShape(type, random)
+      next.template = generatedRoomTemplate(type, next.shape, random)
     }
 
     rooms.push(next)
@@ -506,6 +525,7 @@ export function generateDungeon(
         depth,
       )
       candidate.shape = generatedRoomShape(branchType, random)
+      candidate.template = generatedRoomTemplate(branchType, candidate.shape, random)
       if (!rooms.some((existing) => roomBoundsOverlap(existing, candidate, 4.2 * scale))) branch = candidate
     }
     if (!branch) continue
@@ -626,6 +646,22 @@ function resolveGeneration(input: Partial<DungeonGenerationSettings>): DungeonGe
     corridorWidth: Math.max(3.8, Math.min(8, input.corridorWidth ?? DEFAULT_DUNGEON_GENERATION.corridorWidth)),
     scalePreset: preset,
   }
+}
+
+function generatedRoomTemplate(
+  type: DungeonRoomType,
+  shape: NonNullable<DungeonRoom['shape']>,
+  random: () => number,
+): DungeonRoomTemplate {
+  if (type === 'entrance') return 'threshold'
+  if (type === 'boss') return 'warden-sanctum'
+  if (type === 'elite') return 'warden-hall'
+  if (type === 'treasure') return 'reliquary'
+  if (type === 'shrine') return 'shrine-hall'
+  if (type === 'secret') return 'sealed-ossuary'
+  if (type === 'utility') return 'storage-vault'
+  if (shape === 'cross') return 'crossroads'
+  return random() < 0.46 ? 'ossuary-gallery' : 'burial-chamber'
 }
 
 function generatedRoomShape(type: DungeonRoomType, random: () => number): NonNullable<DungeonRoom['shape']> {

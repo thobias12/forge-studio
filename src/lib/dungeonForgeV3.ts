@@ -59,9 +59,13 @@ export function addDungeonMasonryV3(
 
   const bounds = dungeonWorldBoundsV3(value, 3)
   addFloor(root, value, atmosphere, bounds)
+  addFloorAtmosphere(root, value, atmosphere, bounds)
   addPerimeterWalls(root, value, atmosphere, bounds, mode)
+  addCorridorArchitecture(root, value, atmosphere, mode)
+  addRoomArchitecture(root, value, atmosphere, mode)
   addRoomFixtures(root, value, atmosphere, flickerLights, mode)
-  addRoomDressing(root, value, atmosphere)
+  addCorridorFixtures(root, value, atmosphere, flickerLights, mode)
+  addRoomDressing(root, value, atmosphere, mode)
 
   return root
 }
@@ -266,7 +270,8 @@ export function buildCorridorPathV3(
 }
 
 function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: DungeonAtmosphere, bounds: ReturnType<typeof dungeonWorldBoundsV3>) {
-  const instances: Array<{ x: number; z: number; y: number; width: number; depth: number; shade: number }> = []
+  const instances: Array<{ x: number; z: number; y: number; width: number; depth: number; shade: number; yaw: number }> = []
+  const cracks: Array<{ x: number; z: number; y: number; yaw: number; length: number }> = []
   let row = 0
   for (let z = Math.floor(bounds.minZ / FLOOR_BRICK_D) * FLOOR_BRICK_D; z <= bounds.maxZ; z += FLOOR_BRICK_D) {
     const shift = row % 2 ? FLOOR_BRICK_W / 2 : 0
@@ -276,14 +281,27 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       if (!dungeonContainsPointV3(value, cx, cz, 0.12)) continue
       const hash = numberHash(Math.round(cx * 13), Math.round(cz * 19), value.seed)
       const chip = 0.93 + ((hash >>> 5) % 5) * 0.01
+      const floorY = dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y
+      const damaged = hash % 17 === 0
+      const missingCorner = hash % 29 === 0
       instances.push({
         x: cx,
         z: cz,
-        y: dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y,
-        width: FLOOR_BRICK_W * chip,
-        depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01),
-        shade: 0.88 + (hash % 11) / 100,
+        y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
+        width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
+        depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01) * (damaged ? 0.94 : 1),
+        shade: damaged ? 0.7 + (hash % 7) / 100 : 0.88 + (hash % 11) / 100,
+        yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
+      if (hash % 21 === 0) {
+        cracks.push({
+          x: cx + (((hash >>> 4) % 7) - 3) * 0.035,
+          z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
+          y: floorY + 0.052,
+          yaw: ((hash >>> 12) % 628) / 100,
+          length: 0.28 + ((hash >>> 20) % 5) * 0.07,
+        })
+      }
     }
     row += 1
   }
@@ -305,6 +323,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   const base = new THREE.Color(0xffffff)
   instances.forEach((instance, index) => {
     dummy.position.set(instance.x, instance.y, instance.z)
+    dummy.rotation.set(0, instance.yaw, 0)
     dummy.scale.set(instance.width, 1, instance.depth)
     dummy.updateMatrix()
     mesh.setMatrixAt(index, dummy.matrix)
@@ -312,9 +331,75 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   })
   mesh.receiveShadow = true
   root.add(mesh)
+
+  if (cracks.length) {
+    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x17110d, transparent: true, opacity: 0.72, depthWrite: false })
+    const crackMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.008, 0.045), crackMaterial, cracks.length)
+    crackMesh.name = 'DungeonV3FloorCracks'
+    cracks.forEach((crack, index) => {
+      dummy.position.set(crack.x, crack.y, crack.z)
+      dummy.rotation.set(0, crack.yaw, 0)
+      dummy.scale.set(crack.length, 1, 1)
+      dummy.updateMatrix()
+      crackMesh.setMatrixAt(index, dummy.matrix)
+    })
+    crackMesh.renderOrder = 2
+    root.add(crackMesh)
+  }
 }
 
-type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean }
+function addFloorAtmosphere(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  bounds: ReturnType<typeof dungeonWorldBoundsV3>,
+) {
+  const patches: Array<{ x: number; z: number; y: number; sx: number; sz: number; yaw: number; shade: number }> = []
+  const cell = 5.8
+  const startX = Math.floor(bounds.minX / cell) * cell
+  const startZ = Math.floor(bounds.minZ / cell) * cell
+  for (let z = startZ; z <= bounds.maxZ; z += cell) {
+    for (let x = startX; x <= bounds.maxX; x += cell) {
+      const hash = numberHash(Math.round(x * 7), Math.round(z * 11), value.seed ^ 0x4a3d)
+      if (hash % 4 !== 0) continue
+      const px = x + ((hash >>> 8) % 100) / 100 * cell
+      const pz = z + ((hash >>> 16) % 100) / 100 * cell
+      if (!dungeonContainsPointV3(value, px, pz, 0.9)) continue
+      patches.push({
+        x: px,
+        z: pz,
+        y: dungeonFloorHeightV3(value, px, pz) + 0.096,
+        sx: 0.7 + ((hash >>> 4) % 11) / 10,
+        sz: 0.32 + ((hash >>> 12) % 8) / 10,
+        yaw: ((hash >>> 20) % 628) / 100,
+        shade: 0.55 + (hash % 15) / 100,
+      })
+    }
+  }
+  if (!patches.length) return
+
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(atmosphere.wallDark).multiplyScalar(0.8),
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const mesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 18), material, patches.length)
+  mesh.name = 'DungeonV3DampPatches'
+  const dummy = new THREE.Object3D()
+  patches.forEach((patch, index) => {
+    dummy.position.set(patch.x, patch.y, patch.z)
+    dummy.rotation.set(-Math.PI / 2, 0, patch.yaw)
+    dummy.scale.set(patch.sx, patch.sz, 1)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index, dummy.matrix)
+  })
+  mesh.renderOrder = 3
+  root.add(mesh)
+}
+
+type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean }
 
 function addPerimeterWalls(
   root: THREE.Group,
@@ -352,14 +437,19 @@ function addPerimeterWalls(
           const actualHeight = Math.min(rowHeight * 0.9, wallHeight - row * rowHeight)
           if (actualHeight <= 0.04) continue
           const stagger = row % 2 ? WALL_SAMPLE * 0.08 : 0
+          const cap = row === rows - 1
+          const base = row === 0
+          const damaged = ((hash >>> (row % 16)) + row * 7) % 23 === 0
           samples.push({
             x: edge.x + (edge.yaw === 0 ? stagger : 0),
             z: edge.z + (edge.yaw === 0 ? 0 : stagger),
-            y: floorY + row * rowHeight + actualHeight / 2,
-            length: WALL_SAMPLE * 1.03,
+            y: floorY + row * rowHeight + actualHeight / 2 - (damaged ? 0.025 : 0),
+            length: WALL_SAMPLE * (damaged ? 0.82 : cap ? 1.08 : 1.03),
             yaw: edge.yaw,
-            shade: 0.84 + (hash % 13) / 100,
-            cap: row === rows - 1,
+            shade: (damaged ? 0.71 : 0.84) + (hash % 13) / 100,
+            cap,
+            base,
+            damaged,
           })
         }
       }
@@ -384,15 +474,349 @@ function addPerimeterWalls(
   samples.forEach((sample, index) => {
     dummy.position.set(sample.x, sample.y, sample.z)
     dummy.rotation.set(0, sample.yaw, 0)
-    dummy.scale.set(sample.length, rowHeight * (sample.cap ? 0.7 : 0.88), topDown ? (sample.cap ? 0.52 : 0.44) : (sample.cap ? 0.54 : 0.46))
+    const heightScale = rowHeight * (sample.cap ? 0.68 : sample.base ? 0.94 : sample.damaged ? 0.72 : 0.86)
+    const depthScale = topDown
+      ? sample.cap ? 0.66 : sample.base ? 0.58 : 0.46
+      : sample.cap ? 0.7 : sample.base ? 0.62 : 0.5
+    dummy.scale.set(sample.length, heightScale, depthScale)
     dummy.updateMatrix()
     mesh.setMatrixAt(index, dummy.matrix)
-    const color = white.clone().multiplyScalar(sample.shade + (sample.cap ? 0.08 : 0))
+    const color = white.clone().multiplyScalar(sample.shade + (sample.cap ? 0.1 : sample.base ? -0.03 : 0))
     mesh.setColorAt(index, color)
   })
   mesh.castShadow = true
   mesh.receiveShadow = true
   root.add(mesh)
+}
+
+type V3ArtMaterials = {
+  stone: THREE.MeshStandardMaterial
+  dark: THREE.MeshStandardMaterial
+  cap: THREE.MeshStandardMaterial
+  bone: THREE.MeshStandardMaterial
+  metal: THREE.MeshStandardMaterial
+  cloth: THREE.MeshStandardMaterial
+  wood: THREE.MeshStandardMaterial
+  gold: THREE.MeshStandardMaterial
+}
+
+function createArtMaterials(atmosphere: DungeonAtmosphere): V3ArtMaterials {
+  return {
+    stone: new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.91, metalness: 0.01 }),
+    dark: new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96, metalness: 0.005 }),
+    cap: new THREE.MeshStandardMaterial({
+      color: new THREE.Color(atmosphere.wall).multiplyScalar(1.12),
+      roughness: 0.88,
+      metalness: 0.015,
+    }),
+    bone: new THREE.MeshStandardMaterial({ color: 0xb8aa8a, roughness: 0.9, metalness: 0 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0x5d5146, roughness: 0.7, metalness: 0.32 }),
+    cloth: new THREE.MeshStandardMaterial({ color: 0x4e2c28, roughness: 0.92, metalness: 0 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x5f432c, roughness: 0.88, metalness: 0 }),
+    gold: new THREE.MeshStandardMaterial({ color: atmosphere.treasure, roughness: 0.48, metalness: 0.32 }),
+  }
+}
+
+function addCorridorArchitecture(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  const materials = createArtMaterials(atmosphere)
+  const topDown = mode !== 'walk'
+  for (const edge of value.corridors) {
+    const path = dungeonCorridorPath(value, edge)
+    const total = pathLength(path)
+    if (path.length < 2 || total < 5) continue
+
+    const spacing = topDown ? 8.6 : 7.4
+    const count = Math.max(0, Math.floor((total - 4) / spacing))
+    for (let index = 1; index <= count; index += 1) {
+      const sample = samplePathAtDistance(path, index * total / (count + 1))
+      if (!sample) continue
+      if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 1.7))) continue
+      const half = Math.max(1.45, edge.width / 2 - 0.2)
+      const px = -Math.cos(sample.yaw)
+      const pz = Math.sin(sample.yaw)
+      const left = { x: sample.x + px * half, z: sample.z + pz * half }
+      const right = { x: sample.x - px * half, z: sample.z - pz * half }
+      const floorY = dungeonFloorHeightV3(value, sample.x, sample.z)
+      addSupportPillar(root, left.x, floorY, left.z, sample.yaw, materials, mode, index % 3 === 0)
+      addSupportPillar(root, right.x, floorY, right.z, sample.yaw, materials, mode, index % 3 === 1)
+      if (index % 3 === 0) {
+        const recessSide = index % 2 ? left : right
+        const recess = new THREE.Group()
+        recess.position.set(recessSide.x, floorY, recessSide.z)
+        recess.rotation.y = sample.yaw
+        root.add(recess)
+        const back = new THREE.Mesh(new THREE.BoxGeometry(1.25, topDown ? 0.72 : 1.9, 0.18), materials.dark)
+        back.position.y = topDown ? 0.42 : 1.05
+        back.castShadow = true
+        recess.add(back)
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.38), materials.cap)
+        shelf.position.set(0, topDown ? 0.72 : 1.78, 0.06)
+        recess.add(shelf)
+      }
+      if (!topDown && index % 2 === 1) {
+        addArchLintel(root, sample.x, dungeonFloorHeightV3(value, sample.x, sample.z), sample.z, sample.yaw, edge.width, materials, 3.2)
+      }
+    }
+  }
+}
+
+function addRoomArchitecture(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  const materials = createArtMaterials(atmosphere)
+  const topDown = mode !== 'walk'
+  const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
+
+  for (const room of value.rooms) {
+    const outline = roomLocalOutline(room)
+    const cornerStride = outline.length > 8 ? 2 : 1
+    for (let index = 0; index < outline.length; index += cornerStride) {
+      const point = outline[index]
+      const world = localToWorld(room, point.x, point.z)
+      const previous = outline[(index - 1 + outline.length) % outline.length]
+      const next = outline[(index + 1) % outline.length]
+      const tangentX = next.x - previous.x
+      const tangentZ = next.z - previous.z
+      const yaw = THREE.MathUtils.degToRad(room.rotation) + Math.atan2(tangentX, tangentZ)
+      addSupportPillar(root, world.x, room.floorLevel, world.z, yaw, materials, mode, index % 3 === 0)
+    }
+
+    // Doors are architectural objects, not holes in giant room boxes. Every
+    // connected passage gets the same frame language so procedural rooms read
+    // as one authored kit.
+    for (const edge of value.corridors) {
+      const otherId = edge.fromRoomId === room.id ? edge.toRoomId : edge.toRoomId === room.id ? edge.fromRoomId : undefined
+      if (!otherId) continue
+      const other = roomMap.get(otherId)
+      if (!other) continue
+      const connection = getRoomConnection(room, other, edge.width)
+      const yaw = THREE.MathUtils.degToRad(connection.yaw)
+      const doorway = new THREE.Group()
+      doorway.position.set(connection.x, room.floorLevel, connection.z)
+      doorway.rotation.y = yaw
+      root.add(doorway)
+
+      const postHeight = topDown ? 1.34 : 3.25
+      const postWidth = 0.42
+      const half = Math.max(1.45, edge.width / 2)
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.62), materials.stone)
+        post.position.set(side * half, postHeight / 2, 0)
+        post.castShadow = true
+        post.receiveShadow = true
+        doorway.add(post)
+
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.78), materials.dark)
+        foot.position.set(side * half, 0.11, 0)
+        foot.castShadow = true
+        doorway.add(foot)
+
+        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.2, 0.76), materials.cap)
+        capital.position.set(side * half, postHeight - 0.1, 0)
+        capital.castShadow = true
+        doorway.add(capital)
+      }
+
+      if (!topDown) {
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 0.9, 0.42, 0.72), materials.cap)
+        lintel.position.y = postHeight + 0.08
+        lintel.castShadow = true
+        doorway.add(lintel)
+        for (const side of [-1, 1]) {
+          const wedge = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.48, 0.66), materials.stone)
+          wedge.position.set(side * (half * 0.63), postHeight - 0.2, 0)
+          wedge.rotation.z = side * 0.32
+          wedge.castShadow = true
+          doorway.add(wedge)
+        }
+      }
+    }
+  }
+}
+
+function addSupportPillar(
+  root: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+  materials: V3ArtMaterials,
+  mode: DungeonRenderMode,
+  damaged = false,
+) {
+  const topDown = mode !== 'walk'
+  const height = topDown ? (damaged ? 0.9 : 1.28) : (damaged ? 2.5 : 3.75)
+  const group = new THREE.Group()
+  group.position.set(x, y, z)
+  group.rotation.y = yaw
+  root.add(group)
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.24, 0.82), materials.dark)
+  base.position.y = 0.12
+  base.castShadow = true
+  base.receiveShadow = true
+  group.add(base)
+
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(damaged ? 0.48 : 0.55, height - 0.28, damaged ? 0.5 : 0.58), materials.stone)
+  shaft.position.y = 0.24 + (height - 0.28) / 2
+  shaft.rotation.z = damaged ? 0.025 : 0
+  shaft.castShadow = true
+  shaft.receiveShadow = true
+  group.add(shaft)
+
+  const capital = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.2, 0.76), materials.cap)
+  capital.position.y = height - 0.05
+  capital.castShadow = true
+  group.add(capital)
+
+  if (damaged) {
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.26), materials.dark)
+    chip.position.set(0.28, height * 0.72, 0.1)
+    chip.rotation.set(0.18, 0.22, 0.3)
+    group.add(chip)
+  }
+}
+
+function addArchLintel(
+  root: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+  width: number,
+  materials: V3ArtMaterials,
+  height: number,
+) {
+  const group = new THREE.Group()
+  group.position.set(x, y, z)
+  group.rotation.y = yaw
+  root.add(group)
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(Math.max(3.2, width + 0.7), 0.38, 0.62), materials.cap)
+  lintel.position.y = height
+  lintel.castShadow = true
+  group.add(lintel)
+  const keystone = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.7), materials.stone)
+  keystone.position.y = height - 0.05
+  keystone.rotation.z = 0.06
+  keystone.castShadow = true
+  group.add(keystone)
+}
+
+function pathLength(path: DungeonPoint[]) {
+  let total = 0
+  for (let index = 1; index < path.length; index += 1) total += Math.hypot(path[index].x - path[index - 1].x, path[index].z - path[index - 1].z)
+  return total
+}
+
+function samplePathAtDistance(path: DungeonPoint[], distance: number) {
+  if (path.length < 2) return undefined
+  let travelled = 0
+  for (let index = 1; index < path.length; index += 1) {
+    const a = path[index - 1]
+    const b = path[index]
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    if (travelled + length >= distance) {
+      const t = length > 0.0001 ? (distance - travelled) / length : 0
+      return {
+        x: THREE.MathUtils.lerp(a.x, b.x, t),
+        z: THREE.MathUtils.lerp(a.z, b.z, t),
+        yaw: Math.atan2(b.x - a.x, b.z - a.z),
+      }
+    }
+    travelled += length
+  }
+  const a = path[path.length - 2]
+  const b = path[path.length - 1]
+  return { x: b.x, z: b.z, yaw: Math.atan2(b.x - a.x, b.z - a.z) }
+}
+
+function addCorridorFixtures(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  flickerLights: DungeonV3FlickerLight[],
+  mode: DungeonRenderMode,
+) {
+  const materials = createArtMaterials(atmosphere)
+  for (const edge of value.corridors) {
+    const path = dungeonCorridorPath(value, edge)
+    const total = pathLength(path)
+    if (path.length < 2 || total < 10) continue
+    const count = Math.max(1, Math.floor(total / 10))
+    for (let index = 1; index <= count; index += 1) {
+      const sample = samplePathAtDistance(path, index * total / (count + 1))
+      if (!sample) continue
+      if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.1))) continue
+      const side = index % 2 ? 1 : -1
+      const offset = Math.max(1.25, edge.width / 2 - 0.5)
+      const px = -Math.cos(sample.yaw) * side
+      const pz = Math.sin(sample.yaw) * side
+      const x = sample.x + px * offset
+      const z = sample.z + pz * offset
+      const y = dungeonFloorHeightV3(value, sample.x, sample.z)
+      addFreestandingTorch(root, x, y, z, sample.yaw, atmosphere, materials, flickerLights, mode, stringHash(edge.id) + index * 31, index % 2 === 0)
+    }
+  }
+}
+
+function addFreestandingTorch(
+  root: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+  atmosphere: DungeonAtmosphere,
+  materials: V3ArtMaterials,
+  flickerLights: DungeonV3FlickerLight[],
+  mode: DungeonRenderMode,
+  seed: number,
+  castsLight: boolean,
+) {
+  const height = mode === 'walk' ? 1.9 : 1.08
+  const group = new THREE.Group()
+  group.position.set(x, y, z)
+  group.rotation.y = yaw
+  root.add(group)
+
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, height, 0.12), materials.metal)
+  post.position.y = height / 2
+  post.castShadow = true
+  group.add(post)
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.42), materials.dark)
+  foot.position.y = 0.05
+  group.add(foot)
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.1, 0.1, 8), materials.metal)
+  bowl.position.y = height + 0.02
+  group.add(bowl)
+  const flameMaterial = new THREE.MeshStandardMaterial({
+    color: atmosphere.torch,
+    emissive: atmosphere.torch,
+    emissiveIntensity: 3.4,
+    roughness: 0.25,
+  })
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.28, 7), flameMaterial)
+  flame.position.y = height + 0.22
+  group.add(flame)
+
+  if (castsLight) {
+    const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.46, 9.8, 1.6)
+    light.position.copy(flame.position)
+    group.add(light)
+    flickerLights.push({
+      light,
+      base: light.intensity,
+      phase: (seed % 628) / 100,
+      speed: 6.1 + (seed % 7) * 0.12,
+    })
+  }
 }
 
 function addRoomFixtures(
@@ -453,41 +877,459 @@ function addRoomFixtures(
   }
 }
 
-function addRoomDressing(root: THREE.Group, value: DungeonWithProps, atmosphere: DungeonAtmosphere) {
-  const stone = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.9 })
-  const dark = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.95 })
+type RoomArtObstacle = { x: number; z: number; radius: number }
 
+export function dungeonArtCollidesV3(value: DungeonWithProps, x: number, z: number, radius = 0.3) {
   for (const room of value.rooms) {
-    const random = seededRandom(stringHash(room.id) ^ value.seed)
-    const count = room.type === 'boss' ? 4 : room.type === 'combat' || room.type === 'elite' ? 2 : room.type === 'treasure' ? 2 : 0
-    for (let index = 0; index < count; index += 1) {
-      const side = index % 2 ? 1 : -1
-      const localX = side * room.width * (0.28 + random() * 0.08)
-      const localZ = room.depth * (0.18 + (index >= 2 ? 0.25 : 0))
-      const point = localToWorld(room, localX, localZ)
-      if (!dungeonRoomContainsV3(room, point.x, point.z, 1.1)) continue
-
-      const group = new THREE.Group()
-      group.position.set(point.x, room.floorLevel, point.z)
-      group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
-      root.add(group)
-
-      const base = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.25, 2.35), dark)
-      base.position.y = 0.13
-      base.castShadow = true
-      base.receiveShadow = true
-      group.add(base)
-      const lid = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.22, 2.1), stone)
-      lid.position.y = 0.32
-      lid.castShadow = true
-      lid.receiveShadow = true
-      group.add(lid)
-      const inset = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 1.45), dark)
-      inset.position.y = 0.47
-      group.add(inset)
+    const local = worldToLocal(room, x, z)
+    for (const obstacle of roomArtObstacles(room)) {
+      if (Math.hypot(local.x - obstacle.x, local.z - obstacle.z) <= obstacle.radius + radius) return true
     }
   }
+  return false
 }
+
+function addRoomDressing(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  const materials = createArtMaterials(atmosphere)
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const random = seededRandom(stringHash(room.id) ^ value.seed)
+    const floorY = room.floorLevel
+
+    if (template === 'threshold') {
+      addRoomBanner(root, room, -0.28, -0.42, materials, mode, 0x5d4030)
+      addRoomBanner(root, room, 0.28, -0.42, materials, mode, 0x5d4030)
+      addRubbleCluster(root, room, -0.34, 0.28, materials, random, false)
+      addRubbleCluster(root, room, 0.32, 0.34, materials, random, false)
+      continue
+    }
+
+    if (template === 'burial-chamber') {
+      addSarcophagus(root, room, -0.28, 0.18, 0.03, materials)
+      addSarcophagus(root, room, 0.28, 0.18, -0.03, materials)
+      addBonePile(root, room, 0, -0.27, materials, random)
+      addRubbleCluster(root, room, 0.38, -0.3, materials, random, false)
+      continue
+    }
+
+    if (template === 'ossuary-gallery') {
+      addSarcophagus(root, room, -0.3, -0.24, 0.02, materials)
+      addSarcophagus(root, room, -0.3, 0.03, -0.02, materials)
+      addSarcophagus(root, room, -0.3, 0.3, 0.025, materials)
+      addBonePile(root, room, 0.26, -0.26, materials, random)
+      addBonePile(root, room, 0.28, 0.24, materials, random)
+      continue
+    }
+
+    if (template === 'crossroads') {
+      addBrokenPlinth(root, room, 0, 0, materials, random)
+      addRubbleCluster(root, room, -0.35, -0.28, materials, random, false)
+      addRubbleCluster(root, room, 0.34, 0.29, materials, random, false)
+      continue
+    }
+
+    if (template === 'warden-hall') {
+      addStatue(root, room, -0.31, -0.2, 0, materials, mode)
+      addStatue(root, room, 0.31, -0.2, Math.PI, materials, mode)
+      addRoomBanner(root, room, -0.28, 0.42, materials, mode, 0x632d2b)
+      addRoomBanner(root, room, 0.28, 0.42, materials, mode, 0x632d2b)
+      addBonePile(root, room, 0, 0.22, materials, random)
+      continue
+    }
+
+    if (template === 'reliquary') {
+      addReliquary(root, room, 0, 0.02, materials)
+      addUrnCluster(root, room, -0.3, 0.3, materials, random)
+      addUrnCluster(root, room, 0.3, 0.3, materials, random)
+      addRoomBanner(root, room, 0, -0.42, materials, mode, 0x5a4430)
+      continue
+    }
+
+    if (template === 'shrine-hall') {
+      addShrine(root, room, 0, 0.02, materials)
+      addUrnCluster(root, room, -0.3, 0.28, materials, random)
+      addUrnCluster(root, room, 0.3, 0.28, materials, random)
+      addBonePile(root, room, 0, -0.3, materials, random)
+      continue
+    }
+
+    if (template === 'warden-sanctum') {
+      addBossDais(root, room, materials)
+      addStatue(root, room, -0.34, 0.18, Math.PI / 2, materials, mode)
+      addStatue(root, room, 0.34, 0.18, -Math.PI / 2, materials, mode)
+      addRoomBanner(root, room, -0.22, -0.43, materials, mode, 0x702d27)
+      addRoomBanner(root, room, 0.22, -0.43, materials, mode, 0x702d27)
+      addRubbleCluster(root, room, -0.38, 0.36, materials, random, false)
+      addRubbleCluster(root, room, 0.38, 0.36, materials, random, false)
+      continue
+    }
+
+    if (template === 'sealed-ossuary') {
+      addSarcophagus(root, room, 0, 0.08, 0, materials)
+      addBonePile(root, room, -0.28, -0.28, materials, random)
+      addBonePile(root, room, 0.29, -0.24, materials, random)
+      addUrnCluster(root, room, 0.3, 0.31, materials, random)
+      continue
+    }
+
+    if (template === 'storage-vault') {
+      addCrateStack(root, room, -0.28, 0.2, materials, random)
+      addCrateStack(root, room, 0.3, -0.18, materials, random)
+      addRubbleCluster(root, room, 0, 0.32, materials, random, false)
+      continue
+    }
+
+    // A safe fallback for manually-authored rooms created before templates were
+    // introduced. This keeps old dungeons visually coherent after migration.
+    if (room.type === 'boss') addBossDais(root, room, materials)
+    else if (room.type === 'treasure') addReliquary(root, room, 0, 0, materials)
+    else if (room.type === 'shrine') addShrine(root, room, 0, 0, materials)
+    else if (room.type === 'combat' || room.type === 'elite') {
+      addSarcophagus(root, room, -0.28, 0.18, 0, materials)
+      addSarcophagus(root, room, 0.28, 0.18, 0, materials)
+    } else {
+      addRubbleCluster(root, room, 0.24, 0.24, materials, random, false)
+    }
+
+    // Keep TypeScript aware that the room's authored floor level is consumed by
+    // every helper even when this fallback has no central object.
+    void floorY
+  }
+}
+
+function resolveRoomTemplate(room: DungeonRoom) {
+  if (room.template) return room.template
+  if (room.type === 'entrance') return 'threshold'
+  if (room.type === 'boss') return 'warden-sanctum'
+  if (room.type === 'elite') return 'warden-hall'
+  if (room.type === 'treasure') return 'reliquary'
+  if (room.type === 'shrine') return 'shrine-hall'
+  if (room.type === 'secret') return 'sealed-ossuary'
+  if (room.type === 'utility') return 'storage-vault'
+  if (room.shape === 'cross') return 'crossroads'
+  return 'burial-chamber'
+}
+
+function roomArtObstacles(room: DungeonRoom): RoomArtObstacle[] {
+  const template = resolveRoomTemplate(room)
+  if (template === 'burial-chamber') return [
+    { x: -room.width * 0.28, z: room.depth * 0.18, radius: 1.08 },
+    { x: room.width * 0.28, z: room.depth * 0.18, radius: 1.08 },
+  ]
+  if (template === 'ossuary-gallery') return [-0.24, 0.03, 0.3].map((z) => ({
+    x: -room.width * 0.3,
+    z: room.depth * z,
+    radius: 1.02,
+  }))
+  if (template === 'warden-hall') return [
+    { x: -room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
+    { x: room.width * 0.31, z: -room.depth * 0.2, radius: 0.8 },
+  ]
+  if (template === 'reliquary' || template === 'shrine-hall') return []
+  if (template === 'warden-sanctum') return [
+    { x: -room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
+    { x: room.width * 0.34, z: room.depth * 0.18, radius: 0.82 },
+  ]
+  if (template === 'sealed-ossuary') return [{ x: 0, z: room.depth * 0.08, radius: 1.12 }]
+  if (template === 'storage-vault') return [
+    { x: -room.width * 0.28, z: room.depth * 0.2, radius: 0.85 },
+    { x: room.width * 0.3, z: -room.depth * 0.18, radius: 0.85 },
+  ]
+  return []
+}
+
+function roomPlacement(room: DungeonRoom, xFraction: number, zFraction: number, yaw = 0) {
+  const localX = room.width * xFraction
+  const localZ = room.depth * zFraction
+  const world = localToWorld(room, localX, localZ)
+  return {
+    x: world.x,
+    y: room.floorLevel,
+    z: world.z,
+    yaw: THREE.MathUtils.degToRad(room.rotation) + yaw,
+  }
+}
+
+function addSarcophagus(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  yaw: number,
+  materials: V3ArtMaterials,
+) {
+  const p = roomPlacement(room, xFraction, zFraction, yaw)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.24, 2.5), materials.dark)
+  base.position.y = 0.12
+  base.castShadow = true
+  base.receiveShadow = true
+  group.add(base)
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.34, 2.28), materials.stone)
+  body.position.y = 0.34
+  body.castShadow = true
+  body.receiveShadow = true
+  group.add(body)
+
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 2.06), materials.cap)
+  lid.position.y = 0.59
+  lid.castShadow = true
+  group.add(lid)
+
+  const inset = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.07, 1.22), materials.dark)
+  inset.position.y = 0.7
+  group.add(inset)
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), materials.bone)
+  head.scale.set(0.9, 0.55, 1.05)
+  head.position.set(0, 0.76, -0.64)
+  group.add(head)
+}
+
+function addReliquary(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const lower = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.45, 0.26, 8), materials.dark)
+  lower.position.y = 0.13
+  lower.castShadow = true
+  lower.receiveShadow = true
+  group.add(lower)
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 0.22, 8), materials.stone)
+  upper.position.y = 0.37
+  upper.castShadow = true
+  group.add(upper)
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.58, 0.74), materials.wood)
+  chest.position.y = 0.76
+  chest.castShadow = true
+  group.add(chest)
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.18, 0.8), materials.gold)
+  lid.position.y = 1.13
+  lid.rotation.x = -0.08
+  group.add(lid)
+  for (const x of [-0.43, 0.43]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.65, 0.8), materials.metal)
+    band.position.set(x, 0.79, 0)
+    group.add(band)
+  }
+}
+
+function addShrine(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.55, 0.24, 8), materials.dark)
+  base.position.y = 0.12
+  base.receiveShadow = true
+  group.add(base)
+  const step = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 1.24, 0.2, 8), materials.stone)
+  step.position.y = 0.33
+  group.add(step)
+  const altar = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.82, 0.88), materials.cap)
+  altar.position.y = 0.79
+  altar.castShadow = true
+  group.add(altar)
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.16, 1.05), materials.stone)
+  slab.position.y = 1.28
+  group.add(slab)
+  const relic = new THREE.Mesh(new THREE.OctahedronGeometry(0.23), materials.gold)
+  relic.position.y = 1.65
+  relic.rotation.y = Math.PI / 4
+  group.add(relic)
+}
+
+function addBossDais(root: THREE.Group, room: DungeonRoom, materials: V3ArtMaterials) {
+  const p = roomPlacement(room, 0, 0)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+
+  const bottom = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.35, 0.22, 12), materials.dark)
+  bottom.position.y = 0.11
+  bottom.receiveShadow = true
+  group.add(bottom)
+  const middle = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.95, 0.18, 12), materials.stone)
+  middle.position.y = 0.31
+  group.add(middle)
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.62, 0.16, 12), materials.cap)
+  top.position.y = 0.48
+  group.add(top)
+  const seal = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.025, 12), materials.dark)
+  seal.position.y = 0.575
+  group.add(seal)
+  for (let index = 0; index < 6; index += 1) {
+    const angle = index * Math.PI / 3
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.28, 0.62), materials.stone)
+    stone.position.set(Math.cos(angle) * 1.55, 0.68, Math.sin(angle) * 1.55)
+    stone.rotation.y = -angle
+    stone.castShadow = true
+    group.add(stone)
+  }
+}
+
+function addStatue(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  yaw: number,
+  materials: V3ArtMaterials,
+  mode: DungeonRenderMode,
+) {
+  const p = roomPlacement(room, xFraction, zFraction, yaw)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+  const topDown = mode !== 'walk'
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.78, 0.28, 8), materials.dark)
+  base.position.y = 0.14
+  group.add(base)
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, topDown ? 0.68 : 1.12, 4, 8), materials.stone)
+  body.position.y = topDown ? 0.82 : 1.08
+  body.castShadow = true
+  group.add(body)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 9, 7), materials.cap)
+  head.position.y = topDown ? 1.34 : 1.86
+  group.add(head)
+  const staff = new THREE.Mesh(new THREE.BoxGeometry(0.08, topDown ? 1.0 : 1.65, 0.08), materials.metal)
+  staff.position.set(0.38, topDown ? 0.82 : 1.12, 0.02)
+  staff.rotation.z = -0.08
+  group.add(staff)
+}
+
+function addBrokenPlinth(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.18, 1.55), materials.dark)
+  slab.position.y = 0.09
+  slab.rotation.y = random() * 0.15
+  group.add(slab)
+  for (let index = 0; index < 5; index += 1) {
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.25 + random() * 0.28, 0.12 + random() * 0.18, 0.22 + random() * 0.3), index % 2 ? materials.stone : materials.cap)
+    chip.position.set((random() - 0.5) * 1.35, 0.18 + random() * 0.1, (random() - 0.5) * 1.35)
+    chip.rotation.set(random() * 0.25, random() * Math.PI, random() * 0.25)
+    group.add(chip)
+  }
+}
+
+function addRubbleCluster(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  materials: V3ArtMaterials,
+  random: () => number,
+  bones: boolean,
+) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+  for (let index = 0; index < 7; index += 1) {
+    const size = 0.12 + random() * 0.3
+    const mesh = bones
+      ? new THREE.Mesh(new THREE.CapsuleGeometry(0.035, size * 0.55, 3, 5), materials.bone)
+      : new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), index % 3 ? materials.dark : materials.stone)
+    mesh.position.set((random() - 0.5) * 1.35, bones ? 0.07 : size * 0.42, (random() - 0.5) * 1.15)
+    mesh.rotation.set(random() * 0.5, random() * Math.PI, random() * 0.5)
+    mesh.castShadow = !bones
+    group.add(mesh)
+  }
+}
+
+function addBonePile(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  addRubbleCluster(root, room, xFraction, zFraction, materials, random, true)
+  const p = roomPlacement(room, xFraction, zFraction)
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 5), materials.bone)
+  skull.scale.set(1, 0.82, 0.92)
+  skull.position.set(p.x + 0.16, p.y + 0.1, p.z - 0.08)
+  root.add(skull)
+}
+
+function addUrnCluster(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  root.add(group)
+  for (let index = 0; index < 3; index += 1) {
+    const height = 0.34 + random() * 0.2
+    const urn = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.2, height, 7), index === 1 ? materials.cap : materials.stone)
+    urn.position.set((index - 1) * 0.32 + (random() - 0.5) * 0.08, height / 2, (random() - 0.5) * 0.24)
+    urn.rotation.y = random() * 0.5
+    urn.castShadow = true
+    group.add(urn)
+  }
+}
+
+function addCrateStack(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw + (random() - 0.5) * 0.4
+  root.add(group)
+
+  const crates = [
+    { x: -0.25, y: 0.3, z: 0, size: 0.58 },
+    { x: 0.3, y: 0.26, z: 0.12, size: 0.5 },
+    { x: -0.05, y: 0.78, z: 0.03, size: 0.48 },
+  ]
+  for (const crate of crates) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(crate.size, crate.size, crate.size), materials.wood)
+    mesh.position.set(crate.x, crate.y, crate.z)
+    mesh.rotation.y = (random() - 0.5) * 0.28
+    mesh.castShadow = true
+    group.add(mesh)
+    const band = new THREE.Mesh(new THREE.BoxGeometry(crate.size + 0.03, 0.06, crate.size + 0.03), materials.metal)
+    band.position.set(crate.x, crate.y, crate.z)
+    group.add(band)
+  }
+}
+
+function addRoomBanner(
+  root: THREE.Group,
+  room: DungeonRoom,
+  xFraction: number,
+  zFraction: number,
+  materials: V3ArtMaterials,
+  mode: DungeonRenderMode,
+  color: number,
+) {
+  const p = roomPlacement(room, xFraction, zFraction)
+  const group = new THREE.Group()
+  group.position.set(p.x, p.y, p.z)
+  group.rotation.y = p.yaw
+  root.add(group)
+  const height = mode === 'walk' ? 1.85 : 0.9
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.07, 0.08), materials.metal)
+  bar.position.y = height
+  group.add(bar)
+  const cloth = new THREE.MeshStandardMaterial({ color, roughness: 0.96, side: THREE.DoubleSide })
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(0.72, mode === 'walk' ? 1.15 : 0.55), cloth)
+  banner.position.y = height - (mode === 'walk' ? 0.62 : 0.33)
+  banner.rotation.x = -Math.PI / 2.1
+  group.add(banner)
+}
+
 
 function roomLocalOutline(room: DungeonRoom): DungeonPoint[] {
   const halfW = room.width / 2
@@ -529,10 +1371,11 @@ function roomWallPoint(room: DungeonRoom, side: 'north' | 'south' | 'east' | 'we
   let x = 0
   let z = 0
   let yaw = 0
-  if (side === 'north') { x = room.width * along; z = -room.depth / 2 + inset; yaw = 0 }
-  if (side === 'south') { x = room.width * along; z = room.depth / 2 - inset; yaw = Math.PI }
-  if (side === 'east') { x = room.width / 2 - inset; z = room.depth * along; yaw = -Math.PI / 2 }
-  if (side === 'west') { x = -room.width / 2 + inset; z = room.depth * along; yaw = Math.PI / 2 }
+  const wallAlong = room.shape === 'cross' ? THREE.MathUtils.clamp(along, -0.16, 0.16) : along
+  if (side === 'north') { x = room.width * wallAlong; z = -room.depth / 2 + inset; yaw = 0 }
+  if (side === 'south') { x = room.width * wallAlong; z = room.depth / 2 - inset; yaw = Math.PI }
+  if (side === 'east') { x = room.width / 2 - inset; z = room.depth * wallAlong; yaw = -Math.PI / 2 }
+  if (side === 'west') { x = -room.width / 2 + inset; z = room.depth * wallAlong; yaw = Math.PI / 2 }
   const world = localToWorld(room, x, z)
   return { ...world, yaw: yaw + THREE.MathUtils.degToRad(room.rotation) }
 }
