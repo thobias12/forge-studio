@@ -1369,7 +1369,20 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
     light.position.y = 1.6
     group.add(light)
   } else if (item.type === 'trigger') {
-    object = new THREE.Mesh(new THREE.CylinderGeometry(item.radius ?? 2, item.radius ?? 2, 0.08, 24), new THREE.MeshBasicMaterial({ color, wireframe: true }))
+    const radius = item.radius ?? 2
+    const points: THREE.Vector3[] = []
+    for (let index = 0; index < 64; index += 1) {
+      const angle = index / 64 * Math.PI * 2
+      points.push(new THREE.Vector3(Math.cos(angle) * radius, 0.08, Math.sin(angle) * radius))
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points)
+    object = new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: selected ? 0.95 : 0.58,
+      depthTest: false,
+    }))
+    object.renderOrder = 22
   } else {
     object = new THREE.Mesh(item.type === 'enemy' ? new THREE.OctahedronGeometry(0.42) : new THREE.SphereGeometry(0.34, 14, 10), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2 }))
   }
