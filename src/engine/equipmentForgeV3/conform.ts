@@ -163,6 +163,19 @@ export function buildConformedTunic(
     if (left) {
       meshes.push(left)
       meshes.push(
+        createSkinnedRowBand(
+          source,
+          left.geometry,
+          0,
+          1,
+          18,
+          trim,
+          'EFV3_ArmholeTrim_L',
+          .58,
+          .0021,
+        ),
+      )
+      meshes.push(
         createShoulderBridge(
           source,
           torso.geometry,
@@ -187,6 +200,19 @@ export function buildConformedTunic(
 
     if (right) {
       meshes.push(right)
+      meshes.push(
+        createSkinnedRowBand(
+          source,
+          right.geometry,
+          0,
+          1,
+          18,
+          trim,
+          'EFV3_ArmholeTrim_R',
+          .58,
+          .0021,
+        ),
+      )
       meshes.push(
         createShoulderBridge(
           source,
@@ -230,6 +256,14 @@ export function buildConformedTunic(
       ...createVestPanelDetails(
         source,
         vest.geometry,
+        leather,
+        trim,
+      ),
+    )
+    meshes.push(
+      ...createShoulderReinforcements(
+        source,
+        torso.geometry,
         leather,
         trim,
       ),
@@ -582,16 +616,13 @@ function createTorsoTemplate(
           segments +
         next
 
-      // Wind the sleeve tube outward. The previous order produced
-      // inward-facing normals, so the single-sided cloth material culled
-      // most of the short sleeve and left the body arm visibly exposed.
       indices.push(
         a,
-        b,
         c,
         b,
+        b,
+        c,
         d,
-        c,
       )
     }
   }
@@ -2850,6 +2881,68 @@ function createTunicSeamDetails(
       'EFV3_TunicSideSeam_R',
       'radial',
       .0016,
+    ),
+  ]
+}
+
+function createShoulderReinforcements(
+  source: THREE.SkinnedMesh,
+  torsoGeometry: THREE.BufferGeometry,
+  leather: THREE.Material,
+  trim: THREE.Material,
+) {
+  return [
+    createGridAreaPatch(
+      source,
+      torsoGeometry,
+      48,
+      16,
+      18,
+      9,
+      15,
+      leather,
+      'EFV3_ShoulderReinforcement_L',
+      'radial',
+      .0042,
+    ),
+    createGridAreaPatch(
+      source,
+      torsoGeometry,
+      48,
+      16,
+      18,
+      33,
+      39,
+      leather,
+      'EFV3_ShoulderReinforcement_R',
+      'radial',
+      .0042,
+    ),
+    createGridRowStrip(
+      source,
+      torsoGeometry,
+      48,
+      16,
+      17,
+      9,
+      15,
+      trim,
+      'EFV3_ShoulderReinforcementSeam_L',
+      'radial',
+      .0048,
+    ),
+    createGridRowStrip(
+      source,
+      torsoGeometry,
+      48,
+      16,
+      17,
+      33,
+      39,
+      trim,
+      'EFV3_ShoulderReinforcementSeam_R',
+      'radial',
+      .0048,
     ),
   ]
 }
