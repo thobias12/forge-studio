@@ -12,9 +12,9 @@ from mathutils import Vector
 STYLES = {
     "ranger": {
         "name": "Ranger Field Vest",
-        "cloth": "#26392d",
-        "leather": "#412b1e",
-        "trim": "#7b5d3d",
+        "cloth": "#294333",
+        "leather": "#2b1c14",
+        "trim": "#84613b",
         "accent": "#6b3038",
         "metal": "#7d8589",
         "length": 0.515,
@@ -1040,23 +1040,30 @@ def outward_shell(obj, clearance, thickness, smooth_iterations=1):
     if len(obj.data.vertices) == 0:
         return
 
+    # A wearable garment should follow the body envelope without copying
+    # every anatomical bump. Smooth the cut surface first, preserving
+    # volume and protecting open borders, then push the simplified garment
+    # outward for reliable body clearance.
+    if smooth_iterations > 0:
+        smooth = obj.modifiers.new(
+            "FORGE_GarmentSurface",
+            "LAPLACIANSMOOTH",
+        )
+        smooth.lambda_factor = 0.30
+        smooth.lambda_border = 0.025
+        smooth.iterations = smooth_iterations
+        try:
+            smooth.use_volume_preserve = True
+            smooth.use_normalized = True
+        except Exception:
+            pass
+        apply_modifier(obj, smooth)
+
     displace = obj.modifiers.new("FORGE_Clearance", "DISPLACE")
     displace.direction = "NORMAL"
     displace.mid_level = 0.0
     displace.strength = clearance
     apply_modifier(obj, displace)
-
-    if smooth_iterations > 0:
-        smooth = obj.modifiers.new("FORGE_SurfaceSmooth", "SMOOTH")
-        smooth.factor = 0.22
-        smooth.iterations = smooth_iterations
-        try:
-            smooth.use_x = True
-            smooth.use_y = True
-            smooth.use_z = True
-        except Exception:
-            pass
-        apply_modifier(obj, smooth)
 
     solidify = obj.modifiers.new("FORGE_Thickness", "SOLIDIFY")
     solidify.thickness = thickness
@@ -1490,8 +1497,8 @@ def ranger_front_panels_predicate(
             * shoulder_t
         )
         opening = (
-            0.095
-            + 0.050
+            0.175
+            + 0.055
             * smoothstep(
                 center_top - 0.060,
                 shoulder_top,
@@ -1499,7 +1506,7 @@ def ranger_front_panels_predicate(
             )
         )
         outer = (
-            0.790
+            0.755
             - 0.045
             * smoothstep(
                 center_top - 0.025,
@@ -1694,7 +1701,7 @@ def ranger_diagonal_strap_predicate(
         )
         return abs(
             w - target_w
-        ) <= 0.082
+        ) <= 0.105
 
     return keep
 
@@ -2035,8 +2042,8 @@ def create_chest(body, rig, frame, style, seed):
     )
 
     height = frame["height"]
-    clearance = height * 0.0038
-    cloth_thickness = height * 0.00180
+    clearance = height * 0.0046
+    cloth_thickness = height * 0.00185
     overlay_thickness = height * 0.00150
 
     cloth = material(
@@ -2088,7 +2095,7 @@ def create_chest(body, rig, frame, style, seed):
         ),
         clearance,
         cloth_thickness,
-        smooth_iterations=0,
+        smooth_iterations=3,
         allowed_indices=ranger_surface_indices,
     )
     if base:
@@ -2116,7 +2123,7 @@ def create_chest(body, rig, frame, style, seed):
             ),
             clearance + height * 0.0042,
             overlay_thickness,
-            smooth_iterations=0,
+            smooth_iterations=5,
             allowed_indices=ranger_surface_indices,
         )
         if main_leather:
@@ -2135,7 +2142,7 @@ def create_chest(body, rig, frame, style, seed):
             ),
             clearance + height * 0.0058,
             overlay_thickness * 1.06,
-            smooth_iterations=0,
+            smooth_iterations=3,
             allowed_indices=ranger_surface_indices,
         )
         if shoulders:
