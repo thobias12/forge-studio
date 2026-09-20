@@ -5,6 +5,7 @@ import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
+import { dungeonArtCollidesV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity, distanceToSegment, disposeSceneObject } from './ForgeDungeonRuntimeHelpers'
@@ -329,25 +330,37 @@ export const dungeonGameplayMethods = {
     if (!room) return
     const nextX = enemy.group.position.x + delta.x
     const nextZ = enemy.group.position.z + delta.z
-    if (pointInsideRoom(room, nextX, nextZ, ENEMY_RADIUS)) { enemy.group.position.x = nextX; enemy.group.position.z = nextZ }
+    const inside = this.dungeon.theme === 'crypt'
+      ? dungeonRoomContainsV3(room, nextX, nextZ, ENEMY_RADIUS)
+      : pointInsideRoom(room, nextX, nextZ, ENEMY_RADIUS)
+    if (inside) { enemy.group.position.x = nextX; enemy.group.position.z = nextZ }
   },
 
   canWalkAt(x: number, z: number, radius: number) {
-    const roomOk = this.dungeon.rooms.some((room) => pointInsideRoom(room, x, z, radius))
-    const corridorOk = this.dungeon.corridors.some((edge) => {
-      const a = this.dungeon.rooms.find((room) => room.id === edge.fromRoomId)
-      const b = this.dungeon.rooms.find((room) => room.id === edge.toRoomId)
-      if (!a || !b) return false
-      const from = getRoomConnection(a, b, edge.width)
-      const to = getRoomConnection(b, a, edge.width)
-      return distanceToSegment(x, z, from.x, from.z, to.x, to.z) <= Math.max(0.7, edge.width / 2 - radius * 0.45)
-    })
-    if (!roomOk && !corridorOk) return false
+    const cryptV3 = this.dungeon.theme === 'crypt'
+    if (cryptV3) {
+      if (!dungeonContainsPointV3(this.runtimeDungeon, x, z, radius)) return false
+      if (dungeonArtCollidesV3(this.runtimeDungeon, x, z, radius)) return false
+    } else {
+      const roomOk = this.dungeon.rooms.some((room) => pointInsideRoom(room, x, z, radius))
+      const corridorOk = this.dungeon.corridors.some((edge) => {
+        const a = this.dungeon.rooms.find((room) => room.id === edge.fromRoomId)
+        const b = this.dungeon.rooms.find((room) => room.id === edge.toRoomId)
+        if (!a || !b) return false
+        const from = getRoomConnection(a, b, edge.width)
+        const to = getRoomConnection(b, a, edge.width)
+        return distanceToSegment(x, z, from.x, from.z, to.x, to.z) <= Math.max(0.7, edge.width / 2 - radius * 0.45)
+      })
+      if (!roomOk && !corridorOk) return false
+    }
 
     for (const prop of dungeonProps(this.runtimeDungeon)) {
       if (!prop.collision) continue
       const propRadius = Math.max(0.28, prop.scale * (prop.assetRef === 'pillar' || prop.assetRef === 'statue' ? 0.72 : 0.52))
       if (Math.hypot(x - prop.x, z - prop.z) < radius + propRadius) return false
+    }
+    for (const wall of this.dungeon.walls ?? []) {
+      if (distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2) <= radius + Math.max(0.08, wall.thickness / 2)) return false
     }
     for (const marker of this.dungeon.markers.filter((candidate) => candidate.type === 'door')) {
       const locked = Boolean(marker.data.locked) || this.lockedDoorIds.has(marker.id)
@@ -357,6 +370,7 @@ export const dungeonGameplayMethods = {
   },
 
   floorHeightAt(x: number, z: number) {
+    if (this.dungeon.theme === 'crypt') return dungeonFloorHeightV3(this.runtimeDungeon, x, z)
     const room = this.dungeon.rooms.find((candidate) => pointInsideRoom(candidate, x, z, -0.2))
     return room?.floorLevel ?? 0
   }
