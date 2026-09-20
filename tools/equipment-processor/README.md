@@ -80,3 +80,9 @@ Weapons still use the raw normalized path in this proof stage; automatic grip/so
 ## v1.79.2 setup validation
 
 Forge no longer considers the generator ready merely because the virtual environment exists. Setup now validates imports for NumPy, rembg, torch, xatlas, Pillow and TripoSR itself before writing a ready marker. Missing runtime packages are repaired automatically where possible. uv-created environments are seeded with pip, and a missing pip installation is repaired with ensurepip.
+
+## v1.79.3 Windows marching-cubes fallback
+
+The upstream TripoSR requirements install torchmcubes from GitHub. Modern torchmcubes must be compiled against the installed PyTorch and requires a C++20 compiler (and CUDA toolkit for its GPU extension). Forge avoids making those developer tools a prerequisite on Windows.
+
+During setup Forge now creates a filtered requirements file without torchmcubes, installs scikit-image from a wheel, and writes a local torchmcubes compatibility module inside the TripoSR checkout. TripoSR inference still uses PyTorch/CUDA on the NVIDIA GPU. Only the final marching-cubes surface extraction runs through the portable scikit-image CPU implementation.
