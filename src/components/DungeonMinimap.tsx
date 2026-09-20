@@ -8,10 +8,12 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
 }) {
   const layout = useMemo(() => {
     if (!value.rooms.length) return undefined
-    const minX = Math.min(...value.rooms.map((room) => room.x - room.width / 2))
-    const maxX = Math.max(...value.rooms.map((room) => room.x + room.width / 2))
-    const minZ = Math.min(...value.rooms.map((room) => room.z - room.depth / 2))
-    const maxZ = Math.max(...value.rooms.map((room) => room.z + room.depth / 2))
+    const wallXs = (value.walls ?? []).flatMap((wall) => [wall.x1, wall.x2])
+    const wallZs = (value.walls ?? []).flatMap((wall) => [wall.z1, wall.z2])
+    const minX = Math.min(...value.rooms.map((room) => room.x - room.width / 2), ...wallXs)
+    const maxX = Math.max(...value.rooms.map((room) => room.x + room.width / 2), ...wallXs)
+    const minZ = Math.min(...value.rooms.map((room) => room.z - room.depth / 2), ...wallZs)
+    const maxZ = Math.max(...value.rooms.map((room) => room.z + room.depth / 2), ...wallZs)
     const width = Math.max(8, maxX - minX)
     const depth = Math.max(8, maxZ - minZ)
     const scale = Math.min(240 / width, 145 / depth)
@@ -19,7 +21,7 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
     const oz = 82 - (minZ + maxZ) * 0.5 * scale
     const point = (x: number, z: number) => ({ x: x * scale + ox, y: z * scale + oz })
     return { scale, point }
-  }, [value.rooms])
+  }, [value.rooms, value.walls])
 
   if (!layout) return <div className="dungeon-minimap empty">No rooms yet</div>
   const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
@@ -33,6 +35,13 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
           const p1 = layout.point(a.x, a.z), p2 = layout.point(b.x, b.z)
           const bend = layout.point(b.x, a.z)
           return <path key={edge.id} d={`M ${p1.x} ${p1.y} L ${bend.x} ${bend.y} L ${p2.x} ${p2.y}`} />
+        })}
+      </g>
+      <g className="minimap-walls">
+        {(value.walls ?? []).map((wall) => {
+          const a = layout.point(wall.x1, wall.z1)
+          const b = layout.point(wall.x2, wall.z2)
+          return <line key={wall.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} strokeWidth={Math.max(1.6, wall.thickness * layout.scale)} />
         })}
       </g>
       <g className="minimap-rooms">

@@ -53,31 +53,66 @@ export function addCryptCorridorSurfacePass(
 }
 
 function addFloor(group: THREE.Group, room: DungeonRoom, mats: Mats, random: () => number) {
-  const base = new THREE.Mesh(new THREE.BoxGeometry(room.width-.12,.035,room.depth-.12),mats.floorDark)
-  base.position.y=.248; base.receiveShadow=true; base.userData.roomId=room.id; group.add(base)
+  const base = new THREE.Mesh(new THREE.BoxGeometry(room.width-.12,.05,room.depth-.12),mats.floorDark)
+  base.position.y=.245
+  base.receiveShadow=true
+  base.userData.roomId=room.id
+  group.add(base)
 
-  const slabs:Array<{x:number;z:number;w:number;d:number;r:number;s:number}>=[]
-  let z=-room.depth/2+.58,row=0
-  while(z<room.depth/2-.34){
-    const d=.9+random()*.65
-    let x=-room.width/2+(row%2?-.7:.1)+random()*.24
-    while(x<room.width/2-.25){
-      const w=1.15+random()*1.9
-      if(random()>(room.type==='secret'?.09:.035)) slabs.push({x:x+w/2,z:z+d/2,w:w*(.945+random()*.025),d:d*(.94+random()*.025),r:(random()-.5)*.025,s:.8+random()*.2})
-      x+=w+.045+random()*.055
+  // Deliberately regular running-bond masonry. Variation stays in individual
+  // brick size/height/tint so the floor reads as authored brickwork rather
+  // than a random field of slabs.
+  const course=.64
+  const nominalBrick=1.34
+  const bricks:Array<{x:number;z:number;w:number;d:number;r:number;s:number;y:number}>=[]
+  let row=0
+  for(let z=-room.depth/2+course/2+.1;z<room.depth/2-.16;z+=course){
+    const offset=row%2?nominalBrick*.5:0
+    let column=0
+    for(let x=-room.width/2+nominalBrick/2-offset;x<room.width/2+.3;x+=nominalBrick){
+      const edgeLeft=Math.max(-room.width/2+.1,x-nominalBrick/2)
+      const edgeRight=Math.min(room.width/2-.1,x+nominalBrick/2)
+      const width=edgeRight-edgeLeft
+      if(width>.22&&random()>(room.type==='secret'?.055:.018)){
+        const chip=.94+random()*.045
+        bricks.push({
+          x:(edgeLeft+edgeRight)/2+(random()-.5)*.018,
+          z:z+(random()-.5)*.015,
+          w:width*chip,
+          d:course*(.91+random()*.045),
+          r:(random()-.5)*.012,
+          s:.76+random()*.22,
+          y:.282+(random()-.5)*.009,
+        })
+      }
+      column++
     }
-    z+=d+.045+random()*.055; row++
+    row++
   }
-  const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.055,1),mats.floor,slabs.length)
-  const dummy=new THREE.Object3D(), white=new THREE.Color(0xffffff)
-  slabs.forEach((slab,i)=>{dummy.position.set(slab.x,.284+(random()-.5)*.012,slab.z);dummy.rotation.set(0,slab.r,0);dummy.scale.set(slab.w,1,slab.d);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);mesh.setColorAt(i,white.clone().multiplyScalar(slab.s))})
-  mesh.receiveShadow=true; mesh.userData.roomId=room.id; group.add(mesh)
 
-  const puddles=room.type==='boss'?5:room.type==='entrance'?1:2+Math.floor(random()*2)
+  const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.065,1),mats.floor,bricks.length)
+  const dummy=new THREE.Object3D(), white=new THREE.Color(0xffffff)
+  bricks.forEach((brick,index)=>{
+    dummy.position.set(brick.x,brick.y,brick.z)
+    dummy.rotation.set(0,brick.r,0)
+    dummy.scale.set(brick.w,1,brick.d)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index,dummy.matrix)
+    mesh.setColorAt(index,white.clone().multiplyScalar(brick.s))
+  })
+  mesh.receiveShadow=true
+  mesh.userData.roomId=room.id
+  group.add(mesh)
+
+  const puddles=room.type==='boss'?4:room.type==='entrance'?1:1+Math.floor(random()*2)
   for(let i=0;i<puddles;i++){
-    const wet=new THREE.Mesh(new THREE.CircleGeometry(.7+random()*1.15,28),mats.wet.clone())
-    wet.rotation.x=-Math.PI/2; wet.rotation.z=random()*Math.PI; wet.scale.set(1.2+random()*.9,.42+random()*.42,1)
-    wet.position.set((random()-.5)*room.width*.68,.316,(random()-.5)*room.depth*.68); wet.userData.roomId=room.id; group.add(wet)
+    const wet=new THREE.Mesh(new THREE.CircleGeometry(.55+random()*.95,28),mats.wet.clone())
+    wet.rotation.x=-Math.PI/2
+    wet.rotation.z=random()*Math.PI
+    wet.scale.set(1.3+random()*.85,.38+random()*.35,1)
+    wet.position.set((random()-.5)*room.width*.68,.323,(random()-.5)*room.depth*.68)
+    wet.userData.roomId=room.id
+    group.add(wet)
   }
 }
 
@@ -126,11 +161,45 @@ function addBossFloor(group:THREE.Group,room:DungeonRoom,mats:Mats,random:()=>nu
 }
 
 function addCorridor(parent:THREE.Group,x1:number,z1:number,x2:number,z2:number,width:number,mats:Mats,seed:string){
-  const dx=x2-x1,dz=z2-z1,length=Math.hypot(dx,dz);if(length<.3)return
+  const dx=x2-x1,dz=z2-z1,length=Math.hypot(dx,dz)
+  if(length<.3)return
   const angle=Math.atan2(dx,dz),cx=(x1+x2)/2,cz=(z1+z2)/2,random=rng(hash(seed))
-  const base=new THREE.Mesh(new THREE.BoxGeometry(width-.08,.035,length),mats.floorDark);base.position.set(cx,.245,cz);base.rotation.y=angle;base.receiveShadow=true;parent.add(base)
-  const cols=Math.max(2,Math.floor(width/1.35)),rows=Math.max(1,Math.floor(length/1.2)),mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.055,1),mats.floor,cols*rows),dummy=new THREE.Object3D();let i=0
-  for(let a=0;a<cols;a++)for(let r=0;r<rows;r++){const lx=(a-(cols-1)/2)*(width/cols),lz=(r-(rows-1)/2)*(length/rows);dummy.position.set(cx+Math.cos(angle)*lx+Math.sin(angle)*lz,.282,cz-Math.sin(angle)*lx+Math.cos(angle)*lz);dummy.rotation.set(0,angle+(random()-.5)*.025,0);dummy.scale.set(width/cols*.94,1,length/rows*.94);dummy.updateMatrix();mesh.setMatrixAt(i++,dummy.matrix)}mesh.receiveShadow=true;parent.add(mesh)
+  const base=new THREE.Mesh(new THREE.BoxGeometry(width-.08,.045,length),mats.floorDark)
+  base.position.set(cx,.245,cz)
+  base.rotation.y=angle
+  base.receiveShadow=true
+  parent.add(base)
+
+  const brickAcross=.98
+  const brickAlong=1.25
+  const rows=Math.max(1,Math.ceil(length/brickAlong))
+  const cols=Math.max(2,Math.ceil(width/brickAcross))
+  const bricks:Array<{x:number;z:number;w:number;d:number;s:number}>=[]
+  for(let row=0;row<rows;row++){
+    const z=-length/2+(row+.5)*(length/rows)
+    const offset=row%2?(width/cols)*.5:0
+    for(let col=-1;col<=cols;col++){
+      const x=-width/2+(col+.5)*(width/cols)+offset
+      const left=Math.max(-width/2+.05,x-width/cols/2)
+      const right=Math.min(width/2-.05,x+width/cols/2)
+      if(right-left<.18)continue
+      bricks.push({x:(left+right)/2,z,w:(right-left)*.92,d:(length/rows)*.91,s:.76+random()*.22})
+    }
+  }
+  const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.06,1),mats.floor,bricks.length)
+  const dummy=new THREE.Object3D(),white=new THREE.Color(0xffffff)
+  bricks.forEach((brick,index)=>{
+    const wx=cx+Math.cos(angle)*brick.x+Math.sin(angle)*brick.z
+    const wz=cz-Math.sin(angle)*brick.x+Math.cos(angle)*brick.z
+    dummy.position.set(wx,.283,wz)
+    dummy.rotation.set(0,angle,0)
+    dummy.scale.set(brick.w,1,brick.d)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index,dummy.matrix)
+    mesh.setColorAt(index,white.clone().multiplyScalar(brick.s))
+  })
+  mesh.receiveShadow=true
+  parent.add(mesh)
 }
 
 function box(w:number,h:number,d:number,mat:THREE.Material,y:number){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.y=y;return m}

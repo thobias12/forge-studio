@@ -5,12 +5,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
-import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom } from '../lib/dungeonPackage'
+import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
 
-export type DungeonTool = 'select' | 'room' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
+export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
 
 type Props = {
@@ -19,6 +19,7 @@ type Props = {
   selectedRoomId?: string
   selectedMarkerId?: string
   selectedPropId?: string
+  selectedWallId?: string
   corridorStartId?: string
   topDown: boolean
   playtest: boolean
@@ -27,9 +28,12 @@ type Props = {
   onRoomClick: (roomId: string) => void
   onMarkerClick: (markerId: string) => void
   onPropClick: (propId: string) => void
+  onWallClick: (wallId: string) => void
   onRoomMove: (roomId: string, x: number, z: number, freeMove: boolean) => void
   onRoomResize: (roomId: string, side: ResizeSide, x: number, z: number, freeMove: boolean) => void
   onPropMove: (propId: string, x: number, z: number, freeMove: boolean) => void
+  onRoomDraw: (rect: { x: number; z: number; width: number; depth: number }) => void
+  onWallDraw: (segment: { x1: number; z1: number; x2: number; z2: number }) => void
 }
 
 type RoomOpening = DungeonConnection & { corridorId: string }
@@ -37,6 +41,8 @@ type DragState =
   | { kind: 'room'; id: string; offsetX: number; offsetZ: number; pointerId: number }
   | { kind: 'prop'; id: string; offsetX: number; offsetZ: number; pointerId: number }
   | { kind: 'resize'; id: string; side: ResizeSide; pointerId: number }
+  | { kind: 'draw-room'; x: number; z: number; pointerId: number }
+  | { kind: 'draw-wall'; x: number; z: number; pointerId: number }
 type FlickerLight = { light: THREE.PointLight; base: number; phase: number; speed: number }
 
 export default function DungeonViewport(props: Props) {
@@ -53,8 +59,8 @@ export default function DungeonViewport(props: Props) {
     scene.background = new THREE.Color(initialAtmosphere.background)
     scene.fog = new THREE.FogExp2(initialAtmosphere.fog, props.value.settings.fogDensity * initialAtmosphere.fogMultiplier)
 
-    const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 300)
-    camera.position.set(26, 30, 32)
+    const camera = new THREE.PerspectiveCamera(46, 1, 0.05, 520)
+    camera.position.set(38, 46, 44)
     camera.rotation.order = 'YXZ'
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
@@ -78,7 +84,7 @@ export default function DungeonViewport(props: Props) {
     controls.target.set(4, 0, 0)
     controls.maxPolarAngle = Math.PI * 0.49
     controls.minDistance = 5
-    controls.maxDistance = 90
+    controls.maxDistance = 175
     controls.update()
 
     const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialAtmosphere.ambient)
@@ -87,24 +93,26 @@ export default function DungeonViewport(props: Props) {
     key.position.set(16, 24, 10)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
-    key.shadow.camera.left = -45
-    key.shadow.camera.right = 45
-    key.shadow.camera.top = 45
-    key.shadow.camera.bottom = -45
+    key.shadow.camera.left = -85
+    key.shadow.camera.right = 85
+    key.shadow.camera.top = 85
+    key.shadow.camera.bottom = -85
     key.shadow.camera.near = 1
-    key.shadow.camera.far = 90
+    key.shadow.camera.far = 150
     key.shadow.bias = -0.0005
     scene.add(key)
 
-    const grid = new THREE.GridHelper(100, 100, 0x385064, 0x1b2833)
+    const grid = new THREE.GridHelper(200, 200, 0x385064, 0x1b2833)
     scene.add(grid)
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }))
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }))
     ground.rotation.x = -Math.PI / 2
     ground.name = '__ground'
     scene.add(ground)
 
     const dungeonGroup = new THREE.Group()
     scene.add(dungeonGroup)
+    const drawPreview = new THREE.Group()
+    scene.add(drawPreview)
 
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
@@ -179,6 +187,14 @@ export default function DungeonViewport(props: Props) {
         )
         if (crypt) addCryptRoomEnvironment(dungeonGroup, roomValue, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, immersive)
       }
+      for (const wallValue of current.walls ?? []) {
+        addManualWall(
+          dungeonGroup,
+          wallValue,
+          atmosphere,
+          !immersive && wallValue.id === state.selectedWallId,
+        )
+      }
 
       const assetMap = new Map(state.libraryAssets.map((item) => [item.id, item]))
       for (const prop of dungeonProps(current)) {
@@ -223,15 +239,61 @@ export default function DungeonViewport(props: Props) {
     const getPreferredPropHit = (hits: THREE.Intersection[]) => {
       const propHit = hits.find((hit) => hit.object.userData.propId)
       if (!propHit) return undefined
-      const blocker = hits.find((hit) => !hit.object.userData.propId && (hit.object.userData.roomId || hit.object.userData.markerId))
+      const blocker = hits.find((hit) => !hit.object.userData.propId && (hit.object.userData.roomId || hit.object.userData.wallId || hit.object.userData.markerId))
       if (!blocker || propHit.distance <= blocker.distance + 0.7) return propHit
       return undefined
+    }
+
+    const clearDrawPreview = () => {
+      while (drawPreview.children.length) disposeObject(drawPreview.children.pop()!)
+    }
+
+    const showDrawPreview = (kind: 'room' | 'wall', x1: number, z1: number, x2: number, z2: number) => {
+      clearDrawPreview()
+      const material = new THREE.MeshBasicMaterial({
+        color: kind === 'room' ? 0x71c8ef : 0xe8ad65,
+        transparent: true,
+        opacity: .34,
+        depthWrite: false,
+      })
+      if (kind === 'room') {
+        const width = Math.max(.2, Math.abs(x2 - x1))
+        const depth = Math.max(.2, Math.abs(z2 - z1))
+        const preview = new THREE.Mesh(new THREE.BoxGeometry(width, .08, depth), material)
+        preview.position.set((x1 + x2) / 2, .34, (z1 + z2) / 2)
+        drawPreview.add(preview)
+      } else {
+        const dx = x2 - x1, dz = z2 - z1
+        const length = Math.hypot(dx, dz)
+        if (length < .05) return
+        const preview = new THREE.Mesh(new THREE.BoxGeometry(.34, .12, length), material)
+        preview.position.set((x1 + x2) / 2, .42, (z1 + z2) / 2)
+        preview.rotation.y = Math.atan2(dx, dz)
+        drawPreview.add(preview)
+      }
     }
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
       const state = propsRef.current
       if (state.playtest) { requestWalkLock(); event.preventDefault(); return }
+
+      if (state.tool === 'room' || state.tool === 'wall') {
+        const point = groundPoint(event)
+        if (!point) return
+        drag = {
+          kind: state.tool === 'room' ? 'draw-room' : 'draw-wall',
+          x: point.x,
+          z: point.z,
+          pointerId: event.pointerId,
+        }
+        renderer.domElement.setPointerCapture(event.pointerId)
+        controls.enabled = false
+        showDrawPreview(state.tool, point.x, point.z, point.x, point.z)
+        event.preventDefault()
+        return
+      }
+
       updatePointer(event)
       const hits = raycaster.intersectObjects([dungeonGroup, ground], true)
       const resizeHit = hits.find((hit) => hit.object.userData.resizeSide && hit.object.userData.roomId)
@@ -245,12 +307,18 @@ export default function DungeonViewport(props: Props) {
       }
 
       const preferredProp = state.tool === 'select' ? getPreferredPropHit(hits) : undefined
-      const hit = preferredProp ?? hits.find((candidate) => candidate.object.userData.propId || candidate.object.userData.roomId || candidate.object.userData.markerId || candidate.object.name === '__ground')
+      const hit = preferredProp ?? hits.find((candidate) => candidate.object.userData.propId || candidate.object.userData.wallId || candidate.object.userData.roomId || candidate.object.userData.markerId || candidate.object.name === '__ground')
       if (!hit) return
       const roomId = hit.object.userData.roomId as string | undefined
       const markerId = hit.object.userData.markerId as string | undefined
       const propId = hit.object.userData.propId as string | undefined
+      const wallId = hit.object.userData.wallId as string | undefined
 
+      if (state.tool === 'select' && wallId) {
+        state.onWallClick(wallId)
+        event.preventDefault()
+        return
+      }
       if (state.tool === 'select' && propId) {
         const item = dungeonProps(state.value).find((candidate) => candidate.id === propId)
         const point = groundPoint(event)
@@ -278,7 +346,8 @@ export default function DungeonViewport(props: Props) {
         }
       }
       if (state.tool === 'prop') { state.onGroundClick({ x: hit.point.x, z: hit.point.z }); return }
-      if (markerId) state.onMarkerClick(markerId)
+      if (wallId) state.onWallClick(wallId)
+      else if (markerId) state.onMarkerClick(markerId)
       else if (roomId) state.onRoomClick(roomId)
       else state.onGroundClick({ x: hit.point.x, z: hit.point.z })
     }
@@ -289,7 +358,8 @@ export default function DungeonViewport(props: Props) {
         if (!point) return
         if (drag.kind === 'room') propsRef.current.onRoomMove(drag.id, point.x - drag.offsetX, point.z - drag.offsetZ, event.shiftKey)
         else if (drag.kind === 'prop') propsRef.current.onPropMove(drag.id, point.x - drag.offsetX, point.z - drag.offsetZ, event.shiftKey)
-        else propsRef.current.onRoomResize(drag.id, drag.side, point.x, point.z, event.shiftKey)
+        else if (drag.kind === 'resize') propsRef.current.onRoomResize(drag.id, drag.side, point.x, point.z, event.shiftKey)
+        else showDrawPreview(drag.kind === 'draw-room' ? 'room' : 'wall', drag.x, drag.z, point.x, point.z)
         event.preventDefault()
         return
       }
@@ -301,15 +371,35 @@ export default function DungeonViewport(props: Props) {
       const hits = raycaster.intersectObjects(dungeonGroup.children, true)
       const propHit = getPreferredPropHit(hits)
       if (hits.some((hit) => hit.object.userData.resizeSide)) renderer.domElement.style.cursor = 'nwse-resize'
-      else if (propsRef.current.tool === 'select' && (propHit || hits.some((hit) => hit.object.userData.roomId))) renderer.domElement.style.cursor = 'grab'
+      else if (propsRef.current.tool === 'select' && (propHit || hits.some((hit) => hit.object.userData.roomId || hit.object.userData.wallId))) renderer.domElement.style.cursor = 'grab'
       else renderer.domElement.style.cursor = propsRef.current.tool === 'select' ? 'default' : 'crosshair'
     }
     const onPointerUp = (event: PointerEvent) => {
       if (!drag) return
-      if (renderer.domElement.hasPointerCapture(drag.pointerId)) renderer.domElement.releasePointerCapture(drag.pointerId)
+      const currentDrag = drag
+      const point = currentDrag.kind === 'draw-room' || currentDrag.kind === 'draw-wall'
+        ? groundPoint(event)
+        : undefined
+      if (renderer.domElement.hasPointerCapture(currentDrag.pointerId)) renderer.domElement.releasePointerCapture(currentDrag.pointerId)
       drag = undefined
       controls.enabled = true
       renderer.domElement.style.cursor = 'default'
+      if (point && currentDrag.kind === 'draw-room') {
+        propsRef.current.onRoomDraw({
+          x: (currentDrag.x + point.x) / 2,
+          z: (currentDrag.z + point.z) / 2,
+          width: Math.abs(point.x - currentDrag.x),
+          depth: Math.abs(point.z - currentDrag.z),
+        })
+      } else if (point && currentDrag.kind === 'draw-wall') {
+        propsRef.current.onWallDraw({
+          x1: currentDrag.x,
+          z1: currentDrag.z,
+          x2: point.x,
+          z2: point.z,
+        })
+      }
+      clearDrawPreview()
       event.preventDefault()
     }
 
@@ -365,7 +455,7 @@ export default function DungeonViewport(props: Props) {
       camera.fov = 48
       camera.updateProjectionMatrix()
       camera.rotation.set(0, 0, 0)
-      camera.position.set(26, 30, 32)
+      camera.position.set(38, 46, 44)
       controls.target.set(4, 0, 0)
       controls.enabled = true
       controls.update()
@@ -402,11 +492,13 @@ export default function DungeonViewport(props: Props) {
         state.value.rooms,
         state.value.corridors,
         state.value.markers,
+        state.value.walls ?? [],
         dungeonProps(state.value),
         state.value.settings,
         state.selectedRoomId,
         state.selectedMarkerId,
         state.selectedPropId,
+        state.selectedWallId,
         state.corridorStartId,
         state.playtest,
         state.libraryAssets.map((asset) => asset.id),
@@ -423,7 +515,7 @@ export default function DungeonViewport(props: Props) {
       } else {
         if (state.topDown && !drag) {
           const center = dungeonCenter(state.value.rooms)
-          camera.position.lerp(new THREE.Vector3(center.x, 42, center.z + 0.01), 0.09)
+          camera.position.lerp(new THREE.Vector3(center.x, 68, center.z + 0.01), 0.09)
           controls.target.lerp(new THREE.Vector3(center.x, 0, center.z), 0.09)
         }
         controls.enabled = !drag
@@ -460,6 +552,8 @@ export default function DungeonViewport(props: Props) {
       window.removeEventListener('blur', onBlur)
       controls.dispose()
       disposeObject(dungeonGroup)
+      clearDrawPreview()
+      drawPreview.removeFromParent()
       ground.geometry.dispose()
       disposeMaterial(ground.material as THREE.Material)
       renderer.dispose()
@@ -471,6 +565,75 @@ export default function DungeonViewport(props: Props) {
     <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
     {props.playtest && <div className="map-walk-overlay"><div className="map-crosshair" /><div className="map-walk-help"><strong>FIRST PERSON WALK</strong><span>Click for mouse look · WASD move · Shift sprint · Esc releases mouse</span></div></div>}
   </div>
+}
+
+function addManualWall(parent: THREE.Group, wall: DungeonWall, atmosphere: DungeonAtmosphere, selected: boolean) {
+  const dx = wall.x2 - wall.x1
+  const dz = wall.z2 - wall.z1
+  const length = Math.hypot(dx, dz)
+  if (length < .1) return
+  const root = new THREE.Group()
+  root.position.set((wall.x1 + wall.x2) / 2, 0, (wall.z1 + wall.z2) / 2)
+  root.rotation.y = Math.atan2(dx, dz)
+  root.userData.wallId = wall.id
+  parent.add(root)
+
+  const dark = new THREE.MeshStandardMaterial({ color: selected ? 0x426f82 : atmosphere.wallDark, roughness: .96 })
+  const brick = new THREE.MeshStandardMaterial({ color: selected ? 0x78bfd9 : atmosphere.wall, roughness: .92, metalness: .01 })
+  const core = new THREE.Mesh(new THREE.BoxGeometry(wall.thickness, wall.height, length), dark)
+  core.position.y = wall.height / 2
+  core.castShadow = true
+  core.receiveShadow = true
+  core.userData.wallId = wall.id
+  core.userData.arpgOccluder = true
+  root.add(core)
+
+  const rows = Math.max(3, Math.floor(wall.height / .52))
+  const rowHeight = wall.height / rows
+  const blocks: Array<{ z: number; y: number; length: number; shade: number }> = []
+  const random = seededWallRandom(wall.id)
+  for (let row = 0; row < rows; row += 1) {
+    let cursor = -length / 2 - (row % 2 ? .55 : .05)
+    while (cursor < length / 2) {
+      const blockLength = .85 + random() * .85
+      const center = cursor + blockLength / 2
+      if (center > -length / 2 && center < length / 2) blocks.push({
+        z: center,
+        y: row * rowHeight + rowHeight / 2,
+        length: Math.min(blockLength * .94, length),
+        shade: .78 + random() * .2,
+      })
+      cursor += blockLength + .055
+    }
+  }
+  const geometry = new THREE.BoxGeometry(1, 1, 1)
+  const mesh = new THREE.InstancedMesh(geometry, brick, blocks.length)
+  const dummy = new THREE.Object3D()
+  const tint = new THREE.Color(0xffffff)
+  blocks.forEach((block, index) => {
+    dummy.position.set(0, block.y, block.z)
+    dummy.scale.set(wall.thickness + .08, rowHeight * .82, block.length)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index, dummy.matrix)
+    mesh.setColorAt(index, tint.clone().multiplyScalar(block.shade))
+  })
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.userData.wallId = wall.id
+  mesh.userData.arpgOccluder = true
+  root.add(mesh)
+}
+
+function seededWallRandom(seedText: string) {
+  let seed = 2166136261
+  for (let index = 0; index < seedText.length; index += 1) seed = Math.imul(seed ^ seedText.charCodeAt(index), 16777619)
+  return () => {
+    seed += 0x6D2B79F5
+    let value = seed
+    value = Math.imul(value ^ value >>> 15, value | 1)
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61)
+    return ((value ^ value >>> 14) >>> 0) / 4294967296
+  }
 }
 
 function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[]) {
@@ -974,8 +1137,18 @@ function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
   if (!value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) && !pointInsideCorridor(value, x, z, radius)) return false
   for (const item of value.markers) if (item.type === 'door' && Boolean(item.data.locked) && pointInsideDoor(item, x, z, radius)) return false
+  for (const wall of value.walls ?? []) if (pointNearWall(wall, x, z, radius)) return false
   for (const prop of dungeonProps(value)) if (prop.collision && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
   return true
+}
+function pointNearWall(wall: DungeonWall, x: number, z: number, margin: number) {
+  const dx = wall.x2 - wall.x1
+  const dz = wall.z2 - wall.z1
+  const lenSq = dx * dx + dz * dz
+  const t = lenSq > .0001 ? Math.max(0, Math.min(1, ((x - wall.x1) * dx + (z - wall.z1) * dz) / lenSq)) : 0
+  const px = wall.x1 + dx * t
+  const pz = wall.z1 + dz * t
+  return Math.hypot(x - px, z - pz) <= wall.thickness / 2 + margin
 }
 function propCollisionRadius(prop: DungeonProp) { const base = prop.assetRef === 'pillar' ? 0.45 : prop.assetRef === 'statue' ? 0.5 : prop.assetRef === 'rubble' ? 0.25 : prop.assetRef === 'spikes' ? 0.55 : 0.45; return base * prop.scale }
 function pointInsideRoom(room: DungeonRoom, x: number, z: number, margin: number) { const dx = x - room.x, dz = z - room.z, angle = -THREE.MathUtils.degToRad(room.rotation), cos = Math.cos(angle), sin = Math.sin(angle), localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos; return Math.abs(localX) <= Math.max(0.2, room.width / 2 - margin) && Math.abs(localZ) <= Math.max(0.2, room.depth / 2 - margin) }

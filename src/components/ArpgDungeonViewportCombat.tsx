@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom } from '../lib/dungeonPackage'
+import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonDestructible, type DungeonProp, type DungeonWithProps } from '../lib/dungeonProps'
 import { dungeonAtmosphere, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
@@ -24,9 +24,9 @@ type RuntimeEncounter = { encounter: DungeonEncounter; active: boolean; cleared:
 type AttackFx = { mesh: THREE.Mesh; life: number }
 type Hud = { hp: number; maxHp: number; gold: number; encounter: string; alive: number; total: number }
 
-const CAMERA_OFFSET = new THREE.Vector3(5.1, 10.2, 6.4)
-const CAMERA_FOV = 35
-const CAMERA_LOOK_AHEAD = 1.15
+const CAMERA_OFFSET = new THREE.Vector3(6.8, 13.6, 8.5)
+const CAMERA_FOV = 37
+const CAMERA_LOOK_AHEAD = 1.4
 const CAMERA_FOLLOW_RATE = 10.5
 const CAMERA_FOCUS_RATE = 8.5
 const WALK_SPEED = 4.2
@@ -241,6 +241,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
         addBaseRoom(world, room, current.settings.wallThickness, roomOpenings, atmosphere, flickerLights, crypt)
         if (crypt) addCryptRoomEnvironment(world, room, roomOpenings, current.settings.wallThickness, atmosphere, flickerLights, false)
       }
+      for (const wall of current.walls ?? []) addRuntimeWall(world, wall, atmosphere)
       for (const prop of dungeonProps(current)) { const group = addBuiltinProp(world, prop, atmosphere, flickerLights); if (prop.source === 'library') registerLibraryProp(prop, group, atmosphere) }
       for (const item of current.markers) if (item.type !== 'enemy' && !(item.type === 'loot' && Boolean(item.data.requiresClear))) addMarker(world, item, doors)
       buildEncounters(current)
@@ -367,7 +368,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     let frame = 0
     const tick = (now: number) => {
       const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000)); lastFrame = now
-      const current = valueRef.current, signature = JSON.stringify([current.theme, current.rooms, current.corridors, current.markers, current.logic, dungeonProps(current), current.settings, forcedCharacterId, characters.map((item) => item.id)])
+      const current = valueRef.current, signature = JSON.stringify([current.theme, current.rooms, current.corridors, current.walls ?? [], current.markers, current.logic, dungeonProps(current), current.settings, forcedCharacterId, characters.map((item) => item.id)])
       if (signature !== lastSignature) { lastSignature = signature; rebuild() }
       if (!playerInitialized) spawnPlayer(current)
       const frozen = now < freezeUntil
@@ -401,6 +402,57 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
 function playEnemyAnimation(enemy: RuntimeEnemy, name: string, once = false) { if (!enemy.mixer || enemy.animation === name) return; const clip = enemy.clips.find((item) => item.name.toLowerCase() === name.toLowerCase()) ?? enemy.clips.find((item) => item.name.toLowerCase().includes(name.toLowerCase())); if (!clip) return; const next = enemy.mixer.clipAction(clip); enemy.action?.fadeOut(0.1); next.reset().fadeIn(0.1); if (once) { next.setLoop(THREE.LoopOnce, 1); next.clampWhenFinished = true } else next.setLoop(THREE.LoopRepeat, Infinity); next.play(); enemy.action = next; enemy.animation = name }
 function setEnemyState(enemy: RuntimeEnemy, state: RuntimeEnemyState) { if (enemy.state === state) return; enemy.state = state; playEnemyAnimation(enemy, state === 'chase' ? 'Walk' : state === 'attack' ? 'Attack' : state === 'dead' ? 'Death' : 'Idle', state === 'dead') }
 function markOccluder(mesh: THREE.Mesh) { mesh.userData.arpgOccluder = true; return mesh }
+function addRuntimeWall(parent: THREE.Group, wall: DungeonWall, atmosphere: DungeonAtmosphere) {
+  const dx = wall.x2 - wall.x1
+  const dz = wall.z2 - wall.z1
+  const length = Math.hypot(dx, dz)
+  if (length < .1) return
+
+  const root = new THREE.Group()
+  root.position.set((wall.x1 + wall.x2) / 2, 0, (wall.z1 + wall.z2) / 2)
+  root.rotation.y = Math.atan2(dx, dz)
+  parent.add(root)
+
+  const coreMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: .97 })
+  const brickMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: .93, metalness: .005 })
+  const core = markOccluder(new THREE.Mesh(new THREE.BoxGeometry(wall.thickness, wall.height, length), coreMaterial))
+  core.position.y = wall.height / 2
+  core.castShadow = true
+  core.receiveShadow = true
+  root.add(core)
+
+  const rows = Math.max(4, Math.floor(wall.height / .54))
+  const rowHeight = wall.height / rows
+  const random = seededRandom(stringSeed(`runtime-wall-${wall.id}`))
+  const bricks: Array<{ z: number; y: number; length: number; shade: number }> = []
+  for (let row = 0; row < rows; row += 1) {
+    let cursor = -length / 2 - (row % 2 ? .55 : 0)
+    while (cursor < length / 2) {
+      const brickLength = .82 + random() * .78
+      const center = cursor + brickLength / 2
+      if (center > -length / 2 && center < length / 2) {
+        bricks.push({ z: center, y: row * rowHeight + rowHeight / 2, length: Math.min(brickLength * .93, length), shade: .74 + random() * .22 })
+      }
+      cursor += brickLength + .06
+    }
+  }
+  if (!bricks.length) return
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), brickMaterial, bricks.length)
+  const dummy = new THREE.Object3D()
+  const white = new THREE.Color(0xffffff)
+  bricks.forEach((brick, index) => {
+    dummy.position.set(0, brick.y, brick.z)
+    dummy.scale.set(wall.thickness + .07, rowHeight * .82, brick.length)
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index, dummy.matrix)
+    mesh.setColorAt(index, white.clone().multiplyScalar(brick.shade))
+  })
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.userData.arpgOccluder = true
+  root.add(mesh)
+}
+
 function addBaseRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[], crypt: boolean) { const group = new THREE.Group(); group.position.set(room.x, room.floorLevel, room.z); group.rotation.y = THREE.MathUtils.degToRad(room.rotation); parent.add(group); const floor = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.18, room.depth), new THREE.MeshStandardMaterial({ color: tintRoomFloor(atmosphere.floor, room.type, atmosphere), roughness: crypt ? 0.8 : 0.62, metalness: 0.02 })); floor.position.y = 0.09; floor.receiveShadow = true; group.add(floor); const wallMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: crypt ? 0.93 : 0.86, metalness: 0.01 }), darkMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96 }); for (const side of ['north','south','west','east'] as Side[]) addWallWithOpenings(group, room, side, openings.filter((opening) => opening.side === side), Math.max(0.12, wallThickness), wallMaterial, darkMaterial); if (!crypt) { const inset = 0.16; for (const [x,z] of [[-room.width/2+inset,-room.depth/2+inset],[room.width/2-inset,-room.depth/2+inset],[-room.width/2+inset,room.depth/2-inset],[room.width/2-inset,room.depth/2-inset]] as Array<[number,number]>) { const column = markOccluder(new THREE.Mesh(new THREE.BoxGeometry(0.36, room.height, 0.36), darkMaterial)); column.position.set(x, room.height/2, z); column.castShadow = true; column.receiveShadow = true; group.add(column) } } addRoomLights(group, room, atmosphere, flickerLights, crypt) }
 function addWallWithOpenings(group: THREE.Group, room: DungeonRoom, side: Side, openings: RoomOpening[], thickness: number, material: THREE.Material, darkMaterial: THREE.Material) { const horizontal = side === 'north' || side === 'south', total = horizontal ? room.width : room.depth, half = total / 2; const intervals = mergeIntervals(openings.map((opening) => ({ start: Math.max(-half, opening.offset-opening.openingWidth/2), end: Math.min(half, opening.offset+opening.openingWidth/2) }))); const doorHeight = Math.min(2.45, Math.max(1.9, room.height-0.4)); let cursor = -half; for (const interval of intervals) { addWallSegment(group, room, side, cursor, interval.start, thickness, room.height, material, darkMaterial); const openingLength = interval.end-interval.start; if (openingLength > 0.05 && room.height > doorHeight+0.12) { const lintelHeight = room.height-doorHeight, center = (interval.start+interval.end)/2; const lintel = markOccluder(horizontal ? new THREE.Mesh(new THREE.BoxGeometry(openingLength,lintelHeight,thickness),material) : new THREE.Mesh(new THREE.BoxGeometry(thickness,lintelHeight,openingLength),material)); if (horizontal) lintel.position.set(center,doorHeight+lintelHeight/2,(side==='south'?1:-1)*room.depth/2); else lintel.position.set((side==='east'?1:-1)*room.width/2,doorHeight+lintelHeight/2,center); lintel.castShadow=true; lintel.receiveShadow=true; group.add(lintel) } cursor=interval.end } addWallSegment(group,room,side,cursor,half,thickness,room.height,material,darkMaterial) }
 function addWallSegment(group: THREE.Group, room: DungeonRoom, side: Side, start: number, end: number, thickness: number, height: number, material: THREE.Material, darkMaterial: THREE.Material) { const length=end-start; if(length<=0.04)return; const horizontal=side==='north'||side==='south', center=(start+end)/2; const wall=markOccluder(horizontal?new THREE.Mesh(new THREE.BoxGeometry(length,height,thickness),material):new THREE.Mesh(new THREE.BoxGeometry(thickness,height,length),material)); if(horizontal)wall.position.set(center,height/2,(side==='south'?1:-1)*room.depth/2);else wall.position.set((side==='east'?1:-1)*room.width/2,height/2,center); wall.castShadow=true;wall.receiveShadow=true;group.add(wall); const base=markOccluder(horizontal?new THREE.Mesh(new THREE.BoxGeometry(length,.26,thickness+.08),darkMaterial):new THREE.Mesh(new THREE.BoxGeometry(thickness+.08,.26,length),darkMaterial));base.position.copy(wall.position);base.position.y=.13;group.add(base) }
@@ -415,7 +467,8 @@ function spawnHitFx(parent:THREE.Group,position:THREE.Vector3){const mesh=new TH
 function spawnAttackArc(parent:THREE.Group,output:AttackFx[],position:THREE.Vector3,yaw:number){const mesh=new THREE.Mesh(new THREE.RingGeometry(.7,1.45,26,1,-Math.PI*.38,Math.PI*.76),new THREE.MeshBasicMaterial({color:0xcfe9f7,transparent:true,opacity:.62,side:THREE.DoubleSide,depthWrite:false}));mesh.rotation.x=-Math.PI/2;mesh.rotation.z=-yaw;mesh.position.copy(position);mesh.position.y+=.08;parent.add(mesh);output.push({mesh,life:.18})}
 function createAvatar(){const group=new THREE.Group();group.visible=false;const bodyMaterial=new THREE.MeshStandardMaterial({color:0x46545f,roughness:.66,metalness:.06,emissive:0x0a1116,emissiveIntensity:.2}),accentMaterial=new THREE.MeshStandardMaterial({color:0x9bb6c7,roughness:.5,metalness:.1,emissive:0x101a21,emissiveIntensity:.16}),body=new THREE.Mesh(new THREE.CapsuleGeometry(.28,.72,5,9),bodyMaterial);body.position.y=.86;const head=new THREE.Mesh(new THREE.SphereGeometry(.22,12,9),accentMaterial);head.position.y=1.55;const ring=new THREE.Mesh(new THREE.RingGeometry(.38,.5,28),new THREE.MeshBasicMaterial({color:0xa9d6ee,transparent:true,opacity:.48,side:THREE.DoubleSide,depthWrite:false}));ring.rotation.x=-Math.PI/2;ring.position.y=.025;body.castShadow=true;head.castShadow=true;group.add(body,head,ring);return group}
 function mergeIntervals(intervals:Array<{start:number;end:number}>){const sorted=intervals.filter((item)=>item.end>item.start).sort((a,b)=>a.start-b.start),result:Array<{start:number;end:number}>=[];for(const interval of sorted){const last=result[result.length-1];if(!last||interval.start>last.end+.05)result.push({...interval});else last.end=Math.max(last.end,interval.end)}return result}
-function canWalkAt(value:DungeonWithProps,x:number,z:number,broken:Set<string>,runtimeLocked:Set<string>){const radius=.3;if(!value.rooms.some((room)=>pointInsideRoom(room,x,z,radius))&&!pointInsideCorridor(value,x,z,radius))return false;for(const item of value.markers)if(item.type==='door'&&(Boolean(item.data.locked)||runtimeLocked.has(item.id))&&pointInsideDoor(item,x,z,radius))return false;for(const prop of dungeonProps(value))if(prop.collision&&!broken.has(prop.id)&&Math.hypot(x-prop.x,z-prop.z)<propCollisionRadius(prop)+radius)return false;return true}
+function canWalkAt(value:DungeonWithProps,x:number,z:number,broken:Set<string>,runtimeLocked:Set<string>){const radius=.3;if(!value.rooms.some((room)=>pointInsideRoom(room,x,z,radius))&&!pointInsideCorridor(value,x,z,radius))return false;for(const item of value.markers)if(item.type==='door'&&(Boolean(item.data.locked)||runtimeLocked.has(item.id))&&pointInsideDoor(item,x,z,radius))return false;for(const wall of value.walls??[])if(pointNearWall(wall,x,z,radius))return false;for(const prop of dungeonProps(value))if(prop.collision&&!broken.has(prop.id)&&Math.hypot(x-prop.x,z-prop.z)<propCollisionRadius(prop)+radius)return false;return true}
+function pointNearWall(wall:DungeonWall,x:number,z:number,margin:number){const dx=wall.x2-wall.x1,dz=wall.z2-wall.z1,lenSq=dx*dx+dz*dz,t=lenSq>.0001?Math.max(0,Math.min(1,((x-wall.x1)*dx+(z-wall.z1)*dz)/lenSq)):0,px=wall.x1+dx*t,pz=wall.z1+dz*t;return Math.hypot(x-px,z-pz)<=wall.thickness/2+margin}
 function propCollisionRadius(prop:DungeonProp){const base=prop.assetRef==='pillar'?.45:prop.assetRef==='statue'?.5:prop.assetRef==='rubble'?.25:prop.assetRef==='spikes'?.55:prop.destructible?.enabled?.56:.45;return base*prop.scale}
 function pointInsideRoom(room:DungeonRoom,x:number,z:number,margin:number){const dx=x-room.x,dz=z-room.z,angle=-THREE.MathUtils.degToRad(room.rotation),cos=Math.cos(angle),sin=Math.sin(angle),localX=dx*cos-dz*sin,localZ=dx*sin+dz*cos;return Math.abs(localX)<=Math.max(.2,room.width/2-margin)&&Math.abs(localZ)<=Math.max(.2,room.depth/2-margin)}
 function pointInsideCorridor(value:DungeonWithProps,x:number,z:number,margin:number){const rooms=new Map(value.rooms.map((room)=>[room.id,room]));for(const edge of value.corridors){const a=rooms.get(edge.fromRoomId),b=rooms.get(edge.toRoomId);if(!a||!b)continue;const from=getRoomConnection(a,b,edge.width),to=getRoomConnection(b,a,edge.width),midX=to.x,midZ=from.z;if(pointInsideAxisSegment(x,z,from.x,from.z,midX,midZ,edge.width,margin)||pointInsideAxisSegment(x,z,midX,midZ,to.x,to.z,edge.width,margin))return true}return false}

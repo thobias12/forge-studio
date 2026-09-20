@@ -26,6 +26,7 @@ export type SkillboundDungeonRuntime = {
   spawn: { x: number; y: number; z: number; checkpointId?: string }
   rooms: ForgeDungeonPackage['rooms']
   corridors: ForgeDungeonPackage['corridors']
+  walls: ForgeDungeonPackage['walls']
   doors: DungeonMarker[]
   triggers: DungeonMarker[]
   loot: DungeonMarker[]
@@ -156,6 +157,7 @@ export function compileSkillboundRuntime(value: ForgeDungeonPackage): Skillbound
     spawn: { x: checkpoint?.x ?? entrance?.x ?? 0, y: checkpoint?.y ?? entrance?.floorLevel ?? 0, z: checkpoint?.z ?? entrance?.z ?? 0, checkpointId: checkpoint?.id },
     rooms: value.rooms,
     corridors: value.corridors,
+    walls: value.walls ?? [],
     doors: value.markers.filter((item) => item.type === 'door'),
     triggers: value.markers.filter((item) => item.type === 'trigger'),
     loot: value.markers.filter((item) => item.type === 'loot'),

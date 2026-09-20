@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.7`  
+> **Current Forge version:** `v1.82.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -244,14 +244,24 @@ Important source:
 
 ## Dungeon Forge
 
-Dungeon Forge is the Map Studio workflow for authored dungeon layouts.
+Forge v1.82.0 is the first **Dungeon Forge v2** pass. It shifts the tool toward a hybrid procedural/modular workflow aimed at large, dark ARPG interiors rather than small disconnected editor rooms.
 
-It has been developed around Skillbound dungeon creation and supports room/layout editing, placement workflows, first-person inspection, lighting/atmosphere work, and authored dungeon package integration.
+The default crypt direction is now **Sunken Ossuary**: warm torch pools, deep surrounding darkness, running-bond brick floors, heavy brick/stone walls, stronger vignette/contrast and larger room/corridor proportions.
+
+Dungeon generation now exposes scale, room count, corridor width and branching controls. The generator creates a turning main route, optional side rooms and loops, encounter-ready combat/elite/boss spaces, and wider traversal lanes. Generated layouts remain ordinary editable Dungeon Forge data instead of becoming a baked procedural mesh.
+
+Manual editing remains first-class. Rooms can be click-dragged directly onto the floor and then resized with the existing edge handles. A new **Wall** tool click-drags independent brick wall segments anywhere in the layout; those segments render in the editor and ARPG preview, appear on the minimap, can be edited numerically, and participate in runtime collision.
+
+The editor world/camera bounds were expanded for the larger layouts, while Walk and ARPG preview continue to use the same authored package.
 
 Important source:
 
 - `src/pages/MapStudio.tsx`
-- dungeon/map helpers under `src/lib/` and `src/components/`
+- `src/components/DungeonViewportCore.tsx`
+- `src/components/ArpgDungeonViewportCombat.tsx`
+- `src/lib/dungeonPackage.ts`
+- `src/lib/cryptSurfacePass.ts`
+- `src/lib/dungeonAtmosphere.ts`
 
 ## Destruction Lab
 
@@ -1539,4 +1549,4 @@ When implementing a new feature:
 
 # Quick handoff summary
 
-**Forge Studio v1.77.4** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The current main commit is `d05259d`. The active work is **Equipment Forge V3**, which replaces the old floating-primitive clothing approach with body-conforming, skinned garment templates built from the official Skillbound character rig. The Female Base Ranger outfit is the reference case. V3 currently supports fitted tunics, sleeves, shoulder bridges, masking, vest/belt/tabard/cape layers, material controls, and Ranger/Traveler/Acolyte presets. A dedicated Equipment QA page provides 360° full-body images, close side/underarm/chest/back/waist/cape views, and body-to-garment clearance/clipping diagnostics. v1.77.4 adds authored-looking seams, asymmetric vest panels, belt pouches/studs, split/trimmed tabard work, extra cape detail, and more QA close-ups. **The outfit is not considered finished**: continue refining fit and authored visual detail from current `main`, especially cape/back clearance, side spacing, shoulders/underarms, layering, believable thickness, asymmetry, belt/pouches, tabard, and cape construction. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
+**Forge Studio v1.82.0** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The latest major addition is **Dungeon Forge v2**, which combines larger procedural ARPG layouts with fully editable rooms, corridors, props, gameplay markers and independent click-drawn brick walls. The crypt visual target is the Sunken Ossuary direction: running-bond brick floors, heavy masonry, warm local torch pools and deep surrounding darkness. Generation exposes scale, room count, corridor width and branching while keeping the result as normal authored dungeon data. Equipment Lab remains on the body-aware Blender procedural workflow introduced through v1.81.x. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
