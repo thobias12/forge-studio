@@ -95,6 +95,8 @@ export type DungeonEncounter = {
   difficulty: number
   boss: boolean
   once: boolean
+  encounterProfileId?: string
+  bossProfileId?: string
 }
 
 export type DungeonLogicState = {
