@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.87.3`  
+> **Current Forge version:** `v1.87.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.87.4 — Neutral crypt palette + surface wall collision
+
+- replaces the brown/gold crypt wash with a neutral charcoal/grey-brown masonry palette; warmth now comes primarily from local torch light instead of the entire ambient/key/fill rig
+- removes the fixed warm ambient-fill color from Dungeon Forge, Quick ARPG and the real Play Project dungeon runtime; fill now follows the neutral crypt sky color
+- top-down/ARPG no longer renders procedural corridor buttresses, special-room support columns or doorway jamb stacks; those architectural extras are reserved for Walk mode
+- lowers and thins the top-down perimeter wall silhouette so it reads more like Evergrow-style low masonry rather than chunky freestanding blocks
+- moves V3 perimeter wall geometry outward from the logical floor boundary so the wall no longer occupies the player's navigation surface
+- replaces radius-inflated wall collision with **surface-boundary navigation**: the player's centre stays on the authored walkable floor union instead of shrinking every room/corridor by the capsule radius
+- this removes the invisible safety ring and greatly reduces snagging on concave corners/curved corridor edges while still preventing the player centre from crossing into the void
+- Play Project live testing, Quick ARPG and Walk now all use the same surface-boundary wall rule
+- substantial prop collision and explicit manual-wall collision remain separate and unchanged
+
 
 ## v1.87.3 — Dungeon prop density + collision cleanup
 
