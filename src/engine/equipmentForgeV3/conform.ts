@@ -115,14 +115,6 @@ export function buildConformedTunic(
 
   const meshes = [torso]
 
-  meshes.push(
-    ...createTunicSeamDetails(
-      source,
-      torso.geometry,
-      trim,
-    ),
-  )
-
   if (recipe.sleeve !== 'none') {
     const left = createSleeveTemplate(
       source,
@@ -206,18 +198,10 @@ export function buildConformedTunic(
       )
     meshes.push(vest)
     meshes.push(
-      ...createVestDetailTrim(
-        source,
-        vest.geometry,
-        trim,
-      ),
-    )
-    meshes.push(
       ...createShoulderReinforcements(
         source,
         torso.geometry,
         leather,
-        trim,
       ),
     )
   }
@@ -497,9 +481,32 @@ function createTorsoTemplate(
             sideEase * .00055) +
         hemFlare
 
+      const lateralShoulderT =
+        THREE.MathUtils.clamp(
+          (v - .86) / .14,
+          0,
+          1,
+        )
+      const sideAmount =
+        Math.abs(
+          Math.sin(angle),
+        )
+      const lateralShoulder =
+        lateralShoulderT *
+        THREE.MathUtils.smoothstep(
+          sideAmount,
+          .68,
+          1,
+        )
+      const lateralClearance =
+        frame.height *
+        .0022 *
+        lateralShoulder
+
       position.addScaledVector(
         radialNormal,
-        extra,
+        extra +
+          lateralClearance,
       )
 
       ringPositions.push(position)
@@ -644,7 +651,7 @@ function createTorsoTemplate(
       const strength =
         ringT *
         sideT *
-        .92
+        .82
 
       if (strength <= 0) {
         continue
@@ -659,72 +666,30 @@ function createTorsoTemplate(
           torsoNormals.getY(index),
           torsoNormals.getZ(index),
         ).normalize()
-      const referenceRing =
+      const referenceIndex =
         Math.max(
           0,
-          normalStartRing - 2,
-        )
+          normalStartRing - 1,
+        ) *
+          segments +
+        segment
       const targetNormal =
-        new THREE.Vector3()
-      let targetWeight = 0
-
-      for (
-        let sampleOffset = -2;
-        sampleOffset <= 2;
-        sampleOffset += 1
-      ) {
-        const sampleSegment =
-          (segment +
-            sampleOffset +
-            segments) %
-          segments
-        const referenceIndex =
-          referenceRing *
-            segments +
-          sampleSegment
-        const weight =
-          3 -
-          Math.abs(
-            sampleOffset,
-          )
-        targetNormal.addScaledVector(
-          new THREE.Vector3(
-            torsoNormals.getX(
-              referenceIndex,
-            ),
-            torsoNormals.getY(
-              referenceIndex,
-            ),
-            torsoNormals.getZ(
-              referenceIndex,
-            ),
+        new THREE.Vector3(
+          torsoNormals.getX(
+            referenceIndex,
           ),
-          weight,
-        )
-        targetWeight += weight
-      }
-
-      targetNormal
-        .multiplyScalar(
-          1 /
-            Math.max(
-              1,
-              targetWeight,
-            ),
-        )
-        .normalize()
-      const coreApex =
-        ring >= rings - 2 &&
-        Math.abs(offset) <= 2
-      const blendStrength =
-        coreApex
-          ? 1
-          : strength * .94
+          torsoNormals.getY(
+            referenceIndex,
+          ),
+          torsoNormals.getZ(
+            referenceIndex,
+          ),
+        ).normalize()
       const blended =
         currentNormal
           .lerp(
             targetNormal,
-            blendStrength,
+            strength * .88,
           )
           .normalize()
 
@@ -2953,46 +2918,10 @@ function createCapeLayer(
   )
 }
 
-function createTunicSeamDetails(
-  source: THREE.SkinnedMesh,
-  torsoGeometry: THREE.BufferGeometry,
-  material: THREE.Material,
-) {
-  return [
-    createGridColumnStrip(
-      source,
-      torsoGeometry,
-      19,
-      48,
-      11,
-      12,
-      material,
-      'EFV3_TunicSideSeam_L',
-      'radial',
-      .0016,
-      .22,
-    ),
-    createGridColumnStrip(
-      source,
-      torsoGeometry,
-      19,
-      48,
-      35,
-      36,
-      material,
-      'EFV3_TunicSideSeam_R',
-      'radial',
-      .0016,
-      .22,
-    ),
-  ]
-}
-
 function createShoulderReinforcements(
   source: THREE.SkinnedMesh,
   torsoGeometry: THREE.BufferGeometry,
   leather: THREE.Material,
-  trim: THREE.Material,
 ) {
   return [
     // Thin leather caps follow the real shoulder crown rather than the
@@ -3023,32 +2952,6 @@ function createShoulderReinforcements(
       'EFV3_ShoulderReinforcement_R',
       'radial',
       .0038,
-    ),
-    createGridRowStrip(
-      source,
-      torsoGeometry,
-      48,
-      16,
-      17,
-      6,
-      18,
-      trim,
-      'EFV3_ShoulderReinforcementSeam_L',
-      'radial',
-      .0044,
-    ),
-    createGridRowStrip(
-      source,
-      torsoGeometry,
-      48,
-      16,
-      17,
-      30,
-      42,
-      trim,
-      'EFV3_ShoulderReinforcementSeam_R',
-      'radial',
-      .0044,
     ),
   ]
 }
@@ -3571,70 +3474,6 @@ function createGridAreaPatch(
     material,
     name,
   )
-}
-
-function createVestDetailTrim(
-  source: THREE.SkinnedMesh,
-  vestGeometry: THREE.BufferGeometry,
-  material: THREE.Material,
-) {
-  const rowCount = 10
-  const columnCount = 48
-
-  return [
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      rowCount,
-      columnCount,
-      8,
-      9,
-      material,
-      'EFV3_VestEdge_L',
-      'radial',
-      .0022,
-      .2,
-    ),
-    createGridColumnStrip(
-      source,
-      vestGeometry,
-      rowCount,
-      columnCount,
-      40,
-      41,
-      material,
-      'EFV3_VestEdge_R',
-      'radial',
-      .0022,
-      .2,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      columnCount,
-      0,
-      1,
-      8,
-      40,
-      material,
-      'EFV3_VestHem',
-      'radial',
-      .0022,
-    ),
-    createGridRowStrip(
-      source,
-      vestGeometry,
-      columnCount,
-      9,
-      8,
-      8,
-      40,
-      material,
-      'EFV3_VestShoulderSeam',
-      'radial',
-      .0022,
-    ),
-  ]
 }
 
 function createBeltBuckle(
