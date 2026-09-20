@@ -17,6 +17,7 @@ import { runtimeSaveKey } from '../engine/runtime/ForgeGameSave'
 import { type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
 import '../engine/runtime/ForgeInventoryRuntime'
 import { ForgePlayRuntime, type ForgeRuntimeSnapshot } from '../engine/runtime/ForgePlayRuntime'
+import { installOverworldEnemyCombatRuntime } from '../engine/runtime/ForgeEnemyCombatRuntime'
 import { installForgeRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
 import type { ForgeSkillSnapshotExtension } from '../engine/runtime/ForgeSkillRuntime'
@@ -28,6 +29,7 @@ import '../skillbound-runtime.css'
 import '../skillbound-adventure.css'
 import '../hud-runtime-rewards.css'
 
+installOverworldEnemyCombatRuntime(ForgePlayRuntime)
 installForgeRewardPickupRuntime(ForgePlayRuntime)
 installPlayerProfileRuntime(ForgePlayRuntime)
 
@@ -37,7 +39,10 @@ type Props = {
   paused?: boolean
   onSnapshot?: (state: ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension) => void
 }
-type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension
+type SkillboundRuntimeState = ForgeRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension & {
+  combatLabInvulnerable?: boolean
+  combatLabTimeScale?: number
+}
 
 const EMPTY_STATE: SkillboundRuntimeState = {
   health: 1,
@@ -76,6 +81,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   const [nearDungeon, setNearDungeon] = useState(false)
   const [itemIcons, setItemIcons] = useState<Record<string, string>>({})
   const [showEnvironment, setShowEnvironment] = useState(false)
+  const [showCombatLab, setShowCombatLab] = useState(false)
   const [environmentHour, setEnvironmentHour] = useState(
     DEFAULT_WORLD_ENVIRONMENT.hour,
   )
@@ -344,10 +350,11 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
       <button onClick={() => runtimeRef.current?.saveGame(true)}>Save game</button>
       <button onClick={reset}>Reset run</button>
       {!activeDungeonId && <button
-        onClick={() => runtimeRef.current?.spawnTestPack(8)}
-        title="Spawns temporary enemies near you without changing world generation or saved encounter progress."
+        className={showCombatLab ? 'active' : ''}
+        onClick={() => setShowCombatLab((value) => !value)}
+        title="Open Combat Lab controls for deterministic enemy-role testing."
       >
-        Spawn test pack · 8
+        Combat Lab
       </button>}
       <button
         className={showEnvironment ? 'active' : ''}
@@ -356,6 +363,40 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
         Environment
       </button>
     </div>
+
+    {showCombatLab && !activeDungeonId && <div className="skillbound-combat-lab">
+      <header>
+        <span>COMBAT LAB</span>
+        <strong>Enemy Combat v3</strong>
+      </header>
+      <p>Spawn deterministic archetypes around the current hero. Lab enemies never alter encounter progress.</p>
+      <div className="skillbound-combat-lab-grid">
+        <button onClick={() => (runtimeRef.current as any)?.spawnCombatLabPack?.('mixed')}><strong>Mixed Pack</strong><small>2 skirmishers · brute · 2 ranged · caster</small></button>
+        <button onClick={() => (runtimeRef.current as any)?.spawnCombatLabPack?.('skirmisher')}><strong>Skirmishers</strong><small>Fast melee pressure</small></button>
+        <button onClick={() => (runtimeRef.current as any)?.spawnCombatLabPack?.('brute')}><strong>Brute</strong><small>High poise · heavy swing</small></button>
+        <button onClick={() => (runtimeRef.current as any)?.spawnCombatLabPack?.('ranged')}><strong>Arbalists</strong><small>Distance control · projectiles</small></button>
+        <button onClick={() => (runtimeRef.current as any)?.spawnCombatLabPack?.('caster')}><strong>Channeler</strong><small>Ground-targeted area attack</small></button>
+        <button className="danger" onClick={() => (runtimeRef.current as any)?.clearCombatLab?.()}><strong>Clear Lab</strong><small>Remove all temporary enemies</small></button>
+      </div>
+      <footer className="skillbound-combat-lab-footer">
+        <button
+          className={snapshot.combatLabInvulnerable ? 'active' : ''}
+          onClick={() => (runtimeRef.current as any)?.setCombatLabInvulnerable?.(!snapshot.combatLabInvulnerable)}
+        >
+          {snapshot.combatLabInvulnerable ? 'Invulnerability ON' : 'Invulnerability OFF'}
+        </button>
+        <span className="skillbound-combat-speed">
+          {[1, .5, .25].map((speed) => <button
+            key={speed}
+            className={Math.abs((snapshot.combatLabTimeScale ?? 1) - speed) < .01 ? 'active' : ''}
+            onClick={() => (runtimeRef.current as any)?.setCombatLabTimeScale?.(speed)}
+          >
+            {speed}×
+          </button>)}
+        </span>
+        <small>Gold bar = poise. Use slow motion to inspect telegraphs, dodges and stagger timing.</small>
+      </footer>
+    </div>}
 
     {showEnvironment && <div className="skillbound-environment-debug">
       <header>
@@ -449,11 +490,18 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
   </div>
 }
 
-function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']>; style?: CSSProperties }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeRuntimeSnapshot['target']> & { role?: string; elite?: boolean; eliteModifier?: string; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
+  const poisePercent = target.maxPoise
+    ? Math.max(0, Math.min(100, (target.poise ?? 0) / target.maxPoise * 100))
+    : 0
   return <div className="skillbound-target-bar" style={style}>
-    <div><strong>{target.name}</strong><span>{Math.ceil(target.health)} / {target.maxHealth}</span></div>
+    <div>
+      <strong>{target.name}</strong>
+      <span>{target.eliteModifier ? `${target.eliteModifier.toUpperCase()} · ` : ''}{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
+    </div>
     <i><b style={{ width: `${percent}%` }}/></i>
+    {target.maxPoise !== undefined && <i className="skillbound-poise-bar"><b style={{ width: `${poisePercent}%` }}/></i>}
   </div>
 }
 

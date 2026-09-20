@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.89.4`  
+> **Current Forge version:** `v1.90.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,20 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.90.0 is the first **Combat v3 + Dungeon Runs v2** release.
+
+**Combat v3 / Enemy Combat Foundation** replaces the one-behavior enemy loop with four authored combat roles that share the same runtime in overworld and dungeon play. `Road Wretch` is now a fast skirmisher that pressures and orbits melee range, `Crypt Brute` is a slower high-poise frontliner, `Bone Arbalist` maintains distance and fires dodgeable projectiles, and `Grave Channeler` maintains distance and telegraphs ground-targeted area attacks. Ranged and caster attacks snapshot a visible target during windup so moving or dodging out of the telegraph is meaningful instead of the attack silently tracking the player.
+
+Enemies now have **poise** in addition to health. Normal hits can produce small reactions without permanently stun-locking tougher enemies, while sustained pressure or a heavier finisher breaks poise and opens a stronger stagger window. Poise recovers after a short no-hit delay. Elite enemies receive a deterministic modifier based on their runtime identity: **Bulwark** increases poise, **Relentless** attacks more aggressively, and **Swift** moves faster. Target HUDs identify the enemy role/modifier and render a gold poise bar under health. Dungeon deaths also gain a directional collapse/drift instead of remaining perfectly static until removal.
+
+The Play Project now includes a **Combat Lab** panel for repeatable tuning without changing saved encounter progress. It can spawn mixed packs or individual archetypes around the current hero, clear all lab enemies, toggle invulnerability, and run combat at 1×, 0.5× or 0.25× simulation speed for inspecting telegraphs, dodges, combo contact, poise breaks and stagger timing. Lab enemies are transient and do not count as authored encounter progress.
+
+**Dungeon Runs v2** changes Hollow Vault from a set of pre-spawned rooms into a directed run. Encounter Forge profiles can now author mixed enemy waves with their own messages and timing. The runtime activates encounters in authored run order, locks encounter doors as appropriate, spawns only the active wave, waits for it to be cleared, announces reinforcements, and only completes the room after the final wave. The HUD shows dungeon-run progress plus current wave state.
+
+The bundled Hollow Vault now uses that director. Drowned Crossroads is a three-wave escalation from skirmishers into ranged/caster crossfire and a brute-backed final push. Ossuary Guard is a three-wave elite encounter with brutes, arbalists and channelers. The Vault Warden is now based on the Crypt Brute combat identity and keeps the existing Boss Forge phase system: later phases call in Bone Arbalists and then Grave Channelers before the final reward/return-portal flow. Encounter reward profiles, boss guaranteed rewards, door state, XP/gold rewards and the shared v1.89.4 gameplay camera remain integrated.
+
+Combat v3 runtime extensions live in `src/engine/runtime/ForgeEnemyCombatRuntime.ts`. Dungeon wave/run sequencing lives in `src/engine/runtime/ForgeDungeonRunRuntime.ts`. Enemy role fields are part of `ForgeEnemyDefinition`, Encounter Forge profiles can author `waves`, and dungeon encounters now expose `encounterProfileId` / `bossProfileId` as first-class package fields. Bundled Skillbound content revision is now 12 so existing workspaces can advance to the new four-enemy roster.
 
 Forge v1.89.4 fixes the dungeon-only camera freeze and makes playable camera behavior shared instead of mode-specific. The overworld and full dungeon runtime now call the same `ForgeGameplayCamera.ts` implementation for framing, follow smoothing, velocity look-ahead, cursor aim look-ahead, camera shake, zoom response, offset angle and look-at height. Dungeon FOV, default distance, zoom limits and wheel step now come from the same `FORGE_WORLD_SCALE` camera contract as overworld play.
 

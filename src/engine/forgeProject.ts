@@ -92,7 +92,40 @@ export type ForgeAbilityDefinition = {
   delivery?: ForgeAbilityDelivery
   chain?: ForgeChainAbilityDefinition
 }
-export type ForgeEnemyDefinition = { format: 'forge-enemy'; version: 1; id: string; name: string; maxHealth: number; moveSpeed: number; aggroRange: number; attackRange: number; attackDamage: number; attackCooldown: number; attackWindup?: number; lootTable: string; color: string; characterAssetId?: string; animationAssetId?: string; attackVfxAssetId?: string; hitVfxAssetId?: string; deathVfxAssetId?: string }
+export type ForgeEnemyRole = 'skirmisher' | 'brute' | 'ranged' | 'caster'
+export type ForgeEnemyAttackStyle = 'melee' | 'projectile' | 'area'
+export type ForgeEnemyDefinition = {
+  format: 'forge-enemy'
+  version: 1
+  id: string
+  name: string
+  maxHealth: number
+  moveSpeed: number
+  aggroRange: number
+  attackRange: number
+  attackDamage: number
+  attackCooldown: number
+  attackWindup?: number
+  lootTable: string
+  color: string
+  role?: ForgeEnemyRole
+  attackStyle?: ForgeEnemyAttackStyle
+  preferredRange?: number
+  retreatRange?: number
+  strafeWeight?: number
+  poise?: number
+  poiseRecovery?: number
+  projectileSpeed?: number
+  projectileRadius?: number
+  areaRadius?: number
+  scale?: number
+  telegraphColor?: string
+  characterAssetId?: string
+  animationAssetId?: string
+  attackVfxAssetId?: string
+  hitVfxAssetId?: string
+  deathVfxAssetId?: string
+}
 export type ForgeItemSlot = 'weapon'
 export type ForgeItemRarity = 'common' | 'magic' | 'rare'
 export type ForgeItemSocket = 'RightHand' | 'LeftHand' | 'Back' | 'HipLeft' | 'HipRight'

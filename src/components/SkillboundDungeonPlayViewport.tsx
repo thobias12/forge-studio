@@ -10,6 +10,8 @@ import { ForgeDungeonRuntime, type ForgeDungeonRuntimeSnapshot } from '../engine
 import { hydrateRuntimeEquipment, type ForgeEquipmentSnapshotExtension } from '../engine/runtime/ForgeEquipmentRuntime'
 import { installDungeonRewardMethods } from '../engine/runtime/ForgeDungeonRuntimeRewards'
 import { installEncounterBossRuntime } from '../engine/runtime/ForgeEncounterBossRuntime'
+import { installDungeonEnemyCombatRuntime } from '../engine/runtime/ForgeEnemyCombatRuntime'
+import { installDungeonRunDirector } from '../engine/runtime/ForgeDungeonRunRuntime'
 import { installDungeonRewardPickupRuntime, type ForgeRewardSnapshotExtension } from '../engine/runtime/ForgeRewardPickupRuntime'
 import { installPlayerProfileRuntime } from '../engine/runtime/ForgePlayerProfileRuntime'
 import type { ForgeSkillSnapshotExtension } from '../engine/runtime/ForgeSkillRuntime'
@@ -19,10 +21,23 @@ import '../hud-runtime-rewards.css'
 
 installDungeonRewardMethods(ForgeDungeonRuntime)
 installEncounterBossRuntime(ForgeDungeonRuntime)
+installDungeonEnemyCombatRuntime(ForgeDungeonRuntime)
+installDungeonRunDirector(ForgeDungeonRuntime)
 installDungeonRewardPickupRuntime(ForgeDungeonRuntime)
 installPlayerProfileRuntime(ForgeDungeonRuntime)
 
-type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension
+type DungeonRuntimeState = ForgeDungeonRuntimeSnapshot & ForgeRewardSnapshotExtension & ForgeEquipmentSnapshotExtension & ForgeSkillSnapshotExtension & {
+  runEncountersCleared?: number
+  runEncountersTotal?: number
+  runProgress?: number
+  runState?: 'exploring' | 'encounter' | 'complete'
+  waveCurrent?: number
+  waveTotal?: number
+  waveName?: string
+  waveAlive?: number
+  wavePending?: boolean
+  plannedEnemies?: number
+}
 
 const EMPTY: DungeonRuntimeState = {
   health: 1,
@@ -152,7 +167,17 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
     </div>
 
     <HudPickupFlights events={snapshot.pickupEvents} layout={normalizedHudLayout}/>
-    {hudModuleVisible(normalizedHudLayout, 'objective') && <div className="skillbound-objective" style={moduleStyle('objective')}>{snapshot.bossCleared ? 'Vault Warden defeated · find the active return portal' : snapshot.encounter}</div>}
+    {hudModuleVisible(normalizedHudLayout, 'objective') && <div className="skillbound-objective skillbound-run-objective" style={moduleStyle('objective')}>
+      <span>{snapshot.bossCleared ? 'Vault Warden defeated · find the active return portal' : snapshot.encounter}</span>
+      {(snapshot.runEncountersTotal ?? 0) > 0 && <i>
+        <b style={{ width: `${Math.round((snapshot.runProgress ?? 0) * 100)}%` }}/>
+      </i>}
+      {(snapshot.waveTotal ?? 0) > 1 && !snapshot.bossCleared && <small>
+        {snapshot.wavePending
+          ? `Wave ${Math.min(snapshot.waveTotal ?? 0, (snapshot.waveCurrent ?? 0) + 1)} incoming`
+          : `${snapshot.waveName ?? 'Wave'} · ${snapshot.waveCurrent}/${snapshot.waveTotal}`}
+      </small>}
+    </div>}
     {snapshot.target && hudModuleVisible(normalizedHudLayout, targetModule) && <TargetBar target={snapshot.target} style={moduleStyle(targetModule)}/>} 
     {snapshot.interaction && hudModuleVisible(normalizedHudLayout, 'interaction') && <div className={`skillbound-interaction-prompt ${snapshot.interaction.ready ? 'ready' : 'locked'}`} style={moduleStyle('interaction')}><kbd>E</kbd><strong>{snapshot.interaction.label.replace(/^E · /, '')}</strong></div>}
     {snapshot.message && hudModuleVisible(normalizedHudLayout, 'loot') && <div className="skillbound-runtime-message" style={moduleStyle('loot')}>{snapshot.message}</div>}
@@ -193,11 +218,18 @@ export default function SkillboundDungeonPlayViewport({ dungeon, gameplay, proje
   </div>
 }
 
-function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeSnapshot['target']>; style?: CSSProperties }) {
+function TargetBar({ target, style }: { target: NonNullable<ForgeDungeonRuntimeSnapshot['target']> & { role?: string; elite?: boolean; eliteModifier?: string; poise?: number; maxPoise?: number }; style?: CSSProperties }) {
   const percent = Math.max(0, Math.min(100, target.health / Math.max(1, target.maxHealth) * 100))
+  const poisePercent = target.maxPoise
+    ? Math.max(0, Math.min(100, (target.poise ?? 0) / target.maxPoise * 100))
+    : 0
   return <div className={`skillbound-target-bar ${target.boss ? 'boss' : ''}`} style={style}>
-    <div><strong>{target.name}</strong><span>{Math.ceil(target.health)} / {target.maxHealth}</span></div>
+    <div>
+      <strong>{target.name}</strong>
+      <span>{target.elite && !target.boss ? 'ELITE · ' : ''}{target.eliteModifier ? `${target.eliteModifier.toUpperCase()} · ` : ''}{target.role ? `${target.role.toUpperCase()} · ` : ''}{Math.ceil(target.health)} / {target.maxHealth}</span>
+    </div>
     <i><b style={{ width: `${percent}%` }}/></i>
+    {target.maxPoise !== undefined && <i className="skillbound-poise-bar"><b style={{ width: `${poisePercent}%` }}/></i>}
   </div>
 }
 

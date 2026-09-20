@@ -227,3 +227,35 @@
   border-color:#624d43;
   color:#ba9687;
 }
+
+
+/* Combat v3 + Dungeon Runs v2 */
+.skillbound-run-objective{display:flex;min-width:260px;flex-direction:column;align-items:stretch;gap:4px;text-align:center;white-space:normal}
+.skillbound-run-objective>span{display:block}
+.skillbound-run-objective>i{display:block;height:3px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.08)}
+.skillbound-run-objective>i>b{display:block;height:100%;background:linear-gradient(90deg,var(--sb-accent,#7cb88f),color-mix(in srgb,var(--sb-accent,#7cb88f) 55%,#d7b36a));transition:width .22s ease-out}
+.skillbound-run-objective>small{font-size:7px;letter-spacing:.09em;text-transform:uppercase;color:var(--sb-muted,#958a82)}
+.skillbound-target-bar>.skillbound-poise-bar{height:3px;margin-top:3px;background:rgba(0,0,0,.55);border-color:rgba(209,168,91,.26)}
+.skillbound-target-bar>.skillbound-poise-bar>b{background:linear-gradient(90deg,#76552f,#e0b661);box-shadow:0 0 7px rgba(224,182,97,.22)}
+.skillbound-target-bar.boss>.skillbound-poise-bar>b{background:linear-gradient(90deg,#7d4830,#e88957)}
+
+.skillbound-combat-lab{position:absolute;z-index:20;right:16px;top:74px;width:min(360px,calc(100vw - 32px));padding:12px;border:1px solid color-mix(in srgb,var(--sb-accent,#7cb88f) 42%,var(--sb-border,#3d473c));border-radius:var(--sb-radius,5px);background:color-mix(in srgb,var(--sb-panel,#0b0e0c) 96%,transparent);box-shadow:0 18px 55px rgba(0,0,0,.66);backdrop-filter:blur(12px)}
+.skillbound-combat-lab header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.07)}
+.skillbound-combat-lab header span{font-size:8px;letter-spacing:.14em;color:var(--sb-accent,#7cb88f)}
+.skillbound-combat-lab header strong{font-size:11px;color:var(--sb-text,#eaf2ec)}
+.skillbound-combat-lab>p{margin:9px 0;color:var(--sb-muted,#958a82);font-size:9px;line-height:1.45}
+.skillbound-combat-lab-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.skillbound-combat-lab-grid button{display:flex;min-height:48px;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:8px;border:1px solid color-mix(in srgb,var(--sb-border,#3d473c) 84%,transparent);border-radius:4px;background:var(--sb-panel-alt,#121712);color:var(--sb-text,#eaf2ec);text-align:left;cursor:pointer}
+.skillbound-combat-lab-grid button:hover{border-color:color-mix(in srgb,var(--sb-accent,#7cb88f) 60%,var(--sb-border,#3d473c));background:color-mix(in srgb,var(--sb-accent,#7cb88f) 9%,var(--sb-panel-alt,#121712))}
+.skillbound-combat-lab-grid button strong{font-size:9px}.skillbound-combat-lab-grid button small{font-size:7px;color:var(--sb-muted,#958a82);line-height:1.35}
+.skillbound-combat-lab-grid button.danger{border-color:rgba(156,74,69,.42)}
+.skillbound-combat-lab footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.07)}
+.skillbound-combat-lab footer button{padding:6px 8px;border:1px solid var(--sb-border,#3d473c);border-radius:4px;background:var(--sb-panel-alt,#121712);color:var(--sb-muted,#a0a8a1);font-size:8px;cursor:pointer}
+.skillbound-combat-lab footer button.active{border-color:#659a75;color:#bde2c8;background:#173020}
+.skillbound-combat-lab footer small{max-width:190px;font-size:7px;line-height:1.35;color:var(--sb-muted,#958a82);text-align:right}
+@media(max-width:900px){.skillbound-combat-lab{top:112px;right:10px}.skillbound-combat-lab-grid{grid-template-columns:1fr}}
+
+.skillbound-combat-lab-footer{flex-wrap:wrap}
+.skillbound-combat-speed{display:flex;gap:4px}
+.skillbound-combat-speed button{min-width:34px;text-align:center}
+.skillbound-combat-lab-footer>small{flex:1 1 100%;max-width:none;text-align:left}
