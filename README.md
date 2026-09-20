@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.82.0`  
+> **Current Forge version:** `v1.82.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -252,7 +252,7 @@ Dungeon generation now exposes scale, room count, corridor width and branching c
 
 Manual editing remains first-class. Rooms can be click-dragged directly onto the floor and then resized with the existing edge handles. A new **Wall** tool click-drags independent brick wall segments anywhere in the layout; those segments render in the editor and ARPG preview, appear on the minimap, can be edited numerically, and participate in runtime collision.
 
-The editor world/camera bounds were expanded for the larger layouts, while Walk and ARPG preview continue to use the same authored package.
+The editor world/camera bounds were expanded for the larger layouts, while Walk and ARPG preview continue to use the same authored package. v1.82.1 separates authoring visibility from runtime mood: the editor gets a neutral fill light, reduced authoring fog and automatic layout framing, while Walk/ARPG keeps the darker torch-lit presentation without crushed blacks.
 
 Important source:
 
