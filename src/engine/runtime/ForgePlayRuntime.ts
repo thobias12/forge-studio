@@ -1403,19 +1403,13 @@ export class ForgePlayRuntime {
     const animationV3 = this.playerVisual?.getAnimationRuntimeV3()
     if (animationV3) {
       if (primaryMelee) {
-        const actionNames =
-          comboStep === 0
-            ? ['attackPrimary']
-            : comboStep === 1
-              ? ['attackSecondary', 'attackPrimary']
-              : ['attackHeavy', 'attackPrimary']
-        let played = false
-        for (const actionName of actionNames) {
-          if (animationV3.playAction(actionName)) {
-            played = true
-            break
-          }
-        }
+        // Forge V3 currently exposes primary + heavy attack actions.
+        // Hit two keeps the primary animation but has distinct mechanical
+        // timing/arc/lunge; the finisher uses heavy when authored.
+        const played =
+          comboStep === 2
+            ? animationV3.playAction('attackHeavy')
+            : animationV3.playAction('attackPrimary')
         if (!played) animationV3.playAction('attackPrimary')
       } else if (!animationV3.playAction('cast')) {
         animationV3.playAction('attackPrimary')
