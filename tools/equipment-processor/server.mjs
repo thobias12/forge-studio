@@ -15,7 +15,7 @@ const generatorRepo = join(generatorsDir, 'triposr')
 const generatorVenv = join(generatorRepo, '.forge-venv')
 const bootstrapVenv = join(generatorsDir, '.forge-uv-bootstrap')
 const managedPythonDir = join(generatorsDir, '.forge-python')
-const generatorReadyMarker = join(generatorVenv, '.forge-ready-v2')
+const generatorReadyMarker = join(generatorVenv, '.forge-ready-v3')
 const processor = join(here, 'processor.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
 const backgroundJobs = new Map()
@@ -42,7 +42,7 @@ createServer(async (req, res) => {
       const generator = await generatorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 4,
+        version: 5,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -327,16 +327,25 @@ async function setupGenerator(job) {
       )
     }
 
+    job.progress = 58
+    job.message = 'Preparing Windows-safe TripoSR dependencies…'
+    const forgeRequirements =
+      await prepareForgeTripoRequirements()
+
     job.progress = 62
     job.message = 'Installing TripoSR dependencies…'
     await runCommand(
       venvPython,
       [
         '-m', 'pip', 'install',
-        '-r', join(generatorRepo, 'requirements.txt'),
+        '-r', forgeRequirements,
       ],
       { label: 'TripoSR requirements' },
     )
+
+    job.progress = 74
+    job.message = 'Installing portable marching-cubes fallback…'
+    await installTorchMcubesFallback()
 
     job.progress = 80
     job.message = 'Repairing required runtime packages…'
@@ -547,6 +556,94 @@ async function ensurePipAvailable(
   )
 }
 
+async function prepareForgeTripoRequirements() {
+  const upstreamPath =
+    join(
+      generatorRepo,
+      'requirements.txt',
+    )
+  const forgePath =
+    join(
+      generatorRepo,
+      '.forge-requirements.txt',
+    )
+  const upstream =
+    await readFile(
+      upstreamPath,
+      'utf8',
+    )
+
+  const filtered =
+    upstream
+      .split(/\r?\n/)
+      .filter(
+        (line) =>
+          !line
+            .toLowerCase()
+            .includes(
+              'torchmcubes',
+            ),
+      )
+      .filter(Boolean)
+
+  // Windows-safe marching-cubes implementation used by Forge's
+  // torchmcubes compatibility module.
+  filtered.push(
+    'scikit-image==0.24.0',
+  )
+
+  await writeFile(
+    forgePath,
+    filtered.join('\n') + '\n',
+    'utf8',
+  )
+  return forgePath
+}
+
+async function installTorchMcubesFallback() {
+  const moduleDir =
+    join(
+      generatorRepo,
+      'torchmcubes',
+    )
+  await mkdir(
+    moduleDir,
+    { recursive: true },
+  )
+
+  const moduleSource = [
+    '"""Forge Windows compatibility layer for TripoSR torchmcubes."""',
+    'import numpy as np',
+    'import torch',
+    'from skimage.measure import marching_cubes as _marching_cubes',
+    '',
+    'def marching_cubes(volume, threshold):',
+    '    """Return torch tensors with the API TripoSR expects."""',
+    '    array = volume.detach().to(device="cpu", dtype=torch.float32).contiguous().numpy()',
+    '    vertices, faces, _normals, _values = _marching_cubes(',
+    '        array,',
+    '        level=float(threshold),',
+    '        allow_degenerate=False,',
+    '    )',
+    '    vertices = np.ascontiguousarray(vertices, dtype=np.float32)',
+    '    faces = np.ascontiguousarray(faces, dtype=np.int64)',
+    '    return torch.from_numpy(vertices), torch.from_numpy(faces)',
+    '',
+    'def grid_interp(*_args, **_kwargs):',
+    '    raise NotImplementedError("Forge TripoSR compatibility layer only implements marching_cubes.")',
+    '',
+  ].join('\n')
+
+  await writeFile(
+    join(
+      moduleDir,
+      '__init__.py',
+    ),
+    moduleSource,
+    'utf8',
+  )
+}
+
 async function ensureGeneratorRuntimeDependencies(
   venvPython,
   job,
@@ -575,6 +672,8 @@ async function ensureGeneratorRuntimeDependencies(
     imageio: 'imageio[ffmpeg]',
     gradio: 'gradio',
     moderngl: 'moderngl==5.10.0',
+    skimage: 'scikit-image==0.24.0',
+    torchmcubes: 'scikit-image==0.24.0',
   }
 
   for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -637,8 +736,10 @@ async function validateGeneratorRuntime(
         'import rembg',
         'import torch',
         'import xatlas',
+        'import torchmcubes',
         'from PIL import Image',
         'from tsr.system import TSR',
+        'assert callable(torchmcubes.marching_cubes)',
         'print("FORGE_RUNTIME_OK")',
         'print("FORGE_CUDA=" + str(torch.cuda.is_available()))',
         'print("FORGE_GPU=" + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"))',

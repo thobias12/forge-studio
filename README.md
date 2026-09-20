@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.79.2`  
+> **Current Forge version:** `v1.79.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -340,7 +340,7 @@ The manual raw-GLB route remains available as a fallback.
 
 Local generation currently uses the open-source **TripoSR** backend. The companion runs it as a background job and reports setup/generation progress back to Forge. The first generation may take longer because model weights are downloaded locally.
 
-Forge v1.79.2 makes the local generator setup self-healing. It still manages Python 3.11 privately through uv when the system only has a newer Python such as 3.13, but it now also seeds/repairs pip, explicitly installs NumPy because TripoSR imports it without declaring it in its upstream requirements file, validates the real TripoSR runtime imports before marking the generator ready, and invalidates broken ready state automatically so the UI can repair an incomplete installation. The user's normal Python installation is left unchanged.
+Forge v1.79.3 makes the local TripoSR setup practical on Windows without requiring a local C++/CUDA compiler toolchain. The upstream TripoSR requirements install torchmcubes from source; current torchmcubes builds against the installed PyTorch and requires a native compiler. Forge now excludes that source build on Windows, installs scikit-image from a prebuilt wheel, and writes a small torchmcubes compatibility module that provides the marching_cubes API TripoSR needs. The TripoSR neural network still runs on the NVIDIA GPU; only final mesh surface extraction uses the portable CPU fallback. Forge still manages Python 3.11 privately, repairs pip/NumPy, validates the full runtime, and leaves the user's normal Python installation unchanged.
 
 ## Equipment Forge
 
