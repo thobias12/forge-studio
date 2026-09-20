@@ -903,7 +903,10 @@ def refine_frame_from_torso_mask(
             width_values,
             0.04,
         ),
-        frame["height"] * 0.16,
+        # The weighted torso core is intentionally conservative. Use a
+        # body-height floor so chest/breast vertices are normalized
+        # against the real garment envelope rather than that narrow core.
+        frame["height"] * 0.285,
     )
     frame["torso_depth"] = max(
         percentile(
@@ -1242,19 +1245,17 @@ def chest_landmark_fractions(
         style["length"] + 0.04,
     )
 
-    # Keep the cloth underlayer high enough to read as an actual tunic,
-    # while leaving a believable scoop below the neck joint.
-    center_top = min(
-        shoulder - 0.028,
-        neck - 0.060,
-    )
+    # The shoulder bone on the Skillbound fixture sits much lower than
+    # the visual collar line, so do not let it drag the neckline down
+    # into the bust. Anchor the center opening primarily to the neck and
+    # use the shoulder landmark only to guarantee enough strap height.
     center_top = max(
-        center_top,
-        style["top_center"] + 0.030,
+        style["top_center"] + 0.070,
+        neck - 0.105,
     )
     shoulder_top = max(
-        center_top + 0.036,
-        shoulder + 0.008,
+        center_top + 0.038,
+        shoulder + 0.014,
     )
 
     # Chest pieces should finish around the upper hip, not continue down
@@ -1693,7 +1694,7 @@ def ranger_diagonal_strap_predicate(
         )
         return abs(
             w - target_w
-        ) <= 0.060
+        ) <= 0.082
 
     return keep
 
@@ -2034,8 +2035,8 @@ def create_chest(body, rig, frame, style, seed):
     )
 
     height = frame["height"]
-    clearance = height * 0.0027
-    cloth_thickness = height * 0.00175
+    clearance = height * 0.0038
+    cloth_thickness = height * 0.00180
     overlay_thickness = height * 0.00150
 
     cloth = material(
@@ -2078,7 +2079,7 @@ def create_chest(body, rig, frame, style, seed):
         ),
         clearance,
         cloth_thickness,
-        smooth_iterations=1,
+        smooth_iterations=0,
         allowed_indices=torso_indices,
     )
     if base:
@@ -2111,7 +2112,7 @@ def create_chest(body, rig, frame, style, seed):
             ),
             clearance + height * 0.0042,
             overlay_thickness,
-            smooth_iterations=1,
+            smooth_iterations=0,
             allowed_indices=torso_indices,
         )
         if main_leather:
@@ -2130,7 +2131,7 @@ def create_chest(body, rig, frame, style, seed):
             ),
             clearance + height * 0.0058,
             overlay_thickness * 1.06,
-            smooth_iterations=1,
+            smooth_iterations=0,
             allowed_indices=torso_indices,
         )
         if shoulders:
