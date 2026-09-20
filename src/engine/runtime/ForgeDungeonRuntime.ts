@@ -32,6 +32,7 @@ import {
   FORGE_GAMEPLAY_FEEL,
   forgeWheelDistanceTarget,
 } from './ForgeGameplayFeel'
+import { FORGE_WORLD_SCALE } from '../worldScale'
 
 type RoomOpening = DungeonConnection & { corridorId: string }
 type RuntimeEncounter = { definition: DungeonEncounter; active: boolean; cleared: boolean; rewardSpawned: boolean }
@@ -99,7 +100,12 @@ export class ForgeDungeonRuntime {
   private readonly options: ForgeDungeonRuntimeOptions
   private readonly renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
   private readonly scene = new THREE.Scene()
-  private readonly camera = new THREE.PerspectiveCamera(48, 1, 0.08, 260)
+  private readonly camera = new THREE.PerspectiveCamera(
+    FORGE_WORLD_SCALE.playCameraFov,
+    1,
+    0.08,
+    260,
+  )
   private readonly world = new THREE.Group()
   private readonly player = new THREE.Group()
   private readonly playerPlaceholder = new THREE.Group()
@@ -112,6 +118,8 @@ export class ForgeDungeonRuntime {
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
   private readonly tempMove = new THREE.Vector3()
+  private readonly tempAim = new THREE.Vector3()
+  private readonly tempCamera = new THREE.Vector3()
   private readonly tempEnemyDirection = new THREE.Vector3()
   private readonly tempEnemySeparation = new THREE.Vector3()
   private readonly tempCombatSpacing = new THREE.Vector3()
@@ -140,8 +148,8 @@ export class ForgeDungeonRuntime {
   private equippedWeaponId?: string
   private inventory: string[]
   private playerHealth: number
-  private cameraDistance = 31
-  private cameraDistanceTarget = 31
+  private cameraDistance = FORGE_WORLD_SCALE.playCameraDistance
+  private cameraDistanceTarget = FORGE_WORLD_SCALE.playCameraDistance
   private dodgeRemaining = 0
   private dodgeCooldown = 0
   private playerMoving = false
@@ -165,6 +173,7 @@ export class ForgeDungeonRuntime {
   private totalEnemyCount = 0
   private chainCastSequence = 0
   private runtimeFrameErrorLogged = false
+  private runtimeCameraErrorLogged = false
 
   constructor(host: HTMLElement, dungeon: ForgeProjectDungeonDefinition, gameplay: ForgeGameplayContent, initial: ForgeAdventurePlayerState, options: ForgeDungeonRuntimeOptions) {
     this.host = host
@@ -320,9 +329,9 @@ export class ForgeDungeonRuntime {
     this.cameraDistanceTarget = forgeWheelDistanceTarget(
       this.cameraDistanceTarget,
       event.deltaY,
-      23,
-      43,
-      2,
+      FORGE_WORLD_SCALE.playCameraMinDistance,
+      FORGE_WORLD_SCALE.playCameraMaxDistance,
+      FORGE_WORLD_SCALE.playCameraWheelStep,
     )
     event.preventDefault()
   }
@@ -331,6 +340,7 @@ export class ForgeDungeonRuntime {
     if (this.disposed) return
     const delta = Math.min(0.05, Math.max(0, (now - this.lastFrame) / 1000))
     this.lastFrame = now
+
     try {
       this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
       const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
@@ -344,17 +354,29 @@ export class ForgeDungeonRuntime {
       this.updateLibraryVfx(delta)
       this.updateChainLightningEffects(delta)
       this.updatePortal(delta)
-      this.updateCamera(delta)
-      if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
-      this.updateOcclusion(delta)
       this.emitElapsed += delta
       if (this.emitElapsed >= 0.1) { this.emitElapsed = 0; this.emitState() }
     } catch (reason) {
       if (!this.runtimeFrameErrorLogged) {
         this.runtimeFrameErrorLogged = true
-        console.error('[ForgeDungeonRuntime] frame update failed; keeping the rendered dungeon alive for diagnosis.', reason)
+        console.error('[ForgeDungeonRuntime] gameplay frame update failed; camera/render remain active.', reason)
       }
     }
+
+    // Camera tracking is intentionally isolated from gameplay simulation.
+    // A combat/encounter exception must never leave a live dungeon with a
+    // frozen camera.
+    try {
+      this.updateCamera(delta)
+      if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
+      this.updateOcclusion(delta)
+    } catch (reason) {
+      if (!this.runtimeCameraErrorLogged) {
+        this.runtimeCameraErrorLogged = true
+        console.error('[ForgeDungeonRuntime] camera update failed.', reason)
+      }
+    }
+
     this.renderer.render(this.scene, this.camera)
     this.frame = requestAnimationFrame(this.animate)
   }

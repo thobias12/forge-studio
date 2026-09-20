@@ -92,6 +92,10 @@ import {
   forgeWheelDistanceTarget,
   type ForgePlayerActionPhase,
 } from './ForgeGameplayFeel'
+import {
+  forgeSnapGameplayCamera,
+  forgeUpdateGameplayCamera,
+} from './ForgeGameplayCamera'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -2569,64 +2573,37 @@ export class ForgePlayRuntime {
     this.cameraDistance = THREE.MathUtils.lerp(
       this.cameraDistance,
       this.cameraDistanceTarget,
-      forgeExpAlpha(FORGE_GAMEPLAY_FEEL.camera.zoomResponse, delta),
+      forgeExpAlpha(
+        FORGE_GAMEPLAY_FEEL.camera.zoomResponse,
+        delta,
+      ),
     )
 
-    const focusTarget = this.tempCameraFocus.copy(this.player.position)
-    focusTarget.addScaledVector(
-      this.playerVelocity,
-      FORGE_GAMEPLAY_FEEL.camera.velocityLookAhead,
-    )
-    this.tempAim.copy(this.mouseWorld).sub(this.player.position).setY(0)
-    if (this.tempAim.lengthSq() > .01) {
-      this.tempAim.normalize().multiplyScalar(FORGE_GAMEPLAY_FEEL.camera.aimLookAhead)
-      focusTarget.add(this.tempAim)
-    }
-    focusTarget.y = this.player.position.y
-    this.cameraFocus.lerp(
-      focusTarget,
-      forgeExpAlpha(FORGE_GAMEPLAY_FEEL.camera.followResponse, delta),
-    )
-
-    const desired = this.cameraOffset(this.tempCamera).add(this.cameraFocus)
-    if (this.cameraShake > 0) {
-      const strength = this.cameraShake * .7
-      const now = performance.now()
-      desired.x += Math.sin(now * .061) * strength
-      desired.y += Math.sin(now * .083) * strength * .45
-      desired.z += Math.cos(now * .073) * strength
-    }
-
-    this.camera.position.lerp(
-      desired,
-      forgeExpAlpha(FORGE_GAMEPLAY_FEEL.camera.positionResponse, delta),
-    )
-    this.camera.lookAt(
-      this.cameraFocus.x,
-      this.cameraFocus.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
-      this.cameraFocus.z,
-    )
+    forgeUpdateGameplayCamera({
+      camera: this.camera,
+      focus: this.cameraFocus,
+      playerPosition: this.player.position,
+      playerVelocity: this.playerVelocity,
+      mouseWorld: this.mouseWorld,
+      pointerTracked: this.pointerTracked,
+      distance: this.cameraDistance,
+      delta,
+      shake: this.cameraShake,
+      tempFocus: this.tempCameraFocus,
+      tempAim: this.tempAim,
+      tempOffset: this.tempCamera,
+    })
   }
 
   private snapCamera() {
     this.cameraDistance = this.cameraDistanceTarget
-    this.cameraFocus.copy(this.player.position)
-    this.camera.position
-      .copy(this.cameraFocus)
-      .add(this.cameraOffset(this.tempCamera))
-    this.camera.lookAt(
-      this.cameraFocus.x,
-      this.cameraFocus.y + FORGE_WORLD_SCALE.playCameraLookAtHeight,
-      this.cameraFocus.z,
-    )
-  }
-
-  private cameraOffset(target: THREE.Vector3) {
-    return target.set(
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraVerticalScale,
-      this.cameraDistance * FORGE_WORLD_SCALE.playCameraHorizontalScale,
-    )
+    forgeSnapGameplayCamera({
+      camera: this.camera,
+      focus: this.cameraFocus,
+      playerPosition: this.player.position,
+      distance: this.cameraDistance,
+      tempOffset: this.tempCamera,
+    })
   }
 
   private moveActor(
