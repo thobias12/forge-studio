@@ -55,6 +55,7 @@ export default function MapStudio() {
   const [playtest, setPlaytest] = useState(false)
   const [flowOpen, setFlowOpen] = useState(true)
   const [status, setStatus] = useState('Select rooms to drag or resize them. Combat rooms can now own encounter logic, gates and rewards.')
+  const [generationJob, setGenerationJob] = useState<{ active: boolean; progress: number; label: string }>({ active: false, progress: 0, label: '' })
   const validation = useMemo(() => validateDungeon(value), [value])
   const selectedRoom = value.rooms.find((item) => item.id === selectedRoomId)
   const selectedMarker = value.markers.find((item) => item.id === selectedMarkerId)
@@ -268,20 +269,45 @@ export default function MapStudio() {
     for (const item of value.rooms) if (['combat','elite','boss'].includes(item.type)) next = ensureRoomEncounter(next, item.id)
     mutate(next, `Encounter logic prepared for ${next.logic?.encounters.length ?? 0} combat rooms.`)
   }
-  const proceduralGenerate = () => {
-    const seed = Math.floor(Math.random() * 999999)
-    const generated = generateDungeon(seed, value.theme, generation)
-    const next: DungeonWithProps = {
-      ...generated,
-      settings: {
-        ...generated.settings,
-        brightness: dungeonBrightness,
-      },
-      props: [],
+  const proceduralGenerate = async () => {
+    if (generationJob.active) return
+    const paint = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const advance = async (progress: number, label: string) => {
+      setGenerationJob({ active: true, progress, label })
+      await paint()
     }
-    mutate(next, `${titleCase(value.theme)} dungeon generated: ${next.rooms.length} rooms, wider corridors and modular post-editing ready.`)
-    setGeneration(next.generation ?? generation)
-    clearSelection(); setSelectedRoomId(next.rooms[0]?.id); setCorridorStartId(undefined)
+
+    try {
+      await advance(8, 'Preparing dungeon seed…')
+      const seed = Math.floor(Math.random() * 999999)
+      await advance(24, 'Planning rooms and branches…')
+
+      const generated = generateDungeon(seed, value.theme, generation)
+      await advance(58, 'Building encounters and connections…')
+
+      const next: DungeonWithProps = {
+        ...generated,
+        settings: {
+          ...generated.settings,
+          brightness: dungeonBrightness,
+        },
+        props: [],
+      }
+
+      await advance(76, 'Rebuilding dungeon geometry…')
+      mutate(next, `${titleCase(value.theme)} dungeon generated: ${next.rooms.length} rooms, wider corridors and modular post-editing ready.`)
+      setGeneration(next.generation ?? generation)
+      clearSelection()
+      setSelectedRoomId(next.rooms[0]?.id)
+      setCorridorStartId(undefined)
+
+      await paint()
+      await paint()
+      setGenerationJob({ active: true, progress: 100, label: 'Dungeon ready' })
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+    } finally {
+      setGenerationJob({ active: false, progress: 0, label: '' })
+    }
   }
   const saveToLibrary = async () => { await saveAsset({ name: value.name, category: 'environment', kind: 'file', mime: 'application/x-forge-dungeon+json', tags: ['map','dungeon','skillbound',value.theme,'encounters'], source: 'Forge Map Studio', blob: dungeonBlob(value as ForgeDungeonPackage) }); setStatus(`${value.name} saved to the Shared Asset Library.`) }
   const exportSkillbound = () => {
@@ -308,12 +334,12 @@ export default function MapStudio() {
       <section className="map-panel-section"><div className="map-section-title">TOOLS</div><div className="map-tools-grid">{tools.map(({ id,label,icon:Icon }) => <button key={id} className={tool===id?'active':''} onClick={() => { setTool(id); if(id!=='corridor')setCorridorStartId(undefined) }}><Icon size={15}/><span>{label}</span></button>)}</div></section>
       <section className="map-panel-section"><div className="map-section-title">ROOM PREFABS</div><div className="map-prefab-list">{roomTypes.map((item)=><button key={item.id} className={roomBrush===item.id?'active':''} onClick={()=>{setRoomBrush(item.id);setTool('room')}}><span className={`room-dot ${item.id}`}/><strong>{item.label}</strong><em>{prefabHint(item.id)}</em></button>)}</div></section>
       <section className="map-panel-section"><div className="map-section-title">DUNGEON PROPS</div><div className="map-prop-grid">{BUILTIN_DUNGEON_PROPS.map((item)=><button key={item.id} className={propBrush.source==='builtin'&&propBrush.assetRef===item.id?'active':''} onClick={()=>{setPropBrush({source:'builtin',assetRef:item.id,name:item.name});setTool('prop')}}><Box size={14}/><span><strong>{item.name}</strong><em>{item.hint}</em></span></button>)}</div>{libraryProps.length>0&&<><div className="map-library-caption">SHARED LIBRARY</div><div className="map-prop-grid">{libraryProps.map((item)=><button key={item.id} className={propBrush.source==='library'&&propBrush.assetRef===item.id?'active':''} onClick={()=>{setPropBrush({source:'library',assetRef:item.id,name:item.name});setTool('prop')}}><Box size={14}/><span><strong>{item.name}</strong><em>GLB asset</em></span></button>)}</div></>}</section>
-      <section className="map-panel-section compact"><div className="map-section-title">THEME + GENERATION</div><label className="map-generator-field">Theme<select value={value.theme} onChange={(e)=>mutate({...value,theme:e.target.value as DungeonTheme})}>{themes.map((item)=><option key={item} value={item}>{titleCase(item)}</option>)}</select></label><div className="map-generator-grid"><label>Scale<select value={generation.scalePreset} onChange={(e)=>setGeneration({...generation,scalePreset:e.target.value as DungeonGenerationSettings['scalePreset']})}><option value="standard">Standard</option><option value="grand">Grand</option><option value="massive">Massive</option></select></label><label>Rooms<input type="number" min={5} max={14} value={generation.roomCount} onChange={(e)=>setGeneration({...generation,roomCount:Number(e.target.value)})}/></label><label>Corridor<input type="number" min={3.8} max={8} step={.2} value={generation.corridorWidth} onChange={(e)=>setGeneration({...generation,corridorWidth:Number(e.target.value)})}/></label><label>Branches<input type="range" min={0} max={1} step={.05} value={generation.branchChance} onChange={(e)=>setGeneration({...generation,branchChance:Number(e.target.value)})}/><em>{Math.round(generation.branchChance*100)}%</em></label></div><div className="map-preset-note"><strong>Sunken Ossuary direction</strong><span>Large chambers · brick masonry · warm torch pools · dark negative space</span></div><button className="map-generate-button" onClick={proceduralGenerate}><WandSparkles size={14}/> Generate Dungeon</button><button className="map-generate-button secondary" onClick={autoEncounterLogic}><Network size={14}/> Auto Encounter Logic</button></section>
+      <section className="map-panel-section compact"><div className="map-section-title">THEME + GENERATION</div><label className="map-generator-field">Theme<select value={value.theme} onChange={(e)=>mutate({...value,theme:e.target.value as DungeonTheme})}>{themes.map((item)=><option key={item} value={item}>{titleCase(item)}</option>)}</select></label><div className="map-generator-grid"><label>Scale<select value={generation.scalePreset} onChange={(e)=>setGeneration({...generation,scalePreset:e.target.value as DungeonGenerationSettings['scalePreset']})}><option value="standard">Standard</option><option value="grand">Grand</option><option value="massive">Massive</option></select></label><label>Rooms<input type="number" min={5} max={14} value={generation.roomCount} onChange={(e)=>setGeneration({...generation,roomCount:Number(e.target.value)})}/></label><label>Corridor<input type="number" min={3.8} max={8} step={.2} value={generation.corridorWidth} onChange={(e)=>setGeneration({...generation,corridorWidth:Number(e.target.value)})}/></label><label>Branches<input type="range" min={0} max={1} step={.05} value={generation.branchChance} onChange={(e)=>setGeneration({...generation,branchChance:Number(e.target.value)})}/><em>{Math.round(generation.branchChance*100)}%</em></label></div><div className="map-preset-note"><strong>Sunken Ossuary direction</strong><span>Large chambers · brick masonry · warm torch pools · dark negative space</span></div><button className="map-generate-button" disabled={generationJob.active} onClick={()=>void proceduralGenerate()}><WandSparkles size={14}/> {generationJob.active?'Generating…':'Generate Dungeon'}</button><button className="map-generate-button secondary" onClick={autoEncounterLogic}><Network size={14}/> Auto Encounter Logic</button></section>
     </aside>
 
     <main className="map-workspace">
-      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions"><button className={topDown?'active play':''} onClick={()=>{setTopDown(!topDown);setPlaytest(false)}}><Grid3X3 size={14}/> {topDown?'Exit ARPG':'ARPG'}</button><button className={playtest?'active play':''} onClick={()=>{setPlaytest(!playtest);setTopDown(false)}}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button onClick={proceduralGenerate}><RotateCcw size={14}/> Regenerate</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></div></header>
-      <div className="map-viewport-wrap">{topDown?<ArpgDungeonViewport value={value}/>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} selectedWallId={selectedWallId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onWallClick={onWallClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp} onRoomDraw={drawRoom} onWallDraw={drawWall}/>} {!playtest&&!topDown&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{value.logic?.encounters.length ?? 0} encounters</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.walls?.length ?? 0} walls</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
+      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions"><button className={topDown?'active play':''} onClick={()=>{setTopDown(!topDown);setPlaytest(false)}}><Grid3X3 size={14}/> {topDown?'Exit ARPG':'ARPG'}</button><button className={playtest?'active play':''} onClick={()=>{setPlaytest(!playtest);setTopDown(false)}}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button disabled={generationJob.active} onClick={()=>void proceduralGenerate()}><RotateCcw size={14}/> {generationJob.active?'Generating…':'Regenerate'}</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></div></header>
+      <div className="map-viewport-wrap">{generationJob.active&&<div className="map-generation-overlay"><div className="map-generation-card"><WandSparkles size={22}/><strong>Generating Dungeon</strong><span>{generationJob.label}</span><div className="map-generation-track"><i style={{width:`${generationJob.progress}%`}}/></div><output>{generationJob.progress}%</output></div></div>}{topDown?<ArpgDungeonViewport value={value}/>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} selectedWallId={selectedWallId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onWallClick={onWallClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp} onRoomDraw={drawRoom} onWallDraw={drawWall}/>} {!playtest&&!topDown&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{value.logic?.encounters.length ?? 0} encounters</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.walls?.length ?? 0} walls</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
       <section className={`map-flow ${flowOpen?'open':''}`}><button className="map-flow-header" onClick={()=>setFlowOpen(!flowOpen)}><Network size={14}/><strong>DUNGEON FLOW</strong><span>{flowOpen?'Hide':'Show'}</span></button>{flowOpen&&<div className="map-flow-body">{value.rooms.map((item,index)=>{const roomEncounter=getRoomEncounter(value,item.id);return <div key={item.id} className={`flow-node ${item.type} ${selectedRoomId===item.id?'selected':''}`} onClick={()=>{setSelectedRoomId(item.id);setSelectedMarkerId(undefined);setSelectedPropId(undefined);setTool('select')}}><span>{item.type}</span><strong>{item.name}</strong>{roomEncounter&&<em className="flow-encounter">{roomEncounter.boss?'BOSS':`${roomEncounter.count}× ${roomEncounter.family}`}</em>}{index<value.rooms.length-1&&<ChevronRight size={14}/>}</div>})}</div>}</section>
       <footer className="map-status"><span>{status}</span><b>{validation.ok?'Ready for Skillbound export':validation.warnings[0]}</b></footer>
     </main>

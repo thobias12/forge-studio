@@ -8,3 +8,13 @@
 .map-lighting-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:7px}
 .map-lighting-presets button{padding:5px 4px;border:1px solid #354550;border-radius:5px;background:#121a20;color:#aab9c3;font-size:8px;cursor:pointer}
 .map-lighting-presets button:hover{border-color:#b17e3e;color:#f5d497}
+
+.map-generation-overlay{position:absolute;inset:0;z-index:30;display:grid;place-items:center;background:rgba(4,7,9,.58);backdrop-filter:blur(3px);pointer-events:all}
+.map-generation-card{width:min(340px,calc(100% - 48px));padding:20px 22px;border:1px solid #3a5263;border-radius:10px;background:linear-gradient(155deg,rgba(18,27,34,.98),rgba(10,15,19,.98));box-shadow:0 18px 60px rgba(0,0,0,.46);display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"icon title pct" "icon text pct" "track track track";column-gap:11px;row-gap:4px}
+.map-generation-card>svg{grid-area:icon;color:#e3ac58;align-self:center}
+.map-generation-card>strong{grid-area:title;font-size:13px;color:#edf5fa}
+.map-generation-card>span{grid-area:text;font-size:9px;color:#849aa9}
+.map-generation-card>output{grid-area:pct;align-self:center;color:#e8bc72;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.map-generation-track{grid-area:track;height:6px;margin-top:10px;border-radius:99px;overflow:hidden;background:#17222a;border:1px solid #263844}
+.map-generation-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b6030,#e2a84d);transition:width .16s ease}
+.map-generate-button:disabled,.map-toolbar button:disabled{opacity:.58;cursor:wait}

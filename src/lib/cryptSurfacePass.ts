@@ -20,6 +20,7 @@ export function addCryptRoomSurfacePass(
   group.position.set(room.x, room.floorLevel, room.z)
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
   group.userData.roomId = room.id
+  group.userData.roomRoot = true
   parent.add(group)
 
   const mats = createCryptMaterialSet(atmosphere)
@@ -116,8 +117,8 @@ function addFloor(group: THREE.Group, room: DungeonRoom, mats: Mats, random: () 
   }
 }
 
-function addWalls(group:THREE.Group,room:DungeonRoom,openings:CryptOpening[],thickness:number,mats:Mats,random:()=>number,immersive:boolean){
-  const displayHeight=immersive?room.height:Math.min(room.height,3.05)
+function addWalls(group:THREE.Group,room:DungeonRoom,openings:CryptOpening[],thickness:number,mats:Mats,random:()=>number,_immersive:boolean){
+  const displayHeight=room.height
   for(const side of ['north','south','west','east'] as Side[]){
     const total=side==='north'||side==='south'?room.width:room.depth
     const sideOpenings=openings.filter(o=>o.side===side)

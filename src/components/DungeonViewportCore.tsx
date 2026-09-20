@@ -132,6 +132,7 @@ export default function DungeonViewport(props: Props) {
     const cutawayNodes: THREE.Object3D[] = []
     const cutawayFactor = new Map<THREE.Object3D, number>()
     let drag: DragState | undefined
+    let dragPreviewPoint: { x: number; z: number; freeMove: boolean } | undefined
     let yaw = 0
     let pitch = 0
     let wasPlaytest = false
@@ -423,10 +424,68 @@ export default function DungeonViewport(props: Props) {
       }
     }
 
+    const snapEditorPoint = (x: number, z: number, freeMove: boolean) => {
+      const state = propsRef.current
+      const step = freeMove || !state.value.settings.snap ? 0.1 : state.value.gridSize
+      return {
+        x: Math.round(x / step) * step,
+        z: Math.round(z / step) * step,
+      }
+    }
+
+    const previewRoomMove = (roomId: string, x: number, z: number, freeMove: boolean) => {
+      const point = snapEditorPoint(x, z, freeMove)
+      for (const child of dungeonGroup.children) {
+        if (child.userData.roomRoot !== true || child.userData.roomId !== roomId) continue
+        child.position.x = point.x
+        child.position.z = point.z
+      }
+    }
+
+    const previewPropMove = (propId: string, x: number, z: number, freeMove: boolean) => {
+      const point = snapEditorPoint(x, z, freeMove)
+      const root = dungeonGroup.children.find((child) => child.userData.propRoot === true && child.userData.propId === propId)
+      if (!root) return
+      root.position.x = point.x
+      root.position.z = point.z
+    }
+
+    const previewRoomResize = (roomId: string, side: ResizeSide, worldX: number, worldZ: number, freeMove: boolean) => {
+      const room = propsRef.current.value.rooms.find((item) => item.id === roomId)
+      if (!room) return
+      const angle = THREE.MathUtils.degToRad(room.rotation)
+      const cos = Math.cos(angle), sin = Math.sin(angle)
+      const dx = worldX - room.x, dz = worldZ - room.z
+      let lx = dx * cos - dz * sin, lz = dx * sin + dz * cos
+      const step = freeMove || !propsRef.current.value.settings.snap ? 0.1 : propsRef.current.value.gridSize
+      lx = Math.round(lx / step) * step
+      lz = Math.round(lz / step) * step
+      let width = room.width, depth = room.depth, shiftX = 0, shiftZ = 0
+      if (side === 'east') { const fixed = -room.width / 2, boundary = Math.max(fixed + 3, lx); width = boundary - fixed; shiftX = (boundary + fixed) / 2 }
+      if (side === 'west') { const fixed = room.width / 2, boundary = Math.min(fixed - 3, lx); width = fixed - boundary; shiftX = (boundary + fixed) / 2 }
+      if (side === 'south') { const fixed = -room.depth / 2, boundary = Math.max(fixed + 3, lz); depth = boundary - fixed; shiftZ = (boundary + fixed) / 2 }
+      if (side === 'north') { const fixed = room.depth / 2, boundary = Math.min(fixed - 3, lz); depth = fixed - boundary; shiftZ = (boundary + fixed) / 2 }
+      width = Math.max(3, Math.round(width / step) * step)
+      depth = Math.max(3, Math.round(depth / step) * step)
+      const worldShiftX = shiftX * cos + shiftZ * sin
+      const worldShiftZ = -shiftX * sin + shiftZ * cos
+
+      clearDrawPreview()
+      const material = new THREE.MeshBasicMaterial({ color: 0x71c8ef, transparent: true, opacity: .27, depthWrite: false })
+      const preview = new THREE.Mesh(new THREE.BoxGeometry(width, .09, depth), material)
+      preview.position.set(room.x + worldShiftX, room.floorLevel + .36, room.z + worldShiftZ)
+      preview.rotation.y = angle
+      drawPreview.add(preview)
+    }
+
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
       const state = propsRef.current
       if (state.playtest) { requestWalkLock(); event.preventDefault(); return }
+      if (state.tool !== 'select') {
+        controls.enabled = false
+        event.stopImmediatePropagation()
+      }
 
       if (state.tool === 'room' || state.tool === 'wall') {
         const point = groundPoint(event)
@@ -506,9 +565,10 @@ export default function DungeonViewport(props: Props) {
       if (drag) {
         const point = groundPoint(event)
         if (!point) return
-        if (drag.kind === 'room') propsRef.current.onRoomMove(drag.id, point.x - drag.offsetX, point.z - drag.offsetZ, event.shiftKey)
-        else if (drag.kind === 'prop') propsRef.current.onPropMove(drag.id, point.x - drag.offsetX, point.z - drag.offsetZ, event.shiftKey)
-        else if (drag.kind === 'resize') propsRef.current.onRoomResize(drag.id, drag.side, point.x, point.z, event.shiftKey)
+        dragPreviewPoint = { x: point.x, z: point.z, freeMove: event.shiftKey }
+        if (drag.kind === 'room') previewRoomMove(drag.id, point.x - drag.offsetX, point.z - drag.offsetZ, event.shiftKey)
+        else if (drag.kind === 'prop') previewPropMove(drag.id, point.x - drag.offsetX, point.z - drag.offsetZ, event.shiftKey)
+        else if (drag.kind === 'resize') previewRoomResize(drag.id, drag.side, point.x, point.z, event.shiftKey)
         else showDrawPreview(drag.kind === 'draw-room' ? 'room' : 'wall', drag.x, drag.z, point.x, point.z)
         event.preventDefault()
         return
@@ -527,14 +587,22 @@ export default function DungeonViewport(props: Props) {
     const onPointerUp = (event: PointerEvent) => {
       if (!drag) return
       const currentDrag = drag
-      const point = currentDrag.kind === 'draw-room' || currentDrag.kind === 'draw-wall'
-        ? groundPoint(event)
-        : undefined
+      const pointerPoint = groundPoint(event)
+      const point = pointerPoint ?? (dragPreviewPoint ? new THREE.Vector3(dragPreviewPoint.x, 0, dragPreviewPoint.z) : undefined)
+      const freeMove = event.shiftKey || dragPreviewPoint?.freeMove === true
       if (renderer.domElement.hasPointerCapture(currentDrag.pointerId)) renderer.domElement.releasePointerCapture(currentDrag.pointerId)
       drag = undefined
-      controls.enabled = true
-      renderer.domElement.style.cursor = 'default'
-      if (point && currentDrag.kind === 'draw-room') {
+      dragPreviewPoint = undefined
+      controls.enabled = propsRef.current.tool === 'select'
+      renderer.domElement.style.cursor = propsRef.current.tool === 'select' ? 'default' : 'crosshair'
+
+      if (point && currentDrag.kind === 'room') {
+        propsRef.current.onRoomMove(currentDrag.id, point.x - currentDrag.offsetX, point.z - currentDrag.offsetZ, freeMove)
+      } else if (point && currentDrag.kind === 'prop') {
+        propsRef.current.onPropMove(currentDrag.id, point.x - currentDrag.offsetX, point.z - currentDrag.offsetZ, freeMove)
+      } else if (point && currentDrag.kind === 'resize') {
+        propsRef.current.onRoomResize(currentDrag.id, currentDrag.side, point.x, point.z, freeMove)
+      } else if (point && currentDrag.kind === 'draw-room') {
         propsRef.current.onRoomDraw({
           x: (currentDrag.x + point.x) / 2,
           z: (currentDrag.z + point.z) / 2,
@@ -572,7 +640,7 @@ export default function DungeonViewport(props: Props) {
       if (document.pointerLockElement !== renderer.domElement) keys.clear()
     }
 
-    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown, true)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('pointercancel', onPointerUp)
@@ -666,8 +734,8 @@ export default function DungeonViewport(props: Props) {
           camera.position.lerp(new THREE.Vector3(center.x, 68, center.z + 0.01), 0.09)
           controls.target.lerp(new THREE.Vector3(center.x, 0, center.z), 0.09)
         }
-        controls.enabled = !drag
-        if (!drag) controls.update()
+        controls.enabled = !drag && state.tool === 'select'
+        if (!drag && state.tool === 'select') controls.update()
       }
 
       const seconds = now * 0.001
@@ -690,7 +758,7 @@ export default function DungeonViewport(props: Props) {
       cancelAnimationFrame(raf)
       ro.disconnect()
       if (document.pointerLockElement === renderer.domElement) document.exitPointerLock()
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown, true)
       renderer.domElement.removeEventListener('pointermove', onPointerMove)
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointercancel', onPointerUp)
@@ -789,6 +857,8 @@ function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, 
   const group = new THREE.Group()
   group.position.set(room.x, room.floorLevel, room.z)
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
+  group.userData.roomId = room.id
+  group.userData.roomRoot = true
   parent.add(group)
 
   const floorColor = selected ? new THREE.Color(0x6f9fba) : corridorStart ? new THREE.Color(0x8f78b6) : tintRoomFloor(atmosphere.floor, room.type, atmosphere)
@@ -1039,6 +1109,7 @@ function addDungeonProp(parent: THREE.Group, prop: DungeonProp, asset: PropLibra
   group.position.set(prop.x, prop.y, prop.z)
   group.rotation.y = THREE.MathUtils.degToRad(prop.rotationY)
   group.userData.propId = prop.id
+  group.userData.propRoot = true
   parent.add(group)
 
   if (prop.source === 'builtin') addBuiltinProp(group, prop, atmosphere, flickerLights)

@@ -38,6 +38,7 @@ export function addCryptRoomEnvironment(
   group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
   group.userData.cryptEnvironment = true
   group.userData.roomId = room.id
+  group.userData.roomRoot = true
   parent.add(group)
 
   const stone = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.88, metalness: 0.015 })
@@ -177,7 +178,7 @@ function addWallStoneCourses(ctx: RoomContext, openings: CryptOpening[], thickne
   for (const side of ['north', 'south', 'west', 'east'] as Side[]) {
     const sideOpenings = openings.filter((opening) => opening.side === side)
     const total = side === 'north' || side === 'south' ? ctx.room.width : ctx.room.depth
-    const displayHeight = ctx.immersive ? ctx.room.height : Math.min(ctx.room.height, 3.1)
+    const displayHeight = ctx.room.height
     const rows = Math.max(4, Math.floor(displayHeight / 0.78))
     const rowHeight = displayHeight / rows
     const blocks: WallBlock[] = []
