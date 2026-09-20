@@ -217,14 +217,20 @@ function createSleeveMaskRange(
       vector.clone().normalize(),
     length,
     startDistance:
-      length * .015,
+      length *
+      (sleeve === 'long'
+        ? .015
+        : -.022),
     endDistance:
       length *
       (sleeve === 'long'
         ? .83
-        : .39),
+        : .385),
     radius:
-      length * .2,
+      length *
+      (sleeve === 'long'
+        ? .2
+        : .235),
     sideSign:
       Math.sign(start.x) ||
       (side === 'L' ? 1 : -1),
