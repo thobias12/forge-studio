@@ -18,3 +18,18 @@
 .map-generation-track{grid-area:track;height:6px;margin-top:10px;border-radius:99px;overflow:hidden;background:#17222a;border:1px solid #263844}
 .map-generation-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b6030,#e2a84d);transition:width .16s ease}
 .map-generate-button:disabled,.map-toolbar button:disabled{opacity:.58;cursor:wait}
+
+.map-studio-page.map-live-runtime-active{grid-template-columns:minmax(0,1fr)}
+.map-studio-page.map-live-runtime-active>.map-left-panel,
+.map-studio-page.map-live-runtime-active>.map-right-panel{display:none}
+.map-studio-page.map-live-runtime-active .map-workspace{grid-column:1;grid-template-rows:48px minmax(0,1fr) 0 0}
+.map-studio-page.map-live-runtime-active .map-flow,
+.map-studio-page.map-live-runtime-active .map-status{display:none}
+.map-live-runtime-host{position:absolute;inset:0;overflow:hidden;background:#050708}
+.map-live-runtime-host>.skillbound-runtime-host{position:absolute;inset:0;width:100%;height:100%;min-height:0}
+.map-live-runtime-host .skillbound-runtime-canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+.map-toolbar button.map-play-project-button{border-color:#4f8e68;background:linear-gradient(180deg,#183527,#10271c);color:#d7f3df}
+.map-toolbar button.map-play-project-button:hover{border-color:#69bd87;background:linear-gradient(180deg,#1d4530,#143321);color:#f0fff4}
+.map-live-runtime-badge{height:30px;padding:0 10px;border:1px solid #355846;border-radius:6px;background:#10251a;display:flex;align-items:center;gap:7px;color:#83d79d}
+.map-live-runtime-badge span{font-size:8px;font-weight:800;letter-spacing:.1em}
+.map-live-runtime-badge strong{font-size:10px;color:#d8efe0}
