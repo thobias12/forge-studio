@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.78.0`  
+> **Current Forge version:** `v1.79.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -303,56 +303,44 @@ The female body also has support for subtle spring-based secondary motion in the
 
 ## Equipment Lab
 
-Forge v1.78.0 adds the first proof-of-concept for the new imported-asset equipment pipeline.
+Forge v1.79.0 turns Equipment Lab into an end-to-end local asset factory.
 
-Instead of asking Three.js to procedurally invent final armor topology, Equipment Lab processes real imported GLB assets:
+The primary workflow is now:
 
 ```text
-raw equipment GLB
+reference PNG / JPG / WEBP
     ↓
-local Forge Equipment Processor
+free local TripoSR image-to-3D
     ↓
-headless Blender cleanup / normalization
+raw GLB
     ↓
-body-contact fit
+headless Blender normalization / fitting
     ↓
 Skillbound weight transfer
     ↓
 processed GLB
     ↓
-Forge preview / Asset Library
+Forge QA preview / Asset Library
 ```
 
-The browser workspace is available from **Characters → Equipment Lab**.
+No paid 3D generation service is required. The local generator is installed into the ignored Equipment Processor work directory and is never committed to Git.
 
-Current proof-of-concept capabilities:
+From **Characters → Equipment Lab**:
 
-- Female / Male Skillbound foundation selection
-- chest / head / legs / boots / gloves / waist / back / main-hand / off-hand slots
-- raw and processed GLB preview
-- tight / normal / loose fit presets
-- configurable body clearance
-- polygon budget control
-- predefined slot body-mask metadata
-- automatic upload of the official Skillbound mannequin from Forge Library
-- local Blender discovery and headless processing
-- proximity-weighted fitting so raised armor detail is less affected than body-contact vertices
-- transfer of Skillbound vertex-group weights
-- processed GLB export back to Forge
-- save processed equipment into the Shared Asset Library
+- choose Skillbound Female or Male
+- choose the equipment slot
+- upload a clean reference image
+- install the free local generator once if required
+- choose Draft / Standard / High local generation
+- click **Generate + Process**
+- inspect both the raw generated mesh and final Skillbound fit
+- save the accepted result to the Shared Asset Library
 
-The local companion lives under:
+The manual raw-GLB route remains available as a fallback.
 
-- `tools/equipment-processor/server.mjs`
-- `tools/equipment-processor/processor.py`
+Local generation currently uses the open-source **TripoSR** backend. The companion runs it as a background job and reports setup/generation progress back to Forge. The first generation may take longer because model weights are downloaded locally.
 
-Start it from the Forge checkout with:
-
-```bash
-npm run equipment:processor
-```
-
-The first validation target is a real Ranger chest GLB. AI generation APIs and weapon grip sockets intentionally come after that fit/rig proof succeeds.
+The generator setup expects a compatible Python 3.8–3.11 runtime. On Windows, Python 3.11 is preferred. NVIDIA PyTorch uses the CUDA 12.8 wheel in the Forge setup path.
 
 ## Equipment Forge
 
