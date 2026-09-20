@@ -133,38 +133,219 @@ def smoothstep(edge0, edge1, value):
     return t * t * (3.0 - 2.0 * t)
 
 
-def body_frame(body):
-    points = [body.matrix_world @ vertex.co for vertex in body.data.vertices]
-    full_min, full_max = robust_bounds(points, 0.01, 0.99)
-    size = full_max - full_min
-    vertical_axis = max(range(3), key=lambda axis: size[axis])
-    horizontal_axes = [axis for axis in range(3) if axis != vertical_axis]
-    height = max(size[vertical_axis], 0.001)
+def find_pose_bone(rig, *names):
+    wanted = [name.lower() for name in names]
+    for bone in rig.pose.bones:
+        lower = bone.name.lower()
+        if any(
+            lower == name
+            or lower.endswith(name)
+            or lower.includes(name)
+            for name in wanted
+        ):
+            return bone
+    return None
 
-    band_low = full_min[vertical_axis] + height * 0.48
-    band_high = full_min[vertical_axis] + height * 0.80
+
+def pose_bone_world_position(rig, bone):
+    if bone is None:
+        return None
+    return rig.matrix_world @ bone.head
+
+
+def body_frame(body, rig):
+    points = [
+        body.matrix_world @ vertex.co
+        for vertex in body.data.vertices
+    ]
+
+    # SkillboundHumanoidV1 has a fixed authoring convention:
+    # X = left/right, Y = up, +Z = forward.
+    # Do not infer axes from total dimensions: a T-pose arm span can
+    # legitimately be wider than the character is tall.
+    vertical_axis = 1
+    width_axis = 0
+    depth_axis = 2
+
+    full_min, full_max = robust_bounds(
+        points,
+        0.01,
+        0.99,
+    )
+    height = max(
+        full_max.y - full_min.y,
+        0.001,
+    )
+
+    pelvis = pose_bone_world_position(
+        rig,
+        find_pose_bone(
+            rig,
+            "pelvis",
+            "hips",
+        ),
+    )
+    chest = pose_bone_world_position(
+        rig,
+        find_pose_bone(
+            rig,
+            "spine_03",
+            "chest",
+            "spine_02",
+        ),
+    )
+    left_shoulder = pose_bone_world_position(
+        rig,
+        find_pose_bone(
+            rig,
+            "upperarm_L",
+            "clavicle_L",
+        ),
+    )
+    right_shoulder = pose_bone_world_position(
+        rig,
+        find_pose_bone(
+            rig,
+            "upperarm_R",
+            "clavicle_R",
+        ),
+    )
+
+    center_x = percentile(
+        [point.x for point in points],
+        0.5,
+    )
+    center_z = percentile(
+        [point.z for point in points],
+        0.5,
+    )
+
+    if pelvis is not None and chest is not None:
+        torso_center_y = (
+            pelvis.y + chest.y
+        ) * 0.5
+    else:
+        torso_center_y = (
+            full_min.y
+            + height * 0.64
+        )
+
+    shoulder_half_width = None
+    if (
+        left_shoulder is not None
+        and right_shoulder is not None
+    ):
+        shoulder_half_width = (
+            abs(
+                left_shoulder.x
+                - right_shoulder.x
+            )
+            * 0.5
+        )
+
+    if (
+        shoulder_half_width is None
+        or shoulder_half_width
+        < height * 0.06
+    ):
+        # Fallback: estimate the torso from a narrow central body band,
+        # intentionally excluding most T-pose arm vertices.
+        central = [
+            point
+            for point in points
+            if (
+                full_min.y
+                + height * 0.50
+                <= point.y
+                <= full_min.y
+                + height * 0.78
+            )
+        ]
+        xs = [
+            abs(point.x - center_x)
+            for point in central
+        ]
+        shoulder_half_width = max(
+            percentile(xs, 0.72),
+            height * 0.11,
+        )
+
+    torso_band_low = (
+        full_min.y + height * 0.46
+    )
+    torso_band_high = (
+        full_min.y + height * 0.81
+    )
+    torso_x_limit = (
+        shoulder_half_width * 1.12
+    )
+
     torso = [
         point
         for point in points
-        if band_low <= point[vertical_axis] <= band_high
+        if (
+            torso_band_low
+            <= point.y
+            <= torso_band_high
+            and abs(
+                point.x - center_x
+            )
+            <= torso_x_limit
+        )
     ]
-    if len(torso) < 64:
-        torso = points
 
-    torso_min, torso_max = robust_bounds(torso, 0.08, 0.92)
-    torso_size = torso_max - torso_min
-    width_axis = max(horizontal_axes, key=lambda axis: torso_size[axis])
-    depth_axis = next(axis for axis in horizontal_axes if axis != width_axis)
+    if len(torso) < 64:
+        torso = [
+            point
+            for point in points
+            if (
+                torso_band_low
+                <= point.y
+                <= torso_band_high
+            )
+        ]
+
+    torso_min, torso_max = robust_bounds(
+        torso,
+        0.04,
+        0.96,
+    )
 
     center = Vector((
-        percentile([p.x for p in torso], 0.5),
-        percentile([p.y for p in torso], 0.5),
-        percentile([p.z for p in torso], 0.5),
+        center_x,
+        torso_center_y,
+        center_z,
     ))
 
-    depth_positive = torso_max[depth_axis] - center[depth_axis]
-    depth_negative = center[depth_axis] - torso_min[depth_axis]
-    front_sign = 1.0 if depth_positive >= depth_negative else -1.0
+    torso_width = max(
+        torso_max.x - torso_min.x,
+        shoulder_half_width * 1.45,
+        height * 0.20,
+    )
+    torso_depth = max(
+        torso_max.z - torso_min.z,
+        height * 0.10,
+    )
+
+    print(
+        "FORGE_FRAME "
+        + json.dumps({
+            "axes": {
+                "width": "X",
+                "vertical": "Y",
+                "forward": "+Z",
+            },
+            "height": round(height, 5),
+            "torsoWidth": round(torso_width, 5),
+            "torsoDepth": round(torso_depth, 5),
+            "shoulderHalfWidth": round(
+                shoulder_half_width,
+                5,
+            ),
+            "torsoVertices": len(torso),
+        }),
+        flush=True,
+    )
 
     return {
         "min": full_min,
@@ -174,9 +355,9 @@ def body_frame(body):
         "width": width_axis,
         "depth": depth_axis,
         "center": center,
-        "torso_width": max(torso_size[width_axis], 0.001),
-        "torso_depth": max(torso_size[depth_axis], 0.001),
-        "front_sign": front_sign,
+        "torso_width": torso_width,
+        "torso_depth": torso_depth,
+        "front_sign": 1.0,
     }
 
 
@@ -291,9 +472,25 @@ def duplicate_surface(body, rig, name, mat, keep_vertex, clearance, thickness, s
     ensure_armature(obj, rig)
     delete_unwanted_vertices(obj, keep_vertex)
 
-    if len(obj.data.vertices) < 12:
-        obj.data.user_clear()
-        bpy.data.objects.remove(obj, do_unlink=True)
+    vertex_count = len(obj.data.vertices)
+    print(
+        "FORGE_LAYER "
+        + name
+        + " vertices="
+        + str(vertex_count),
+        flush=True,
+    )
+
+    if vertex_count < 12:
+        mesh_data = obj.data
+        bpy.data.objects.remove(
+            obj,
+            do_unlink=True,
+        )
+        if mesh_data.users == 0:
+            bpy.data.meshes.remove(
+                mesh_data,
+            )
         return None
 
     outward_shell(
@@ -592,7 +789,10 @@ def main():
         )
 
     style = STYLES.get(config.style, STYLES["ranger"])
-    frame = body_frame(body)
+    frame = body_frame(
+        body,
+        rig,
+    )
 
     print("FORGE_STAGE template", flush=True)
     generated = create_chest(
