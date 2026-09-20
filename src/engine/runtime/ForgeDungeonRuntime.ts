@@ -22,10 +22,12 @@ import {
   ForgeCharacterVisualBinding,
   ForgeLibraryVfxInstance,
   loadLibraryAnimationClips,
+  preloadLibraryVfx,
   spawnLibraryVfx,
 } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import type { ForgeAdventurePlayerState } from './ForgeAdventureSession'
+import { ForgeChainLightningEffect } from './ForgeChainLightningRuntime'
 
 type RoomOpening = DungeonConnection & { corridorId: string }
 type RuntimeEncounter = { definition: DungeonEncounter; active: boolean; cleared: boolean; rewardSpawned: boolean }
@@ -111,6 +113,7 @@ export class ForgeDungeonRuntime {
   private readonly effects: RuntimeEffect[] = []
   private readonly textEffects: RuntimeTextEffect[] = []
   private readonly libraryVfx: ForgeLibraryVfxInstance[] = []
+  private readonly chainLightningEffects: ForgeChainLightningEffect[] = []
   private readonly occlusionRay = new THREE.Raycaster()
   private readonly fadedOccluders = new Map<THREE.Mesh, number>()
   private readonly cooldowns = new Map<string, number>()
@@ -137,6 +140,7 @@ export class ForgeDungeonRuntime {
   private hitStopRemaining = 0
   private cameraShake = 0
   private totalEnemyCount = 0
+  private chainCastSequence = 0
 
   constructor(host: HTMLElement, dungeon: ForgeProjectDungeonDefinition, gameplay: ForgeGameplayContent, initial: ForgeAdventurePlayerState, options: ForgeDungeonRuntimeOptions) {
     this.host = host
@@ -173,6 +177,14 @@ export class ForgeDungeonRuntime {
     const completionMarker = dungeon.markers.find((marker) => marker.id === dungeon.logic?.completionPortalId)
       ?? dungeon.markers.find((marker) => marker.type === 'portal')
     if (completionMarker) this.portal = this.buildPortal(completionMarker)
+    void preloadLibraryVfx([
+      ...this.gameplay.abilities.map((ability) => ability.vfxAssetId),
+      ...this.gameplay.enemies.flatMap((enemy) => [
+        enemy.attackVfxAssetId,
+        enemy.hitVfxAssetId,
+        enemy.deathVfxAssetId,
+      ]),
+    ]).catch(() => undefined)
     void this.bindPlayerVisual()
     void this.refreshEquippedModel()
 
@@ -208,6 +220,8 @@ export class ForgeDungeonRuntime {
     this.enemies.forEach((enemy) => enemy.visual?.dispose())
     if (this.equippedModel) disposeBoundObject(this.equippedModel)
     this.libraryVfx.forEach((effect) => effect.dispose())
+    this.chainLightningEffects.forEach((effect) => effect.dispose())
+    this.chainLightningEffects.length = 0
     disposeSceneObject(this.world)
     disposeSceneObject(this.player)
     this.renderer.dispose()
@@ -280,6 +294,7 @@ export class ForgeDungeonRuntime {
     this.updateEffects(delta)
     this.updateTextEffects(delta)
     this.updateLibraryVfx(delta)
+    this.updateChainLightningEffects(delta)
     this.updatePortal(delta)
     this.updateCamera(delta)
     this.updateOcclusion(delta)

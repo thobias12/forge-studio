@@ -8,10 +8,16 @@ import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/
 import { dungeonArtCollidesV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
+import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity, distanceToSegment, disposeSceneObject } from './ForgeDungeonRuntimeHelpers'
 const PLAYER_RADIUS = 0.58
 const ENEMY_RADIUS = 0.58
 const DODGE_DURATION = 0.19
+const V3_WALL_CLEARANCE = 0.3
+
+function chainLightningTravelDuration(distance: number) {
+  return THREE.MathUtils.clamp(0.045 + Math.max(0, distance) * 0.012, 0.055, 0.125)
+}
 
 export const dungeonGameplayMethods = {
   updateCooldowns(delta: number) {
@@ -83,8 +89,20 @@ export const dungeonGameplayMethods = {
     if (aim.lengthSq() < 0.01) aim.set(0, 0, -1)
     aim.normalize()
     const damage = ability.damage + this.getEquippedDamageBonus()
-    const clipName = this.abilityAnimationClipNames.get(ability.id)
-    if (!clipName || !this.playerVisual?.playClipName(clipName, false)) this.playerVisual?.play('attack', false)
+    const animationV3 = this.playerVisual?.getAnimationRuntimeV3?.()
+    if (animationV3) {
+      const action = ability.id === this.gameplay.player.basicAbility ? 'attackPrimary' : 'cast'
+      if (!animationV3.playAction(action)) animationV3.playAction('attackPrimary')
+    } else {
+      const clipName = this.abilityAnimationClipNames.get(ability.id)
+      if (!clipName || !this.playerVisual?.playClipName(clipName, false)) this.playerVisual?.play('attack', false)
+    }
+    if (ability.delivery === 'chain') {
+      this.performChainAbility(ability, aim, damage)
+      this.cooldowns.set(ability.id, ability.cooldown)
+      this.emitState()
+      return
+    }
     if (ability.kind === 'melee') {
       const impact = this.player.position.clone().addScaledVector(aim, Math.max(1, ability.range * 0.5))
       this.spawnPulse(impact, ability.color, ability.radius, 0.24)
@@ -111,6 +129,124 @@ export const dungeonGameplayMethods = {
     }
     this.cooldowns.set(ability.id, ability.cooldown)
     this.emitState()
+  },
+
+  getChainCastOrigin(aim: THREE.Vector3) {
+    const characterRoot = this.playerVisual?.root ?? this.player.getObjectByName('__forge_bound_character')
+    if (characterRoot) {
+      const rightHand = findRuntimeItemSocket(characterRoot, 'RightHand')
+      if (rightHand) {
+        rightHand.updateWorldMatrix(true, false)
+        const position = rightHand.getWorldPosition(new THREE.Vector3())
+        position.y += 0.035
+        position.addScaledVector(aim, 0.12)
+        return position
+      }
+    }
+    const fallback = new THREE.Vector3(...fallbackSocketPosition('RightHand'))
+    this.player.localToWorld(fallback)
+    fallback.addScaledVector(aim, 0.1)
+    return fallback
+  },
+
+  performChainAbility(ability: ForgeAbilityDefinition, aim: THREE.Vector3, damage: number) {
+    const config = normalizeChainConfig(ability.chain)
+    const caster = this.getChainCastOrigin(aim)
+    const cursorDistance = this.mouseWorld.distanceTo(this.player.position)
+    const targetDistance = Math.min(Math.max(1.5, cursorDistance), ability.range)
+    const aimedPoint = this.player.position.clone().addScaledVector(aim, targetDistance)
+    aimedPoint.y = this.floorHeightAt(aimedPoint.x, aimedPoint.z) + 0.14
+
+    const candidates = [...this.enemies.values()]
+      .filter((enemy) => this.enemyDamageable(enemy) && enemy.group.position.distanceTo(this.player.position) <= ability.range + ENEMY_RADIUS)
+      .map((enemy) => ({
+        id: enemy.id,
+        value: enemy,
+        position: enemy.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)),
+      }))
+
+    const first = [...candidates].sort((a, b) => {
+      const aDx = a.position.x - aimedPoint.x
+      const aDz = a.position.z - aimedPoint.z
+      const bDx = b.position.x - aimedPoint.x
+      const bDz = b.position.z - aimedPoint.z
+      const aAim = aDx * aDx + aDz * aDz
+      const bAim = bDx * bDx + bDz * bDz
+      if (Math.abs(aAim - bAim) > 1e-6) return aAim - bAim
+      return a.id.localeCompare(b.id)
+    })[0]
+
+    const castId = `${ability.id}:${this.dungeon.seed}:${++this.chainCastSequence}`
+    if (!first) {
+      this.chainLightningEffects.push(new ForgeChainLightningEffect(
+        this.scene,
+        [{
+          index: 0,
+          from: caster,
+          to: aimedPoint,
+          delay: 0,
+          travel: chainLightningTravelDuration(caster.distanceTo(aimedPoint)),
+        }],
+        {
+          color: ability.color,
+          boltLifetime: config.boltLifetime,
+          arcAmplitude: config.arcAmplitude,
+          branchCount: config.branchCount,
+          glowWidth: config.glowWidth,
+          lightFlashIntensity: config.lightFlashIntensity,
+          seed: castId,
+        },
+      ))
+      return
+    }
+
+    const targets = resolveForgeChainTargets(first, candidates, ability.chain)
+    let chainDelay = 0
+    const hops = targets.map((target, index) => {
+      const from = index === 0 ? caster.clone() : targets[index - 1].position.clone()
+      const to = target.position.clone()
+      const travel = chainLightningTravelDuration(from.distanceTo(to))
+      const hop = { index, from, to, delay: chainDelay, travel }
+      chainDelay += travel + config.jumpDelay
+      return hop
+    })
+
+    const effect = new ForgeChainLightningEffect(
+      this.scene,
+      hops,
+      {
+        color: ability.color,
+        boltLifetime: config.boltLifetime,
+        arcAmplitude: config.arcAmplitude,
+        branchCount: config.branchCount,
+        glowWidth: config.glowWidth,
+        lightFlashIntensity: config.lightFlashIntensity,
+        seed: castId,
+      },
+      (index) => {
+        const target = targets[index]
+        if (!target) return
+        const enemy = target.value
+        if (!this.enemies.has(enemy.id) || !this.enemyDamageable(enemy)) return
+        const from = hops[index]?.from ?? caster
+        const direction = target.position.clone().sub(from).setY(0)
+        if (direction.lengthSq() > 0.001) direction.normalize()
+        else direction.copy(aim)
+        void this.spawnBoundVfx(ability.vfxAssetId, target.position)
+        this.damageEnemy(enemy, Math.max(1, damage * target.damageMultiplier), direction, ability.color)
+      },
+    )
+    this.chainLightningEffects.push(effect)
+    if (targets.length > 1) this.setMessage(`${ability.name} chained through ${targets.length} targets.`, 1.15)
+  },
+
+  updateChainLightningEffects(delta: number) {
+    for (let index = this.chainLightningEffects.length - 1; index >= 0; index -= 1) {
+      const effect = this.chainLightningEffects[index]
+      if (effect.update(delta)) continue
+      effect.dispose()
+      this.chainLightningEffects.splice(index, 1)
+    }
   },
 
   enemyDamageable(enemy: RuntimeEnemy) {
@@ -339,7 +475,7 @@ export const dungeonGameplayMethods = {
   canWalkAt(x: number, z: number, radius: number) {
     const cryptV3 = this.dungeon.theme === 'crypt'
     if (cryptV3) {
-      if (!dungeonContainsPointV3(this.runtimeDungeon, x, z, radius)) return false
+      if (!dungeonContainsPointV3(this.runtimeDungeon, x, z, radius + V3_WALL_CLEARANCE)) return false
       if (dungeonArtCollidesV3(this.runtimeDungeon, x, z, radius)) return false
     } else {
       const roomOk = this.dungeon.rooms.some((room) => pointInsideRoom(room, x, z, radius))
