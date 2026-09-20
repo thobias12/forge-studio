@@ -296,8 +296,14 @@ try {
         )}`
       : ''
 
+  const nativeQuery =
+    process.env.FORGE_QA_NATIVE_MODEL ===
+    '1'
+      ? '&native=1'
+      : ''
+
   const url =
-    `${baseUrl}/?equipmentQa=1&body=${bodyType}&model=./qa-foundation/${qaModelName}&fit=0${viewQuery}`
+    `${baseUrl}/?equipmentQa=1&body=${bodyType}&model=./qa-foundation/${qaModelName}&fit=0${nativeQuery}${viewQuery}`
 
   console.log(
     `Opening ${url}`,
