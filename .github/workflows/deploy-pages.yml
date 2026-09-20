@@ -2,7 +2,9 @@ name: Deploy Forge Studio to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'equipment-v3-*'
   workflow_dispatch:
 
 permissions:
@@ -55,6 +57,7 @@ jobs:
           path: ./dist
 
   qa:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 4
