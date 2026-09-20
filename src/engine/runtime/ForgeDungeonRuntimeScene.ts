@@ -94,21 +94,14 @@ export const dungeonSceneMethods = {
       const atmosphere = dungeonAtmosphere(this.dungeon.theme)
       const lighting = dungeonLightingProfile(atmosphere, this.dungeon.settings)
       const normalized = THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1)
-      const visibilityTarget = new THREE.Object3D()
-      visibilityTarget.name = 'DungeonReadabilityTarget'
-      visibilityTarget.position.set(0, 0.8, 0)
-      this.player.add(visibilityTarget)
-      const visibility = new THREE.SpotLight(
+      const visibility = new THREE.PointLight(
         atmosphere.sky,
-        THREE.MathUtils.lerp(0.5, 0.78, normalized),
-        8.6,
-        Math.PI / 3.15,
-        0.9,
-        1.55,
+        THREE.MathUtils.lerp(0.28, 0.42, normalized),
+        5.6,
+        2.15,
       )
       visibility.name = 'DungeonReadabilityLight'
-      visibility.position.set(0, 5.2, 1.8)
-      visibility.target = visibilityTarget
+      visibility.position.set(0, 2.7, 0)
       visibility.castShadow = false
       this.player.add(visibility)
     }
