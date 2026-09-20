@@ -66,6 +66,12 @@ const SLOT_LABELS: Array<{ id: EquipmentLabSlot; label: string }> = [
   { id: 'off-hand', label: 'Off Hand' },
 ]
 
+const PROCEDURAL_STYLE_DETAILS = {
+  ranger: 'Fitted field vest · layered leather · diagonal utility strap',
+  traveler: 'Layered travel jerkin · lighter leather · broad utility belt',
+  acolyte: 'High-neck battle tunic · symmetric framing · accent panel',
+} as const
+
 type ProcessState =
   | 'idle'
   | 'installing'
@@ -557,7 +563,8 @@ export default function EquipmentLab() {
         ...(proceduralResult
           ? [
               'generated:procedural',
-              'generator:blender-body-aware-v2',
+              'generator:blender-equipment-grammar-v1',
+              'recipe:' + proceduralStyle,
               'style:' + proceduralStyle,
               'seed:' + proceduralSeed,
             ]
@@ -581,8 +588,8 @@ export default function EquipmentLab() {
           <span className="eyebrow">SKILLBOUND ASSET FACTORY</span>
           <h1>Equipment Lab</h1>
           <p>
-            Generate body-aware equipment directly around the Skillbound character
-            with Blender. No reference image, paid service or manual fitting required.
+            One-click recipe-driven equipment generation around the Skillbound character.
+            Forge builds the garment, layers, details, fit and skinning automatically in Blender.
           </p>
         </div>
 
@@ -659,6 +666,7 @@ export default function EquipmentLab() {
               <option value="traveler">Traveler</option>
               <option value="acolyte">Acolyte</option>
             </select>
+            <small>{PROCEDURAL_STYLE_DETAILS[proceduralStyle]}</small>
           </label>
 
           <label className="equipment-lab-field">
@@ -693,7 +701,7 @@ export default function EquipmentLab() {
             {state === 'uploading' && !referenceFile
               ? 'Preparing Skillbound body…'
               : state === 'generating' && !referenceFile
-                ? 'Building equipment…'
+                ? 'Generating equipment recipe…'
                 : proceduralResult
                   ? 'Regenerate Equipment'
                   : 'Generate Equipment'}
@@ -994,7 +1002,7 @@ export default function EquipmentLab() {
                     title={proceduralResult ? 'No raw intermediate' : 'No raw 3D yet'}
                     detail={
                       proceduralResult
-                        ? 'Body-aware generation builds directly from the Skillbound mannequin, so there is no detached raw mesh to fit afterward.'
+                        ? 'Recipe generation builds the garment directly around the Skillbound mannequin, so there is no detached raw mesh to fit afterward.'
                         : 'Image-to-3D and manual imports appear here before Blender fitting.'
                     }
                   />
@@ -1049,7 +1057,7 @@ export default function EquipmentLab() {
                 label={proceduralResult ? 'Design' : 'Reference'}
                 detail={
                   proceduralResult
-                    ? proceduralStyle
+                    ? proceduralStyle + ' · variation ' + String(proceduralSeed + 1).padStart(2, '0')
                     : 'PNG / JPG / WEBP'
                 }
                 done={
@@ -1062,7 +1070,7 @@ export default function EquipmentLab() {
                 label={proceduralResult ? 'Build' : 'Generate'}
                 detail={
                   proceduralResult
-                    ? 'Body-aware Blender'
+                    ? 'Recipe grammar + Blender'
                     : referenceFile
                       ? 'Local SPAR3D'
                       : 'Imported GLB'
@@ -1085,7 +1093,7 @@ export default function EquipmentLab() {
                 label="Fit"
                 detail={
                   proceduralResult
-                    ? 'Built on body surface'
+                    ? 'Generated from body envelope'
                     : fit + ' · ' + clearanceMm + ' mm'
                 }
                 done={state === 'ready'}
