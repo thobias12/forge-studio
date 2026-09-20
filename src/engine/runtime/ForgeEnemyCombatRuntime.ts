@@ -553,6 +553,9 @@ function roleTargetSnapshot(runtime: any, snapshot: any, mode: EnemyMode) {
     ...snapshot,
     target: {
       ...snapshot.target,
+      name:
+        enemy.bossProfile?.name ??
+        snapshot.target.name,
       role: enemy.combatRole,
       elite: Boolean(enemy.elite),
       eliteModifier: enemy.eliteModifier,
