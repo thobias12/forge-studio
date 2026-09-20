@@ -3,6 +3,7 @@ import type { ForgeAnimationActionId, ForgeAnimationEvent } from '../animationBi
 import type { ForgeCharacterBlueprint } from '../characterBlueprint'
 import { playLibraryAudio } from './ForgeAnimationAudio'
 import { bindCharacterBlueprint } from './ForgeBlueprintRuntime'
+import { preloadLibraryVfx } from './ForgeAssetRuntime'
 import { installForgeSkillRuntime } from './ForgeSkillRuntime'
 import { registerSkillboundRuntime, unregisterSkillboundRuntime } from './SkillboundRuntimeBridge'
 
@@ -23,7 +24,17 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
       const binding = await bindCharacterBlueprint(this.player, blueprint, 1.95, animationTargetId)
       if (this.disposed) { binding.dispose(); return }
       this.playerVisual = binding
-      if (binding && !binding.getAnimationRuntimeV3?.() && this.preloadAbilityAnimations) {
+      const animationRuntime = binding.getAnimationRuntimeV3?.()
+      if (animationRuntime) {
+        const authoredVfx: Array<string | undefined> = []
+        for (const action of ['attackPrimary', 'attackHeavy', 'cast', 'block', 'hit', 'stagger', 'dodge', 'death', 'equip', 'unequip']) {
+          for (const event of animationRuntime.getEvents?.(action) ?? []) {
+            if (event.kind === 'vfx') authoredVfx.push(event.assetId)
+          }
+        }
+        void preloadLibraryVfx(authoredVfx).catch(() => undefined)
+      }
+      if (binding && !animationRuntime && this.preloadAbilityAnimations) {
         await this.preloadAbilityAnimations(binding)
       }
       if (!this.disposed && this.refreshEquippedModel) void this.refreshEquippedModel()
