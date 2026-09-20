@@ -2495,8 +2495,8 @@ def resolve_chest_recipe(
             ], strap[
                 "end_width"
             ] = (
-                -strap["end_width"],
-                -strap["start_width"],
+                strap["end_width"],
+                strap["start_width"],
             )
         strap["half_width"] *= (
             rng.uniform(
