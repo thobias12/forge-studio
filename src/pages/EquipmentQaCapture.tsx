@@ -440,6 +440,8 @@ export default function EquipmentQaCapture() {
 
   const analyzeFit =
     params.get('fit') !== '0'
+  const nativeModel =
+    params.get('native') === '1'
 
   const activeViews =
     useMemo(() => {
@@ -756,17 +758,22 @@ export default function EquipmentQaCapture() {
         scene.add(bodyRoot)
         bodyRoot.updateMatrixWorld(true)
 
-        buildEquipmentForgeV3Visual(
-          bodyRoot,
-          recipe,
-          {
-            analyzeFit,
-          },
-        )
-        bodyRoot.updateMatrixWorld(true)
+        // Native mode is for already-generated procedural GLBs. Do not
+        // layer the legacy Equipment Forge V3 recipe on top of them:
+        // that would make QA screenshots show two armor systems at once.
+        if (!nativeModel) {
+          buildEquipmentForgeV3Visual(
+            bodyRoot,
+            recipe,
+            {
+              analyzeFit,
+            },
+          )
+          bodyRoot.updateMatrixWorld(true)
+        }
 
         const diagnostics =
-          analyzeFit
+          analyzeFit && !nativeModel
             ? getEquipmentForgeV3FitDiagnostics(
                 bodyRoot,
               )
@@ -864,9 +871,11 @@ export default function EquipmentQaCapture() {
         }
       } finally {
         if (bodyRoot) {
-          disposeEquipmentForgeV3Visual(
-            bodyRoot,
-          )
+          if (!nativeModel) {
+            disposeEquipmentForgeV3Visual(
+              bodyRoot,
+            )
+          }
           bodyRoot.removeFromParent()
         }
         if (ground) {
@@ -898,6 +907,7 @@ export default function EquipmentQaCapture() {
     recipe,
     analyzeFit,
     activeViews,
+    nativeModel,
   ])
 
   const allReady =
@@ -917,6 +927,9 @@ export default function EquipmentQaCapture() {
       bodyType,
       modelUrl,
       recipe,
+      mode: nativeModel
+        ? 'native-model'
+        : 'v3-recipe',
       views: readyViewIds,
       errors: error
         ? [error]
@@ -931,6 +944,7 @@ export default function EquipmentQaCapture() {
     recipe,
     readyViewIds,
     fitDiagnostics,
+    nativeModel,
   ])
 
   const shotMap =
@@ -974,7 +988,9 @@ export default function EquipmentQaCapture() {
             V3 360° + fit + top inspection
           </h1>
           <p>
-            {bodyType} · {recipe.name}
+            {bodyType} · {nativeModel
+              ? 'Native generated equipment'
+              : recipe.name}
             {requestedModel === 'library'
               ? ' · live Forge Library model'
               : requestedModel === 'fixture'
@@ -997,7 +1013,7 @@ export default function EquipmentQaCapture() {
         </section>
       ) : (
         <>
-          {analyzeFit ? (
+          {analyzeFit && !nativeModel ? (
             <FitDiagnosticsPanel
               diagnostics={
                 fitDiagnostics
