@@ -149,6 +149,14 @@ export function buildConformedTunic(
     if (left) {
       meshes.push(left)
       meshes.push(
+        createSleeveArmholeTrim(
+          source,
+          left.geometry,
+          trim,
+          'L',
+        ),
+      )
+      meshes.push(
         createShoulderBridge(
           source,
           torso.geometry,
@@ -174,6 +182,14 @@ export function buildConformedTunic(
     if (right) {
       meshes.push(right)
       meshes.push(
+        createSleeveArmholeTrim(
+          source,
+          right.geometry,
+          trim,
+          'R',
+        ),
+      )
+      meshes.push(
         createShoulderBridge(
           source,
           torso.geometry,
@@ -197,7 +213,38 @@ export function buildConformedTunic(
     }
   }
 
-  // QA isolate: vest block temporarily omitted to trace chest X.
+  if (recipe.layers.vest) {
+    const vest =
+      createVestOverlay(
+        source,
+        torso.geometry,
+        leather,
+      )
+    meshes.push(vest)
+    meshes.push(
+      ...createVestDetailTrim(
+        source,
+        vest.geometry,
+        trim,
+      ),
+    )
+    meshes.push(
+      ...createVestPanelDetails(
+        source,
+        vest.geometry,
+        leather,
+        trim,
+      ),
+    )
+    meshes.push(
+      ...createShoulderReinforcements(
+        source,
+        torso.geometry,
+        leather,
+        trim,
+      ),
+    )
+  }
 
   if (recipe.layers.belt) {
     meshes.push(
@@ -262,6 +309,15 @@ export function buildConformedTunic(
         accent,
       )
     meshes.push(cape)
+    meshes.push(
+      ...createCapeDetails(
+        source,
+        cape.geometry,
+        trim,
+        leather,
+        metal,
+      ),
+    )
   }
 
   return { meshes, frame }
@@ -4170,6 +4226,204 @@ function createDetailMesh(
     geometry,
     material,
     name,
+  )
+}
+
+function createSleeveArmholeTrim(
+  source: THREE.SkinnedMesh,
+  sleeveGeometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  side: 'L' | 'R',
+) {
+  const segments = 18
+  const position =
+    sleeveGeometry.getAttribute(
+      'position',
+    )
+
+  const rootCenter =
+    Array.from(
+      { length: segments },
+      (_, segment) =>
+        new THREE.Vector3(
+          position.getX(segment),
+          position.getY(segment),
+          position.getZ(segment),
+        ),
+    ).reduce(
+      (sum, point) =>
+        sum.add(point),
+      new THREE.Vector3(),
+    ).multiplyScalar(
+      1 / segments,
+    )
+
+  const sideSign =
+    side === 'L' ? 1 : -1
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  const influences: SkinInfluence[] = []
+  const pairBySegment =
+    new Map<number, number>()
+
+  for (
+    let segment = 0;
+    segment < segments;
+    segment += 1
+  ) {
+    const outerIndex = segment
+    const innerIndex =
+      segments + segment
+
+    const outer =
+      new THREE.Vector3(
+        position.getX(outerIndex),
+        position.getY(outerIndex),
+        position.getZ(outerIndex),
+      )
+    const local =
+      outer
+        .clone()
+        .sub(rootCenter)
+
+    const inward =
+      local.x * sideSign < 0
+    const upper =
+      local.y >
+      rootCenter.y -
+        rootCenter.y
+
+    // The old closed ring continued across the upper-inner sleeve root
+    // and visually crossed the chest/neckline. Keep the lower underarm
+    // seam and the outer shoulder seam, but leave that quadrant open.
+    if (
+      inward &&
+      upper &&
+      local.y > 0
+    ) {
+      continue
+    }
+
+    const inner =
+      new THREE.Vector3(
+        position.getX(innerIndex),
+        position.getY(innerIndex),
+        position.getZ(innerIndex),
+      )
+    const inset =
+      outer
+        .clone()
+        .lerp(
+          inner,
+          .5,
+        )
+
+    const radial =
+      new THREE.Vector3(
+        outer.x,
+        0,
+        outer.z,
+      )
+    if (
+      radial.lengthSq() >
+      1e-6
+    ) {
+      radial
+        .normalize()
+        .multiplyScalar(.002)
+      outer.add(radial)
+      inset.add(radial)
+    }
+
+    const pair =
+      positions.length / 3
+    pairBySegment.set(
+      segment,
+      pair,
+    )
+
+    positions.push(
+      outer.x,
+      outer.y,
+      outer.z,
+      inset.x,
+      inset.y,
+      inset.z,
+    )
+    uvs.push(
+      segment / segments, 1,
+      segment / segments, 0,
+    )
+    influences.push(
+      readSkinInfluence(
+        sleeveGeometry,
+        outerIndex,
+      ),
+      readSkinInfluence(
+        sleeveGeometry,
+        innerIndex,
+      ),
+    )
+  }
+
+  for (
+    let segment = 0;
+    segment < segments;
+    segment += 1
+  ) {
+    const next =
+      (segment + 1) %
+      segments
+    const a =
+      pairBySegment.get(segment)
+    const c0 =
+      pairBySegment.get(next)
+
+    if (
+      a === undefined ||
+      c0 === undefined
+    ) {
+      continue
+    }
+
+    const b = a + 1
+    const d = c0 + 1
+    indices.push(
+      a, b, c0,
+      c0, b, d,
+    )
+  }
+
+  const geometry =
+    new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      positions,
+      3,
+    ),
+  )
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute(
+      uvs,
+      2,
+    ),
+  )
+  geometry.setIndex(indices)
+  applySkinAttributes(
+    geometry,
+    influences,
+  )
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  return makeSkinnedTemplate(
+    source,
+    geometry,
+    material,
+    `EFV3_ArmholeTrim_${side}`,
   )
 }
 
