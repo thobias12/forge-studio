@@ -10,12 +10,33 @@ export type EquipmentLabSlot =
   | 'main-hand'
   | 'off-hand'
 
+export type EquipmentGeneratorHealth = {
+  backend: 'triposr'
+  label: string
+  installed: boolean
+  ready: boolean
+  setupRunning?: boolean
+  pythonAvailable?: boolean
+  message?: string
+}
+
 export type EquipmentProcessorHealth = {
   ok: boolean
   version: number
   blenderAvailable: boolean
   blenderPath?: string
   mannequins?: Partial<Record<EquipmentLabBody, boolean>>
+  generator?: EquipmentGeneratorHealth
+}
+
+export type EquipmentGeneratorJob = {
+  id: string
+  kind: 'setup' | 'generate'
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  progress: number
+  message: string
+  error?: string
+  resultReady?: boolean
 }
 
 export type EquipmentProcessOptions = {
@@ -56,6 +77,120 @@ export async function checkEquipmentProcessor(
 
   return await response.json() as
     EquipmentProcessorHealth
+}
+
+export async function startLocalGeneratorSetup() {
+  const response = await fetch(
+    EQUIPMENT_PROCESSOR_URL + '/generator/setup',
+    {
+      method: 'POST',
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await readProcessorError(
+        response,
+        'Could not start local 3D generator setup.',
+      ),
+    )
+  }
+
+  return await response.json() as {
+    jobId: string
+  }
+}
+
+export async function startLocal3DGeneration(
+  image: Blob,
+  options: {
+    fileName: string
+    quality: 'draft' | 'standard' | 'high'
+  },
+) {
+  const query =
+    new URLSearchParams({
+      quality: options.quality,
+    })
+
+  const response = await fetch(
+    EQUIPMENT_PROCESSOR_URL +
+      '/generator/generate?' +
+      query.toString(),
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type':
+          image.type || 'image/png',
+        'X-Forge-Filename':
+          options.fileName,
+      },
+      body: image,
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await readProcessorError(
+        response,
+        'Could not start local 3D generation.',
+      ),
+    )
+  }
+
+  return await response.json() as {
+    jobId: string
+  }
+}
+
+export async function getEquipmentProcessorJob(
+  jobId: string,
+): Promise<EquipmentGeneratorJob> {
+  const response = await fetch(
+    EQUIPMENT_PROCESSOR_URL +
+      '/jobs/' +
+      encodeURIComponent(jobId),
+    {
+      cache: 'no-store',
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await readProcessorError(
+        response,
+        'Could not read Equipment Processor job.',
+      ),
+    )
+  }
+
+  return await response.json() as
+    EquipmentGeneratorJob
+}
+
+export async function getLocal3DGenerationResult(
+  jobId: string,
+) {
+  const response = await fetch(
+    EQUIPMENT_PROCESSOR_URL +
+      '/jobs/' +
+      encodeURIComponent(jobId) +
+      '/result',
+    {
+      cache: 'no-store',
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await readProcessorError(
+        response,
+        'Local 3D model is not ready.',
+      ),
+    )
+  }
+
+  return await response.blob()
 }
 
 export async function uploadEquipmentMannequin(

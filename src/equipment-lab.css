@@ -170,6 +170,122 @@
   margin-top: 3px;
 }
 
+.equipment-lab-reference {
+  margin-top: 16px;
+  min-height: 88px;
+  border: 1px dashed rgba(112, 143, 177, .4);
+  border-radius: 11px;
+  background: rgba(16, 25, 35, .6);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.equipment-lab-reference:hover {
+  border-color: rgba(120, 171, 220, .72);
+  background: rgba(23, 35, 48, .72);
+}
+
+.equipment-lab-reference input {
+  display: none;
+}
+
+.equipment-lab-reference > svg {
+  color: #7fb2df;
+  flex: 0 0 auto;
+}
+
+.equipment-lab-reference img {
+  width: 62px;
+  height: 62px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(130, 157, 184, .2);
+  background: #080d13;
+}
+
+.equipment-lab-reference span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.equipment-lab-reference strong {
+  color: #dbe6f1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipment-lab-reference small {
+  color: #75879a;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.equipment-generator-progress {
+  margin-top: 12px;
+  border: 1px solid rgba(100, 135, 166, .2);
+  border-radius: 9px;
+  background: rgba(6, 11, 17, .6);
+  padding: 10px;
+}
+
+.equipment-generator-progress > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #91a4b7;
+  font-size: 11px;
+}
+
+.equipment-generator-progress strong {
+  color: #c6d4df;
+  font-weight: 600;
+}
+
+.equipment-generator-progress > i {
+  display: block;
+  height: 5px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(97, 123, 149, .18);
+}
+
+.equipment-generator-progress > i > b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d799f, #6aa8d8);
+  transition: width .25s ease;
+}
+
+.equipment-lab-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 0;
+  color: #53677a;
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+
+.equipment-lab-or::before,
+.equipment-lab-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(103, 128, 153, .16);
+}
+
+.equipment-lab-steps-seven {
+  grid-template-columns: repeat(7, 1fr);
+}
+
 .equipment-lab-divider {
   height: 1px;
   background: rgba(101, 126, 150, .16);
@@ -423,7 +539,8 @@
     min-height: 820px;
   }
 
-  .equipment-lab-steps {
+  .equipment-lab-steps,
+  .equipment-lab-steps-seven {
     grid-template-columns: repeat(3, 1fr);
   }
 }
@@ -446,7 +563,8 @@
     grid-template-columns: 1fr;
   }
 
-  .equipment-lab-steps {
+  .equipment-lab-steps,
+  .equipment-lab-steps-seven {
     grid-template-columns: repeat(2, 1fr);
   }
 }

@@ -3,24 +3,30 @@ import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const work = resolve(here, 'work')
 const mannequins = join(work, 'mannequins')
-const jobs = join(work, 'jobs')
+const jobsDir = join(work, 'jobs')
+const generatorsDir = join(work, 'generators')
+const generatorRepo = join(generatorsDir, 'triposr')
+const generatorVenv = join(generatorRepo, '.forge-venv')
 const processor = join(here, 'processor.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
+const backgroundJobs = new Map()
 
 await mkdir(mannequins, { recursive: true })
-await mkdir(jobs, { recursive: true })
+await mkdir(jobsDir, { recursive: true })
+await mkdir(generatorsDir, { recursive: true })
 
 const blender = await findBlender()
 
 createServer(async (req, res) => {
   try {
     cors(req, res)
+
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
       res.end()
@@ -30,16 +36,101 @@ createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
 
     if (req.method === 'GET' && url.pathname === '/health') {
+      const generator = await generatorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 1,
+        version: 2,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
           female: await exists(mannequinPath('female')),
           male: await exists(mannequinPath('male')),
         },
+        generator,
       })
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/generator/setup') {
+      const active = [...backgroundJobs.values()].find(
+        (job) => job.kind === 'setup' && (job.status === 'queued' || job.status === 'running'),
+      )
+      if (active) {
+        sendJson(res, 202, { jobId: active.id })
+        return
+      }
+
+      const ready = await isGeneratorReady()
+      if (ready) {
+        const job = createJob('setup', 'Local 3D generator is already installed.')
+        job.status = 'completed'
+        job.progress = 100
+        backgroundJobs.set(job.id, job)
+        sendJson(res, 200, { jobId: job.id })
+        return
+      }
+
+      const job = createJob('setup', 'Preparing local 3D generator…')
+      backgroundJobs.set(job.id, job)
+      void setupGenerator(job)
+      sendJson(res, 202, { jobId: job.id })
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/generator/generate') {
+      if (!await isGeneratorReady()) {
+        throw new HttpError(
+          409,
+          'The local 3D generator is not installed yet. Use Install Local Generator in Equipment Lab first.',
+        )
+      }
+
+      const bytes = await bodyBytes(req, 30 * 1024 * 1024)
+      const contentType = String(req.headers['content-type'] || '')
+      if (!contentType.startsWith('image/')) {
+        throw new HttpError(400, 'Local 3D generation requires a PNG, JPG or WEBP reference image.')
+      }
+
+      const quality = generationQuality(url.searchParams.get('quality'))
+      const id = randomUUID()
+      const extension = imageExtension(contentType, req.headers['x-forge-filename'])
+      const input = join(jobsDir, id + '-reference' + extension)
+      const outputDir = join(jobsDir, id + '-generated')
+      await mkdir(outputDir, { recursive: true })
+      await writeFile(input, bytes)
+
+      const job = createJob('generate', 'Queued local image-to-3D generation.')
+      job.id = id
+      job.quality = quality
+      job.inputPath = input
+      job.outputDir = outputDir
+      backgroundJobs.set(job.id, job)
+      void generate3D(job)
+
+      sendJson(res, 202, { jobId: job.id })
+      return
+    }
+
+    const jobMatch = url.pathname.match(/^\/jobs\/([^/]+)$/)
+    if (req.method === 'GET' && jobMatch) {
+      const job = backgroundJobs.get(decodeURIComponent(jobMatch[1]))
+      if (!job) throw new HttpError(404, 'Equipment Processor job was not found.')
+      sendJson(res, 200, publicJob(job))
+      return
+    }
+
+    const resultMatch = url.pathname.match(/^\/jobs\/([^/]+)\/result$/)
+    if (req.method === 'GET' && resultMatch) {
+      const job = backgroundJobs.get(decodeURIComponent(resultMatch[1]))
+      if (!job) throw new HttpError(404, 'Equipment Processor job was not found.')
+      if (job.status !== 'completed' || !job.resultPath) {
+        throw new HttpError(409, 'The generated 3D model is not ready yet.')
+      }
+      const result = await readFile(job.resultPath)
+      res.statusCode = 200
+      res.setHeader('Content-Type', 'model/gltf-binary')
+      res.setHeader('Content-Length', String(result.length))
+      res.end(result)
       return
     }
 
@@ -53,7 +144,12 @@ createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/process') {
-      if (!blender) throw new HttpError(503, 'Blender was not found. Install Blender or set BLENDER_PATH before starting the processor.')
+      if (!blender) {
+        throw new HttpError(
+          503,
+          'Blender was not found. Install Blender or set BLENDER_PATH before starting the processor.',
+        )
+      }
 
       const body = bodyType(url.searchParams.get('body'))
       const slot = slotType(url.searchParams.get('slot'))
@@ -62,31 +158,39 @@ createServer(async (req, res) => {
       const polyLimit = Math.round(clamp(url.searchParams.get('polyLimit'), 2000, 150000, 25000))
       const mannequin = mannequinPath(body)
 
-      if (!await exists(mannequin)) throw new HttpError(409, 'The Skillbound ' + body + ' mannequin has not been uploaded yet.')
+      if (!await exists(mannequin)) {
+        throw new HttpError(409, 'The Skillbound ' + body + ' mannequin has not been uploaded yet.')
+      }
 
       const bytes = await bodyBytes(req)
       validGlb(bytes, 'equipment')
 
       const id = randomUUID()
-      const input = join(jobs, id + '-input.glb')
-      const output = join(jobs, id + '-processed.glb')
+      const input = join(jobsDir, id + '-input.glb')
+      const output = join(jobsDir, id + '-processed.glb')
       await writeFile(input, bytes)
 
-      const run = await runBlender(blender, [
-        '--background',
-        '--python', processor,
-        '--',
-        '--input', input,
-        '--mannequin', mannequin,
-        '--output', output,
-        '--body', body,
-        '--slot', slot,
-        '--fit', fit,
-        '--clearance-mm', String(clearance),
-        '--poly-limit', String(polyLimit),
-      ])
+      const run = await runCommand(
+        blender,
+        [
+          '--background',
+          '--python', processor,
+          '--',
+          '--input', input,
+          '--mannequin', mannequin,
+          '--output', output,
+          '--body', body,
+          '--slot', slot,
+          '--fit', fit,
+          '--clearance-mm', String(clearance),
+          '--poly-limit', String(polyLimit),
+        ],
+        { label: 'Blender Equipment Processor' },
+      )
 
-      if (!await exists(output)) throw new HttpError(500, 'Blender finished without producing a processed GLB.')
+      if (!await exists(output)) {
+        throw new HttpError(500, 'Blender finished without producing a processed GLB.')
+      }
 
       const result = await readFile(output)
       let metadata = { body, slot, fit, clearanceMm: clearance, polyLimit }
@@ -118,9 +222,291 @@ createServer(async (req, res) => {
   console.log('Forge Equipment Processor')
   console.log('http://127.0.0.1:' + port)
   console.log('Blender: ' + (blender || 'NOT FOUND'))
+  console.log('Local 3D: TripoSR adapter')
   console.log('Keep this window open while using Forge Equipment Lab.')
   console.log('')
 })
+
+function createJob(kind, message) {
+  return {
+    id: randomUUID(),
+    kind,
+    status: 'queued',
+    progress: 0,
+    message,
+    error: undefined,
+    resultPath: undefined,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function publicJob(job) {
+  return {
+    id: job.id,
+    kind: job.kind,
+    status: job.status,
+    progress: job.progress,
+    message: job.message,
+    error: job.error,
+    resultReady: Boolean(job.resultPath && job.status === 'completed'),
+  }
+}
+
+async function setupGenerator(job) {
+  try {
+    job.status = 'running'
+    job.progress = 4
+    job.message = 'Checking Python 3.11…'
+
+    const python = await findPythonLauncher()
+    if (!python) {
+      throw new Error(
+        'Python 3.11 was not found. Install Python 3.11 from python.org with the Python launcher enabled, then retry.',
+      )
+    }
+
+    if (!await exists(join(generatorRepo, 'run.py'))) {
+      job.progress = 10
+      job.message = 'Downloading the free TripoSR generator…'
+      await runCommand(
+        'git',
+        [
+          'clone',
+          '--depth', '1',
+          'https://github.com/VAST-AI-Research/TripoSR.git',
+          generatorRepo,
+        ],
+        { label: 'TripoSR clone' },
+      )
+    }
+
+    const venvPython = generatorPythonPath()
+    if (!await exists(venvPython)) {
+      job.progress = 22
+      job.message = 'Creating isolated Python environment…'
+      await runCommand(
+        python.command,
+        [
+          ...python.prefix,
+          '-m', 'venv',
+          generatorVenv,
+        ],
+        { label: 'Python venv' },
+      )
+    }
+
+    job.progress = 32
+    job.message = 'Preparing Python packages…'
+    await runCommand(
+      venvPython,
+      [
+        '-m', 'pip', 'install',
+        '--upgrade',
+        'pip',
+        'setuptools',
+        'wheel',
+      ],
+      { label: 'pip bootstrap' },
+    )
+
+    job.progress = 43
+    job.message = 'Installing NVIDIA PyTorch runtime…'
+    if (process.platform === 'win32') {
+      await runCommand(
+        venvPython,
+        [
+          '-m', 'pip', 'install',
+          'torch==2.11.0',
+          'torchvision==0.26.0',
+          '--index-url',
+          'https://download.pytorch.org/whl/cu128',
+        ],
+        { label: 'PyTorch CUDA 12.8' },
+      )
+    } else {
+      await runCommand(
+        venvPython,
+        [
+          '-m', 'pip', 'install',
+          'torch',
+          'torchvision',
+        ],
+        { label: 'PyTorch' },
+      )
+    }
+
+    job.progress = 62
+    job.message = 'Installing TripoSR dependencies…'
+    await runCommand(
+      venvPython,
+      [
+        '-m', 'pip', 'install',
+        '-r', join(generatorRepo, 'requirements.txt'),
+      ],
+      { label: 'TripoSR requirements' },
+    )
+
+    job.progress = 92
+    job.message = 'Checking GPU access…'
+    const smoke = await runCommand(
+      venvPython,
+      [
+        '-c',
+        'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")',
+      ],
+      { label: 'generator smoke test' },
+    )
+
+    job.status = 'completed'
+    job.progress = 100
+    job.message = smoke.stdout.includes('True')
+      ? 'Local 3D generator installed and NVIDIA GPU detected.'
+      : 'Local 3D generator installed. CUDA was not detected, so generation will use CPU and be much slower.'
+  } catch (error) {
+    job.status = 'failed'
+    job.error = error instanceof Error ? error.message : String(error)
+    job.message = 'Local 3D generator setup failed.'
+  }
+}
+
+async function generate3D(job) {
+  try {
+    job.status = 'running'
+    job.progress = 5
+    job.message = 'Starting local AI 3D generator…'
+
+    const venvPython = generatorPythonPath()
+    const resolution = {
+      draft: '192',
+      standard: '256',
+      high: '320',
+    }[job.quality || 'standard']
+
+    const run = await runCommand(
+      venvPython,
+      [
+        join(generatorRepo, 'run.py'),
+        job.inputPath,
+        '--output-dir', job.outputDir,
+        '--model-save-format', 'glb',
+        '--mc-resolution', resolution,
+        '--foreground-ratio', '0.85',
+        '--chunk-size', '4096',
+      ],
+      {
+        cwd: generatorRepo,
+        label: 'TripoSR generation',
+        onLine: (line) => updateGenerationProgress(job, line),
+      },
+    )
+
+    const result = join(job.outputDir, '0', 'mesh.glb')
+    if (!await exists(result)) {
+      throw new Error(
+        'The local 3D generator finished without creating mesh.glb.\n' + run.stdout.slice(-1800),
+      )
+    }
+
+    validGlb(await readFile(result), 'generated equipment')
+    job.resultPath = result
+    job.status = 'completed'
+    job.progress = 100
+    job.message = 'Raw 3D model generated locally. Ready for Skillbound fitting.'
+  } catch (error) {
+    job.status = 'failed'
+    job.error = error instanceof Error ? error.message : String(error)
+    job.message = 'Local image-to-3D generation failed.'
+  }
+}
+
+function updateGenerationProgress(job, line) {
+  const value = line.toLowerCase()
+  if (value.includes('initializing model')) {
+    job.progress = Math.max(job.progress, 12)
+    job.message = 'Loading local 3D model…'
+  } else if (value.includes('processing images')) {
+    job.progress = Math.max(job.progress, 28)
+    job.message = 'Preparing reference image…'
+  } else if (value.includes('running model')) {
+    job.progress = Math.max(job.progress, 42)
+    job.message = 'Generating 3D shape on your GPU…'
+  } else if (value.includes('extracting mesh')) {
+    job.progress = Math.max(job.progress, 78)
+    job.message = 'Extracting game mesh…'
+  } else if (value.includes('exporting mesh')) {
+    job.progress = Math.max(job.progress, 91)
+    job.message = 'Exporting raw GLB…'
+  }
+}
+
+async function generatorHealth() {
+  const activeSetup = [...backgroundJobs.values()].find(
+    (job) => job.kind === 'setup' && (job.status === 'queued' || job.status === 'running'),
+  )
+  const python = await findPythonLauncher()
+  const installed = await exists(join(generatorRepo, 'run.py'))
+  const ready = await isGeneratorReady()
+
+  return {
+    backend: 'triposr',
+    label: 'Local TripoSR',
+    installed,
+    ready,
+    setupRunning: Boolean(activeSetup),
+    pythonAvailable: Boolean(python),
+    message: ready
+      ? 'Free local image-to-3D is ready.'
+      : activeSetup
+        ? activeSetup.message
+        : installed
+          ? 'Generator files exist but the Python environment is incomplete.'
+          : 'Install once to enable free local image-to-3D.',
+  }
+}
+
+async function isGeneratorReady() {
+  return await exists(join(generatorRepo, 'run.py'))
+    && await exists(generatorPythonPath())
+}
+
+function generatorPythonPath() {
+  return process.platform === 'win32'
+    ? join(generatorVenv, 'Scripts', 'python.exe')
+    : join(generatorVenv, 'bin', 'python')
+}
+
+async function findPythonLauncher() {
+  const candidates = process.platform === 'win32'
+    ? [
+        { command: 'py', prefix: ['-3.11'] },
+        { command: 'py', prefix: ['-3.10'] },
+        { command: 'python', prefix: [] },
+      ]
+    : [
+        { command: 'python3.11', prefix: [] },
+        { command: 'python3.10', prefix: [] },
+        { command: 'python3', prefix: [] },
+      ]
+
+  for (const candidate of candidates) {
+    try {
+      const result = await runCommand(
+        candidate.command,
+        [...candidate.prefix, '--version'],
+        { timeoutMs: 5000, quiet: true },
+      )
+      const version = (result.stdout + result.stderr).match(/Python\s+(\d+)\.(\d+)/)
+      if (!version) continue
+      const major = Number(version[1])
+      const minor = Number(version[2])
+      if (major === 3 && minor >= 8 && minor <= 11) return candidate
+    } catch {
+      // Try the next Python launcher.
+    }
+  }
+
+  return undefined
+}
 
 function mannequinPath(body) {
   return join(mannequins, body + '.glb')
@@ -131,7 +517,17 @@ function bodyType(value) {
 }
 
 function slotType(value) {
-  const allowed = new Set(['chest','head','legs','boots','gloves','waist','back','main-hand','off-hand'])
+  const allowed = new Set([
+    'chest',
+    'head',
+    'legs',
+    'boots',
+    'gloves',
+    'waist',
+    'back',
+    'main-hand',
+    'off-hand',
+  ])
   return allowed.has(value) ? value : 'chest'
 }
 
@@ -139,32 +535,53 @@ function fitType(value) {
   return value === 'tight' || value === 'loose' ? value : 'normal'
 }
 
+function generationQuality(value) {
+  return value === 'draft' || value === 'high' ? value : 'standard'
+}
+
+function imageExtension(contentType, filename) {
+  const supplied = typeof filename === 'string' ? extname(filename).toLowerCase() : ''
+  if (['.png', '.jpg', '.jpeg', '.webp'].includes(supplied)) return supplied
+  if (contentType.includes('jpeg')) return '.jpg'
+  if (contentType.includes('webp')) return '.webp'
+  return '.png'
+}
+
 function clamp(value, min, max, fallback) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback
 }
 
-async function bodyBytes(req) {
+async function bodyBytes(req, max = 200 * 1024 * 1024) {
   const chunks = []
   let size = 0
-  const max = 200 * 1024 * 1024
   for await (const chunk of req) {
     size += chunk.length
-    if (size > max) throw new HttpError(413, 'GLB is larger than the 200 MB processor limit.')
+    if (size > max) {
+      throw new HttpError(413, 'Upload is larger than the Equipment Processor limit.')
+    }
     chunks.push(chunk)
   }
   return Buffer.concat(chunks)
 }
 
 function validGlb(bytes, label) {
-  if (bytes.length < 12 || bytes[0] !== 0x67 || bytes[1] !== 0x6c || bytes[2] !== 0x54 || bytes[3] !== 0x46) {
+  if (
+    bytes.length < 12
+    || bytes[0] !== 0x67
+    || bytes[1] !== 0x6c
+    || bytes[2] !== 0x54
+    || bytes[3] !== 0x46
+  ) {
     throw new HttpError(400, 'The ' + label + ' upload is not a valid .glb file.')
   }
 }
 
 function cors(req, res) {
   const origin = req.headers.origin
-  if (!origin || allowedOrigin(origin)) res.setHeader('Access-Control-Allow-Origin', origin || '*')
+  if (!origin || allowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*')
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-Forge-Filename')
   res.setHeader('Access-Control-Expose-Headers', 'X-Forge-Metadata')
@@ -184,26 +601,96 @@ function sendJson(res, status, payload) {
   res.end(data)
 }
 
-async function runBlender(executable, args) {
+async function runCommand(
+  executable,
+  args,
+  {
+    cwd,
+    label = executable,
+    onLine,
+    timeoutMs = 0,
+    quiet = false,
+  } = {},
+) {
   return await new Promise((resolvePromise, reject) => {
-    const child = spawn(executable, args, { windowsHide: true })
+    const child = spawn(executable, args, {
+      cwd,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: '1',
+      },
+    })
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString() })
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
-    child.on('error', reject)
+    let stdoutRemainder = ''
+    let stderrRemainder = ''
+    let settled = false
+    let timer
+
+    const consume = (chunk, isError) => {
+      const text = chunk.toString()
+      if (isError) stderr += text
+      else stdout += text
+
+      let combined = (isError ? stderrRemainder : stdoutRemainder) + text
+      const lines = combined.split(/\r?\n/)
+      const remainder = lines.pop() || ''
+      if (isError) stderrRemainder = remainder
+      else stdoutRemainder = remainder
+
+      for (const line of lines) {
+        if (!quiet) console.log('[' + label + '] ' + line)
+        onLine?.(line)
+      }
+    }
+
+    child.stdout.on('data', (chunk) => consume(chunk, false))
+    child.stderr.on('data', (chunk) => consume(chunk, true))
+
+    child.on('error', (error) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      reject(error)
+    })
+
     child.on('exit', (code) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
       if (code === 0) {
         resolvePromise({ stdout, stderr })
       } else {
-        reject(new Error('Blender processor failed with exit code ' + code + '.\n' + stderr.slice(-5000) + '\n' + stdout.slice(-2500)))
+        reject(
+          new Error(
+            label
+            + ' failed with exit code '
+            + code
+            + '.\n'
+            + stderr.slice(-6000)
+            + '\n'
+            + stdout.slice(-3000),
+          ),
+        )
       }
     })
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        child.kill()
+        reject(new Error(label + ' timed out.'))
+      }, timeoutMs)
+    }
   })
 }
 
 async function findBlender() {
-  if (process.env.BLENDER_PATH && await canLaunch(process.env.BLENDER_PATH)) return process.env.BLENDER_PATH
+  if (process.env.BLENDER_PATH && await canLaunch(process.env.BLENDER_PATH)) {
+    return process.env.BLENDER_PATH
+  }
 
   const candidates = []
   if (process.platform === 'win32') {
@@ -211,11 +698,18 @@ async function findBlender() {
     if (existsSync(root)) {
       try {
         const entries = await readdir(root)
-        entries.sort().reverse().forEach((entry) => candidates.push(join(root, entry, 'blender.exe')))
-      } catch {}
+        entries
+          .sort()
+          .reverse()
+          .forEach((entry) => candidates.push(join(root, entry, 'blender.exe')))
+      } catch {
+        // Fall through to PATH.
+      }
     }
   }
-  if (process.platform === 'darwin') candidates.push('/Applications/Blender.app/Contents/MacOS/Blender')
+  if (process.platform === 'darwin') {
+    candidates.push('/Applications/Blender.app/Contents/MacOS/Blender')
+  }
   candidates.push('blender')
 
   for (const candidate of candidates) {
@@ -225,22 +719,23 @@ async function findBlender() {
 }
 
 async function canLaunch(executable) {
-  if ((executable.includes('/') || executable.includes('\\')) && !await exists(executable)) return false
-  return await new Promise((resolvePromise) => {
-    const child = spawn(executable, ['--version'], { windowsHide: true })
-    const timer = setTimeout(() => {
-      child.kill()
-      resolvePromise(false)
-    }, 5000)
-    child.on('error', () => {
-      clearTimeout(timer)
-      resolvePromise(false)
-    })
-    child.on('exit', (code) => {
-      clearTimeout(timer)
-      resolvePromise(code === 0)
-    })
-  })
+  if (
+    (executable.includes('/') || executable.includes('\\'))
+    && !await exists(executable)
+  ) {
+    return false
+  }
+
+  try {
+    await runCommand(
+      executable,
+      ['--version'],
+      { timeoutMs: 5000, quiet: true },
+    )
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function exists(path) {
