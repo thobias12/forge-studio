@@ -1,11 +1,11 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.87.4`  
+> **Current Forge version:** `v1.88.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
 > **Live build:** https://thobias12.github.io/forge-studio/  
-> **Last handbook update:** 2026-09-19
+> **Last handbook update:** 2026-09-20
 
 Forge Studio is a browser-based game-development workspace and runtime used to build **Skillbound**. It combines world authoring, gameplay content, characters, animation, equipment, VFX, audio, UI, models, props, dungeons, validation, and the playable Three.js runtime in one project.
 
@@ -193,6 +193,12 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.88.0 is a full gameplay-feel pass for Skillbound's playable runtime. Overworld and dungeon play now share fast acceleration/deceleration, stepped collision sliding, attack input buffering, held-primary repeat, explicit windup/impact/recovery phases, attack-phase movement, predictive velocity/aim camera look-ahead, and smooth target-based wheel zoom. Dodge can cancel recovery but not an uncommitted attack, keeping actions readable without making movement feel locked.
+
+Reward collection was rebuilt alongside combat. Enemy gold and XP now launch physically, bounce, settle, then accelerate into the player; gold renders as small multi-coin piles and XP has a separate violet crystal/halo language. Collected rewards use longer curved HUD flights with trails and stronger target impacts. Pickup audio is layered Web Audio rather than a single ping: gold combines body/transient/metallic partials, XP uses a rising harmonic shimmer, and level-up adds an ascending accent.
+
+Shared feel tuning lives in `src/engine/runtime/ForgeGameplayFeel.ts`. Physical reward behavior lives in `src/engine/runtime/ForgeRewardPickupRuntime.ts`, HUD flights in `src/components/HudPickupFlights.tsx`, and reward synthesis in `src/lib/pickupFeedbackAudio.ts`.
 
 Forge v1.81.7 keeps cursor aiming locked to the live camera even when the mouse is stationary while the player/camera moves. The runtime now reprojects the saved screen cursor every rendered frame and again at cast time, and untargeted Chain Lightning ends exactly at the resolved terrain cursor point.
 

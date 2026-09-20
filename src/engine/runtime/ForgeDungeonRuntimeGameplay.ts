@@ -9,10 +9,17 @@ import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
+import {
+  FORGE_GAMEPLAY_FEEL,
+  forgeAbilityTiming,
+  forgeAttackMovementMultiplier,
+  forgeExpAlpha,
+  forgeMovementResponse,
+} from './ForgeGameplayFeel'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity, distanceToSegment, disposeSceneObject } from './ForgeDungeonRuntimeHelpers'
 const PLAYER_RADIUS = 0.58
 const ENEMY_RADIUS = 0.58
-const DODGE_DURATION = 0.19
+const DODGE_DURATION = FORGE_GAMEPLAY_FEEL.dodgeDuration
 
 function chainLightningTravelDuration(distance: number) {
   return THREE.MathUtils.clamp(0.045 + Math.max(0, distance) * 0.012, 0.055, 0.125)
@@ -22,26 +29,66 @@ export const dungeonGameplayMethods = {
   updateCooldowns(delta: number) {
     for (const [id, value] of this.cooldowns) this.cooldowns.set(id, Math.max(0, value - delta))
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta)
+    if (this.bufferedAbilityRemaining > 0) {
+      this.bufferedAbilityRemaining = Math.max(0, this.bufferedAbilityRemaining - delta)
+      if (this.bufferedAbilityRemaining <= 0) this.bufferedAbility = undefined
+    }
     if (this.messageRemaining > 0) { this.messageRemaining -= delta; if (this.messageRemaining <= 0) this.message = '' }
   },
 
   updatePlayer(delta: number) {
+    this.updatePlayerAction(delta)
     let moving = false
+
     if (this.dodgeRemaining > 0) {
       const speed = this.gameplay.player.dodgeDistance / DODGE_DURATION
-      this.movePlayer(this.dodgeDirection.clone().multiplyScalar(speed * delta))
+      this.playerVelocity.copy(this.dodgeDirection).multiplyScalar(speed)
+      this.movePlayer(this.playerVelocity.clone().multiplyScalar(delta))
       this.dodgeRemaining = Math.max(0, this.dodgeRemaining - delta)
       moving = true
     } else {
-      const move = this.getMoveDirection()
-      if (move.lengthSq() > 0) {
-        this.movePlayer(move.multiplyScalar(this.gameplay.player.moveSpeed * delta))
-        moving = true
+      const input = this.getMoveDirection()
+      const movementMultiplier = forgeAttackMovementMultiplier(this.playerAction?.phase)
+      const desiredX = input.x * this.gameplay.player.moveSpeed * movementMultiplier
+      const desiredZ = input.z * this.gameplay.player.moveSpeed * movementMultiplier
+      const response = forgeMovementResponse(
+        this.playerVelocity.x,
+        this.playerVelocity.z,
+        desiredX,
+        desiredZ,
+      )
+      const alpha = forgeExpAlpha(response, delta)
+      this.playerVelocity.x = THREE.MathUtils.lerp(this.playerVelocity.x, desiredX, alpha)
+      this.playerVelocity.z = THREE.MathUtils.lerp(this.playerVelocity.z, desiredZ, alpha)
+      this.playerVelocity.y = 0
+      if (
+        input.lengthSq() < .001 &&
+        this.playerVelocity.lengthSq() <
+          FORGE_GAMEPLAY_FEEL.movement.stopSpeed *
+          FORGE_GAMEPLAY_FEEL.movement.stopSpeed
+      ) {
+        this.playerVelocity.set(0, 0, 0)
       }
+      if (this.playerVelocity.lengthSq() > .001) {
+        this.movePlayer(this.playerVelocity.clone().multiplyScalar(delta))
+      }
+      moving = this.playerVelocity.lengthSq() > .04
     }
-    const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
-    if (aim.lengthSq() > 0.01) this.player.rotation.y = Math.atan2(aim.x, aim.z)
-    if (moving !== this.playerMoving) { this.playerMoving = moving; this.playerVisual?.play(moving ? 'move' : 'idle') }
+
+    const aim = this.playerAction?.aim ?? this.mouseWorld.clone().sub(this.player.position).setY(0)
+    if (aim.lengthSq() > .01) {
+      const targetAngle = Math.atan2(aim.x, aim.z)
+      const difference = Math.atan2(
+        Math.sin(targetAngle - this.player.rotation.y),
+        Math.cos(targetAngle - this.player.rotation.y),
+      )
+      this.player.rotation.y += difference * forgeExpAlpha(28, delta)
+    }
+
+    if (moving !== this.playerMoving) {
+      this.playerMoving = moving
+      if (!this.playerAction) this.playerVisual?.play(moving ? 'move' : 'idle')
+    }
     this.playerVisual?.update(delta)
   },
 
@@ -59,15 +106,60 @@ export const dungeonGameplayMethods = {
   },
 
   movePlayer(delta: THREE.Vector3) {
-    const nextX = this.player.position.x + delta.x
-    const nextZ = this.player.position.z + delta.z
-    if (this.canWalkAt(nextX, this.player.position.z, PLAYER_RADIUS)) this.player.position.x = nextX
-    if (this.canWalkAt(this.player.position.x, nextZ, PLAYER_RADIUS)) this.player.position.z = nextZ
-    this.player.position.y = this.floorHeightAt(this.player.position.x, this.player.position.z)
+    const distance = Math.hypot(delta.x, delta.z)
+    if (distance <= 0) return
+    const steps = Math.max(
+      1,
+      Math.ceil(distance / FORGE_GAMEPLAY_FEEL.movement.collisionStep),
+    )
+    const stepX = delta.x / steps
+    const stepZ = delta.z / steps
+
+    for (let index = 0; index < steps; index += 1) {
+      const currentX = this.player.position.x
+      const currentZ = this.player.position.z
+      const nextX = currentX + stepX
+      const nextZ = currentZ + stepZ
+
+      if (this.canWalkAt(nextX, nextZ, PLAYER_RADIUS)) {
+        this.player.position.x = nextX
+        this.player.position.z = nextZ
+        continue
+      }
+
+      const xOpen = this.canWalkAt(nextX, currentZ, PLAYER_RADIUS)
+      const zOpen = this.canWalkAt(currentX, nextZ, PLAYER_RADIUS)
+      if (xOpen && zOpen) {
+        if (Math.abs(stepX) >= Math.abs(stepZ)) {
+          this.player.position.x = nextX
+          if (this.canWalkAt(this.player.position.x, nextZ, PLAYER_RADIUS)) {
+            this.player.position.z = nextZ
+          }
+        } else {
+          this.player.position.z = nextZ
+          if (this.canWalkAt(nextX, this.player.position.z, PLAYER_RADIUS)) {
+            this.player.position.x = nextX
+          }
+        }
+      } else if (xOpen) {
+        this.player.position.x = nextX
+      } else if (zOpen) {
+        this.player.position.z = nextZ
+      }
+    }
+
+    this.player.position.y = this.floorHeightAt(
+      this.player.position.x,
+      this.player.position.z,
+    )
   },
 
   startDodge() {
     if (this.dodgeCooldown > 0 || this.dodgeRemaining > 0) return
+    if (this.playerAction && this.playerAction.phase !== 'recovery') return
+    this.playerAction = undefined
+    this.bufferedAbility = undefined
+    this.bufferedAbilityRemaining = 0
     const direction = this.getMoveDirection()
     if (direction.lengthSq() < 0.01) {
       direction.copy(this.mouseWorld).sub(this.player.position).setY(0)
@@ -83,51 +175,141 @@ export const dungeonGameplayMethods = {
   },
 
   performAbility(ability: ForgeAbilityDefinition) {
+    if (this.playerHealth <= 0) return
+    if (
+      this.dodgeRemaining > 0 ||
+      this.playerAction ||
+      (this.cooldowns.get(ability.id) ?? 0) > 0
+    ) {
+      this.bufferedAbility = ability
+      this.bufferedAbilityRemaining = FORGE_GAMEPLAY_FEEL.inputBufferSeconds
+      return
+    }
+    this.startAbilityAction(ability)
+  },
+
+  startAbilityAction(ability: ForgeAbilityDefinition) {
     if ((this.cooldowns.get(ability.id) ?? 0) > 0 || this.playerHealth <= 0) return
+    if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
-    if (aim.lengthSq() < 0.01) aim.set(0, 0, -1)
+    if (aim.lengthSq() < .01) aim.set(0, 0, -1)
     aim.normalize()
-    const damage = ability.damage + this.getEquippedDamageBonus()
+    const timing = forgeAbilityTiming(ability)
+    this.playerAction = {
+      ability,
+      aim,
+      phase: 'windup',
+      remaining: timing.windup,
+      activeDuration: timing.active,
+      recoveryDuration: timing.recovery,
+      impacted: false,
+    }
+    this.cooldowns.set(ability.id, ability.cooldown)
+
     const animationV3 = this.playerVisual?.getAnimationRuntimeV3?.()
     if (animationV3) {
       const action = ability.id === this.gameplay.player.basicAbility ? 'attackPrimary' : 'cast'
       if (!animationV3.playAction(action)) animationV3.playAction('attackPrimary')
     } else {
       const clipName = this.abilityAnimationClipNames.get(ability.id)
-      if (!clipName || !this.playerVisual?.playClipName(clipName, false)) this.playerVisual?.play('attack', false)
+      if (!clipName || !this.playerVisual?.playClipName(clipName, false)) {
+        this.playerVisual?.play('attack', false)
+      }
     }
-    if (ability.delivery === 'chain') {
-      this.performChainAbility(ability, aim, damage)
-      this.cooldowns.set(ability.id, ability.cooldown)
-      this.emitState()
+    this.emitState()
+  },
+
+  updatePlayerAction(delta: number) {
+    const action = this.playerAction
+    if (!action) {
+      if (
+        this.bufferedAbility &&
+        this.bufferedAbilityRemaining > 0 &&
+        (this.cooldowns.get(this.bufferedAbility.id) ?? 0) <= 0 &&
+        this.dodgeRemaining <= 0
+      ) {
+        const buffered = this.bufferedAbility
+        this.bufferedAbility = undefined
+        this.bufferedAbilityRemaining = 0
+        this.startAbilityAction(buffered)
+      } else if (this.primaryHeld && this.dodgeRemaining <= 0) {
+        const primary = this.getPrimaryAbility()
+        if (primary && (this.cooldowns.get(primary.id) ?? 0) <= 0) {
+          this.startAbilityAction(primary)
+        }
+      }
       return
     }
+
+    if (action.phase === 'windup' && this.pointerTracked) {
+      const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
+      if (aim.lengthSq() > .01) action.aim.copy(aim.normalize())
+    }
+
+    action.remaining -= delta
+    if (action.remaining > 0) return
+
+    if (action.phase === 'windup') {
+      action.phase = 'active'
+      action.remaining = action.activeDuration
+      if (!action.impacted) {
+        action.impacted = true
+        this.resolveAbilityImpact(action.ability, action.aim)
+      }
+      return
+    }
+    if (action.phase === 'active') {
+      action.phase = 'recovery'
+      action.remaining = action.recoveryDuration
+      return
+    }
+
+    this.playerAction = undefined
+    if (this.playerMoving) this.playerVisual?.play('move')
+    else this.playerVisual?.play('idle')
+  },
+
+  resolveAbilityImpact(ability: ForgeAbilityDefinition, aim: THREE.Vector3) {
+    const damage = ability.damage + this.getEquippedDamageBonus()
+    if (ability.delivery === 'chain') {
+      this.performChainAbility(ability, aim, damage)
+      return
+    }
+
     if (ability.kind === 'melee') {
-      const impact = this.player.position.clone().addScaledVector(aim, Math.max(1, ability.range * 0.5))
-      this.spawnPulse(impact, ability.color, ability.radius, 0.24)
+      const impact = this.player.position.clone().addScaledVector(
+        aim,
+        Math.max(1, ability.range * .5),
+      )
+      this.spawnPulse(impact, ability.color, ability.radius, .24)
       void this.spawnBoundVfx(ability.vfxAssetId, impact)
       for (const enemy of this.enemies.values()) {
         if (!this.enemyDamageable(enemy)) continue
         const toEnemy = enemy.group.position.clone().sub(this.player.position).setY(0)
         const distance = toEnemy.length()
         if (distance > ability.range + ENEMY_RADIUS) continue
-        const facing = distance > 0.001 ? toEnemy.normalize().dot(aim) : 1
-        if (facing >= 0.1) this.damageEnemy(enemy, damage, aim, ability.color)
+        const facing = distance > .001 ? toEnemy.normalize().dot(aim) : 1
+        if (facing >= .08) this.damageEnemy(enemy, damage, aim, ability.color)
       }
-    } else {
-      const targetDistance = Math.min(ability.range, this.mouseWorld.distanceTo(this.player.position))
-      const target = this.player.position.clone().addScaledVector(aim, targetDistance)
-      this.spawnPulse(target, ability.color, ability.radius, 0.55)
-      void this.spawnBoundVfx(ability.vfxAssetId, target)
-      for (const enemy of this.enemies.values()) {
-        if (!this.enemyDamageable(enemy) || enemy.group.position.distanceTo(target) > ability.radius + ENEMY_RADIUS) continue
-        const direction = enemy.group.position.clone().sub(target).setY(0)
-        if (direction.lengthSq() > 0.001) direction.normalize(); else direction.copy(aim)
-        this.damageEnemy(enemy, damage, direction, ability.color)
-      }
+      return
     }
-    this.cooldowns.set(ability.id, ability.cooldown)
-    this.emitState()
+
+    const cursorDistance = this.mouseWorld.distanceTo(this.player.position)
+    const targetDistance = Math.min(ability.range, cursorDistance)
+    const target = this.player.position.clone().addScaledVector(aim, targetDistance)
+    target.y = this.floorHeightAt(target.x, target.z)
+    this.spawnPulse(target, ability.color, ability.radius, .55)
+    void this.spawnBoundVfx(ability.vfxAssetId, target)
+    for (const enemy of this.enemies.values()) {
+      if (
+        !this.enemyDamageable(enemy) ||
+        enemy.group.position.distanceTo(target) > ability.radius + ENEMY_RADIUS
+      ) continue
+      const direction = enemy.group.position.clone().sub(target).setY(0)
+      if (direction.lengthSq() > .001) direction.normalize()
+      else direction.copy(aim)
+      this.damageEnemy(enemy, damage, direction, ability.color)
+    }
   },
 
   getChainCastOrigin(aim: THREE.Vector3) {
