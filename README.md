@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.7`  
+> **Current Forge version:** `v1.82.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -244,14 +244,24 @@ Important source:
 
 ## Dungeon Forge
 
-Dungeon Forge is the Map Studio workflow for authored dungeon layouts.
+Forge v1.82.0 is the first **Dungeon Forge v2** pass. It shifts the tool toward a hybrid procedural/modular workflow aimed at large, dark ARPG interiors rather than small disconnected editor rooms.
 
-It has been developed around Skillbound dungeon creation and supports room/layout editing, placement workflows, first-person inspection, lighting/atmosphere work, and authored dungeon package integration.
+The default crypt direction is now **Sunken Ossuary**: warm torch pools, deep surrounding darkness, running-bond brick floors, heavy brick/stone walls, stronger vignette/contrast and larger room/corridor proportions.
+
+Dungeon generation now exposes scale, room count, corridor width and branching controls. The generator creates a turning main route, optional side rooms and loops, encounter-ready combat/elite/boss spaces, and wider traversal lanes. Generated layouts remain ordinary editable Dungeon Forge data instead of becoming a baked procedural mesh.
+
+Manual editing remains first-class. Rooms can be click-dragged directly onto the floor and then resized with the existing edge handles. A new **Wall** tool click-drags independent brick wall segments anywhere in the layout; those segments render in the editor and ARPG preview, appear on the minimap, can be edited numerically, and participate in runtime collision.
+
+The editor world/camera bounds were expanded for the larger layouts, while Walk and ARPG preview continue to use the same authored package.
 
 Important source:
 
 - `src/pages/MapStudio.tsx`
-- dungeon/map helpers under `src/lib/` and `src/components/`
+- `src/components/DungeonViewportCore.tsx`
+- `src/components/ArpgDungeonViewportCombat.tsx`
+- `src/lib/dungeonPackage.ts`
+- `src/lib/cryptSurfacePass.ts`
+- `src/lib/dungeonAtmosphere.ts`
 
 ## Destruction Lab
 
