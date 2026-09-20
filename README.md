@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.89.1`  
+> **Current Forge version:** `v1.89.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,12 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.89.2 is the Combat v2 readability/spacing pass based directly on recorded Wanderer gameplay. Melee lunges now stop at a front-facing contact distance instead of carrying the player through enemies, and the three combo arcs are tightened so primary attacks read as forward cleaves rather than near-360-degree hits. Hit 3 keeps the strongest lunge/impact presentation but is still contact-clamped.
+
+Combatants now maintain active spacing during chase, stagger, windup, and recovery. Enemies push away from the player when they get too close, push apart from nearby encounter members, and dungeon enemies blend separation plus a small deterministic tangential bias into their approach so packs spread around the player instead of stacking in one point. Dungeon enemy movement also refuses steps that would move farther inside the player spacing radius.
+
+Routine hit flash is now a short warm emissive accent instead of the strong white wash, damage numbers use smaller staggered lanes and shorter lifetimes to reduce pile-up, and the three melee impact pulses scale progressively so the third strike reads more clearly as the finisher.
 
 Forge v1.89.0 introduces the first Combat v2 foundation pass. Primary melee now chains through three mechanically distinct hits instead of repeating one cadence: each step has its own windup, active frame, recovery, arc width, forward lunge, damage weight, knockback, hit-stop and stagger, with the third swing acting as the finisher. The combo resets after a short pause and uses a wider buffered-input window for cleaner click chaining.
 
