@@ -836,6 +836,8 @@ function flameGlow(color: number, radius: number) {
 }
 
 function placeOnSide(object: THREE.Object3D, room: DungeonRoom, side: Side, along: number, y: number, normalOffset: number) {
+  object.userData.wallSide = side
+  object.userData.roomId = room.id
   if (side === 'north') object.position.set(along, y, -room.depth / 2 + normalOffset)
   if (side === 'south') object.position.set(along, y, room.depth / 2 - normalOffset)
   if (side === 'west') object.position.set(-room.width / 2 + normalOffset, y, along)
@@ -844,6 +846,8 @@ function placeOnSide(object: THREE.Object3D, room: DungeonRoom, side: Side, alon
 }
 
 function placeWallRoot(object: THREE.Object3D, room: DungeonRoom, side: Side, along: number, y: number, inset: number) {
+  object.userData.wallSide = side
+  object.userData.roomId = room.id
   if (side === 'north') { object.position.set(along, y, -room.depth / 2 + inset); object.rotation.y = 0 }
   if (side === 'south') { object.position.set(along, y, room.depth / 2 - inset); object.rotation.y = Math.PI }
   if (side === 'west') { object.position.set(-room.width / 2 + inset, y, along); object.rotation.y = Math.PI / 2 }
