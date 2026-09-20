@@ -608,10 +608,19 @@ function createTorsoTemplate(
         next
 
       const frontOpening =
-        ring >= rings - 2 &&
         (
-          segment === 0 ||
-          segment === segments - 1
+          ring === rings - 1 &&
+          (
+            segment <= 1 ||
+            segment >= segments - 2
+          )
+        ) ||
+        (
+          ring === rings - 2 &&
+          (
+            segment === 0 ||
+            segment === segments - 1
+          )
         )
 
       if (frontOpening) {
