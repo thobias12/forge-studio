@@ -222,7 +222,7 @@ function createSleeveMaskRange(
     startDistance:
       length *
       (sleeve === 'short'
-        ? -.035
+        ? -.18
         : .015),
     endDistance:
       length *
@@ -230,7 +230,10 @@ function createSleeveMaskRange(
         ? .83
         : .39),
     radius:
-      length * .2,
+      length *
+      (sleeve === 'short'
+        ? .26
+        : .2),
     sideSign:
       Math.sign(start.x) ||
       (side === 'L' ? 1 : -1),
