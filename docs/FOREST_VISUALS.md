@@ -2,6 +2,14 @@
 
 ## Atmosphere pass
 
+The latest revision replaces rounded foliage blobs with closed, folded leaf geometry (80 leaves per crown),
+adds flared trunks with six tapered boughs, and shades canopy leaves with vertex colors.
+Roads use layered noise for compacted wear, grit and irregular mossy margins rather than repeating sine bands.
+Water UVs now track cumulative stream distance, so moving ripples follow the river rather than a fixed world diagonal.
+Deep center/shallow bank colors and restrained normal variation provide depth cues without changing river geometry.
+Close-up tree/road/water inspection and gameplay were checked in addition to the geometry tests.
+The per-prop geometry check now allows 3,200 vertices to cover folded leaves (2,880 vertices per crown).
+
 Live crowns now use separated, rounded foliage clusters instead of solid cone tiers.
 Dead branches include tapered forks and twigs. Existing tree anchors and navigation obstacles stay fixed.
 Shared road materials feather UV edges with world-space grain; runtime ribbons now carry the same UVs as the editor.

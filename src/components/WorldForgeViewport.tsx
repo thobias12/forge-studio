@@ -1,5 +1,5 @@
 import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
-import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial, forestBranch } from '../engine/forestGeometry'
+import { forestCrown, forestRock, forestLog, forestGrass, forestFern, forestBroadleaf, forestFloorMaterial, forestBranch, forestTrunk } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -899,10 +899,12 @@ function makeTerrainSafeWaterGeometry(region: GeneratedRegion) {
   const sheenWater = new THREE.Color(0x8bc5bd)
   const waterColor = new THREE.Color()
 
+  let flowDistance = 0
   rows.forEach((row, rowIndex) => {
+    if (rowIndex) flowDistance += Math.hypot(row.x-rows[rowIndex-1].x,row.z-rows[rowIndex-1].z)
     row.points.forEach((point, laneIndex) => {
       const u = laneIndex / Math.max(1, lanes - 1)
-      const v = rowIndex / Math.max(1, rows.length - 1)
+      const v = flowDistance
       const edge = Math.pow(Math.abs(u * 2 - 1), 1.55)
       const flowWave = Math.sin(rowIndex * .31 + laneIndex * .46)
         + Math.sin(rowIndex * .12 - laneIndex * .24 + 1.35)
@@ -1439,7 +1441,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (trees.length) {
-    const trunkGeometry = new THREE.CylinderGeometry(.13, .29, 3.45, 9)
+    const trunkGeometry = forestTrunk()
     const trunkMaterial = markWorldWindMaterial(
       new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
       .16,
@@ -1509,21 +1511,21 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       const lowerMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: variantColor.clone().multiplyScalar(.9),
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .48,
       )
       const middleMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: variantColor,
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .68,
       )
       const upperMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
           color: variantColor.clone().multiplyScalar(1.1),
-          roughness: 1,
+          roughness: 1, vertexColors: true,
         }),
         .9,
       )
