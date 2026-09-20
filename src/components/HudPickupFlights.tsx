@@ -5,7 +5,6 @@ import {
   type SkillboundHudModuleId,
 } from '../lib/hudForge'
 import {
-  playLevelUpFeedbackSound,
   playPickupFeedbackSound,
   primePickupFeedbackAudio,
 } from '../lib/pickupFeedbackAudio'
@@ -49,26 +48,11 @@ export function HudPickupFlights({
     lastSeenId.current = Math.max(lastSeenId.current, latestId)
     if (!fresh.length) return
 
-    fresh.slice(-8).forEach((event, index) => {
-      const recipe = FLIGHT[event.kind]
-      const impactDelay =
-        (recipe.duration +
-          recipe.delayStep * (recipe.count - 1) -
-          recipe.impactLead) /
-        1000
-
-      if (event.kind === 'xp') {
-        playPickupFeedbackSound('xp', event.amount, .015 + index * .012)
-      } else {
-        playPickupFeedbackSound(
-          'gold',
-          event.amount,
-          impactDelay + index * .01,
-        )
-      }
-
-      if (event.levelUp) {
-        playLevelUpFeedbackSound(.08 + index * .012)
+    fresh.slice(-8).forEach((event) => {
+      // Gold events are emitted at the exact collection frame.
+      // XP is intentionally visual-only.
+      if (event.kind === 'gold') {
+        playPickupFeedbackSound('gold', event.amount)
       }
     })
   }, [events])
