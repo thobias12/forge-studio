@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.84.0`  
+> **Current Forge version:** `v1.85.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.85.0 — Dungeon Forge V3 structural remake
+
+- replaces the crypt's stacked room-box/corridor renderer with one shared walkable-surface system inspired by the architecture used in Evergrow's dungeon tooling
+- floor rendering, perimeter detection and movement now consume the same room/corridor geometry instead of overlapping independent boxes
+- curved passages connect real room-wall openings and eliminate the old rectangular black bars at room/corridor overlaps
+- top-down and ARPG use a low masonry perimeter silhouette; Walk reuses the same floor geometry with full-height masonry
+- staggered brick floors and perimeter brick courses are instanced for substantially lower rebuild cost
+- generated combat rooms can use rectangular, cross and octagonal silhouettes; boss arenas default to octagonal
+- the minimap now follows the same curved passages and semantic room silhouettes
+- V3 corridor geometry is cached per dungeon state so moving/resizing a room no longer recomputes corridor curves for every surface sample
+- the legacy crypt wall/cap/cutaway stack is bypassed in Editor, ARPG and Walk, removing the source of the giant slab/black-strip artifacts
+
 
 ## v1.84.0 — Recipe-driven Equipment Lab
 
