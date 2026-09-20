@@ -23,7 +23,8 @@ export function addCryptRoomEnvironment(
   const start = parent.children.length
   addLegacyRoom(parent, room, openings, wallThickness, atmosphere, flickerLights, immersive)
   addCryptRoomSurfacePass(parent, room, openings, wallThickness, atmosphere, flickerLights, immersive)
-  if (!immersive) suppressFloatingTopTrim(parent.children.slice(start), room.floorLevel + Math.min(room.height - 0.7, 3.15))
+  // Room wall trim now participates in the camera-aware cutaway, so far walls
+  // can keep their full-height brick/cornice silhouette.
 }
 
 export function addCryptCorridorEnvironment(
