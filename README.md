@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.87.2`  
+> **Current Forge version:** `v1.87.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.87.3 — Dungeon prop density + collision cleanup
+
+- removes the bright/golden treasure material treatment from physical dungeon props; reliquary accents now use muted aged stone/bronze instead of saturated gold
+- cuts procedural dressing density significantly so rooms keep large clean combat/readability areas instead of being filled with scattered props
+- Crossroads no longer uses a solid broken-plinth obstacle; small rubble/bones/urns remain purely decorative floor detail
+- art collision is now limited to genuinely substantial freestanding objects: sarcophagi, statues, shrine/reliquary structures, boss dais, large crate stacks and sealed tombs
+- doorway jambs, wall-attached buttresses, torches and decorative floor clutter no longer add extra circular blockers
+- special-room wall supports are reduced again; ordinary rooms have none and Warden Sanctum/Warden Hall only use sparse structural accents
+- doorway masonry is slimmer and reads as part of the wall instead of freestanding columns
+- V3 wall clearance drops from 0.30 to 0.06 beyond the normal player radius, allowing the player to walk naturally close to walls without entering them or snagging early
+- the same wall-clearance rule is shared by Play Project live testing, Quick ARPG and Walk
+
 
 ## v1.87.2 — Sparse Evergrow-style dungeon architecture
 

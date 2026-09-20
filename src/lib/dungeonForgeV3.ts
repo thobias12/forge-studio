@@ -513,7 +513,7 @@ function createArtMaterials(atmosphere: DungeonAtmosphere): V3ArtMaterials {
     metal: new THREE.MeshStandardMaterial({ color: 0x5d5146, roughness: 0.7, metalness: 0.32 }),
     cloth: new THREE.MeshStandardMaterial({ color: 0x4e2c28, roughness: 0.92, metalness: 0 }),
     wood: new THREE.MeshStandardMaterial({ color: 0x5f432c, roughness: 0.88, metalness: 0 }),
-    gold: new THREE.MeshStandardMaterial({ color: atmosphere.treasure, roughness: 0.48, metalness: 0.32 }),
+    gold: new THREE.MeshStandardMaterial({ color: 0x5b5042, roughness: 0.84, metalness: 0.12 }),
   }
 }
 
@@ -590,16 +590,11 @@ function roomStructuralSupports(room: DungeonRoom) {
   const local: Array<{ x: number; z: number; yaw: number }> = []
   if (template === 'warden-sanctum') {
     local.push(
-      { x: -room.width * 0.34, z: -room.depth / 2, yaw: 0 },
-      { x: room.width * 0.34, z: -room.depth / 2, yaw: 0 },
-      { x: -room.width * 0.34, z: room.depth / 2, yaw: Math.PI },
-      { x: room.width * 0.34, z: room.depth / 2, yaw: Math.PI },
-    )
-  } else if (template === 'warden-hall' || template === 'shrine-hall') {
-    local.push(
       { x: -room.width * 0.3, z: -room.depth / 2, yaw: 0 },
       { x: room.width * 0.3, z: -room.depth / 2, yaw: 0 },
     )
+  } else if (template === 'warden-hall' && room.width >= 18) {
+    local.push({ x: 0, z: -room.depth / 2, yaw: 0 })
   }
 
   local.forEach((point, index) => {
@@ -644,22 +639,22 @@ function addRoomArchitecture(
       doorway.rotation.y = yaw
       root.add(doorway)
 
-      const postHeight = topDown ? 1.16 : 3.1
-      const postWidth = 0.34
+      const postHeight = topDown ? 0.92 : 2.95
+      const postWidth = 0.24
       const half = Math.max(1.45, edge.width / 2)
       for (const side of [-1, 1]) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.48), materials.stone)
+        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.28), materials.stone)
         post.position.set(side * half, postHeight / 2, 0)
         post.castShadow = true
         post.receiveShadow = true
         doorway.add(post)
 
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.58), materials.dark)
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.13, 0.34), materials.dark)
         foot.position.set(side * half, 0.11, 0)
         foot.castShadow = true
         doorway.add(foot)
 
-        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.16, 0.56), materials.cap)
+        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.34), materials.cap)
         capital.position.set(side * half, postHeight - 0.1, 0)
         capital.castShadow = true
         doorway.add(capital)
@@ -938,8 +933,6 @@ function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[
   const colliders: V3ArtCollider[] = []
   const add = (x: number, z: number, radius: number) => colliders.push({ x, z, radius })
 
-  // Room dressing colliders are derived from the same template placements used
-  // by the renderer, so visible solid props and movement cannot drift apart.
   for (const room of value.rooms) {
     const template = resolveRoomTemplate(room)
     const place = (xFraction: number, zFraction: number, radius: number) => {
@@ -947,59 +940,30 @@ function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[
       add(point.x, point.z, radius)
     }
 
+    // Only objects a player would realistically need to walk around are solid.
     if (template === 'burial-chamber') {
-      place(-0.28, 0.18, 1.08); place(0.28, 0.18, 1.08)
+      place(-0.28, 0.18, 0.9)
+      place(0.28, 0.18, 0.9)
     } else if (template === 'ossuary-gallery') {
-      place(-0.3, -0.24, 1.04); place(-0.3, 0.03, 1.04); place(-0.3, 0.3, 1.04)
-    } else if (template === 'crossroads') {
-      place(0, 0, 0.9)
+      place(-0.3, -0.24, 0.88)
+      place(-0.3, 0.03, 0.88)
+      place(-0.3, 0.3, 0.88)
     } else if (template === 'warden-hall') {
-      place(-0.31, -0.2, 0.78); place(0.31, -0.2, 0.78)
+      place(-0.31, -0.2, 0.62)
+      place(0.31, -0.2, 0.62)
     } else if (template === 'reliquary') {
-      place(0, 0.02, 1.36)
+      place(0, 0.02, 1.0)
     } else if (template === 'shrine-hall') {
-      place(0, 0.02, 1.46)
+      place(0, 0.02, 1.08)
     } else if (template === 'warden-sanctum') {
-      place(0, 0, 2.15)
-      place(-0.34, 0.18, 0.78); place(0.34, 0.18, 0.78)
+      place(0, 0, 1.72)
+      place(-0.34, 0.18, 0.64)
+      place(0.34, 0.18, 0.64)
     } else if (template === 'sealed-ossuary') {
-      place(0, 0.08, 1.1)
+      place(0, 0.08, 0.92)
     } else if (template === 'storage-vault') {
-      place(-0.28, 0.2, 0.82); place(0.3, -0.18, 0.82)
-    }
-
-    // Only the sparse special-room buttresses are physical.
-    for (const support of roomStructuralSupports(room)) {
-      add(support.x, support.z, 0.42)
-    }
-  }
-
-  // Door-frame posts rendered at each room/corridor connection.
-  const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
-  for (const room of value.rooms) {
-    for (const edge of value.corridors) {
-      const otherId = edge.fromRoomId === room.id ? edge.toRoomId : edge.toRoomId === room.id ? edge.fromRoomId : undefined
-      if (!otherId) continue
-      const other = roomMap.get(otherId)
-      if (!other) continue
-      const connection = getRoomConnection(room, other, edge.width)
-      const yaw = THREE.MathUtils.degToRad(connection.yaw)
-      const half = Math.max(1.45, edge.width / 2)
-      for (const side of [-1, 1]) {
-        const localX = side * half
-        add(
-          connection.x + Math.cos(yaw) * localX,
-          connection.z - Math.sin(yaw) * localX,
-          0.44,
-        )
-      }
-    }
-  }
-
-  // Sparse wall buttresses are solid; decorative floor torches are not.
-  for (const edge of value.corridors) {
-    for (const support of corridorStructuralSupports(value, edge)) {
-      add(support.x, support.z, 0.4)
+      place(-0.28, 0.2, 0.68)
+      place(0.3, -0.18, 0.68)
     }
   }
 
@@ -1018,62 +982,49 @@ function addRoomDressing(
   for (const room of value.rooms) {
     const template = resolveRoomTemplate(room)
     const random = seededRandom(stringHash(room.id) ^ value.seed)
-    const floorY = room.floorLevel
 
+    // Keep most of the playable floor intentionally empty. Dressing is a focal
+    // cluster, not a scatter pass.
     if (template === 'threshold') {
-      addRoomBanner(root, room, -0.28, -0.42, materials, mode, 0x5d4030)
-      addRoomBanner(root, room, 0.28, -0.42, materials, mode, 0x5d4030)
-      addRubbleCluster(root, room, -0.34, 0.28, materials, random, false)
-      addRubbleCluster(root, room, 0.32, 0.34, materials, random, false)
+      if (random() > 0.45) addRubbleCluster(root, room, 0.34, 0.34, materials, random, false)
       continue
     }
 
     if (template === 'burial-chamber') {
       addSarcophagus(root, room, -0.28, 0.18, 0.03, materials)
       addSarcophagus(root, room, 0.28, 0.18, -0.03, materials)
-      addBonePile(root, room, 0, -0.27, materials, random)
-      addRubbleCluster(root, room, 0.38, -0.3, materials, random, false)
+      if (random() > 0.5) addBonePile(root, room, 0, -0.27, materials, random)
       continue
     }
 
     if (template === 'ossuary-gallery') {
-      addSarcophagus(root, room, -0.3, -0.24, 0.02, materials)
-      addSarcophagus(root, room, -0.3, 0.03, -0.02, materials)
-      addSarcophagus(root, room, -0.3, 0.3, 0.025, materials)
-      addBonePile(root, room, 0.26, -0.26, materials, random)
-      addBonePile(root, room, 0.28, 0.24, materials, random)
+      addSarcophagus(root, room, -0.3, -0.2, 0.02, materials)
+      addSarcophagus(root, room, -0.3, 0.22, -0.02, materials)
+      if (random() > 0.6) addBonePile(root, room, 0.28, 0.24, materials, random)
       continue
     }
 
     if (template === 'crossroads') {
-      addBrokenPlinth(root, room, 0, 0, materials, random)
-      addRubbleCluster(root, room, -0.35, -0.28, materials, random, false)
-      addRubbleCluster(root, room, 0.34, 0.29, materials, random, false)
+      if (random() > 0.55) addRubbleCluster(root, room, 0.34, 0.29, materials, random, false)
       continue
     }
 
     if (template === 'warden-hall') {
       addStatue(root, room, -0.31, -0.2, 0, materials, mode)
       addStatue(root, room, 0.31, -0.2, Math.PI, materials, mode)
-      addRoomBanner(root, room, -0.28, 0.42, materials, mode, 0x632d2b)
-      addRoomBanner(root, room, 0.28, 0.42, materials, mode, 0x632d2b)
-      addBonePile(root, room, 0, 0.22, materials, random)
+      if (random() > 0.55) addRoomBanner(root, room, 0, 0.42, materials, mode, 0x4b3430)
       continue
     }
 
     if (template === 'reliquary') {
       addReliquary(root, room, 0, 0.02, materials)
-      addUrnCluster(root, room, -0.3, 0.3, materials, random)
-      addUrnCluster(root, room, 0.3, 0.3, materials, random)
-      addRoomBanner(root, room, 0, -0.42, materials, mode, 0x5a4430)
+      if (random() > 0.55) addUrnCluster(root, room, 0.3, 0.3, materials, random)
       continue
     }
 
     if (template === 'shrine-hall') {
       addShrine(root, room, 0, 0.02, materials)
-      addUrnCluster(root, room, -0.3, 0.28, materials, random)
-      addUrnCluster(root, room, 0.3, 0.28, materials, random)
-      addBonePile(root, room, 0, -0.3, materials, random)
+      if (random() > 0.6) addBonePile(root, room, 0.3, 0.28, materials, random)
       continue
     }
 
@@ -1081,43 +1032,29 @@ function addRoomDressing(
       addBossDais(root, room, materials)
       addStatue(root, room, -0.34, 0.18, Math.PI / 2, materials, mode)
       addStatue(root, room, 0.34, 0.18, -Math.PI / 2, materials, mode)
-      addRoomBanner(root, room, -0.22, -0.43, materials, mode, 0x702d27)
-      addRoomBanner(root, room, 0.22, -0.43, materials, mode, 0x702d27)
-      addRubbleCluster(root, room, -0.38, 0.36, materials, random, false)
-      addRubbleCluster(root, room, 0.38, 0.36, materials, random, false)
       continue
     }
 
     if (template === 'sealed-ossuary') {
       addSarcophagus(root, room, 0, 0.08, 0, materials)
-      addBonePile(root, room, -0.28, -0.28, materials, random)
-      addBonePile(root, room, 0.29, -0.24, materials, random)
-      addUrnCluster(root, room, 0.3, 0.31, materials, random)
+      if (random() > 0.5) addBonePile(root, room, 0.29, -0.24, materials, random)
       continue
     }
 
     if (template === 'storage-vault') {
       addCrateStack(root, room, -0.28, 0.2, materials, random)
       addCrateStack(root, room, 0.3, -0.18, materials, random)
-      addRubbleCluster(root, room, 0, 0.32, materials, random, false)
       continue
     }
 
-    // A safe fallback for manually-authored rooms created before templates were
-    // introduced. This keeps old dungeons visually coherent after migration.
     if (room.type === 'boss') addBossDais(root, room, materials)
     else if (room.type === 'treasure') addReliquary(root, room, 0, 0, materials)
     else if (room.type === 'shrine') addShrine(root, room, 0, 0, materials)
     else if (room.type === 'combat' || room.type === 'elite') {
-      addSarcophagus(root, room, -0.28, 0.18, 0, materials)
-      addSarcophagus(root, room, 0.28, 0.18, 0, materials)
-    } else {
-      addRubbleCluster(root, room, 0.24, 0.24, materials, random, false)
+      addSarcophagus(root, room, -0.26, 0.2, 0, materials)
+    } else if (random() > 0.7) {
+      addRubbleCluster(root, room, 0.28, 0.28, materials, random, false)
     }
-
-    // Keep TypeScript aware that the room's authored floor level is consumed by
-    // every helper even when this fallback has no central object.
-    void floorY
   }
 }
 
