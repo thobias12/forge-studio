@@ -664,7 +664,6 @@ LIMB_GROUP_TOKENS = (
     "foot",
     "toe",
     "head",
-    "neck",
 )
 
 
