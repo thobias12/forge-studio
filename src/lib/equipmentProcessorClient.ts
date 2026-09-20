@@ -71,7 +71,7 @@ export const EQUIPMENT_PROCESSOR_URL =
 export async function checkEquipmentProcessor(
   signal?: AbortSignal,
 ): Promise<EquipmentProcessorHealth> {
-  const response = await fetch(
+  const response = await fetchProcessorRead(
     EQUIPMENT_PROCESSOR_URL + '/health',
     {
       cache: 'no-store',
@@ -199,7 +199,7 @@ export async function startLocal3DGeneration(
 export async function getEquipmentProcessorJob(
   jobId: string,
 ): Promise<EquipmentGeneratorJob> {
-  const response = await fetch(
+  const response = await fetchProcessorRead(
     EQUIPMENT_PROCESSOR_URL +
       '/jobs/' +
       encodeURIComponent(jobId),
@@ -224,7 +224,7 @@ export async function getEquipmentProcessorJob(
 export async function getLocal3DGenerationResult(
   jobId: string,
 ) {
-  const response = await fetch(
+  const response = await fetchProcessorRead(
     EQUIPMENT_PROCESSOR_URL +
       '/jobs/' +
       encodeURIComponent(jobId) +
@@ -232,6 +232,7 @@ export async function getLocal3DGenerationResult(
     {
       cache: 'no-store',
     },
+    8,
   )
 
   if (!response.ok) {
@@ -342,6 +343,70 @@ export async function processEquipment(
     blob: await response.blob(),
     metadata,
   }
+}
+
+async function fetchProcessorRead(
+  url: string,
+  init: RequestInit = {},
+  retries = 4,
+) {
+  let lastError:
+    | unknown
+    | undefined
+
+  for (
+    let attempt = 0;
+    attempt <= retries;
+    attempt += 1
+  ) {
+    try {
+      return await fetch(
+        url,
+        init,
+      )
+    } catch (cause) {
+      if (
+        init.signal?.aborted
+      ) {
+        throw cause
+      }
+
+      lastError = cause
+
+      if (
+        attempt >= retries
+      ) {
+        break
+      }
+
+      const delayMs =
+        Math.min(
+          3000,
+          450 *
+          2 ** attempt,
+        )
+
+      await new Promise(
+        (resolve) =>
+          window.setTimeout(
+            resolve,
+            delayMs,
+          ),
+      )
+    }
+  }
+
+  throw new Error(
+    'Temporarily lost the local Equipment Processor connection. ' +
+    'Forge retried automatically but localhost:47831 is still unavailable. ' +
+    (
+      lastError instanceof Error
+        ? '(' +
+          lastError.message +
+          ')'
+        : ''
+    ),
+  )
 }
 
 async function readProcessorError(
