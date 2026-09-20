@@ -71,6 +71,7 @@ jobs:
           FORGE_QA_OUTPUT: artifacts/procedural-qa
           FORGE_QA_SKIP_BUILD: '1'
           FORGE_QA_HEADLESS: '1'
+          FORGE_QA_NATIVE_MODEL: '1'
         run: npm run qa:equipment
 
       - name: Upload procedural Ranger QA
