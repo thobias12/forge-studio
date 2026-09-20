@@ -505,9 +505,9 @@ function createArtMaterials(atmosphere: DungeonAtmosphere): V3ArtMaterials {
     stone: new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.91, metalness: 0.01 }),
     dark: new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96, metalness: 0.005 }),
     cap: new THREE.MeshStandardMaterial({
-      color: new THREE.Color(atmosphere.wall).multiplyScalar(1.12),
-      roughness: 0.88,
-      metalness: 0.015,
+      color: new THREE.Color(atmosphere.wall).offsetHSL(-0.01, -0.14, -0.045),
+      roughness: 0.93,
+      metalness: 0.005,
     }),
     bone: new THREE.MeshStandardMaterial({ color: 0xb8aa8a, roughness: 0.9, metalness: 0 }),
     metal: new THREE.MeshStandardMaterial({ color: 0x5d5146, roughness: 0.7, metalness: 0.32 }),
@@ -515,6 +515,33 @@ function createArtMaterials(atmosphere: DungeonAtmosphere): V3ArtMaterials {
     wood: new THREE.MeshStandardMaterial({ color: 0x5f432c, roughness: 0.88, metalness: 0 }),
     gold: new THREE.MeshStandardMaterial({ color: atmosphere.treasure, roughness: 0.48, metalness: 0.32 }),
   }
+}
+
+function corridorStructuralSupports(value: DungeonWithProps, edge: DungeonCorridor) {
+  const path = dungeonCorridorPath(value, edge)
+  const total = pathLength(path)
+  const supports: Array<{ x: number; z: number; yaw: number; damaged: boolean }> = []
+  if (path.length < 2 || total < 13) return supports
+
+  // Evergrow-style corridors read primarily as masonry passages. Structural
+  // accents are sparse and wall-attached instead of freestanding every few m.
+  const count = Math.max(0, Math.floor(total / 16))
+  for (let index = 1; index <= count; index += 1) {
+    const sample = samplePathAtDistance(path, index * total / (count + 1))
+    if (!sample) continue
+    if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.2))) continue
+    const side = index % 2 ? 1 : -1
+    const half = Math.max(1.35, edge.width / 2 - 0.12)
+    const px = -Math.cos(sample.yaw) * side
+    const pz = Math.sin(sample.yaw) * side
+    supports.push({
+      x: sample.x + px * half,
+      z: sample.z + pz * half,
+      yaw: sample.yaw,
+      damaged: (stringHash(edge.id) + index) % 4 === 0,
+    })
+  }
+  return supports
 }
 
 function addCorridorArchitecture(
@@ -530,39 +557,61 @@ function addCorridorArchitecture(
     const total = pathLength(path)
     if (path.length < 2 || total < 5) continue
 
-    const spacing = 8.6
-    const count = Math.max(0, Math.floor((total - 4) / spacing))
-    for (let index = 1; index <= count; index += 1) {
-      const sample = samplePathAtDistance(path, index * total / (count + 1))
-      if (!sample) continue
-      if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 1.7))) continue
-      const half = Math.max(1.45, edge.width / 2 - 0.2)
-      const px = -Math.cos(sample.yaw)
-      const pz = Math.sin(sample.yaw)
-      const left = { x: sample.x + px * half, z: sample.z + pz * half }
-      const right = { x: sample.x - px * half, z: sample.z - pz * half }
-      const floorY = dungeonFloorHeightV3(value, sample.x, sample.z)
-      addSupportPillar(root, left.x, floorY, left.z, sample.yaw, materials, mode, index % 3 === 0)
-      addSupportPillar(root, right.x, floorY, right.z, sample.yaw, materials, mode, index % 3 === 1)
-      if (index % 3 === 0) {
-        const recessSide = index % 2 ? left : right
-        const recess = new THREE.Group()
-        recess.position.set(recessSide.x, floorY, recessSide.z)
-        recess.rotation.y = sample.yaw
-        root.add(recess)
-        const back = new THREE.Mesh(new THREE.BoxGeometry(1.25, topDown ? 0.72 : 1.9, 0.18), materials.dark)
-        back.position.y = topDown ? 0.42 : 1.05
-        back.castShadow = true
-        recess.add(back)
-        const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.38), materials.cap)
-        shelf.position.set(0, topDown ? 0.72 : 1.78, 0.06)
-        recess.add(shelf)
-      }
-      if (!topDown && index % 2 === 1) {
-        addArchLintel(root, sample.x, dungeonFloorHeightV3(value, sample.x, sample.z), sample.z, sample.yaw, edge.width, materials, 3.2)
+    for (const support of corridorStructuralSupports(value, edge)) {
+      const floorY = dungeonFloorHeightV3(value, support.x, support.z)
+      addWallButtress(root, support.x, floorY, support.z, support.yaw, materials, mode, support.damaged)
+
+      const recess = new THREE.Group()
+      recess.position.set(support.x, floorY, support.z)
+      recess.rotation.y = support.yaw
+      root.add(recess)
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.9, topDown ? 0.55 : 1.55, 0.13), materials.dark)
+      back.position.y = topDown ? 0.34 : 0.86
+      back.castShadow = true
+      recess.add(back)
+    }
+
+    if (!topDown && total > 18) {
+      const midpoint = samplePathAtDistance(path, total * 0.5)
+      if (midpoint && !value.rooms.some((room) => dungeonRoomContainsV3(room, midpoint.x, midpoint.z, 2.4))) {
+        addArchLintel(root, midpoint.x, dungeonFloorHeightV3(value, midpoint.x, midpoint.z), midpoint.z, midpoint.yaw, edge.width, materials, 3.2)
       }
     }
   }
+}
+
+function roomStructuralSupports(room: DungeonRoom) {
+  const template = resolveRoomTemplate(room)
+  const points: Array<{ x: number; z: number; yaw: number; damaged: boolean }> = []
+  const angle = THREE.MathUtils.degToRad(room.rotation)
+
+  // Ordinary rooms intentionally have none. Large ritual/warden spaces may
+  // have two or four masonry buttresses integrated into the walls.
+  const local: Array<{ x: number; z: number; yaw: number }> = []
+  if (template === 'warden-sanctum') {
+    local.push(
+      { x: -room.width * 0.34, z: -room.depth / 2, yaw: 0 },
+      { x: room.width * 0.34, z: -room.depth / 2, yaw: 0 },
+      { x: -room.width * 0.34, z: room.depth / 2, yaw: Math.PI },
+      { x: room.width * 0.34, z: room.depth / 2, yaw: Math.PI },
+    )
+  } else if (template === 'warden-hall' || template === 'shrine-hall') {
+    local.push(
+      { x: -room.width * 0.3, z: -room.depth / 2, yaw: 0 },
+      { x: room.width * 0.3, z: -room.depth / 2, yaw: 0 },
+    )
+  }
+
+  local.forEach((point, index) => {
+    const world = localToWorld(room, point.x, point.z)
+    points.push({
+      x: world.x,
+      z: world.z,
+      yaw: angle + point.yaw,
+      damaged: (stringHash(room.id) + index * 13) % 5 === 0,
+    })
+  })
+  return points
 }
 
 function addRoomArchitecture(
@@ -576,17 +625,8 @@ function addRoomArchitecture(
   const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
 
   for (const room of value.rooms) {
-    const outline = roomLocalOutline(room)
-    const cornerStride = outline.length > 8 ? 2 : 1
-    for (let index = 0; index < outline.length; index += cornerStride) {
-      const point = outline[index]
-      const world = localToWorld(room, point.x, point.z)
-      const previous = outline[(index - 1 + outline.length) % outline.length]
-      const next = outline[(index + 1) % outline.length]
-      const tangentX = next.x - previous.x
-      const tangentZ = next.z - previous.z
-      const yaw = THREE.MathUtils.degToRad(room.rotation) + Math.atan2(tangentX, tangentZ)
-      addSupportPillar(root, world.x, room.floorLevel, world.z, yaw, materials, mode, index % 3 === 0)
+    for (const support of roomStructuralSupports(room)) {
+      addWallButtress(root, support.x, room.floorLevel, support.z, support.yaw, materials, mode, support.damaged)
     }
 
     // Doors are architectural objects, not holes in giant room boxes. Every
@@ -604,22 +644,22 @@ function addRoomArchitecture(
       doorway.rotation.y = yaw
       root.add(doorway)
 
-      const postHeight = topDown ? 1.34 : 3.25
-      const postWidth = 0.42
+      const postHeight = topDown ? 1.16 : 3.1
+      const postWidth = 0.34
       const half = Math.max(1.45, edge.width / 2)
       for (const side of [-1, 1]) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.62), materials.stone)
+        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.48), materials.stone)
         post.position.set(side * half, postHeight / 2, 0)
         post.castShadow = true
         post.receiveShadow = true
         doorway.add(post)
 
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.78), materials.dark)
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.58), materials.dark)
         foot.position.set(side * half, 0.11, 0)
         foot.castShadow = true
         doorway.add(foot)
 
-        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.2, 0.76), materials.cap)
+        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.16, 0.56), materials.cap)
         capital.position.set(side * half, postHeight - 0.1, 0)
         capital.castShadow = true
         doorway.add(capital)
@@ -642,7 +682,7 @@ function addRoomArchitecture(
   }
 }
 
-function addSupportPillar(
+function addWallButtress(
   root: THREE.Group,
   x: number,
   y: number,
@@ -653,34 +693,37 @@ function addSupportPillar(
   damaged = false,
 ) {
   const topDown = mode !== 'walk'
-  const height = topDown ? (damaged ? 0.9 : 1.28) : (damaged ? 2.5 : 3.75)
+  const height = topDown ? (damaged ? 0.82 : 1.18) : (damaged ? 2.25 : 3.35)
   const group = new THREE.Group()
   group.position.set(x, y, z)
   group.rotation.y = yaw
   root.add(group)
 
-  const base = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.24, 0.82), materials.dark)
-  base.position.y = 0.12
-  base.castShadow = true
-  base.receiveShadow = true
-  group.add(base)
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.18, 0.42), materials.dark)
+  plinth.position.set(0, 0.09, 0.03)
+  plinth.castShadow = true
+  plinth.receiveShadow = true
+  group.add(plinth)
 
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(damaged ? 0.48 : 0.55, height - 0.28, damaged ? 0.5 : 0.58), materials.stone)
-  shaft.position.y = 0.24 + (height - 0.28) / 2
-  shaft.rotation.z = damaged ? 0.025 : 0
+  const shaft = new THREE.Mesh(
+    new THREE.BoxGeometry(damaged ? 0.42 : 0.48, height - 0.22, damaged ? 0.28 : 0.32),
+    materials.stone,
+  )
+  shaft.position.set(0, 0.18 + (height - 0.22) / 2, 0.08)
+  shaft.rotation.z = damaged ? 0.018 : 0
   shaft.castShadow = true
   shaft.receiveShadow = true
   group.add(shaft)
 
-  const capital = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.2, 0.76), materials.cap)
-  capital.position.y = height - 0.05
-  capital.castShadow = true
-  group.add(capital)
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.16, 0.38), materials.cap)
+  cap.position.set(0, height - 0.03, 0.06)
+  cap.castShadow = true
+  group.add(cap)
 
   if (damaged) {
-    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.26), materials.dark)
-    chip.position.set(0.28, height * 0.72, 0.1)
-    chip.rotation.set(0.18, 0.22, 0.3)
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, 0.18), materials.dark)
+    chip.position.set(0.18, height * 0.68, 0.08)
+    chip.rotation.set(0.18, 0.22, 0.28)
     group.add(chip)
   }
 }
@@ -925,13 +968,9 @@ function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[
       place(-0.28, 0.2, 0.82); place(0.3, -0.18, 0.82)
     }
 
-    // Corner/support pillars rendered by addRoomArchitecture.
-    const outline = roomLocalOutline(room)
-    const cornerStride = outline.length > 8 ? 2 : 1
-    for (let index = 0; index < outline.length; index += cornerStride) {
-      const point = outline[index]
-      const world = localToWorld(room, point.x, point.z)
-      add(world.x, world.z, 0.5)
+    // Only the sparse special-room buttresses are physical.
+    for (const support of roomStructuralSupports(room)) {
+      add(support.x, support.z, 0.42)
     }
   }
 
@@ -957,37 +996,10 @@ function dungeonArtCollidersV3(value: DungeonWithProps): readonly V3ArtCollider[
     }
   }
 
-  // Corridor architecture and floor torch fixtures use the same path sampling
-  // rules as the renderer.
+  // Sparse wall buttresses are solid; decorative floor torches are not.
   for (const edge of value.corridors) {
-    const path = dungeonCorridorPath(value, edge)
-    const total = pathLength(path)
-    if (path.length >= 2 && total >= 5) {
-      const supportCount = Math.max(0, Math.floor((total - 4) / 8.6))
-      for (let index = 1; index <= supportCount; index += 1) {
-        const sample = samplePathAtDistance(path, index * total / (supportCount + 1))
-        if (!sample) continue
-        if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 1.7))) continue
-        const half = Math.max(1.45, edge.width / 2 - 0.2)
-        const px = -Math.cos(sample.yaw)
-        const pz = Math.sin(sample.yaw)
-        add(sample.x + px * half, sample.z + pz * half, 0.5)
-        add(sample.x - px * half, sample.z - pz * half, 0.5)
-      }
-    }
-
-    if (path.length >= 2 && total >= 10) {
-      const torchCount = Math.max(1, Math.floor(total / 10))
-      for (let index = 1; index <= torchCount; index += 1) {
-        const sample = samplePathAtDistance(path, index * total / (torchCount + 1))
-        if (!sample) continue
-        if (value.rooms.some((room) => dungeonRoomContainsV3(room, sample.x, sample.z, 2.1))) continue
-        const side = index % 2 ? 1 : -1
-        const offset = Math.max(1.25, edge.width / 2 - 0.5)
-        const px = -Math.cos(sample.yaw) * side
-        const pz = Math.sin(sample.yaw) * side
-        add(sample.x + px * offset, sample.z + pz * offset, 0.28)
-      }
+    for (const support of corridorStructuralSupports(value, edge)) {
+      add(support.x, support.z, 0.4)
     }
   }
 

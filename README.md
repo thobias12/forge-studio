@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.87.1`  
+> **Current Forge version:** `v1.87.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,19 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.87.2 — Sparse Evergrow-style dungeon architecture
+
+- removes the dense freestanding-column treatment from ordinary rooms and corridors; regular crypt spaces now read primarily as brick walls/floors with sparse structural accents
+- ordinary rooms no longer receive automatic corner pillars; only Warden Hall, Shrine Hall and Warden Sanctum templates get limited wall-integrated supports
+- corridor support spacing is reduced dramatically and supports alternate sides instead of appearing in pairs every few metres
+- structural accents are now shallow wall buttresses/recesses rather than bright freestanding square pillars
+- doorway posts/capitals are slimmer and visually integrated into the wall opening
+- trim/cap stone is darker, rougher and less saturated so warm torch light no longer turns every support into a gold column
+- collision is intentionally limited to substantial objects: sarcophagi, statues, altars/reliquaries, boss dais, crate stacks, doorway posts and the sparse structural buttresses
+- decorative ground clutter such as rubble, bones, urns, floor cracks/damp patches and freestanding torches no longer blocks movement
+- art collision continues to share deterministic placements with the renderer so large visible objects remain physically trustworthy
+
 
 ## v1.87.1 — Live dungeon VFX + wall collision
 
