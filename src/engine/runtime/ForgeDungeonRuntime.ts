@@ -28,6 +28,10 @@ import {
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import type { ForgeAdventurePlayerState } from './ForgeAdventureSession'
 import { ForgeChainLightningEffect } from './ForgeChainLightningRuntime'
+import {
+  FORGE_GAMEPLAY_FEEL,
+  forgeWheelDistanceTarget,
+} from './ForgeGameplayFeel'
 
 type RoomOpening = DungeonConnection & { corridorId: string }
 type RuntimeEncounter = { definition: DungeonEncounter; active: boolean; cleared: boolean; rewardSpawned: boolean }
@@ -106,6 +110,9 @@ export class ForgeDungeonRuntime {
   private readonly tempRight = new THREE.Vector3()
   private readonly tempMove = new THREE.Vector3()
   private readonly dodgeDirection = new THREE.Vector3()
+  private readonly playerVelocity = new THREE.Vector3()
+  private readonly cameraFocus = new THREE.Vector3()
+  private readonly tempCameraFocus = new THREE.Vector3()
   private readonly enemies = new Map<string, RuntimeEnemy>()
   private readonly encounters = new Map<string, RuntimeEncounter>()
   private readonly lockedDoorIds = new Set<string>()
@@ -127,9 +134,15 @@ export class ForgeDungeonRuntime {
   private inventory: string[]
   private playerHealth: number
   private cameraDistance = 31
+  private cameraDistanceTarget = 31
   private dodgeRemaining = 0
   private dodgeCooldown = 0
   private playerMoving = false
+  private playerAction?: any
+  private bufferedAbility?: ForgeAbilityDefinition
+  private bufferedAbilityRemaining = 0
+  private primaryHeld = false
+  private pointerTracked = false
   private focusEnemyId?: string
   private disposed = false
   private lastFrame = performance.now()
@@ -195,6 +208,9 @@ export class ForgeDungeonRuntime {
     window.addEventListener('blur', this.onBlur)
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove)
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown)
+    this.renderer.domElement.addEventListener('pointerup', this.onPointerUp)
+    this.renderer.domElement.addEventListener('pointercancel', this.onPointerUp)
+    this.renderer.domElement.addEventListener('pointerleave', this.onPointerUp)
     this.renderer.domElement.addEventListener('wheel', this.onWheel, { passive: false })
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu)
     this.resize()
@@ -214,6 +230,9 @@ export class ForgeDungeonRuntime {
     window.removeEventListener('blur', this.onBlur)
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove)
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown)
+    this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp)
+    this.renderer.domElement.removeEventListener('pointercancel', this.onPointerUp)
+    this.renderer.domElement.removeEventListener('pointerleave', this.onPointerUp)
     this.renderer.domElement.removeEventListener('wheel', this.onWheel)
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu)
     this.playerVisual?.dispose()
@@ -260,23 +279,40 @@ export class ForgeDungeonRuntime {
   }
 
   private onKeyUp = (event: KeyboardEvent) => this.keys.delete(event.key.toLowerCase())
-  private onBlur = () => this.keys.clear()
+  private onBlur = () => {
+    this.keys.clear()
+    this.primaryHeld = false
+  }
   private onContextMenu = (event: MouseEvent) => event.preventDefault()
   private onPointerMove = (event: PointerEvent) => {
     const rect = this.renderer.domElement.getBoundingClientRect()
     this.ndc.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1
     this.ndc.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1
+    this.pointerTracked = true
+    this.updateMouseWorldFromPointerRay()
+  }
+  private updateMouseWorldFromPointerRay() {
     this.raycaster.setFromCamera(this.ndc, this.camera)
     this.raycaster.ray.intersectPlane(this.floorPlane, this.mouseWorld)
   }
   private onPointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return
+    this.primaryHeld = true
     const ability = this.getPrimaryAbility()
     if (ability) this.performAbility(ability)
     event.preventDefault()
   }
+  private onPointerUp = (event: PointerEvent) => {
+    if (event.button === 0) this.primaryHeld = false
+  }
   private onWheel = (event: WheelEvent) => {
-    this.cameraDistance = THREE.MathUtils.clamp(this.cameraDistance + Math.sign(event.deltaY) * 2, 23, 43)
+    this.cameraDistanceTarget = forgeWheelDistanceTarget(
+      this.cameraDistanceTarget,
+      event.deltaY,
+      23,
+      43,
+      2,
+    )
     event.preventDefault()
   }
 
@@ -297,6 +333,7 @@ export class ForgeDungeonRuntime {
     this.updateChainLightningEffects(delta)
     this.updatePortal(delta)
     this.updateCamera(delta)
+    if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     this.updateOcclusion(delta)
     this.emitElapsed += delta
     if (this.emitElapsed >= 0.1) { this.emitElapsed = 0; this.emitState() }
