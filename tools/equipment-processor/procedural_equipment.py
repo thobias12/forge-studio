@@ -64,6 +64,11 @@ def parse_args():
     parser.add_argument("--slot", default="chest")
     parser.add_argument("--style", default="ranger")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--include-body",
+        action="store_true",
+        help="Include the mannequin body in the exported GLB for QA only.",
+    )
     return parser.parse_args(argv)
 
 
@@ -2255,10 +2260,17 @@ def create_chest(body, rig, frame, style, seed):
     return objects
 
 
-def export_glb(path, objects, rig):
+def export_glb(
+    path,
+    objects,
+    rig,
+    body=None,
+):
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
         obj.select_set(True)
+    if body is not None:
+        body.select_set(True)
     rig.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -2308,7 +2320,16 @@ def main():
         ensure_armature(obj, rig)
 
     print("FORGE_STAGE export", flush=True)
-    export_glb(config.output, generated, rig)
+    export_glb(
+        config.output,
+        generated,
+        rig,
+        body=(
+            body
+            if config.include_body
+            else None
+        ),
+    )
 
     polygons = sum(len(obj.data.polygons) for obj in generated)
     vertices = sum(len(obj.data.vertices) for obj in generated)
@@ -2328,6 +2349,9 @@ def main():
         "armature": rig.name,
         "bodyMesh": body.name,
         "generator": "blender-body-aware-v2",
+        "qaIncludesBody": bool(
+            config.include_body,
+        ),
     }
 
     with open(config.output + ".json", "w", encoding="utf-8") as handle:
