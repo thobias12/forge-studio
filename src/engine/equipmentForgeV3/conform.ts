@@ -1842,9 +1842,9 @@ function createShoulderBridge(
     sleeveSamples.filter(
       (sample) =>
         side === 'L'
-          ? sample.point.x >=
+          ? sample.point.x <=
             sleeveCenter.x
-          : sample.point.x <=
+          : sample.point.x >=
             sleeveCenter.x,
     )
 
