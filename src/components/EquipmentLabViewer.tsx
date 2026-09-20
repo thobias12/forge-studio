@@ -17,12 +17,14 @@ type Props = {
   bodySrc?: string
   equipmentSrc?: string
   rawOnly?: boolean
+  slot?: string
 }
 
 export default function EquipmentLabViewer({
   bodySrc,
   equipmentSrc,
   rawOnly = false,
+  slot,
 }: Props) {
   const mountRef =
     useRef<HTMLDivElement | null>(
@@ -197,6 +199,11 @@ export default function EquipmentLabViewer({
           content.add(
             gltf.scene,
           )
+          if (slot === 'chest') {
+            autoOrientChestForPreview(
+              gltf.scene,
+            )
+          }
           frameObject(content)
           return
         }
@@ -310,6 +317,7 @@ export default function EquipmentLabViewer({
     bodySrc,
     equipmentSrc,
     rawOnly,
+    slot,
   ])
 
   return (
@@ -378,4 +386,112 @@ function disposeObject(
   ) {
     material.dispose()
   }
+}
+
+
+function autoOrientChestForPreview(
+  root: THREE.Object3D,
+) {
+  const original =
+    root.quaternion.clone()
+  let best =
+    original.clone()
+  let bestScore =
+    Number.POSITIVE_INFINITY
+
+  const targetWidthRatio =
+    1.18
+  const targetDepthRatio =
+    0.62
+
+  for (
+    const x of [
+      0,
+      Math.PI / 2,
+      Math.PI,
+      Math.PI * 1.5,
+    ]
+  ) {
+    for (
+      const y of [
+        0,
+        Math.PI / 2,
+        Math.PI,
+        Math.PI * 1.5,
+      ]
+    ) {
+      for (
+        const z of [
+          0,
+          Math.PI / 2,
+          Math.PI,
+          Math.PI * 1.5,
+        ]
+      ) {
+        const candidate =
+          new THREE.Quaternion()
+            .setFromEuler(
+              new THREE.Euler(
+                x,
+                y,
+                z,
+                'XYZ',
+              ),
+            )
+        root.quaternion
+          .copy(original)
+          .multiply(candidate)
+        root.updateMatrixWorld(true)
+
+        const size =
+          new THREE.Box3()
+            .setFromObject(root)
+            .getSize(
+              new THREE.Vector3(),
+            )
+        const height =
+          Math.max(
+            size.y,
+            1e-5,
+          )
+        const width =
+          Math.max(
+            size.x,
+            1e-5,
+          )
+        const depth =
+          Math.max(
+            size.z,
+            1e-5,
+          )
+
+        const score =
+          Math.abs(
+            Math.log(
+              (width / height) /
+              targetWidthRatio,
+            ),
+          ) +
+          1.25 *
+          Math.abs(
+            Math.log(
+              (depth / height) /
+              targetDepthRatio,
+            ),
+          )
+
+        if (
+          score < bestScore
+        ) {
+          bestScore = score
+          best.copy(
+            root.quaternion,
+          )
+        }
+      }
+    }
+  }
+
+  root.quaternion.copy(best)
+  root.updateMatrixWorld(true)
 }
