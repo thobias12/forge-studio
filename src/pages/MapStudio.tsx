@@ -9,7 +9,7 @@ import ArpgDungeonViewport from '../components/ArpgDungeonViewport'
 import DungeonMinimap from '../components/DungeonMinimap'
 import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
 import {
-  DEFAULT_DUNGEON_GENERATION, corridor, createStarterDungeon, dungeonBlob, generateDungeon, getRoomConnection, marker, room, validateDungeon, wall,
+  DEFAULT_DUNGEON_BRIGHTNESS, DEFAULT_DUNGEON_GENERATION, corridor, createStarterDungeon, dungeonBlob, generateDungeon, getRoomConnection, marker, room, validateDungeon, wall,
   type DungeonEncounter, type DungeonGenerationSettings, type DungeonMarker, type DungeonRoom, type DungeonRoomType, type DungeonTheme, type DungeonTriggerAction, type DungeonWall, type ForgeDungeonPackage,
 } from '../lib/dungeonPackage'
 import {
@@ -61,6 +61,8 @@ export default function MapStudio() {
   const selectedProp = dungeonProps(value).find((item) => item.id === selectedPropId)
   const selectedWall = (value.walls ?? []).find((item) => item.id === selectedWallId)
   const selectedEncounter = selectedRoom ? getRoomEncounter(value, selectedRoom.id) : undefined
+  const dungeonBrightness = value.settings.brightness ?? DEFAULT_DUNGEON_BRIGHTNESS
+
 
   useEffect(() => {
     let cancelled = false
@@ -268,7 +270,15 @@ export default function MapStudio() {
   }
   const proceduralGenerate = () => {
     const seed = Math.floor(Math.random() * 999999)
-    const next: DungeonWithProps = { ...generateDungeon(seed, value.theme, generation), props: [] }
+    const generated = generateDungeon(seed, value.theme, generation)
+    const next: DungeonWithProps = {
+      ...generated,
+      settings: {
+        ...generated.settings,
+        brightness: dungeonBrightness,
+      },
+      props: [],
+    }
     mutate(next, `${titleCase(value.theme)} dungeon generated: ${next.rooms.length} rooms, wider corridors and modular post-editing ready.`)
     setGeneration(next.generation ?? generation)
     clearSelection(); setSelectedRoomId(next.rooms[0]?.id); setCorridorStartId(undefined)
@@ -284,6 +294,17 @@ export default function MapStudio() {
     <aside className="map-left-panel">
       <div className="map-panel-title"><MapIcon size={15} /> DUNGEON FORGE</div>
       <div className="map-mode-card"><span>CREATION MODE</span><strong>Interior Dungeon Builder</strong><em>Skillbound ARPG</em></div>
+      <section className="map-panel-section compact map-lighting-section">
+        <div className="map-section-title">LIGHTING</div>
+        <div className="map-lighting-head"><strong>Brightness</strong><output>{Math.round(dungeonBrightness * 100)}%</output></div>
+        <input className="map-brightness-slider" type="range" min={0.55} max={2.5} step={0.05} value={dungeonBrightness} onChange={(e)=>mutate({...value,settings:{...value.settings,brightness:Number(e.target.value)}})} />
+        <div className="map-lighting-scale"><span>Darker</span><span>Shared in Edit · ARPG · Walk</span><span>Brighter</span></div>
+        <div className="map-lighting-presets">
+          <button onClick={()=>mutate({...value,settings:{...value.settings,brightness:0.9}})}>90%</button>
+          <button onClick={()=>mutate({...value,settings:{...value.settings,brightness:DEFAULT_DUNGEON_BRIGHTNESS}})}>Default</button>
+          <button onClick={()=>mutate({...value,settings:{...value.settings,brightness:1.8}})}>180%</button>
+        </div>
+      </section>
       <section className="map-panel-section"><div className="map-section-title">TOOLS</div><div className="map-tools-grid">{tools.map(({ id,label,icon:Icon }) => <button key={id} className={tool===id?'active':''} onClick={() => { setTool(id); if(id!=='corridor')setCorridorStartId(undefined) }}><Icon size={15}/><span>{label}</span></button>)}</div></section>
       <section className="map-panel-section"><div className="map-section-title">ROOM PREFABS</div><div className="map-prefab-list">{roomTypes.map((item)=><button key={item.id} className={roomBrush===item.id?'active':''} onClick={()=>{setRoomBrush(item.id);setTool('room')}}><span className={`room-dot ${item.id}`}/><strong>{item.label}</strong><em>{prefabHint(item.id)}</em></button>)}</div></section>
       <section className="map-panel-section"><div className="map-section-title">DUNGEON PROPS</div><div className="map-prop-grid">{BUILTIN_DUNGEON_PROPS.map((item)=><button key={item.id} className={propBrush.source==='builtin'&&propBrush.assetRef===item.id?'active':''} onClick={()=>{setPropBrush({source:'builtin',assetRef:item.id,name:item.name});setTool('prop')}}><Box size={14}/><span><strong>{item.name}</strong><em>{item.hint}</em></span></button>)}</div>{libraryProps.length>0&&<><div className="map-library-caption">SHARED LIBRARY</div><div className="map-prop-grid">{libraryProps.map((item)=><button key={item.id} className={propBrush.source==='library'&&propBrush.assetRef===item.id?'active':''} onClick={()=>{setPropBrush({source:'library',assetRef:item.id,name:item.name});setTool('prop')}}><Box size={14}/><span><strong>{item.name}</strong><em>GLB asset</em></span></button>)}</div></>}</section>

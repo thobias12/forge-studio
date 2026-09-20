@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonDestructible, type DungeonProp, type DungeonWithProps } from '../lib/dungeonProps'
-import { dungeonAtmosphere, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
+import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../lib/cryptEnvironment'
 import { getAsset, listAssets } from '../lib/library'
 import { definitionFromMetadata, findDestructibleRoot, isForgeDestructibleMetadata, playDestructibleBreakSound } from '../lib/destructibleAsset'
@@ -56,23 +56,26 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     const host = hostRef.current
     if (!host) return
     const initialAtmosphere = dungeonAtmosphere(valueRef.current.theme)
+    const initialLighting = dungeonLightingProfile(initialAtmosphere, valueRef.current.settings)
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(initialAtmosphere.background)
-    scene.fog = new THREE.FogExp2(initialAtmosphere.fog, valueRef.current.settings.fogDensity * initialAtmosphere.fogMultiplier)
+    scene.fog = new THREE.FogExp2(initialAtmosphere.fog, initialLighting.fogDensity)
     const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.08, 220)
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = initialAtmosphere.exposure
+    renderer.toneMappingExposure = initialLighting.exposure
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.domElement.style.touchAction = 'none'
     host.appendChild(renderer.domElement)
 
-    const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialAtmosphere.ambient * 1.18)
+    const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialLighting.ambientIntensity)
     scene.add(ambient)
-    const key = new THREE.DirectionalLight(initialAtmosphere.key, initialAtmosphere.keyIntensity * 0.9)
+    const sceneFill = new THREE.AmbientLight(0xb99878, initialLighting.fillIntensity)
+    scene.add(sceneFill)
+    const key = new THREE.DirectionalLight(initialAtmosphere.key, initialLighting.keyIntensity)
     key.position.set(12, 22, 9); key.castShadow = true; key.shadow.mapSize.set(1024, 1024)
     key.shadow.camera.left = -36; key.shadow.camera.right = 36; key.shadow.camera.top = 36; key.shadow.camera.bottom = -36; key.shadow.camera.near = 1; key.shadow.camera.far = 76; key.shadow.bias = -0.0005
     scene.add(key)
@@ -111,13 +114,20 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     let lastHudUpdate = 0
 
     const applyAtmosphere = (current: DungeonWithProps) => {
-      const atmosphere = dungeonAtmosphere(current.theme), crypt = current.theme === 'crypt'
+      const atmosphere = dungeonAtmosphere(current.theme)
+      const lighting = dungeonLightingProfile(atmosphere, current.settings)
       scene.background = new THREE.Color(atmosphere.background)
-      if (scene.fog instanceof THREE.FogExp2) { scene.fog.color.setHex(atmosphere.fog); scene.fog.density = current.settings.fogDensity * atmosphere.fogMultiplier * (crypt ? 0.9 : 1) }
-      ambient.color.setHex(atmosphere.sky); ambient.groundColor.setHex(atmosphere.ground)
-      ambient.intensity = atmosphere.ambient * (crypt ? 1.3 + current.settings.ambientLight * 0.74 : 0.9 + current.settings.ambientLight * 0.7)
-      key.color.setHex(atmosphere.key); key.intensity = atmosphere.keyIntensity * (crypt ? 0.98 : 0.9)
-      renderer.toneMappingExposure = atmosphere.exposure * (crypt ? 1.08 : 1)
+      if (scene.fog instanceof THREE.FogExp2) {
+        scene.fog.color.setHex(atmosphere.fog)
+        scene.fog.density = lighting.fogDensity
+      }
+      ambient.color.setHex(atmosphere.sky)
+      ambient.groundColor.setHex(atmosphere.ground)
+      ambient.intensity = lighting.ambientIntensity
+      sceneFill.intensity = lighting.fillIntensity
+      key.color.setHex(atmosphere.key)
+      key.intensity = lighting.keyIntensity
+      renderer.toneMappingExposure = lighting.exposure
       return atmosphere
     }
 
