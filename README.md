@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.83.3`  
+> **Current Forge version:** `v1.83.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -1259,6 +1259,18 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.83.4 — Ranger body-envelope fit
+
+- replaces the rectangular analytic Ranger torso with an envelope sampled from the real Skillbound mannequin
+- keeps waist/chest/back curvature while smoothing away scan-like anatomical detail
+- raises the chest hem above the butt/hip break
+- narrows shoulder/armhole contours
+- stabilizes curved leather overlay topology and face normals
+- tapers front/back leather panels instead of using rectangular slabs
+- refines Ranger belt, strap and trim proportions
+- preserves automatic nearest-body weight transfer and official armature binding
+
 
 ## v1.83.1 — Equipment Lab production upgrade
 
