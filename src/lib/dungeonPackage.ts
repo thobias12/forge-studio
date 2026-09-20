@@ -289,6 +289,10 @@ export function validateDungeon(value: ForgeDungeonPackage): DungeonValidation {
     if (roomItem.type === 'boss' && Math.min(roomItem.width, roomItem.depth) < 16) warnings.push(`${roomItem.name} is cramped for a boss arena; aim for at least 16m on its short side.`)
   }
   for (const edge of value.corridors) if (edge.width < 3) warnings.push('A corridor is narrower than 3m and may feel cramped in ARPG camera mode.')
+  for (const wallItem of value.walls ?? []) {
+    if (Math.hypot(wallItem.x2 - wallItem.x1, wallItem.z2 - wallItem.z1) < 0.75) warnings.push(`${wallItem.name} is too short to be a useful wall segment.`)
+    if (wallItem.thickness < 0.12) warnings.push(`${wallItem.name} is too thin for reliable runtime collision.`)
+  }
 
   if (entrance && !value.markers.some((item) => item.type === 'checkpoint' && item.roomId === entrance.id)) warnings.push('Entrance needs a checkpoint / spawn marker.')
   if (boss && !value.markers.some((item) => item.type === 'portal' && item.roomId === boss.id)) warnings.push('Boss room needs an exit portal.')
