@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.4`  
+> **Current Forge version:** `v1.81.5`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -302,6 +302,8 @@ The official foundation ZIP can be imported into Forge rather than committing th
 The female body also has support for subtle spring-based secondary motion in the runtime binding.
 
 ## Equipment Lab
+
+Forge v1.81.5 improves the first successful procedural Chest result. Chest generation now isolates real torso vertices from Skillbound skin weights instead of relying on a broad body-width test, recalculates torso width/depth from spine/pelvis/breast/clavicle-driven vertices, and shapes the neckline/shoulders from pelvis/chest/neck/clavicle landmarks. This removes the stray forearm/hand/leg fragments visible in the first successful Ranger test and moves the top edge from the under-bust region toward a real tunic neckline.
 
 Forge v1.81.4 fixes the actual Blender deletion bug exposed by the v1.81.3 diagnostics. The source-body predicates were matching thousands of correct vertices, but the copied glTF mesh entered Edit Mode with selection state that caused the operator-based delete step to remove every vertex. Procedural layer cutting now uses Blender's low-level BMesh API to delete non-matching vertices directly by source index, with no UI/edit-mode selection dependency. Layer diagnostics now report both surviving vertices and polygons.
 

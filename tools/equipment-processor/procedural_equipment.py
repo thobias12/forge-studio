@@ -208,29 +208,36 @@ def body_frame(body, rig):
             "spine_02",
         ),
     )
+    neck = pose_bone_world_position(
+        rig,
+        find_pose_bone(
+            rig,
+            "neck_01",
+            "neck",
+        ),
+    )
     head = pose_bone_world_position(
         rig,
         find_pose_bone(
             rig,
             "head",
             "head_01",
-            "neck_01",
         ),
     )
     left_shoulder = pose_bone_world_position(
         rig,
         find_pose_bone(
             rig,
-            "upperarm_L",
             "clavicle_L",
+            "upperarm_L",
         ),
     )
     right_shoulder = pose_bone_world_position(
         rig,
         find_pose_bone(
             rig,
-            "upperarm_R",
             "clavicle_R",
+            "upperarm_R",
         ),
     )
 
@@ -489,6 +496,36 @@ def body_frame(body, rig):
         else -1.0
     )
 
+    def signed_vertical(position):
+        if position is None:
+            return None
+        return (
+            position[vertical_axis]
+            * vertical_sign
+        )
+
+    pelvis_v = signed_vertical(pelvis)
+    chest_v = signed_vertical(chest)
+    neck_v = signed_vertical(neck)
+    head_v = signed_vertical(head)
+    shoulder_values = [
+        signed_vertical(position)
+        for position in [
+            left_shoulder,
+            right_shoulder,
+        ]
+        if position is not None
+    ]
+    shoulder_v = (
+        sum(shoulder_values)
+        / len(shoulder_values)
+        if shoulder_values
+        else (
+            vertical_min
+            + height * 0.76
+        )
+    )
+
     print(
         "FORGE_FRAME "
         + json.dumps({
@@ -551,6 +588,18 @@ def body_frame(body, rig):
                     if chest is not None
                     else None
                 ),
+                "neck": (
+                    list(
+                        round(
+                            value,
+                            5,
+                        )
+                        for value
+                        in neck
+                    )
+                    if neck is not None
+                    else None
+                ),
                 "head": (
                     list(
                         round(
@@ -581,7 +630,242 @@ def body_frame(body, rig):
         "torso_width": torso_width,
         "torso_depth": torso_depth,
         "front_sign": front_sign,
+        "pelvis_v": pelvis_v,
+        "chest_v": chest_v,
+        "neck_v": neck_v,
+        "head_v": head_v,
+        "shoulder_v": shoulder_v,
     }
+
+
+TORSO_GROUP_TOKENS = (
+    "spine",
+    "pelvis",
+    "hips",
+    "chest",
+    "breast",
+    "clavicle",
+)
+
+LIMB_GROUP_TOKENS = (
+    "upperarm",
+    "lowerarm",
+    "forearm",
+    "hand",
+    "thumb",
+    "index",
+    "middle",
+    "ring",
+    "pinky",
+    "finger",
+    "thigh",
+    "calf",
+    "shin",
+    "foot",
+    "toe",
+    "head",
+)
+
+
+def build_torso_vertex_mask(
+    body,
+    frame,
+):
+    group_names = {
+        group.index:
+            group.name.lower()
+        for group
+        in body.vertex_groups
+    }
+
+    keep = set()
+    torso_weights = []
+
+    for vertex in body.data.vertices:
+        torso_score = 0.0
+        limb_score = 0.0
+
+        for assignment in vertex.groups:
+            name = group_names.get(
+                assignment.group,
+                "",
+            )
+            if any(
+                token in name
+                for token
+                in TORSO_GROUP_TOKENS
+            ):
+                torso_score += (
+                    assignment.weight
+                )
+            if any(
+                token in name
+                for token
+                in LIMB_GROUP_TOKENS
+            ):
+                limb_score += (
+                    assignment.weight
+                )
+
+        # Require the vertex to be genuinely torso-driven. This cuts out
+        # arms/hands/legs even when they share the same height band.
+        if (
+            torso_score >= 0.28
+            and torso_score
+            >= limb_score * 1.10
+        ):
+            keep.add(vertex.index)
+            torso_weights.append(
+                torso_score,
+            )
+
+    if len(keep) < 400:
+        # Safe fallback for unexpected rig naming: keep a strict central
+        # spatial torso region rather than reintroducing the full T-pose.
+        source_world = (
+            body.matrix_world.copy()
+        )
+        for vertex in body.data.vertices:
+            point = (
+                source_world
+                @ vertex.co
+            )
+            signed_v = (
+                point[
+                    frame["vertical"]
+                ]
+                * frame[
+                    "vertical_sign"
+                ]
+            )
+            v = (
+                signed_v
+                - frame["vertical_min"]
+            ) / frame["height"]
+            width_distance = abs(
+                point[frame["width"]]
+                - frame["center"][
+                    frame["width"]
+                ]
+            )
+            if (
+                0.43 <= v <= 0.82
+                and width_distance
+                <= frame["height"]
+                * 0.18
+            ):
+                keep.add(
+                    vertex.index,
+                )
+
+    print(
+        "FORGE_TORSO_MASK "
+        + "vertices="
+        + str(len(keep))
+        + "/"
+        + str(len(body.data.vertices))
+        + " groups="
+        + ",".join(
+            sorted({
+                name
+                for name
+                in group_names.values()
+                if any(
+                    token in name
+                    for token
+                    in TORSO_GROUP_TOKENS
+                )
+            })[:18]
+        ),
+        flush=True,
+    )
+
+    return keep
+
+
+def refine_frame_from_torso_mask(
+    body,
+    frame,
+    torso_indices,
+):
+    source_world = (
+        body.matrix_world.copy()
+    )
+    points = [
+        source_world @ vertex.co
+        for vertex
+        in body.data.vertices
+        if vertex.index
+        in torso_indices
+    ]
+
+    if len(points) < 64:
+        return frame
+
+    width_axis = frame["width"]
+    depth_axis = frame["depth"]
+
+    width_values = [
+        point[width_axis]
+        for point in points
+    ]
+    depth_values = [
+        point[depth_axis]
+        for point in points
+    ]
+
+    frame["center"][
+        width_axis
+    ] = percentile(
+        width_values,
+        0.5,
+    )
+    frame["center"][
+        depth_axis
+    ] = percentile(
+        depth_values,
+        0.5,
+    )
+    frame["torso_width"] = max(
+        percentile(
+            width_values,
+            0.96,
+        )
+        - percentile(
+            width_values,
+            0.04,
+        ),
+        frame["height"] * 0.16,
+    )
+    frame["torso_depth"] = max(
+        percentile(
+            depth_values,
+            0.96,
+        )
+        - percentile(
+            depth_values,
+            0.04,
+        ),
+        frame["height"] * 0.08,
+    )
+
+    print(
+        "FORGE_TORSO_REFINED "
+        + json.dumps({
+            "width": round(
+                frame["torso_width"],
+                5,
+            ),
+            "depth": round(
+                frame["torso_depth"],
+                5,
+            ),
+        }),
+        flush=True,
+    )
+
+    return frame
+
 
 def hex_rgb(value):
     value = value.lstrip("#")
@@ -723,6 +1007,7 @@ def duplicate_surface(
     clearance,
     thickness,
     smooth_iterations=1,
+    allowed_indices=None,
 ):
     # Decide the garment cut on the untouched source body before copying.
     # The copied mesh has identical vertex indices, so this avoids any
@@ -732,8 +1017,16 @@ def duplicate_surface(
     keep_indices = {
         vertex.index
         for vertex in body.data.vertices
-        if keep_vertex(
-            source_world @ vertex.co
+        if (
+            (
+                allowed_indices is None
+                or vertex.index
+                in allowed_indices
+            )
+            and keep_vertex(
+                source_world
+                @ vertex.co
+            )
         )
     }
 
@@ -848,55 +1141,200 @@ def normalized_components(point, frame):
     )
 
 
+def frame_fraction(
+    frame,
+    signed_value,
+    fallback,
+):
+    if signed_value is None:
+        return fallback
+    return (
+        signed_value
+        - frame["vertical_min"]
+    ) / frame["height"]
+
+
+def chest_landmark_fractions(
+    frame,
+    style,
+):
+    shoulder = frame_fraction(
+        frame,
+        frame.get("shoulder_v"),
+        style["top_shoulder"],
+    )
+    neck = frame_fraction(
+        frame,
+        frame.get("neck_v"),
+        style["top_center"]
+        + 0.08,
+    )
+    pelvis = frame_fraction(
+        frame,
+        frame.get("pelvis_v"),
+        style["length"]
+        + 0.06,
+    )
+
+    # A sleeveless tunic neckline should sit below the neck joint but
+    # clearly above the bust, while shoulder straps rise close to the
+    # shoulder joint.
+    center_top = min(
+        shoulder - 0.012,
+        neck - 0.035,
+    )
+    center_top = max(
+        center_top,
+        style["top_center"] + 0.045,
+    )
+    shoulder_top = max(
+        center_top + 0.025,
+        shoulder + 0.006,
+    )
+
+    hem = min(
+        style["length"],
+        pelvis - 0.055,
+    )
+
+    return (
+        hem,
+        center_top,
+        shoulder_top,
+    )
+
+
 def tunic_predicate(frame, style):
-    lower = style["length"]
+    (
+        lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
 
     def keep(point):
-        v, dw, _dd, width_n, _depth_n = normalized_components(point, frame)
-        shoulder_t = smoothstep(0.18, 0.88, width_n)
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        shoulder_t = smoothstep(
+            0.18,
+            0.86,
+            width_n,
+        )
         top = (
-            style["top_center"]
-            + (style["top_shoulder"] - style["top_center"]) * shoulder_t
+            center_top
+            + (
+                shoulder_top
+                - center_top
+            )
+            * shoulder_t
         )
 
-        # Open armholes by narrowing the allowed torso width near the
-        # underarm while still leaving a real shoulder strap at the crown.
-        upper_t = smoothstep(0.62, style["top_shoulder"], v)
-        width_limit = 0.93 + 0.08 * upper_t
+        # Stay inside the torso shell. The skin-weight torso mask removes
+        # limb vertices; this contour shapes the armhole itself.
+        upper_t = smoothstep(
+            center_top - 0.05,
+            shoulder_top,
+            v,
+        )
+        width_limit = (
+            0.92
+            - 0.12 * upper_t
+        )
 
-        # Slightly flare the waist/hem so the lower edge does not bite into
-        # the body when animated.
-        hem_t = 1.0 - smoothstep(lower, lower + 0.07, v)
-        width_limit += style["waist_flare"] * 6.0 * hem_t
+        hem_t = (
+            1.0
+            - smoothstep(
+                lower,
+                lower + 0.07,
+                v,
+            )
+        )
+        width_limit += (
+            style["waist_flare"]
+            * 3.5
+            * hem_t
+        )
 
         return (
             v >= lower
             and v <= top
-            and width_n <= width_limit
+            and width_n
+            <= width_limit
         )
 
     return keep
-
 
 def vest_predicate(frame, style):
-    lower = style["length"] + 0.055
+    (
+        lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    lower += 0.045
+    center_top -= 0.018
+    shoulder_top -= 0.012
 
     def keep(point):
-        v, _dw, _dd, width_n, _depth_n = normalized_components(point, frame)
-        shoulder_t = smoothstep(0.25, 0.86, width_n)
-        top = 0.705 + 0.060 * shoulder_t
-        width_limit = 0.79 + 0.10 * smoothstep(0.62, 0.76, v)
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        shoulder_t = smoothstep(
+            0.24,
+            0.82,
+            width_n,
+        )
+        top = (
+            center_top
+            + (
+                shoulder_top
+                - center_top
+            )
+            * shoulder_t
+        )
+        width_limit = (
+            0.74
+            + 0.08
+            * smoothstep(
+                center_top - 0.08,
+                shoulder_top,
+                v,
+            )
+        )
         return (
             v >= lower
             and v <= top
-            and width_n <= width_limit
+            and width_n
+            <= width_limit
         )
 
     return keep
 
-
 def belt_predicate(frame, style):
-    center_v = style["length"] + 0.040
+    lower, _, _ = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    center_v = lower + 0.040
 
     def keep(point):
         v, _dw, _dd, width_n, _depth_n = normalized_components(point, frame)
@@ -909,7 +1347,10 @@ def belt_predicate(frame, style):
 
 
 def hem_trim_predicate(frame, style):
-    lower = style["length"]
+    lower, _, _ = chest_landmark_fractions(
+        frame,
+        style,
+    )
 
     def keep(point):
         v, _dw, _dd, width_n, _depth_n = normalized_components(point, frame)
@@ -922,24 +1363,55 @@ def hem_trim_predicate(frame, style):
 
 
 def neckline_trim_predicate(frame, style):
+    (
+        _lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
     def keep(point):
-        v, _dw, _dd, width_n, _depth_n = normalized_components(point, frame)
-        shoulder_t = smoothstep(0.18, 0.88, width_n)
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        shoulder_t = smoothstep(
+            0.18,
+            0.86,
+            width_n,
+        )
         top = (
-            style["top_center"]
-            + (style["top_shoulder"] - style["top_center"]) * shoulder_t
+            center_top
+            + (
+                shoulder_top
+                - center_top
+            )
+            * shoulder_t
         )
         return (
-            top - 0.018 <= v <= top + 0.004
-            and width_n <= 0.99
+            top - 0.014
+            <= v
+            <= top + 0.006
+            and width_n <= 0.90
         )
 
     return keep
 
-
 def tabard_predicate(frame, style):
-    lower = style["length"] - 0.045
-    upper = style["length"] + 0.055
+    hem, _, _ = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    lower = hem - 0.035
+    upper = hem + 0.070
     front_sign = frame["front_sign"]
 
     def keep(point):
@@ -963,6 +1435,16 @@ def create_chest(body, rig, frame, style, seed):
     style["length"] += [0.0, -0.008, 0.007, -0.003][variant]
     style["top_center"] += [0.0, 0.006, -0.004, 0.003][variant]
     style["waist_flare"] += [0.0, 0.004, -0.003, 0.002][variant]
+
+    torso_indices = build_torso_vertex_mask(
+        body,
+        frame,
+    )
+    refine_frame_from_torso_mask(
+        body,
+        frame,
+        torso_indices,
+    )
 
     height = frame["height"]
     clearance = height * 0.0024
@@ -1001,6 +1483,7 @@ def create_chest(body, rig, frame, style, seed):
         clearance,
         cloth_thickness,
         smooth_iterations=1,
+        allowed_indices=torso_indices,
     )
     if base:
         objects.append(base)
@@ -1015,6 +1498,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0045,
             overlay_thickness,
             smooth_iterations=1,
+            allowed_indices=torso_indices,
         )
         if vest:
             objects.append(vest)
@@ -1028,6 +1512,7 @@ def create_chest(body, rig, frame, style, seed):
         clearance + height * 0.0062,
         overlay_thickness * 1.18,
         smooth_iterations=0,
+        allowed_indices=torso_indices,
     )
     if belt:
         objects.append(belt)
@@ -1041,6 +1526,7 @@ def create_chest(body, rig, frame, style, seed):
         clearance + height * 0.0040,
         overlay_thickness * 0.85,
         smooth_iterations=0,
+        allowed_indices=torso_indices,
     )
     if hem:
         objects.append(hem)
@@ -1054,6 +1540,7 @@ def create_chest(body, rig, frame, style, seed):
         clearance + height * 0.0041,
         overlay_thickness * 0.82,
         smooth_iterations=0,
+        allowed_indices=torso_indices,
     )
     if neck:
         objects.append(neck)
@@ -1068,6 +1555,7 @@ def create_chest(body, rig, frame, style, seed):
             clearance + height * 0.0060,
             overlay_thickness,
             smooth_iterations=1,
+            allowed_indices=torso_indices,
         )
         if tabard:
             objects.append(tabard)
