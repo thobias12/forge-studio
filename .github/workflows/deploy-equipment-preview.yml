@@ -1,0 +1,69 @@
+name: Deploy Equipment V3 Preview to GitHub Pages
+
+on:
+  workflow_run:
+    workflows:
+      - Forge Studio PR Build
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'equipment-v3-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout successful Equipment V3 PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare deployed Equipment QA fixture
+        env:
+          FORGE_QA_FIXTURE_OUTPUT: public/qa-foundation/__qa-base.glb
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
+      - name: Build Forge Studio preview
+        env:
+          VITE_FORGE_BUILD: ${{ github.event.workflow_run.head_sha }}
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./dist
+
+  deploy:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'equipment-v3-')
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy Equipment V3 preview to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
