@@ -58,6 +58,12 @@ export function dungeonProps(value: DungeonWithProps) {
   return (value.props ?? []).filter((prop) => !prop.id.startsWith(LEGACY_CRYPT_COLLISION_PREFIX))
 }
 
+export function dungeonPropBlocksMovement(prop: DungeonProp) {
+  if (!prop.collision) return false
+  if (prop.source === 'library') return true
+  return ['pillar', 'statue', 'barrel', 'crate'].includes(prop.assetRef)
+}
+
 export function createDungeonProp(input: {
   name: string
   source: DungeonProp['source']
@@ -82,7 +88,7 @@ export function createDungeonProp(input: {
     roomId: input.roomId,
     scale: input.scale ?? 1,
     rotationY: input.rotationY ?? 0,
-    collision: input.collision ?? input.assetRef !== 'rubble',
+    collision: input.collision ?? (input.source === 'library' || ['pillar', 'statue', 'barrel', 'crate'].includes(input.assetRef)),
     destructible: input.destructible,
   }
 }
