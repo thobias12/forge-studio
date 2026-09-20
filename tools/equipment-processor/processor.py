@@ -2,9 +2,10 @@ import argparse
 import json
 import os
 import sys
+import math
 
 import bpy
-from mathutils import Vector
+from mathutils import Euler, Vector
 from mathutils.bvhtree import BVHTree
 
 SLOTS = {
@@ -107,40 +108,429 @@ def apply_modifier(obj, name):
     obj.select_set(False)
 
 
-def normalize(armor, body, slot):
+def percentile(values, fraction):
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = max(0.0, min(1.0, fraction)) * (len(ordered) - 1)
+    low = int(math.floor(position))
+    high = int(math.ceil(position))
+    if low == high:
+        return ordered[low]
+    blend = position - low
+    return ordered[low] * (1.0 - blend) + ordered[high] * blend
+
+
+def robust_point_bounds(points, low=0.05, high=0.95):
+    if not points:
+        zero = Vector((0.0, 0.0, 0.0))
+        return zero.copy(), zero.copy()
+
+    minimum = Vector((
+        percentile([p.x for p in points], low),
+        percentile([p.y for p in points], low),
+        percentile([p.z for p in points], low),
+    ))
+    maximum = Vector((
+        percentile([p.x for p in points], high),
+        percentile([p.y for p in points], high),
+        percentile([p.z for p in points], high),
+    ))
+    return minimum, maximum
+
+
+def mesh_world_points(obj):
+    return [
+        obj.matrix_world @ vertex.co
+        for vertex in obj.data.vertices
+    ]
+
+
+def apply_object_transform(obj):
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.transform_apply(
+        location=False,
+        rotation=True,
+        scale=True,
+    )
+    obj.select_set(False)
+
+
+def chest_body_frame(body):
+    points = mesh_world_points(body)
+    full_min, full_max = robust_point_bounds(
+        points,
+        0.01,
+        0.99,
+    )
+    full_size = full_max - full_min
+
+    vertical_axis = max(
+        range(3),
+        key=lambda axis: full_size[axis],
+    )
+    horizontal_axes = [
+        axis
+        for axis in range(3)
+        if axis != vertical_axis
+    ]
+
+    body_height = max(
+        full_size[vertical_axis],
+        0.001,
+    )
+    band_low = (
+        full_min[vertical_axis]
+        + body_height * 0.48
+    )
+    band_high = (
+        full_min[vertical_axis]
+        + body_height * 0.79
+    )
+    torso_points = [
+        point
+        for point in points
+        if band_low
+        <= point[vertical_axis]
+        <= band_high
+    ]
+    if len(torso_points) < 20:
+        torso_points = points
+
+    torso_min, torso_max = robust_point_bounds(
+        torso_points,
+        0.10,
+        0.90,
+    )
+    torso_size = torso_max - torso_min
+
+    width_axis = max(
+        horizontal_axes,
+        key=lambda axis: torso_size[axis],
+    )
+    depth_axis = next(
+        axis
+        for axis in horizontal_axes
+        if axis != width_axis
+    )
+
+    torso_center = Vector((
+        percentile([p.x for p in torso_points], 0.5),
+        percentile([p.y for p in torso_points], 0.5),
+        percentile([p.z for p in torso_points], 0.5),
+    ))
+
+    return {
+        "verticalAxis": vertical_axis,
+        "widthAxis": width_axis,
+        "depthAxis": depth_axis,
+        "bodyHeight": body_height,
+        "bodyMin": full_min,
+        "torsoCenter": torso_center,
+        "torsoWidth": max(torso_size[width_axis], 0.001),
+        "torsoDepth": max(torso_size[depth_axis], 0.001),
+    }
+
+
+def candidate_rotations():
+    rotations = []
+    seen = set()
+
+    quarter_turns = [
+        0.0,
+        math.pi * 0.5,
+        math.pi,
+        math.pi * 1.5,
+    ]
+
+    for x in quarter_turns:
+        for y in quarter_turns:
+            for z in quarter_turns:
+                matrix = Euler((x, y, z), "XYZ").to_matrix()
+                key = tuple(
+                    round(matrix[row][column], 5)
+                    for row in range(3)
+                    for column in range(3)
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                rotations.append(matrix)
+
+    return rotations
+
+
+def oriented_local_points(armor, rotation):
+    return [
+        rotation @ vertex.co
+        for vertex in armor.data.vertices
+    ]
+
+
+def orientation_score(
+    points,
+    vertical_axis,
+    width_axis,
+    depth_axis,
+    target_height,
+    target_width,
+    target_depth,
+):
+    minimum, maximum = robust_point_bounds(
+        points,
+        0.02,
+        0.98,
+    )
+    size = maximum - minimum
+
+    height = max(
+        size[vertical_axis],
+        0.00001,
+    )
+    width = max(
+        size[width_axis],
+        0.00001,
+    )
+    depth = max(
+        size[depth_axis],
+        0.00001,
+    )
+
+    source_width_ratio = width / height
+    source_depth_ratio = depth / height
+    target_width_ratio = target_width / target_height
+    target_depth_ratio = target_depth / target_height
+
+    return (
+        abs(
+            math.log(
+                source_width_ratio
+                / max(target_width_ratio, 0.00001)
+            )
+        )
+        + 1.35
+        * abs(
+            math.log(
+                source_depth_ratio
+                / max(target_depth_ratio, 0.00001)
+            )
+        )
+    )
+
+
+def normalize_chest(armor, body):
+    apply_object_transform(armor)
+    frame = chest_body_frame(body)
+
+    vertical_axis = frame["verticalAxis"]
+    width_axis = frame["widthAxis"]
+    depth_axis = frame["depthAxis"]
+    body_height = frame["bodyHeight"]
+
+    target_height = body_height * 0.34
+    target_width = frame["torsoWidth"] * 1.10
+    target_depth = frame["torsoDepth"] * 1.18
+
+    best_rotation = None
+    best_score = None
+
+    for rotation in candidate_rotations():
+        points = oriented_local_points(
+            armor,
+            rotation,
+        )
+        score = orientation_score(
+            points,
+            vertical_axis,
+            width_axis,
+            depth_axis,
+            target_height,
+            target_width,
+            target_depth,
+        )
+        if (
+            best_score is None
+            or score < best_score
+        ):
+            best_score = score
+            best_rotation = rotation
+
+    if best_rotation is not None:
+        armor.rotation_euler = (
+            best_rotation.to_euler("XYZ")
+        )
+        apply_object_transform(armor)
+
+    armor_points = mesh_world_points(armor)
+    armor_min, armor_max = robust_point_bounds(
+        armor_points,
+        0.02,
+        0.98,
+    )
+    armor_size = armor_max - armor_min
+
+    desired = {
+        vertical_axis: target_height,
+        width_axis: target_width,
+        depth_axis: target_depth,
+    }
+
+    scale = Vector((1.0, 1.0, 1.0))
+    for axis, target in desired.items():
+        current = max(
+            armor_size[axis],
+            0.00001,
+        )
+        scale[axis] = target / current
+
+    # Prevent pathological single-view reconstructions from being
+    # stretched into extreme shapes. The target torso still wins, but
+    # no axis is allowed to diverge too far from the median scale.
+    median_scale = sorted(
+        [scale.x, scale.y, scale.z]
+    )[1]
+    lower = median_scale * 0.58
+    upper = median_scale * 1.55
+    for axis in range(3):
+        scale[axis] = max(
+            lower,
+            min(upper, scale[axis]),
+        )
+
+    armor.scale = scale
+    apply_object_transform(armor)
+
+    armor_points = mesh_world_points(armor)
+    armor_min, armor_max = robust_point_bounds(
+        armor_points,
+        0.02,
+        0.98,
+    )
+    armor_center = (
+        armor_min + armor_max
+    ) * 0.5
+
+    target_center = (
+        frame["torsoCenter"].copy()
+    )
+    target_center[vertical_axis] = (
+        frame["bodyMin"][vertical_axis]
+        + body_height * 0.655
+    )
+
+    armor.location += (
+        target_center - armor_center
+    )
+
+    bpy.context.view_layer.objects.active = armor
+    armor.select_set(True)
+    bpy.ops.object.transform_apply(
+        location=True,
+        rotation=False,
+        scale=False,
+    )
+    armor.select_set(False)
+
+    return body_height, {
+        "mode": "chest-torso-solve",
+        "orientationScore": (
+            round(best_score, 6)
+            if best_score is not None
+            else None
+        ),
+        "verticalAxis": vertical_axis,
+        "widthAxis": width_axis,
+        "depthAxis": depth_axis,
+        "targetHeight": target_height,
+        "targetWidth": target_width,
+        "targetDepth": target_depth,
+        "scale": [
+            round(scale.x, 6),
+            round(scale.y, 6),
+            round(scale.z, 6),
+        ],
+    }
+
+
+def normalize_generic(armor, body, slot):
     body_min, body_max = bounds(body)
     size = body_max - body_min
     vertical = "z" if size.z >= size.y else "y"
-    height = max(size.z if vertical == "z" else size.y, 0.001)
-    target_height, center_fraction = SLOTS.get(slot, SLOTS["chest"])
+    height = max(
+        size.z if vertical == "z" else size.y,
+        0.001,
+    )
+    target_height, center_fraction = SLOTS.get(
+        slot,
+        SLOTS["chest"],
+    )
 
     armor_min, armor_max = bounds(armor)
     armor_size = armor_max - armor_min
-    armor_height = armor_size.z if vertical == "z" else armor_size.y
+    armor_height = (
+        armor_size.z
+        if vertical == "z"
+        else armor_size.y
+    )
     if armor_height > 1e-6:
-        armor.scale *= (height * target_height) / armor_height
-        bpy.context.view_layer.objects.active = armor
-        armor.select_set(True)
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-        armor.select_set(False)
+        armor.scale *= (
+            height
+            * target_height
+            / armor_height
+        )
+        apply_object_transform(armor)
 
     body_min, body_max = bounds(body)
-    body_center = (body_min + body_max) * 0.5
+    body_center = (
+        body_min + body_max
+    ) * 0.5
     armor_min, armor_max = bounds(armor)
-    armor_center = (armor_min + armor_max) * 0.5
+    armor_center = (
+        armor_min + armor_max
+    ) * 0.5
     target = body_center.copy()
-    if vertical == "z":
-        target.z = body_min.z + height * center_fraction
-    else:
-        target.y = body_min.y + height * center_fraction
 
-    armor.location += target - armor_center
+    if vertical == "z":
+        target.z = (
+            body_min.z
+            + height * center_fraction
+        )
+    else:
+        target.y = (
+            body_min.y
+            + height * center_fraction
+        )
+
+    armor.location += (
+        target - armor_center
+    )
     bpy.context.view_layer.objects.active = armor
     armor.select_set(True)
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    bpy.ops.object.transform_apply(
+        location=True,
+        rotation=True,
+        scale=True,
+    )
     armor.select_set(False)
-    return height
 
+    return height, {
+        "mode": "generic",
+    }
+
+
+def normalize(armor, body, slot):
+    if slot == "chest":
+        return normalize_chest(
+            armor,
+            body,
+        )
+    return normalize_generic(
+        armor,
+        body,
+        slot,
+    )
 
 def decimate(armor, limit):
     before = len(armor.data.polygons)
@@ -249,8 +639,15 @@ def main():
     armor = join_meshes(import_glb(config.input))
     armor.name = "FORGE_Equipment_" + config.slot
 
-    height = normalize(armor, body, config.slot)
-    before, after = decimate(armor, config.poly_limit)
+    height, normalization = normalize(
+        armor,
+        body,
+        config.slot,
+    )
+    before, after = decimate(
+        armor,
+        config.poly_limit,
+    )
     group = contact_group(armor, body, height)
 
     if config.slot not in {"main-hand", "off-hand"}:
@@ -276,6 +673,7 @@ def main():
         "armature": rig.name,
         "bodyMesh": body.name,
         "equipmentMesh": armor.name,
+        "normalization": normalization,
     }
     with open(config.output + ".json", "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
