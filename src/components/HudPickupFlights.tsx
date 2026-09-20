@@ -143,6 +143,7 @@ function RuntimeFlight({
       style={{
         '--target-x': event.kind === 'xp' ? `${sourceX}%` : `${targetX}%`,
         '--target-y': event.kind === 'xp' ? `${sourceY}%` : `${targetY}%`,
+        animationDelay: event.kind === 'xp' ? '35ms' : `${impactDelay}ms`,
       } as CSSProperties}
     >
       +{event.amount}{event.kind === 'xp' ? ' XP' : ''}
