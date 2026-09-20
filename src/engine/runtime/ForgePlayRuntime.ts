@@ -1053,17 +1053,23 @@ export class ForgePlayRuntime {
     const delta = Math.min(0.05, Math.max(0, (now - this.lastFrame) / 1000))
     this.lastFrame = now
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
-    const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
-    this.updateCooldowns(delta)
+    const combatLabTimeScale = THREE.MathUtils.clamp(
+      Number((this as any).__forgeCombatLabTimeScale ?? 1),
+      .2,
+      1,
+    )
+    const scaledDelta = delta * combatLabTimeScale
+    const simulationDelta = this.hitStopRemaining > 0 ? 0 : scaledDelta
+    this.updateCooldowns(scaledDelta)
     this.updatePlayer(simulationDelta)
     this.updateInteractions(simulationDelta)
     this.updateEnemies(simulationDelta)
-    this.updateCorpses(delta)
+    this.updateCorpses(scaledDelta)
     this.updateLoot(simulationDelta)
-    this.updateEffects(delta)
-    this.updateLibraryVfx(delta)
-    this.updateChainLightningEffects(delta)
-    this.updateTextEffects(delta)
+    this.updateEffects(scaledDelta)
+    this.updateLibraryVfx(scaledDelta)
+    this.updateChainLightningEffects(scaledDelta)
+    this.updateTextEffects(scaledDelta)
     this.updateCamera(delta)
     if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     this.updateCameraOcclusion(delta)
