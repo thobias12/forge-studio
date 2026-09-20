@@ -46,6 +46,55 @@ export function addDungeonMasonryV3(
   return root
 }
 
+export function addDungeonRoomOverlayV3(
+  parent: THREE.Group,
+  room: DungeonRoom,
+  selected: boolean,
+  corridorStart: boolean,
+) {
+  const root = new THREE.Group()
+  root.position.set(room.x, room.floorLevel, room.z)
+  root.rotation.y = THREE.MathUtils.degToRad(room.rotation)
+  root.userData.roomId = room.id
+  root.userData.roomRoot = true
+  parent.add(root)
+
+  const color = selected ? 0x91ddff : corridorStart ? 0xb69aff : 0x526772
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: selected || corridorStart ? 0.92 : 0.24,
+    depthTest: false,
+  })
+  const outline = roomLocalOutline(room)
+  const points = [...outline, outline[0]].map((point) => new THREE.Vector3(point.x, 0.22, point.z))
+  const geometry = new THREE.BufferGeometry().setFromPoints(points)
+  const line = new THREE.Line(geometry, material)
+  line.userData.roomId = room.id
+  line.renderOrder = 18
+  root.add(line)
+
+  if (selected) {
+    const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x8ed8ff, depthTest: false })
+    const positions: Array<['north' | 'south' | 'east' | 'west', number, number]> = [
+      ['north', 0, -room.depth / 2],
+      ['south', 0, room.depth / 2],
+      ['west', -room.width / 2, 0],
+      ['east', room.width / 2, 0],
+    ]
+    for (const [side, x, z] of positions) {
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.24, 0.58), handleMaterial)
+      handle.position.set(x, 0.34, z)
+      handle.userData.roomId = room.id
+      handle.userData.resizeSide = side
+      handle.renderOrder = 20
+      root.add(handle)
+    }
+  }
+
+  return root
+}
+
 export function dungeonWorldBoundsV3(value: DungeonWithProps, padding = 0) {
   const points: DungeonPoint[] = []
   for (const room of value.rooms) {
@@ -413,6 +462,42 @@ function addRoomDressing(root: THREE.Group, value: DungeonWithProps, atmosphere:
       group.add(inset)
     }
   }
+}
+
+function roomLocalOutline(room: DungeonRoom): DungeonPoint[] {
+  const halfW = room.width / 2
+  const halfD = room.depth / 2
+  if ((room.shape ?? 'rect') === 'octagon') {
+    const cut = Math.min(room.width, room.depth) * 0.16
+    return [
+      { x: -halfW + cut, z: -halfD },
+      { x: halfW - cut, z: -halfD },
+      { x: halfW, z: -halfD + cut },
+      { x: halfW, z: halfD - cut },
+      { x: halfW - cut, z: halfD },
+      { x: -halfW + cut, z: halfD },
+      { x: -halfW, z: halfD - cut },
+      { x: -halfW, z: -halfD + cut },
+    ]
+  }
+  if (room.shape === 'cross') {
+    const ax = halfW * 0.38
+    const az = halfD * 0.38
+    return [
+      { x: -ax, z: -halfD }, { x: ax, z: -halfD },
+      { x: ax, z: -az }, { x: halfW, z: -az },
+      { x: halfW, z: az }, { x: ax, z: az },
+      { x: ax, z: halfD }, { x: -ax, z: halfD },
+      { x: -ax, z: az }, { x: -halfW, z: az },
+      { x: -halfW, z: -az }, { x: -ax, z: -az },
+    ]
+  }
+  return [
+    { x: -halfW, z: -halfD },
+    { x: halfW, z: -halfD },
+    { x: halfW, z: halfD },
+    { x: -halfW, z: halfD },
+  ]
 }
 
 function roomWallPoint(room: DungeonRoom, side: 'north' | 'south' | 'east' | 'west', along: number, inset: number) {
