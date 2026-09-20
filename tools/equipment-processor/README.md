@@ -2,7 +2,7 @@
 
 The local companion powers **Forge → Equipment Lab**.
 
-It listens only on `http://127.0.0.1:47831` and lets the GitHub Pages build use Blender and local AI on the user's PC.
+It listens only on `http://127.0.0.1:47831` and gives the GitHub Pages build controlled access to Blender and optional local AI on the user's PC.
 
 ## Start
 
@@ -14,100 +14,92 @@ npm run equipment:processor
 
 Keep the terminal open while using Equipment Lab.
 
-## v1.80.0 recommended pipeline
+## v1.81.0 default: body-aware procedural equipment
+
+The primary Equipment Lab armor workflow no longer depends on image-to-3D.
 
 ```text
-reference image
+Skillbound mannequin
     ↓
-SPAR3D point-aware local reconstruction
+slot + style + variation
     ↓
-raw GLB
+Blender body-aware generator
     ↓
-Blender processing
+skinned layered garment
     ↓
-Skillbound fit + skin
+GLB
     ↓
-processed GLB
+Forge preview / Asset Library
 ```
 
-SPAR3D is the recommended backend. TripoSR remains as a legacy fallback because it successfully proves the end-to-end system, but its single-view geometry quality was not strong enough for the Ranger chest target.
+The first production template is **Chest**.
 
-### Why Forge uses SPAR3D geometry-only mode
+The processor launches:
 
-The official SPAR3D project includes native texture-baker and UV-unwrapper extensions. Those extensions normally require native compiler tooling on Windows.
+`tools/equipment-processor/procedural_equipment.py`
 
-Forge avoids that requirement:
+The generator imports the exact Skillbound mannequin uploaded by Forge, identifies the primary body and armature, then builds the garment directly from copies of the real skinned body surface.
 
-- the SPAR3D neural reconstruction and point diffusion still run on CUDA/NVIDIA;
-- Forge supplies lightweight import shims for the optional native texture/UV modules;
-- the Forge SPAR3D adapter stops after geometry reconstruction;
-- generated point-cloud color is transferred to mesh vertex colors;
-- Blender then performs the game-specific normalization, fitting, decimation and skinning.
+Current chest construction:
 
-This keeps the setup realistic for a normal game-development PC without forcing Visual Studio Build Tools or a full CUDA compiler toolchain.
+1. measure the real mannequin axes / torso bounds;
+2. cut a fitted torso shell with shaped neckline and arm openings;
+3. push the shell outward for safe body clearance;
+4. add physical garment thickness;
+5. build a second leather-vest surface;
+6. add fitted belt, hem trim and neckline trim;
+7. optionally add a front tabard;
+8. retain the body's real vertex groups;
+9. bind every layer to the official Skillbound armature;
+10. export one GLB.
 
-## One-time model access
+Current style presets:
 
-SPAR3D model weights are hosted in Stability AI's gated Hugging Face repository.
+- Ranger
+- Traveler
+- Acolyte
 
-Equipment Lab exposes:
+Variations are deterministic and intentionally small so the fit contract stays stable.
 
-- **Accept model access**
-- **Create read token**
-- local token field
-- **Save token locally**
+The generated GLB includes body-mask metadata for the Chest workflow.
 
-The token is stored at:
+## Why this is now the default
 
-`tools/equipment-processor/work/generators/.hf-token`
+The earlier TripoSR and SPAR3D experiments proved the local pipeline could generate, process and preview 3D, but generic single-image reconstruction is not reliable enough for wearable armor. The generator can interpret a chest reference as a solid torso-shaped sculpture, and Blender cannot recover garment openings/topology that were never generated.
 
-The entire `tools/equipment-processor/work/` tree is ignored by Git.
+Body-aware construction removes that ambiguity: armor starts on the actual character instead of being fitted after the fact.
 
-Never commit or share this token.
+## Existing imported-GLB processing
 
-## Managed Python
+Manual GLB processing remains available.
 
-Forge continues to manage its own compatible Python runtime. A newer system Python (for example Python 3.13) can bootstrap uv, and uv supplies Python 3.11 privately for the generator environments. The user's normal Python installation is not replaced or downgraded.
+That path still uses `processor.py` to:
 
-## Blender processing
+1. normalize imported equipment;
+2. solve Chest orientation / proportions against the mannequin;
+3. apply a polygon budget;
+4. detect contact regions;
+5. shrink-fit body-facing vertices;
+6. transfer Skillbound weights;
+7. export a processed GLB.
 
-After local generation (or manual GLB import), the processor:
+## Experimental SPAR3D
 
-1. receives the official Skillbound mannequin from Forge Library;
-2. normalizes equipment orientation and slot placement;
-3. for Chest, measures the actual torso and solves height / width / depth independently;
-4. applies the requested polygon budget;
-5. identifies body-facing contact vertices;
-6. fits contact regions toward the mannequin;
-7. transfers Skillbound vertex-group weights;
-8. binds the equipment to the Skillbound armature;
-9. returns the processed GLB directly to Forge.
+SPAR3D remains available as an optional image-to-3D experiment for asset categories where generic object reconstruction may work better than clothing, especially weapons / props.
 
-The chest solver also evaluates axis-aligned rotations because image-to-3D generators do not guarantee Blender/Skillbound axis conventions.
+Forge's SPAR3D compatibility layer includes:
+
+- managed Python 3.11;
+- separate CLIP / AlphaCLIP setup;
+- geometry-only Windows mode;
+- headless rembg-backed background removal;
+- Hugging Face gated model access;
+- resilient localhost job polling.
+
+It is not required for the body-aware procedural Chest generator.
 
 ## Legacy TripoSR
 
-The existing TripoSR environment is intentionally preserved as a fallback.
+TripoSR remains as a legacy fallback only.
 
-Forge's TripoSR compatibility work includes:
-
-- private Python 3.11 management;
-- pip repair/seeding;
-- explicit NumPy and ONNX runtime setup;
-- a Windows-safe scikit-image marching-cubes replacement for native torchmcubes;
-- runtime import validation;
-- automatic invalidation of incomplete installations.
-
-It is no longer the primary Equipment Lab generator.
-
-## v1.80.1 CLIP / AlphaCLIP installation
-
-The upstream SPAR3D requirements install OpenAI CLIP and AlphaCLIP directly from GitHub. AlphaCLIP's setup.py imports `pkg_resources`, but pip's isolated build environment may not include setuptools/pkg_resources, causing metadata generation to fail on Windows.
-
-Forge now removes both Git dependencies from the bulk requirements file, installs OpenAI CLIP first, then installs AlphaCLIP with `--no-build-isolation` after PyTorch and setuptools are already available in the private SPAR3D environment. Runtime validation now checks both `clip` and `alpha_clip` imports before writing the SPAR3D ready marker.
-
-## v1.80.2 headless background removal
-
-SPAR3D imports `Remover` from `transparent_background`, but that package imports its Flet GUI at module import time. Newer Flet releases can break the GUI API even though Equipment Lab never uses it.
-
-Forge now removes `transparent-background` from the SPAR3D requirements and supplies a local `transparent_background.Remover` compatibility shim backed by `rembg`. This keeps background removal fully headless and eliminates Flet from the local generator runtime path.
+The procedural equipment workflow requires only the normal Equipment Processor + Blender connection.

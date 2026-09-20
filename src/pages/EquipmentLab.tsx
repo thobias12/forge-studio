@@ -35,6 +35,7 @@ import {
   saveGeneratorAccessToken,
   startLocal3DGeneration,
   startLocalGeneratorSetup,
+  startProceduralEquipmentGeneration,
   uploadEquipmentMannequin,
   type EquipmentGeneratorJob,
   type EquipmentLabSlot,
@@ -82,6 +83,10 @@ export default function EquipmentLab() {
   const [polyLimit, setPolyLimit] = useState(25000)
   const [generationQuality, setGenerationQuality] =
     useState<'draft' | 'standard' | 'high'>('standard')
+  const [proceduralStyle, setProceduralStyle] =
+    useState<'ranger' | 'traveler' | 'acolyte'>('ranger')
+  const [proceduralSeed, setProceduralSeed] = useState(0)
+  const [proceduralResult, setProceduralResult] = useState(false)
   const [generatorToken, setGeneratorToken] = useState('')
   const [savingGeneratorToken, setSavingGeneratorToken] = useState(false)
 
@@ -110,12 +115,25 @@ export default function EquipmentLab() {
     || state === 'processing'
 
   const assetName = useMemo(() => {
+    if (proceduralResult) {
+      return {
+        ranger: 'Ranger Field Vest',
+        traveler: 'Traveler Layered Tunic',
+        acolyte: 'Acolyte Battle Tunic',
+      }[proceduralStyle]
+    }
+
     const source = rawFile ?? referenceFile
     if (!source) return 'New equipment'
     return source.name
       .replace(/\.(glb|png|jpe?g|webp)$/i, '')
       .replace(/[-_]+/g, ' ')
-  }, [rawFile, referenceFile])
+  }, [
+    rawFile,
+    referenceFile,
+    proceduralResult,
+    proceduralStyle,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -222,7 +240,7 @@ export default function EquipmentLab() {
               current?.progress ??
               0,
             message:
-              'SPAR3D is still running · reconnecting to the local processor…',
+              'Local generation is still running · reconnecting to the processor…',
           }),
         )
 
@@ -232,7 +250,7 @@ export default function EquipmentLab() {
         ) {
           throw new Error(
             'The local Equipment Processor has been unreachable for about a minute. ' +
-            'Check that the processor CMD window is still open. The SPAR3D job may still be running there.',
+            'Check that the processor CMD window is still open. The local Blender/3D job may still be running there.',
           )
         }
       }
@@ -259,6 +277,7 @@ export default function EquipmentLab() {
   const selectReference = (file?: File) => {
     setError('')
     setGeneratorJob(undefined)
+    setProceduralResult(false)
     clearProcessed()
 
     if (referenceUrl) {
@@ -293,6 +312,7 @@ export default function EquipmentLab() {
 
   const selectRawFile = (file?: File) => {
     setError('')
+    setProceduralResult(false)
     if (!file) {
       setRawAsset(undefined)
       return
@@ -345,6 +365,89 @@ export default function EquipmentLab() {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
+
+  const generateProcedural =
+    async () => {
+      if (!mannequinBlob) {
+        setError(
+          'The Skillbound ' +
+          bodyType +
+          ' foundation is not installed in Forge Library yet.',
+        )
+        return
+      }
+
+      if (!connected) {
+        setError(
+          'Start the Forge Equipment Processor first.',
+        )
+        return
+      }
+
+      if (slot !== 'chest') {
+        setError(
+          'The first body-aware generator is Chest. The remaining equipment slots come after this chest template passes QA.',
+        )
+        return
+      }
+
+      setError('')
+      setSaved('')
+      setGeneratorJob(undefined)
+      clearProcessed()
+      setState('uploading')
+
+      try {
+        await uploadEquipmentMannequin(
+          bodyType,
+          mannequinBlob,
+        )
+
+        setState('generating')
+        const started =
+          await startProceduralEquipmentGeneration(
+            {
+              bodyType,
+              slot,
+              style:
+                proceduralStyle,
+              seed:
+                proceduralSeed,
+            },
+          )
+
+        await waitForJob(
+          started.jobId,
+        )
+
+        const result =
+          await getLocal3DGenerationResult(
+            started.jobId,
+          )
+
+        if (processedUrl) {
+          URL.revokeObjectURL(
+            processedUrl,
+          )
+        }
+
+        setProcessedBlob(result)
+        setProcessedUrl(
+          URL.createObjectURL(
+            result,
+          ),
+        )
+        setProceduralResult(true)
+        setState('ready')
+      } catch (cause) {
+        setState('error')
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : String(cause),
+        )
+      }
+    }
 
   const processRawFile = async (sourceFile: File) => {
     if (!mannequinBlob) {
@@ -406,6 +509,7 @@ export default function EquipmentLab() {
     setError('')
     setSaved('')
     setGeneratorJob(undefined)
+    setProceduralResult(false)
     clearProcessed()
     setState('generating')
 
@@ -440,14 +544,25 @@ export default function EquipmentLab() {
       category: 'characters',
       kind: 'glb',
       mime: 'model/gltf-binary',
-      source: referenceFile
-        ? 'Forge Equipment Lab · Local AI'
-        : 'Forge Equipment Lab',
+      source: proceduralResult
+        ? 'Forge Equipment Lab · Body-aware procedural'
+        : referenceFile
+          ? 'Forge Equipment Lab · Local AI'
+          : 'Forge Equipment Lab',
       tags: [
         'equipment',
         'equipment-lab',
         'processed:blender',
-        ...(referenceFile ? ['generated:local-ai', 'generator:spar3d'] : []),
+        ...(proceduralResult
+          ? [
+              'generated:procedural',
+              'generator:blender-body-aware-v1',
+              'style:' + proceduralStyle,
+              'seed:' + proceduralSeed,
+            ]
+          : referenceFile
+            ? ['generated:local-ai', 'generator:spar3d']
+            : []),
         'body-type:' + bodyType,
         'equipment-slot:' + slot,
         ...maskRegions.map((region) => 'body-mask:' + region.toLowerCase()),
@@ -465,9 +580,8 @@ export default function EquipmentLab() {
           <span className="eyebrow">SKILLBOUND ASSET FACTORY</span>
           <h1>Equipment Lab</h1>
           <p>
-            Create equipment from a reference image entirely on your PC, then
-            automatically fit, skin and preview it on the Skillbound character.
-            No paid 3D service required.
+            Generate body-aware equipment directly around the Skillbound character
+            with Blender. No reference image, paid service or manual fitting required.
           </p>
         </div>
 
@@ -481,10 +595,8 @@ export default function EquipmentLab() {
             <small>
               {connected
                 ? generatorReady
-                  ? 'Blender + Local 3D ready'
-                  : health?.generator?.needsAccessToken
-                    ? 'Blender ready · SPAR3D access needed'
-                    : 'Blender ready · Better Local 3D not installed'
+                  ? 'Blender + Procedural + SPAR3D ready'
+                  : 'Blender + Procedural ready'
                 : 'localhost:47831'}
             </small>
           </span>
@@ -495,8 +607,8 @@ export default function EquipmentLab() {
       <div className="equipment-lab-layout">
         <aside className="equipment-lab-panel equipment-lab-controls">
           <header>
-            <span className="eyebrow">CREATE</span>
-            <h2>Reference → game asset</h2>
+            <span className="eyebrow">AUTOMATIC</span>
+            <h2>Generate equipment</h2>
           </header>
 
           <label className="equipment-lab-field">
@@ -522,6 +634,77 @@ export default function EquipmentLab() {
               ))}
             </select>
           </label>
+
+          <label className="equipment-lab-field">
+            <span>Style</span>
+            <select
+              value={proceduralStyle}
+              onChange={(event) =>
+                setProceduralStyle(
+                  event.target.value as
+                    | 'ranger'
+                    | 'traveler'
+                    | 'acolyte',
+                )}
+            >
+              <option value="ranger">Ranger</option>
+              <option value="traveler">Traveler</option>
+              <option value="acolyte">Acolyte</option>
+            </select>
+          </label>
+
+          <label className="equipment-lab-field">
+            <span>Variation</span>
+            <select
+              value={proceduralSeed}
+              onChange={(event) =>
+                setProceduralSeed(
+                  Number(event.target.value),
+                )}
+            >
+              <option value={0}>01 · balanced</option>
+              <option value={1}>02 · alternate</option>
+              <option value={2}>03 · alternate</option>
+              <option value={3}>04 · alternate</option>
+            </select>
+          </label>
+
+          <button
+            className="primary-button equipment-lab-process"
+            disabled={
+              !connected ||
+              !mannequinBlob ||
+              busy ||
+              slot !== 'chest'
+            }
+            onClick={generateProcedural}
+          >
+            {state === 'generating' && !referenceFile
+              ? <LoaderCircle className="spin" size={16} />
+              : <WandSparkles size={16} />}
+            {state === 'uploading' && !referenceFile
+              ? 'Preparing Skillbound body…'
+              : state === 'generating' && !referenceFile
+                ? 'Building equipment…'
+                : proceduralResult
+                  ? 'Generate Another'
+                  : 'Generate Equipment'}
+          </button>
+
+          {slot !== 'chest' && (
+            <div className="equipment-lab-warning">
+              <AlertTriangle size={16} />
+              <span>
+                Body-aware Chest generation is the first production template.
+                Other slots stay visible so the same workflow can expand after
+                this template passes visual QA.
+              </span>
+            </div>
+          )}
+
+          <div className="equipment-lab-or">
+            <span>EXPERIMENTAL IMAGE → 3D</span>
+          </div>
 
           <label className="equipment-lab-reference">
             <input
@@ -772,8 +955,12 @@ export default function EquipmentLab() {
                 ) : (
                   <PreviewEmpty
                     icon={<HardDriveUpload size={24} />}
-                    title="No raw 3D yet"
-                    detail="Upload a reference and Generate + Process. The local AI mesh appears here first."
+                    title={proceduralResult ? 'No raw intermediate' : 'No raw 3D yet'}
+                    detail={
+                      proceduralResult
+                        ? 'Body-aware generation builds directly from the Skillbound mannequin, so there is no detached raw mesh to fit afterward.'
+                        : 'Image-to-3D and manual imports appear here before Blender fitting.'
+                    }
                   />
                 )}
               </div>
@@ -805,7 +992,11 @@ export default function EquipmentLab() {
             <header>
               <div>
                 <span className="eyebrow">PIPELINE</span>
-                <h2>Reference → Skillbound</h2>
+                <h2>
+                  {proceduralResult
+                    ? 'Recipe → Skillbound'
+                    : 'Reference → Skillbound'}
+                </h2>
               </div>
               {state === 'ready' && (
                 <span className="equipment-lab-ready">
@@ -816,22 +1007,59 @@ export default function EquipmentLab() {
 
             <div className="equipment-lab-steps equipment-lab-steps-seven">
               <PipelineStep
-                label="Reference"
-                detail="PNG / JPG / WEBP"
-                done={Boolean(referenceFile) || Boolean(rawFile)}
+                label={proceduralResult ? 'Design' : 'Reference'}
+                detail={
+                  proceduralResult
+                    ? proceduralStyle
+                    : 'PNG / JPG / WEBP'
+                }
+                done={
+                  proceduralResult ||
+                  Boolean(referenceFile) ||
+                  Boolean(rawFile)
+                }
               />
               <PipelineStep
-                label="Generate"
-                detail={referenceFile ? 'Local SPAR3D' : 'Imported GLB'}
-                done={Boolean(rawFile)}
+                label={proceduralResult ? 'Build' : 'Generate'}
+                detail={
+                  proceduralResult
+                    ? 'Body-aware Blender'
+                    : referenceFile
+                      ? 'Local SPAR3D'
+                      : 'Imported GLB'
+                }
+                done={
+                  proceduralResult ||
+                  Boolean(rawFile)
+                }
               />
-              <PipelineStep label="Normalize" detail="Scale + orientation" done={state === 'ready'} />
               <PipelineStep
-                label="Fit"
-                detail={fit + ' · ' + clearanceMm + ' mm'}
+                label="Normalize"
+                detail={
+                  proceduralResult
+                    ? 'Native Skillbound scale'
+                    : 'Scale + orientation'
+                }
                 done={state === 'ready'}
               />
-              <PipelineStep label="Skin" detail="Skillbound weights" done={state === 'ready'} />
+              <PipelineStep
+                label="Fit"
+                detail={
+                  proceduralResult
+                    ? 'Built on body surface'
+                    : fit + ' · ' + clearanceMm + ' mm'
+                }
+                done={state === 'ready'}
+              />
+              <PipelineStep
+                label="Skin"
+                detail={
+                  proceduralResult
+                    ? 'Inherited body weights'
+                    : 'Skillbound weights'
+                }
+                done={state === 'ready'}
+              />
               <PipelineStep
                 label="Mask"
                 detail={maskRegions.length ? maskRegions.join(' · ') : 'No body mask'}
