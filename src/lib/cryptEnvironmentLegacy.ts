@@ -177,8 +177,9 @@ function addWallStoneCourses(ctx: RoomContext, openings: CryptOpening[], thickne
   for (const side of ['north', 'south', 'west', 'east'] as Side[]) {
     const sideOpenings = openings.filter((opening) => opening.side === side)
     const total = side === 'north' || side === 'south' ? ctx.room.width : ctx.room.depth
-    const rows = Math.max(4, Math.floor(ctx.room.height / 0.78))
-    const rowHeight = ctx.room.height / rows
+    const displayHeight = ctx.immersive ? ctx.room.height : Math.min(ctx.room.height, 3.1)
+    const rows = Math.max(4, Math.floor(displayHeight / 0.78))
+    const rowHeight = displayHeight / rows
     const blocks: WallBlock[] = []
     const random = seededRandom(stringSeed(`courses-${ctx.room.id}-${side}`))
     for (let row = 0; row < rows; row += 1) {
@@ -765,7 +766,7 @@ function addCorridorSegmentDetail(parent: THREE.Group, x1: number, z1: number, x
 
   const wallMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.corridorWall, roughness: 0.9 })
   const darkMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96 })
-  const wallHeight = immersive ? 3.8 : 3.45
+  const wallHeight = immersive ? 3.05 : 1.55
   for (const side of [-1, 1]) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(0.18, wallHeight, length), wallMaterial)
     wall.position.set(
@@ -785,7 +786,7 @@ function addCorridorSegmentDetail(parent: THREE.Group, x1: number, z1: number, x
     const localZ = -length / 2 + (index + 0.5) * (length / ribCount)
     for (const side of [-1, 1]) {
       const localX = (width / 2 + 0.18) * side
-      const height = immersive ? 3.45 : 2.35
+      const height = immersive ? 2.82 : 1.48
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.34, height, 0.44), index % 2 ? darkMaterial : wallMaterial)
       pillar.position.set(
         cx + Math.cos(angle) * localX + Math.sin(angle) * localZ,
@@ -812,9 +813,17 @@ function addCorridorSegmentDetail(parent: THREE.Group, x1: number, z1: number, x
       const localX = (width / 2 - 0.18) * side
       const wx = cx + Math.cos(angle) * localX + Math.sin(angle) * localZ
       const wz = cz - Math.sin(angle) * localX + Math.cos(angle) * localZ
+      const lightY = immersive ? 2.05 : 1.34
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.38, 0.09), darkMaterial)
+      bracket.position.set(wx, lightY - 0.28, wz)
+      bracket.castShadow = true
+      parent.add(bracket)
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.09, 0.1, 8), darkMaterial)
+      bowl.position.set(wx, lightY - 0.07, wz)
+      parent.add(bowl)
       const flame = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), new THREE.MeshStandardMaterial({ color: atmosphere.torch, emissive: atmosphere.torch, emissiveIntensity: 2.5, roughness: 0.25 }))
-      flame.scale.y = 1.45
-      flame.position.set(wx, 2.05, wz)
+      flame.scale.set(0.76, 1.5, 0.76)
+      flame.position.set(wx, lightY + 0.1, wz)
       parent.add(flame)
       const light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.24, 9, 1.45)
       light.position.copy(flame.position)
