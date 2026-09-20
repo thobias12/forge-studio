@@ -3006,6 +3006,95 @@ def build_ranger_top_trim(
     )
 
 
+def build_shaped_ranger_panel(
+    frame,
+    style,
+    surface_samples,
+    surface_side,
+    side_sign,
+    rows,
+    bounds,
+    radial_offset,
+    across=5,
+):
+    vertices = []
+    faces = []
+
+    for row_index, v in enumerate(rows):
+        inner, outer = bounds[row_index]
+        widths = []
+        for column in range(across):
+            t = (
+                column
+                / max(
+                    across - 1,
+                    1,
+                )
+            )
+            if side_sign < 0:
+                width_n = (
+                    -outer
+                    + (
+                        outer - inner
+                    ) * t
+                )
+            else:
+                width_n = (
+                    inner
+                    + (
+                        outer - inner
+                    ) * t
+                )
+            widths.append(width_n)
+
+        for width_n in widths:
+            vertices.append(
+                ranger_surface_point(
+                    frame,
+                    style,
+                    surface_samples,
+                    v,
+                    width_n,
+                    surface_side,
+                    radial_offset,
+                )
+            )
+
+    for row in range(
+        len(rows) - 1
+    ):
+        for column in range(
+            across - 1
+        ):
+            a = (
+                row * across
+                + column
+            )
+            b = a + 1
+            c = (
+                (row + 1)
+                * across
+                + column
+                + 1
+            )
+            d = c - 1
+            faces.append((
+                a,
+                b,
+                c,
+            ))
+            faces.append((
+                a,
+                c,
+                d,
+            ))
+
+    return (
+        vertices,
+        faces,
+    )
+
+
 def build_ranger_cross_strap(
     frame,
     style,
@@ -3139,24 +3228,12 @@ def create_ranger_authored_chest(
     if shell:
         objects.append(shell)
 
-    # Layered front leather panels leave the cloth visible at center and
-    # sides. Their upper outer corners rise toward the shoulder straps.
+    # Layered front leather panels use changing inner/outer edges through
+    # the torso so they read as tailored pieces rather than rectangles.
     for side_sign, side_name in [
         (-1.0, "L"),
         (1.0, "R"),
     ]:
-        columns = [
-            side_sign * 0.18,
-            side_sign * 0.30,
-            side_sign * 0.42,
-            side_sign * 0.54,
-            side_sign * 0.66,
-        ]
-        if side_sign < 0:
-            columns = list(
-                reversed(columns)
-            )
-
         rows = [
             lower + 0.050,
             lower + 0.082,
@@ -3167,16 +3244,28 @@ def create_ranger_authored_chest(
             center_top - 0.032,
             center_top - 0.006,
         ]
+        bounds = [
+            (0.18, 0.63),
+            (0.17, 0.62),
+            (0.16, 0.61),
+            (0.16, 0.62),
+            (0.17, 0.63),
+            (0.19, 0.62),
+            (0.22, 0.58),
+            (0.26, 0.51),
+        ]
 
         panel_vertices, panel_faces = (
-            build_surface_patch(
+            build_shaped_ranger_panel(
                 frame,
                 style,
                 surface_samples,
                 "front",
+                side_sign,
                 rows,
-                columns,
+                bounds,
                 height * 0.0055,
+                across=6,
             )
         )
         panel = create_authored_mesh(
@@ -3192,40 +3281,42 @@ def create_ranger_authored_chest(
         if panel:
             objects.append(panel)
 
-    # Split back construction avoids the previous giant rectangular plate.
+    # Split, tapered back panels keep a center cloth seam and narrow
+    # toward the shoulder blades instead of forming one large back plate.
     for side_sign, side_name in [
         (-1.0, "L"),
         (1.0, "R"),
     ]:
-        columns = [
-            side_sign * 0.08,
-            side_sign * 0.22,
-            side_sign * 0.36,
-            side_sign * 0.50,
-            side_sign * 0.64,
+        rows = [
+            lower + 0.055,
+            lower + 0.087,
+            lower + 0.119,
+            lower + 0.151,
+            center_top - 0.065,
+            center_top - 0.038,
+            center_top - 0.012,
         ]
-        if side_sign < 0:
-            columns = list(
-                reversed(columns)
-            )
+        bounds = [
+            (0.08, 0.62),
+            (0.08, 0.61),
+            (0.09, 0.60),
+            (0.10, 0.59),
+            (0.11, 0.57),
+            (0.12, 0.54),
+            (0.14, 0.49),
+        ]
 
         back_vertices, back_faces = (
-            build_surface_patch(
+            build_shaped_ranger_panel(
                 frame,
                 style,
                 surface_samples,
                 "back",
-                [
-                    lower + 0.055,
-                    lower + 0.087,
-                    lower + 0.119,
-                    lower + 0.151,
-                    center_top - 0.065,
-                    center_top - 0.038,
-                    center_top - 0.012,
-                ],
-                columns,
+                side_sign,
+                rows,
+                bounds,
                 height * 0.0050,
+                across=6,
             )
         )
         back_panel = create_authored_mesh(
