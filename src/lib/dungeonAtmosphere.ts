@@ -70,11 +70,11 @@ export function dungeonLightingProfile(atmosphere: DungeonAtmosphere, settings: 
   return {
     brightness,
     ambientIntensity: crypt
-      ? atmosphere.ambient * (1.34 + settings.ambientLight * 0.5) * THREE.MathUtils.lerp(0.98, 1.68, normalized)
+      ? atmosphere.ambient * (1.18 + settings.ambientLight * 0.46) * THREE.MathUtils.lerp(0.98, 1.58, normalized)
       : atmosphere.ambient * (1.65 + settings.ambientLight * 0.6) * ambientScale,
-    fillIntensity: (crypt ? 0.44 : 0.48) * (crypt ? THREE.MathUtils.lerp(0.98, 1.68, normalized) : fillScale),
-    keyIntensity: atmosphere.keyIntensity * (crypt ? 1.08 : 1.35) * keyScale,
-    exposure: atmosphere.exposure * (crypt ? THREE.MathUtils.lerp(1.04, 1.3, normalized) : exposureScale),
+    fillIntensity: (crypt ? 0.32 : 0.48) * (crypt ? THREE.MathUtils.lerp(0.96, 1.55, normalized) : fillScale),
+    keyIntensity: atmosphere.keyIntensity * (crypt ? 1.04 : 1.35) * keyScale,
+    exposure: atmosphere.exposure * (crypt ? THREE.MathUtils.lerp(1.04, 1.28, normalized) : exposureScale),
     fogDensity: settings.fogDensity * atmosphere.fogMultiplier,
     bloomStrength: atmosphere.bloomStrength * THREE.MathUtils.lerp(0.94, 1.06, normalized),
   }
