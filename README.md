@@ -1274,6 +1274,18 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
+## v1.88.3 — High-readability crypt lighting without losing atmosphere
+
+- significantly raises the physical albedo of crypt floor/wall/corridor stone instead of relying only on stronger global lights, preventing black-crushed masonry while preserving warm/cool separation
+- keeps the outside void nearly black so the dungeon silhouette and exploration mood remain intact
+- raises neutral hemisphere, fill, key and exposure modestly on top of the brighter stone palette
+- increases the subtle V3 floor/wall self-fill so brick shapes remain legible in areas between sconces without looking emissive
+- adds a soft neutral **player readability light** to the real Play Project dungeon runtime; it follows the character, has no shadows and is deliberately weaker/desaturated compared with torch light
+- adds the same player-centered readability light to Quick ARPG so both gameplay test modes read consistently
+- player readability light scales with the existing Dungeon Forge brightness setting rather than using a fixed hard-coded brightness
+- warm sconces/candles, flame VFX, embers and local radial light pools from v1.88.1 remain unchanged and continue to provide the dungeon's primary atmosphere
+
+
 ## v1.88.2 — Crypt readability rebalance
 
 - keeps the new local torch/candle flame VFX and warm light pools from v1.88.1 unchanged

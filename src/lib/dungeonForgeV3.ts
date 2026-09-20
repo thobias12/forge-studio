@@ -388,7 +388,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     metalness: 0.01,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.floor),
-    emissiveIntensity: 0.2,
+    emissiveIntensity: 0.3,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -540,7 +540,7 @@ function addPerimeterWalls(
     metalness: 0.005,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.wall),
-    emissiveIntensity: topDown ? 0.11 : 0.07,
+    emissiveIntensity: topDown ? 0.16 : 0.1,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, samples.length)
   mesh.name = 'DungeonV3Perimeter'

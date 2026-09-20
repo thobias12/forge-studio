@@ -90,6 +90,21 @@ export const dungeonSceneMethods = {
     this.player.add(this.playerPlaceholder)
     this.equippedModelAnchor.position.set(...fallbackSocketPosition('RightHand'))
     this.player.add(this.equippedModelAnchor)
+    if (this.dungeon.theme === 'crypt') {
+      const atmosphere = dungeonAtmosphere(this.dungeon.theme)
+      const lighting = dungeonLightingProfile(atmosphere, this.dungeon.settings)
+      const normalized = THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1)
+      const visibility = new THREE.PointLight(
+        atmosphere.sky,
+        THREE.MathUtils.lerp(1.05, 1.7, normalized),
+        13.5,
+        1.7,
+      )
+      visibility.name = 'DungeonReadabilityLight'
+      visibility.position.set(0, 3.4, 0)
+      visibility.castShadow = false
+      this.player.add(visibility)
+    }
     const spawn = this.dungeon.markers.find((marker) => marker.type === 'checkpoint')
     const entrance = this.dungeon.rooms.find((room) => room.type === 'entrance') ?? this.dungeon.rooms[0]
     this.player.position.set(spawn?.x ?? entrance?.x ?? 0, entrance?.floorLevel ?? 0, spawn?.z ?? entrance?.z ?? 0)
