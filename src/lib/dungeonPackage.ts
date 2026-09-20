@@ -353,12 +353,14 @@ export function getRoomConnection(roomValue: DungeonRoom, target: DungeonRoom, c
   let lx = 0, lz = 0, offset = 0
   if (Math.abs(localX) >= Math.abs(localZ)) {
     side = localX >= 0 ? 'east' : 'west'
-    offset = clamp(localZ, -roomValue.depth / 2 + openingWidth / 2 + margin, roomValue.depth / 2 - openingWidth / 2 - margin)
+    const usableDepth = roomValue.shape === 'cross' ? roomValue.depth * 0.38 : roomValue.depth
+    offset = clamp(localZ, -usableDepth / 2 + openingWidth / 2 + margin, usableDepth / 2 - openingWidth / 2 - margin)
     lx = (side === 'east' ? 1 : -1) * roomValue.width / 2
     lz = offset
   } else {
     side = localZ >= 0 ? 'south' : 'north'
-    offset = clamp(localX, -roomValue.width / 2 + openingWidth / 2 + margin, roomValue.width / 2 - openingWidth / 2 - margin)
+    const usableWidth = roomValue.shape === 'cross' ? roomValue.width * 0.38 : roomValue.width
+    offset = clamp(localX, -usableWidth / 2 + openingWidth / 2 + margin, usableWidth / 2 - openingWidth / 2 - margin)
     lx = offset
     lz = (side === 'south' ? 1 : -1) * roomValue.depth / 2
   }
