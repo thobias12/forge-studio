@@ -16,6 +16,7 @@ export type DungeonRoom = {
   height: number
   rotation: 0 | 90 | 180 | 270
   floorLevel: number
+  shape?: 'rect' | 'cross' | 'octagon'
   tags: string[]
 }
 
@@ -24,7 +25,8 @@ export type DungeonCorridor = {
   fromRoomId: string
   toRoomId: string
   width: number
-  style: 'straight' | 'l'
+  style: 'straight' | 'l' | 'curve'
+  path?: Array<{ x: number; z: number }>
 }
 
 export type DungeonWall = {
@@ -147,6 +149,10 @@ export function createStarterDungeon(): ForgeDungeonPackage {
   const combat = room('Crossroads', 'combat', -7, 0, 18, 15)
   const treasure = room('Treasure Alcove', 'treasure', -7, -21)
   const boss = room('Boss Arena', 'boss', 27, 2, 30, 25)
+  entrance.shape = 'rect'
+  combat.shape = 'cross'
+  treasure.shape = 'rect'
+  boss.shape = 'octagon'
   const entranceEdge = corridor(entrance.id, combat.id)
   const treasureEdge = corridor(combat.id, treasure.id)
   const bossEdge = corridor(combat.id, boss.id)
@@ -211,7 +217,7 @@ export function room(name: string, type: DungeonRoomType, x: number, z: number, 
 }
 
 export function corridor(fromRoomId: string, toRoomId: string, width = DEFAULT_DUNGEON_GENERATION.corridorWidth): DungeonCorridor {
-  return { id: crypto.randomUUID(), fromRoomId, toRoomId, width, style: 'l' }
+  return { id: crypto.randomUUID(), fromRoomId, toRoomId, width, style: 'curve' }
 }
 
 export function wall(x1: number, z1: number, x2: number, z2: number, height = 3.8, thickness = 0.5, name = 'Stone Wall'): DungeonWall {
@@ -347,12 +353,14 @@ export function getRoomConnection(roomValue: DungeonRoom, target: DungeonRoom, c
   let lx = 0, lz = 0, offset = 0
   if (Math.abs(localX) >= Math.abs(localZ)) {
     side = localX >= 0 ? 'east' : 'west'
-    offset = clamp(localZ, -roomValue.depth / 2 + openingWidth / 2 + margin, roomValue.depth / 2 - openingWidth / 2 - margin)
+    const usableDepth = roomValue.shape === 'cross' ? roomValue.depth * 0.38 : roomValue.depth
+    offset = clamp(localZ, -usableDepth / 2 + openingWidth / 2 + margin, usableDepth / 2 - openingWidth / 2 - margin)
     lx = (side === 'east' ? 1 : -1) * roomValue.width / 2
     lz = offset
   } else {
     side = localZ >= 0 ? 'south' : 'north'
-    offset = clamp(localX, -roomValue.width / 2 + openingWidth / 2 + margin, roomValue.width / 2 - openingWidth / 2 - margin)
+    const usableWidth = roomValue.shape === 'cross' ? roomValue.width * 0.38 : roomValue.width
+    offset = clamp(localX, -usableWidth / 2 + openingWidth / 2 + margin, usableWidth / 2 - openingWidth / 2 - margin)
     lx = offset
     lz = (side === 'south' ? 1 : -1) * roomValue.depth / 2
   }
@@ -387,6 +395,7 @@ export function generateDungeon(
     entranceBase.width * scale,
     entranceBase.depth * scale,
   )
+  entrance.shape = 'rect'
   rooms.push(entrance)
   markers.push(marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance Checkpoint', { checkpointId: 'entrance' }))
 
@@ -431,6 +440,7 @@ export function generateDungeon(
         width,
         depth,
       )
+      candidate.shape = generatedRoomShape(type, random)
       if (!rooms.some((existing) => roomBoundsOverlap(existing, candidate, 5.5 * scale))) {
         direction = candidateDirection
         next = candidate
@@ -447,6 +457,7 @@ export function generateDungeon(
         width,
         depth,
       )
+      next.shape = generatedRoomShape(type, random)
     }
 
     rooms.push(next)
@@ -494,6 +505,7 @@ export function generateDungeon(
         width,
         depth,
       )
+      candidate.shape = generatedRoomShape(branchType, random)
       if (!rooms.some((existing) => roomBoundsOverlap(existing, candidate, 4.2 * scale))) branch = candidate
     }
     if (!branch) continue
@@ -614,6 +626,15 @@ function resolveGeneration(input: Partial<DungeonGenerationSettings>): DungeonGe
     corridorWidth: Math.max(3.8, Math.min(8, input.corridorWidth ?? DEFAULT_DUNGEON_GENERATION.corridorWidth)),
     scalePreset: preset,
   }
+}
+
+function generatedRoomShape(type: DungeonRoomType, random: () => number): NonNullable<DungeonRoom['shape']> {
+  if (type === 'boss') return 'octagon'
+  if (type === 'entrance' || type === 'treasure' || type === 'shrine' || type === 'secret') return 'rect'
+  const roll = random()
+  if (roll < 0.2) return 'cross'
+  if (roll < 0.36) return 'octagon'
+  return 'rect'
 }
 
 function turnDirection(direction: [number, number], turn: number): [number, number] {

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { DungeonWithProps } from '../lib/dungeonProps'
+import { dungeonCorridorPath, dungeonWorldBoundsV3 } from '../lib/dungeonForgeV3'
 
 export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: {
   value: DungeonWithProps
@@ -8,20 +9,13 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
 }) {
   const layout = useMemo(() => {
     if (!value.rooms.length) return undefined
-    const wallXs = (value.walls ?? []).flatMap((wall) => [wall.x1, wall.x2])
-    const wallZs = (value.walls ?? []).flatMap((wall) => [wall.z1, wall.z2])
-    const minX = Math.min(...value.rooms.map((room) => room.x - room.width / 2), ...wallXs)
-    const maxX = Math.max(...value.rooms.map((room) => room.x + room.width / 2), ...wallXs)
-    const minZ = Math.min(...value.rooms.map((room) => room.z - room.depth / 2), ...wallZs)
-    const maxZ = Math.max(...value.rooms.map((room) => room.z + room.depth / 2), ...wallZs)
-    const width = Math.max(8, maxX - minX)
-    const depth = Math.max(8, maxZ - minZ)
-    const scale = Math.min(240 / width, 145 / depth)
-    const ox = 140 - (minX + maxX) * 0.5 * scale
-    const oz = 82 - (minZ + maxZ) * 0.5 * scale
+    const bounds = dungeonWorldBoundsV3(value, 1.5)
+    const scale = Math.min(240 / Math.max(8, bounds.width), 145 / Math.max(8, bounds.depth))
+    const ox = 140 - bounds.x * scale
+    const oz = 82 - bounds.z * scale
     const point = (x: number, z: number) => ({ x: x * scale + ox, y: z * scale + oz })
     return { scale, point }
-  }, [value.rooms, value.walls])
+  }, [value])
 
   if (!layout) return <div className="dungeon-minimap empty">No rooms yet</div>
   const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
@@ -30,11 +24,14 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
       <rect x="0" y="0" width="280" height="164" rx="8" className="minimap-bg" />
       <g className="minimap-corridors">
         {value.corridors.map((edge) => {
-          const a = roomMap.get(edge.fromRoomId), b = roomMap.get(edge.toRoomId)
-          if (!a || !b) return null
-          const p1 = layout.point(a.x, a.z), p2 = layout.point(b.x, b.z)
-          const bend = layout.point(b.x, a.z)
-          return <path key={edge.id} d={`M ${p1.x} ${p1.y} L ${bend.x} ${bend.y} L ${p2.x} ${p2.y}`} />
+          if (!roomMap.has(edge.fromRoomId) || !roomMap.has(edge.toRoomId)) return null
+          const path = dungeonCorridorPath(value, edge)
+          if (path.length < 2) return null
+          const d = path.map((point, index) => {
+            const p = layout.point(point.x, point.z)
+            return `${index ? 'L' : 'M'} ${p.x} ${p.y}`
+          }).join(' ')
+          return <path key={edge.id} d={d} />
         })}
       </g>
       <g className="minimap-walls">
@@ -48,8 +45,16 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
         {value.rooms.map((room) => {
           const p = layout.point(room.x, room.z)
           const w = Math.max(5, room.width * layout.scale), h = Math.max(5, room.depth * layout.scale)
+          const shape = room.shape ?? 'rect'
+          const points = shape === 'octagon'
+            ? [[-.34,-.5],[.34,-.5],[.5,-.34],[.5,.34],[.34,.5],[-.34,.5],[-.5,.34],[-.5,-.34]]
+            : shape === 'cross'
+              ? [[-.19,-.5],[.19,-.5],[.19,-.19],[.5,-.19],[.5,.19],[.19,.19],[.19,.5],[-.19,.5],[-.19,.19],[-.5,.19],[-.5,-.19],[-.19,-.19]]
+              : undefined
           return <g key={room.id} transform={`translate(${p.x} ${p.y}) rotate(${room.rotation})`} onClick={() => onSelectRoom?.(room.id)} className={`minimap-room ${room.type} ${selectedRoomId === room.id ? 'selected' : ''}`}>
-            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" />
+            {points
+              ? <polygon points={points.map(([x,z]) => `${x*w},${z*h}`).join(' ')} />
+              : <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="2" />}
             <circle r={room.type === 'boss' ? 3.2 : room.type === 'entrance' ? 2.6 : 1.7} />
           </g>
         })}

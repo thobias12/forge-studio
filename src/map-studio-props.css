@@ -3,3 +3,13 @@
    Keep CSS from silently changing exposure between preview modes. */
 .dungeon-viewport-canvas canvas{filter:none!important}
 .dungeon-viewport-canvas:after{background:none!important;box-shadow:none!important}
+
+.minimap-room polygon{fill:#24333b;stroke:#536a77;stroke-width:1.2}
+.minimap-room.entrance polygon{fill:#254237;stroke:#5f987f}
+.minimap-room.combat polygon{fill:#342d2d;stroke:#755252}
+.minimap-room.elite polygon{fill:#443326;stroke:#a1744f}
+.minimap-room.treasure polygon{fill:#403a25;stroke:#9a8449}
+.minimap-room.shrine polygon{fill:#283a42;stroke:#5a8795}
+.minimap-room.boss polygon{fill:#49262d;stroke:#b85b6d}
+.minimap-room.secret polygon{fill:#332a42;stroke:#745a96}
+.minimap-room.selected polygon{stroke:#d5edf9;stroke-width:2}
