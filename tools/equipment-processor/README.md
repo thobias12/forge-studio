@@ -76,3 +76,7 @@ After generation (or manual GLB import), the processor:
 8. returns the processed GLB directly to Forge
 
 Weapons still use the raw normalized path in this proof stage; automatic grip/socket authoring is a later milestone.
+
+## v1.79.2 setup validation
+
+Forge no longer considers the generator ready merely because the virtual environment exists. Setup now validates imports for NumPy, rembg, torch, xatlas, Pillow and TripoSR itself before writing a ready marker. Missing runtime packages are repaired automatically where possible. uv-created environments are seeded with pip, and a missing pip installation is repaired with ensurepip.

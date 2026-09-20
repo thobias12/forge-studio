@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.79.1`  
+> **Current Forge version:** `v1.79.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -340,7 +340,7 @@ The manual raw-GLB route remains available as a fallback.
 
 Local generation currently uses the open-source **TripoSR** backend. The companion runs it as a background job and reports setup/generation progress back to Forge. The first generation may take longer because model weights are downloaded locally.
 
-Forge v1.79.1 removes the need to install Python 3.11 manually. If the PC only has a newer Python such as 3.13, the Equipment Processor creates a private bootstrap environment, installs uv there, and lets uv download/manage Python 3.11 only for the local 3D generator. The user's normal Python installation is left unchanged. NVIDIA PyTorch uses the CUDA 12.8 wheel in the Forge setup path.
+Forge v1.79.2 makes the local generator setup self-healing. It still manages Python 3.11 privately through uv when the system only has a newer Python such as 3.13, but it now also seeds/repairs pip, explicitly installs NumPy because TripoSR imports it without declaring it in its upstream requirements file, validates the real TripoSR runtime imports before marking the generator ready, and invalidates broken ready state automatically so the UI can repair an incomplete installation. The user's normal Python installation is left unchanged.
 
 ## Equipment Forge
 
