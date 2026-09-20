@@ -143,7 +143,7 @@ function addWalls(group:THREE.Group,room:DungeonRoom,openings:CryptOpening[],thi
 function addPillars(group:THREE.Group,room:DungeonRoom,mats:Mats){
   const inset=.62
   for(const [x,z] of [[-room.width/2+inset,-room.depth/2+inset],[room.width/2-inset,-room.depth/2+inset],[-room.width/2+inset,room.depth/2-inset],[room.width/2-inset,room.depth/2-inset]] as Array<[number,number]>){
-    const root=new THREE.Group();root.position.set(x,0,z);root.userData.roomId=room.id;root.userData.arpgOccluder=true
+    const root=new THREE.Group();root.position.set(x,0,z);root.userData.roomId=room.id;root.userData.wallSides=[x<0?'west':'east',z<0?'north':'south'];root.userData.arpgOccluder=true
     const shaftH=Math.max(1.7,room.height-1.48)
     root.add(box(1.3,.24,1.3,mats.wallDark,.12),box(1.02,.23,1.02,mats.wall,.345))
     const foot=new THREE.Mesh(new THREE.CylinderGeometry(.55,.64,.28,8),mats.wallLight);foot.position.y=.59;foot.rotation.y=Math.PI/8
