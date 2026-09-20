@@ -254,3 +254,8 @@
 .skillbound-combat-lab footer button.active{border-color:#659a75;color:#bde2c8;background:#173020}
 .skillbound-combat-lab footer small{max-width:190px;font-size:7px;line-height:1.35;color:var(--sb-muted,#958a82);text-align:right}
 @media(max-width:900px){.skillbound-combat-lab{top:112px;right:10px}.skillbound-combat-lab-grid{grid-template-columns:1fr}}
+
+.skillbound-combat-lab-footer{flex-wrap:wrap}
+.skillbound-combat-speed{display:flex;gap:4px}
+.skillbound-combat-speed button{min-width:34px;text-align:center}
+.skillbound-combat-lab-footer>small{flex:1 1 100%;max-width:none;text-align:left}
