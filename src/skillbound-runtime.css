@@ -227,3 +227,14 @@
   border-color:#624d43;
   color:#ba9687;
 }
+
+
+/* Combat v3 + Dungeon Runs v2 */
+.skillbound-run-objective{display:flex;min-width:260px;flex-direction:column;align-items:stretch;gap:4px;text-align:center;white-space:normal}
+.skillbound-run-objective>span{display:block}
+.skillbound-run-objective>i{display:block;height:3px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.08)}
+.skillbound-run-objective>i>b{display:block;height:100%;background:linear-gradient(90deg,var(--sb-accent,#7cb88f),color-mix(in srgb,var(--sb-accent,#7cb88f) 55%,#d7b36a));transition:width .22s ease-out}
+.skillbound-run-objective>small{font-size:7px;letter-spacing:.09em;text-transform:uppercase;color:var(--sb-muted,#958a82)}
+.skillbound-target-bar>.skillbound-poise-bar{height:3px;margin-top:3px;background:rgba(0,0,0,.55);border-color:rgba(209,168,91,.26)}
+.skillbound-target-bar>.skillbound-poise-bar>b{background:linear-gradient(90deg,#76552f,#e0b661);box-shadow:0 0 7px rgba(224,182,97,.22)}
+.skillbound-target-bar.boss>.skillbound-poise-bar>b{background:linear-gradient(90deg,#7d4830,#e88957)}
