@@ -1246,6 +1246,22 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 
 # Current release history
 
+## v1.82.0 — Authored procedural Ranger chest
+
+- Female → Chest → Ranger variation 01 remains the reference proof
+- wider fitted cloth underlayer with a shorter upper-hip hem
+- dedicated front leather panels with a center opening
+- separate back and side leather structure
+- shoulder reinforcement pieces instead of a single shell silhouette
+- asymmetric diagonal ranger strap
+- cleaner neckline and armhole trim
+- panel-edge seams plus a back center seam
+- raised wrap belt with metal buckle and belt keepers
+- Ranger chest no longer emits the long front tabard/crotch flap
+- all new pieces remain body-derived, weight-preserving, automatic, local and reference-image-free
+- generator metadata upgraded to `blender-body-aware-v2`
+
+
 ## v1.77.4 — Authored-looking Ranger construction
 
 - fitted tunic seam refinement
@@ -1362,9 +1378,9 @@ For exact history beyond this point, use Git history.
 
 # Current priorities
 
-The immediate priority is **Equipment Forge V3 visual quality**.
+The immediate priority is **Equipment Lab / procedural Ranger chest visual quality**.
 
-1. Continue refining the v1.77.4 Ranger reference outfit until it looks authored and game-ready, not like a procedural shell.
+1. Continue refining the v1.82.0 Female → Chest → Ranger variation 01 proof until it looks authored and game-ready, not like a procedural shell.
 2. Use the built-in 360° + close-up QA views to inspect:
    - body/clothing side clearance
    - shoulders
@@ -1535,4 +1551,4 @@ When implementing a new feature:
 
 # Quick handoff summary
 
-**Forge Studio v1.77.4** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The current main commit is `d05259d`. The active work is **Equipment Forge V3**, which replaces the old floating-primitive clothing approach with body-conforming, skinned garment templates built from the official Skillbound character rig. The Female Base Ranger outfit is the reference case. V3 currently supports fitted tunics, sleeves, shoulder bridges, masking, vest/belt/tabard/cape layers, material controls, and Ranger/Traveler/Acolyte presets. A dedicated Equipment QA page provides 360° full-body images, close side/underarm/chest/back/waist/cape views, and body-to-garment clearance/clipping diagnostics. v1.77.4 adds authored-looking seams, asymmetric vest panels, belt pouches/studs, split/trimmed tabard work, extra cape detail, and more QA close-ups. **The outfit is not considered finished**: continue refining fit and authored visual detail from current `main`, especially cape/back clearance, side spacing, shoulders/underarms, layering, believable thickness, asymmetry, belt/pouches, tabard, and cape construction. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
+**Forge Studio v1.82.0** is the React/TypeScript/Three.js browser editor/runtime for **Skillbound**. The active reference case is **Female → Chest → Ranger → variation 01** in Equipment Lab. The production path now uses the body-aware local Blender procedural generator rather than single-image reconstruction. v1.82.0 upgrades the Ranger chest from a narrow shell/harness into a layered garment: broader cloth underlayer, shaped front/back/side leather panels, shoulder reinforcement, asymmetric cross-strap, neckline/armhole/panel trims, belt, buckle and keepers. All pieces remain derived from the real Skillbound mannequin and keep its skin weights. Continue visual QA on the deployed result before expanding the same construction system to other chest styles or equipment slots. Use GitHub directly: inspect current source, branch, implement, run a real build, merge, and verify Pages deployment. Do not tell the user to manually push changes when GitHub access is available.
