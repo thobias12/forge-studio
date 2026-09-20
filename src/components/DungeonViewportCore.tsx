@@ -527,7 +527,7 @@ export default function DungeonViewport(props: Props) {
       }
 
       const preferredProp = state.tool === 'select' ? getPreferredPropHit(hits) : undefined
-      const hit = preferredProp ?? hits.find((candidate) => candidate.object.userData.propId || candidate.object.userData.wallId || candidate.object.userData.roomId || candidate.object.userData.markerId || candidate.object.name === '__ground')
+      const hit = preferredProp ?? hits.find((candidate) => candidate.object.userData.propId || candidate.object.userData.wallId || candidate.object.userData.roomId || candidate.object.userData.markerId || candidate.object.userData.dungeonSurface || candidate.object.name === '__ground')
       if (!hit) return
       const surfaceRoom = hit.object.userData.dungeonSurface
         ? dungeonRoomAtV3(state.value, hit.point.x, hit.point.z)
