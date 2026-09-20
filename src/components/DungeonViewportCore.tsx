@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -91,7 +91,7 @@ export default function DungeonViewport(props: Props) {
     scene.add(ambient)
     // Authoring fill keeps masonry legible in the editor without flattening the
     // darker Walk/ARPG presentation.
-    const editorFill = new THREE.AmbientLight(0xb99878, 0)
+    const editorFill = new THREE.AmbientLight(initialAtmosphere.sky, 0)
     scene.add(editorFill)
     const key = new THREE.DirectionalLight(initialAtmosphere.key, initialAtmosphere.keyIntensity)
     key.position.set(16, 24, 10)
@@ -168,6 +168,7 @@ export default function DungeonViewport(props: Props) {
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
       ambient.intensity = lighting.ambientIntensity
+      editorFill.color.setHex(atmosphere.sky)
       editorFill.intensity = lighting.fillIntensity
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
@@ -1400,7 +1401,7 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
 function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
   const inside = value.theme === 'crypt'
-    ? dungeonContainsPointV3(value, x, z, radius + 0.06)
+    ? dungeonNavigationContainsV3(value, x, z)
     : value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) || pointInsideCorridor(value, x, z, radius)
   if (!inside) return false
   if (value.theme === 'crypt' && dungeonArtCollidesV3(value, x, z, radius)) return false

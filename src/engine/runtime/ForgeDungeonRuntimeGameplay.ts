@@ -5,7 +5,7 @@ import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
-import { dungeonArtCollidesV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
+import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
@@ -13,7 +13,6 @@ import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, mark
 const PLAYER_RADIUS = 0.58
 const ENEMY_RADIUS = 0.58
 const DODGE_DURATION = 0.19
-const V3_WALL_CLEARANCE = 0.06
 
 function chainLightningTravelDuration(distance: number) {
   return THREE.MathUtils.clamp(0.045 + Math.max(0, distance) * 0.012, 0.055, 0.125)
@@ -475,7 +474,7 @@ export const dungeonGameplayMethods = {
   canWalkAt(x: number, z: number, radius: number) {
     const cryptV3 = this.dungeon.theme === 'crypt'
     if (cryptV3) {
-      if (!dungeonContainsPointV3(this.runtimeDungeon, x, z, radius + V3_WALL_CLEARANCE)) return false
+      if (!dungeonNavigationContainsV3(this.runtimeDungeon, x, z)) return false
       if (dungeonArtCollidesV3(this.runtimeDungeon, x, z, radius)) return false
     } else {
       const roomOk = this.dungeon.rooms.some((room) => pointInsideRoom(room, x, z, radius))

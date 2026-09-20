@@ -16,7 +16,7 @@ export const dungeonSceneMethods = {
     const atmosphere = dungeonAtmosphere(this.dungeon.theme)
     const lighting = dungeonLightingProfile(atmosphere, this.dungeon.settings)
     this.scene.add(new THREE.HemisphereLight(atmosphere.sky, atmosphere.ground, lighting.ambientIntensity))
-    this.scene.add(new THREE.AmbientLight(0xb99878, lighting.fillIntensity))
+    this.scene.add(new THREE.AmbientLight(atmosphere.sky, lighting.fillIntensity))
     const key = new THREE.DirectionalLight(atmosphere.key, lighting.keyIntensity)
     key.position.set(12, 22, 9)
     key.castShadow = true
