@@ -8,10 +8,12 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
 }) {
   const layout = useMemo(() => {
     if (!value.rooms.length) return undefined
-    const minX = Math.min(...value.rooms.map((room) => room.x - room.width / 2))
-    const maxX = Math.max(...value.rooms.map((room) => room.x + room.width / 2))
-    const minZ = Math.min(...value.rooms.map((room) => room.z - room.depth / 2))
-    const maxZ = Math.max(...value.rooms.map((room) => room.z + room.depth / 2))
+    const wallXs = (value.walls ?? []).flatMap((wall) => [wall.x1, wall.x2])
+    const wallZs = (value.walls ?? []).flatMap((wall) => [wall.z1, wall.z2])
+    const minX = Math.min(...value.rooms.map((room) => room.x - room.width / 2), ...wallXs)
+    const maxX = Math.max(...value.rooms.map((room) => room.x + room.width / 2), ...wallXs)
+    const minZ = Math.min(...value.rooms.map((room) => room.z - room.depth / 2), ...wallZs)
+    const maxZ = Math.max(...value.rooms.map((room) => room.z + room.depth / 2), ...wallZs)
     const width = Math.max(8, maxX - minX)
     const depth = Math.max(8, maxZ - minZ)
     const scale = Math.min(240 / width, 145 / depth)
@@ -19,7 +21,7 @@ export default function DungeonMinimap({ value, selectedRoomId, onSelectRoom }: 
     const oz = 82 - (minZ + maxZ) * 0.5 * scale
     const point = (x: number, z: number) => ({ x: x * scale + ox, y: z * scale + oz })
     return { scale, point }
-  }, [value.rooms])
+  }, [value.rooms, value.walls])
 
   if (!layout) return <div className="dungeon-minimap empty">No rooms yet</div>
   const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
