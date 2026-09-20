@@ -33,6 +33,11 @@ jobs:
           VITE_FORGE_BUILD: ${{ github.sha }}
         run: npm run build
 
+      - name: Check Equipment Processor scripts
+        run: |
+          node --check tools/equipment-processor/server.mjs
+          python -m py_compile tools/equipment-processor/processor.py
+
       - name: Install fast QA runtime
         run: |
           npm install --no-save --package-lock=false playwright
