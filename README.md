@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.81.6`  
+> **Current Forge version:** `v1.81.7`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,8 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.81.7 keeps cursor aiming locked to the live camera even when the mouse is stationary while the player/camera moves. The runtime now reprojects the saved screen cursor every rendered frame and again at cast time, and untargeted Chain Lightning ends exactly at the resolved terrain cursor point.
 
 Forge v1.81.6 fixes cursor-to-skill alignment in the playable runtime. Pointer projection now resolves against the actual generated terrain while staying on the camera ray, ranged/area impacts use the clamped terrain aim point, and untargeted Chain Lightning terminates at the cursor instead of one meter above it.
 
