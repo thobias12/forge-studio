@@ -12,17 +12,17 @@ from mathutils import Vector
 STYLES = {
     "ranger": {
         "name": "Ranger Field Vest",
-        "cloth": "#314b36",
-        "leather": "#3b281d",
-        "trim": "#6a4a2c",
-        "accent": "#6a2430",
-        "metal": "#778087",
-        "length": 0.485,
-        "top_center": 0.720,
-        "top_shoulder": 0.792,
-        "waist_flare": 0.010,
+        "cloth": "#26392d",
+        "leather": "#412b1e",
+        "trim": "#7b5d3d",
+        "accent": "#6b3038",
+        "metal": "#7d8589",
+        "length": 0.515,
+        "top_center": 0.730,
+        "top_shoulder": 0.800,
+        "waist_flare": 0.008,
         "vest": True,
-        "tabard": True,
+        "tabard": False,
     },
     "traveler": {
         "name": "Traveler Layered Tunic",
@@ -1166,35 +1166,38 @@ def chest_landmark_fractions(
     neck = frame_fraction(
         frame,
         frame.get("neck_v"),
-        style["top_center"]
-        + 0.08,
+        style["top_center"] + 0.08,
     )
     pelvis = frame_fraction(
         frame,
         frame.get("pelvis_v"),
-        style["length"]
-        + 0.06,
+        style["length"] + 0.04,
     )
 
-    # A sleeveless tunic neckline should sit below the neck joint but
-    # clearly above the bust, while shoulder straps rise close to the
-    # shoulder joint.
+    # Keep the cloth underlayer high enough to read as an actual tunic,
+    # while leaving a believable scoop below the neck joint.
     center_top = min(
-        shoulder - 0.012,
-        neck - 0.035,
+        shoulder - 0.028,
+        neck - 0.060,
     )
     center_top = max(
         center_top,
-        style["top_center"] + 0.045,
+        style["top_center"] + 0.030,
     )
     shoulder_top = max(
-        center_top + 0.025,
-        shoulder + 0.006,
+        center_top + 0.036,
+        shoulder + 0.008,
     )
 
-    hem = min(
+    # Chest pieces should finish around the upper hip, not continue down
+    # into a bodysuit/crotch silhouette.
+    hem = max(
         style["length"],
-        pelvis - 0.055,
+        pelvis - 0.018,
+    )
+    hem = min(
+        hem,
+        center_top - 0.155,
     )
 
     return (
@@ -1202,6 +1205,57 @@ def chest_landmark_fractions(
         center_top,
         shoulder_top,
     )
+
+
+def normalized_signed_width(
+    point,
+    frame,
+):
+    (
+        _v,
+        dw,
+        _dd,
+        _width_n,
+        _depth_n,
+    ) = normalized_components(
+        point,
+        frame,
+    )
+    half_width = max(
+        frame["torso_width"] * 0.5,
+        1e-5,
+    )
+    return dw / half_width
+
+
+def front_component(
+    point,
+    frame,
+):
+    (
+        _v,
+        _dw,
+        _dd,
+        _width_n,
+        depth_n,
+    ) = normalized_components(
+        point,
+        frame,
+    )
+    return (
+        depth_n
+        * frame["front_sign"]
+    )
+
+
+def any_predicate(*predicates):
+    def keep(point):
+        return any(
+            predicate(point)
+            for predicate
+            in predicates
+        )
+    return keep
 
 
 def tunic_predicate(frame, style):
@@ -1225,9 +1279,10 @@ def tunic_predicate(frame, style):
             point,
             frame,
         )
+
         shoulder_t = smoothstep(
-            0.18,
-            0.86,
+            0.16,
+            0.88,
             width_n,
         )
         top = (
@@ -1239,40 +1294,40 @@ def tunic_predicate(frame, style):
             * shoulder_t
         )
 
-        # Stay inside the torso shell. The skin-weight torso mask removes
-        # limb vertices; this contour shapes the armhole itself.
+        # Broader body coverage than the earlier harness-like cut. The
+        # upper taper is reserved for the armhole region only.
         upper_t = smoothstep(
-            center_top - 0.05,
+            center_top - 0.070,
             shoulder_top,
             v,
         )
         width_limit = (
-            0.92
-            - 0.12 * upper_t
+            0.985
+            - 0.115 * upper_t
         )
 
         hem_t = (
             1.0
             - smoothstep(
                 lower,
-                lower + 0.07,
+                lower + 0.075,
                 v,
             )
         )
         width_limit += (
             style["waist_flare"]
-            * 3.5
+            * 2.8
             * hem_t
         )
 
         return (
             v >= lower
             and v <= top
-            and width_n
-            <= width_limit
+            and width_n <= width_limit
         )
 
     return keep
+
 
 def vest_predicate(frame, style):
     (
@@ -1283,9 +1338,7 @@ def vest_predicate(frame, style):
         frame,
         style,
     )
-    lower += 0.045
-    center_top -= 0.018
-    shoulder_top -= 0.012
+    lower += 0.055
 
     def keep(point):
         (
@@ -1299,48 +1352,385 @@ def vest_predicate(frame, style):
             frame,
         )
         shoulder_t = smoothstep(
-            0.24,
+            0.22,
             0.82,
             width_n,
         )
         top = (
             center_top
+            - 0.018
             + (
                 shoulder_top
                 - center_top
             )
             * shoulder_t
         )
-        width_limit = (
-            0.74
-            + 0.08
+        return (
+            v >= lower
+            and v <= top
+            and width_n <= 0.82
+        )
+
+    return keep
+
+
+def ranger_front_panels_predicate(
+    frame,
+    style,
+):
+    (
+        lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        w = normalized_signed_width(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        shoulder_t = smoothstep(
+            0.24,
+            0.80,
+            width_n,
+        )
+        top = (
+            center_top
+            - 0.020
+            + (
+                shoulder_top
+                - center_top
+            )
+            * shoulder_t
+        )
+        opening = (
+            0.095
+            + 0.050
             * smoothstep(
-                center_top - 0.08,
+                center_top - 0.060,
+                shoulder_top,
+                v,
+            )
+        )
+        outer = (
+            0.790
+            - 0.045
+            * smoothstep(
+                center_top - 0.025,
                 shoulder_top,
                 v,
             )
         )
         return (
-            v >= lower
-            and v <= top
-            and width_n
-            <= width_limit
+            front >= 0.08
+            and lower + 0.060 <= v <= top
+            and opening <= abs(w) <= outer
         )
 
     return keep
+
+
+def ranger_back_panel_predicate(
+    frame,
+    style,
+):
+    (
+        lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        top = (
+            center_top
+            + 0.020
+            + (
+                shoulder_top
+                - center_top
+            )
+            * smoothstep(
+                0.35,
+                0.78,
+                width_n,
+            )
+        )
+        return (
+            front <= -0.10
+            and lower + 0.078 <= v <= top
+            and width_n <= 0.735
+        )
+
+    return keep
+
+
+def ranger_side_panels_predicate(
+    frame,
+    style,
+):
+    (
+        lower,
+        center_top,
+        _shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        return (
+            lower + 0.075 <= v <= center_top - 0.018
+            and 0.735 <= width_n <= 0.915
+            and -0.82 <= front <= 0.82
+        )
+
+    return keep
+
+
+def ranger_shoulder_predicate(
+    frame,
+    style,
+):
+    (
+        _lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        return (
+            center_top - 0.014 <= v <= shoulder_top + 0.008
+            and 0.575 <= width_n <= 0.855
+            and -0.82 <= front <= 0.82
+        )
+
+    return keep
+
+
+def ranger_diagonal_strap_predicate(
+    frame,
+    style,
+):
+    (
+        lower,
+        _center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    start_v = lower + 0.105
+    end_v = shoulder_top - 0.012
+    span = max(
+        end_v - start_v,
+        0.05,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        if not (
+            front >= 0.16
+            and start_v <= v <= end_v
+            and width_n <= 0.86
+        ):
+            return False
+
+        t = (
+            v - start_v
+        ) / span
+        target_w = (
+            -0.57
+            + 1.14 * t
+        )
+        w = normalized_signed_width(
+            point,
+            frame,
+        )
+        return abs(
+            w - target_w
+        ) <= 0.060
+
+    return keep
+
 
 def belt_predicate(frame, style):
     lower, _, _ = chest_landmark_fractions(
         frame,
         style,
     )
-    center_v = lower + 0.040
+    center_v = lower + 0.047
 
     def keep(point):
-        v, _dw, _dd, width_n, _depth_n = normalized_components(point, frame)
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
         return (
-            center_v <= v <= center_v + 0.026
-            and width_n <= 0.99
+            center_v - 0.014 <= v <= center_v + 0.018
+            and width_n <= 1.01
+        )
+
+    return keep
+
+
+def ranger_buckle_predicate(
+    frame,
+    style,
+):
+    lower, _, _ = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    center_v = lower + 0.049
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            _width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        w = normalized_signed_width(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        return (
+            front >= 0.28
+            and abs(w) <= 0.145
+            and center_v - 0.020 <= v <= center_v + 0.024
+        )
+
+    return keep
+
+
+def ranger_belt_keepers_predicate(
+    frame,
+    style,
+):
+    lower, _, _ = chest_landmark_fractions(
+        frame,
+        style,
+    )
+    center_v = lower + 0.049
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            _width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        w = normalized_signed_width(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+        keeper = min(
+            abs(w - 0.43),
+            abs(w + 0.43),
+        )
+        return (
+            front >= 0.08
+            and keeper <= 0.035
+            and center_v - 0.032 <= v <= center_v + 0.034
         )
 
     return keep
@@ -1353,10 +1743,19 @@ def hem_trim_predicate(frame, style):
     )
 
     def keep(point):
-        v, _dw, _dd, width_n, _depth_n = normalized_components(point, frame)
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
         return (
-            lower <= v <= lower + 0.016
-            and width_n <= 0.99
+            lower <= v <= lower + 0.014
+            and width_n <= 0.98
         )
 
     return keep
@@ -1384,8 +1783,8 @@ def neckline_trim_predicate(frame, style):
             frame,
         )
         shoulder_t = smoothstep(
-            0.18,
-            0.86,
+            0.16,
+            0.88,
             width_n,
         )
         top = (
@@ -1397,30 +1796,136 @@ def neckline_trim_predicate(frame, style):
             * shoulder_t
         )
         return (
-            top - 0.014
-            <= v
-            <= top + 0.006
+            top - 0.012 <= v <= top + 0.006
             and width_n <= 0.90
         )
 
     return keep
+
+
+def armhole_trim_predicate(frame, style):
+    (
+        _lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        upper_t = smoothstep(
+            center_top - 0.070,
+            shoulder_top,
+            v,
+        )
+        edge = (
+            0.985
+            - 0.115 * upper_t
+        )
+        return (
+            center_top - 0.075 <= v <= shoulder_top + 0.004
+            and edge - 0.040 <= width_n <= edge + 0.012
+        )
+
+    return keep
+
+
+def ranger_panel_trim_predicate(
+    frame,
+    style,
+):
+    (
+        lower,
+        center_top,
+        shoulder_top,
+    ) = chest_landmark_fractions(
+        frame,
+        style,
+    )
+
+    def keep(point):
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            _depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        w = normalized_signed_width(
+            point,
+            frame,
+        )
+        front = front_component(
+            point,
+            frame,
+        )
+
+        front_outer = (
+            front >= 0.10
+            and lower + 0.070 <= v <= center_top + 0.020
+            and 0.745 <= width_n <= 0.790
+        )
+        front_opening = (
+            front >= 0.10
+            and lower + 0.085 <= v <= center_top - 0.005
+            and 0.085 <= abs(w) <= 0.125
+        )
+        back_spine = (
+            front <= -0.12
+            and lower + 0.105 <= v <= shoulder_top - 0.020
+            and abs(w) <= 0.030
+        )
+        return (
+            front_outer
+            or front_opening
+            or back_spine
+        )
+
+    return keep
+
 
 def tabard_predicate(frame, style):
     hem, _, _ = chest_landmark_fractions(
         frame,
         style,
     )
-    lower = hem - 0.035
-    upper = hem + 0.070
+    lower = hem - 0.015
+    upper = hem + 0.060
     front_sign = frame["front_sign"]
 
     def keep(point):
-        v, _dw, dd, width_n, depth_n = normalized_components(point, frame)
-        front = depth_n * front_sign
+        (
+            v,
+            _dw,
+            _dd,
+            width_n,
+            depth_n,
+        ) = normalized_components(
+            point,
+            frame,
+        )
+        front = (
+            depth_n
+            * front_sign
+        )
         return (
             lower <= v <= upper
-            and width_n <= 0.33
-            and front >= 0.28
+            and width_n <= 0.30
+            and front >= 0.30
         )
 
     return keep
@@ -1430,11 +1935,25 @@ def create_chest(body, rig, frame, style, seed):
     style = dict(style)
     variant = int(seed) % 4
 
-    # Small deterministic changes keep "Generate Another" useful without
-    # changing the fundamental fit contract of the template.
-    style["length"] += [0.0, -0.008, 0.007, -0.003][variant]
-    style["top_center"] += [0.0, 0.006, -0.004, 0.003][variant]
-    style["waist_flare"] += [0.0, 0.004, -0.003, 0.002][variant]
+    # Keep variations subtle. Variation 01 (seed 0) is the reference look.
+    style["length"] += [
+        0.0,
+        -0.006,
+        0.006,
+        -0.002,
+    ][variant]
+    style["top_center"] += [
+        0.0,
+        0.004,
+        -0.003,
+        0.002,
+    ][variant]
+    style["waist_flare"] += [
+        0.0,
+        0.003,
+        -0.002,
+        0.001,
+    ][variant]
 
     torso_indices = build_torso_vertex_mask(
         body,
@@ -1447,19 +1966,19 @@ def create_chest(body, rig, frame, style, seed):
     )
 
     height = frame["height"]
-    clearance = height * 0.0024
-    cloth_thickness = height * 0.00165
-    overlay_thickness = height * 0.00145
+    clearance = height * 0.0027
+    cloth_thickness = height * 0.00175
+    overlay_thickness = height * 0.00150
 
     cloth = material(
         "FORGE_Ranger_Cloth",
         style["cloth"],
-        roughness=0.82,
+        roughness=0.84,
     )
     leather = material(
         "FORGE_Ranger_Leather",
         style["leather"],
-        roughness=0.66,
+        roughness=0.64,
     )
     trim = material(
         "FORGE_Ranger_Trim",
@@ -1469,7 +1988,13 @@ def create_chest(body, rig, frame, style, seed):
     accent = material(
         "FORGE_Ranger_Accent",
         style["accent"],
-        roughness=0.76,
+        roughness=0.74,
+    )
+    metal = material(
+        "FORGE_Ranger_Metal",
+        style["metal"],
+        roughness=0.34,
+        metallic=0.72,
     )
 
     objects = []
@@ -1477,9 +2002,12 @@ def create_chest(body, rig, frame, style, seed):
     base = duplicate_surface(
         body,
         rig,
-        "FORGE_Chest_Base",
+        "FORGE_Chest_ClothUnderlayer",
         cloth,
-        tunic_predicate(frame, style),
+        tunic_predicate(
+            frame,
+            style,
+        ),
         clearance,
         cloth_thickness,
         smooth_iterations=1,
@@ -1488,13 +2016,121 @@ def create_chest(body, rig, frame, style, seed):
     if base:
         objects.append(base)
 
-    if style["vest"]:
+    is_ranger = (
+        style["name"]
+        == "Ranger Field Vest"
+    )
+
+    if is_ranger:
+        main_leather = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_RangerLeatherPanels",
+            leather,
+            any_predicate(
+                ranger_front_panels_predicate(
+                    frame,
+                    style,
+                ),
+                ranger_back_panel_predicate(
+                    frame,
+                    style,
+                ),
+                ranger_side_panels_predicate(
+                    frame,
+                    style,
+                ),
+            ),
+            clearance + height * 0.0042,
+            overlay_thickness,
+            smooth_iterations=1,
+            allowed_indices=torso_indices,
+        )
+        if main_leather:
+            objects.append(
+                main_leather,
+            )
+
+        shoulders = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_RangerShoulderReinforcement",
+            leather,
+            ranger_shoulder_predicate(
+                frame,
+                style,
+            ),
+            clearance + height * 0.0058,
+            overlay_thickness * 1.06,
+            smooth_iterations=1,
+            allowed_indices=torso_indices,
+        )
+        if shoulders:
+            objects.append(
+                shoulders,
+            )
+
+        strap = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_RangerCrossStrap",
+            leather,
+            ranger_diagonal_strap_predicate(
+                frame,
+                style,
+            ),
+            clearance + height * 0.0072,
+            overlay_thickness * 1.12,
+            smooth_iterations=0,
+            allowed_indices=torso_indices,
+        )
+        if strap:
+            objects.append(
+                strap,
+            )
+
+        trims = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_RangerTrimsAndSeams",
+            trim,
+            any_predicate(
+                neckline_trim_predicate(
+                    frame,
+                    style,
+                ),
+                armhole_trim_predicate(
+                    frame,
+                    style,
+                ),
+                hem_trim_predicate(
+                    frame,
+                    style,
+                ),
+                ranger_panel_trim_predicate(
+                    frame,
+                    style,
+                ),
+            ),
+            clearance + height * 0.0064,
+            overlay_thickness * 0.72,
+            smooth_iterations=0,
+            allowed_indices=torso_indices,
+        )
+        if trims:
+            objects.append(
+                trims,
+            )
+    elif style["vest"]:
         vest = duplicate_surface(
             body,
             rig,
             "FORGE_Chest_LeatherVest",
             leather,
-            vest_predicate(frame, style),
+            vest_predicate(
+                frame,
+                style,
+            ),
             clearance + height * 0.0045,
             overlay_thickness,
             smooth_iterations=1,
@@ -1503,47 +2139,95 @@ def create_chest(body, rig, frame, style, seed):
         if vest:
             objects.append(vest)
 
+        neck = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_NeckTrim",
+            trim,
+            neckline_trim_predicate(
+                frame,
+                style,
+            ),
+            clearance + height * 0.0041,
+            overlay_thickness * 0.82,
+            smooth_iterations=0,
+            allowed_indices=torso_indices,
+        )
+        if neck:
+            objects.append(neck)
+
+        hem = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_HemTrim",
+            trim,
+            hem_trim_predicate(
+                frame,
+                style,
+            ),
+            clearance + height * 0.0040,
+            overlay_thickness * 0.85,
+            smooth_iterations=0,
+            allowed_indices=torso_indices,
+        )
+        if hem:
+            objects.append(hem)
+
     belt = duplicate_surface(
         body,
         rig,
         "FORGE_Chest_Belt",
         leather,
-        belt_predicate(frame, style),
-        clearance + height * 0.0062,
-        overlay_thickness * 1.18,
+        belt_predicate(
+            frame,
+            style,
+        ),
+        clearance + height * 0.0074,
+        overlay_thickness * 1.22,
         smooth_iterations=0,
         allowed_indices=torso_indices,
     )
     if belt:
         objects.append(belt)
 
-    hem = duplicate_surface(
-        body,
-        rig,
-        "FORGE_Chest_HemTrim",
-        trim,
-        hem_trim_predicate(frame, style),
-        clearance + height * 0.0040,
-        overlay_thickness * 0.85,
-        smooth_iterations=0,
-        allowed_indices=torso_indices,
-    )
-    if hem:
-        objects.append(hem)
+    if is_ranger:
+        buckle = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_RangerBuckle",
+            metal,
+            ranger_buckle_predicate(
+                frame,
+                style,
+            ),
+            clearance + height * 0.0094,
+            overlay_thickness * 1.08,
+            smooth_iterations=0,
+            allowed_indices=torso_indices,
+        )
+        if buckle:
+            objects.append(
+                buckle,
+            )
 
-    neck = duplicate_surface(
-        body,
-        rig,
-        "FORGE_Chest_NeckTrim",
-        trim,
-        neckline_trim_predicate(frame, style),
-        clearance + height * 0.0041,
-        overlay_thickness * 0.82,
-        smooth_iterations=0,
-        allowed_indices=torso_indices,
-    )
-    if neck:
-        objects.append(neck)
+        keepers = duplicate_surface(
+            body,
+            rig,
+            "FORGE_Chest_RangerBeltKeepers",
+            trim,
+            ranger_belt_keepers_predicate(
+                frame,
+                style,
+            ),
+            clearance + height * 0.0085,
+            overlay_thickness * 0.88,
+            smooth_iterations=0,
+            allowed_indices=torso_indices,
+        )
+        if keepers:
+            objects.append(
+                keepers,
+            )
 
     if style["tabard"]:
         tabard = duplicate_surface(
@@ -1551,7 +2235,10 @@ def create_chest(body, rig, frame, style, seed):
             rig,
             "FORGE_Chest_FrontTabard",
             accent,
-            tabard_predicate(frame, style),
+            tabard_predicate(
+                frame,
+                style,
+            ),
             clearance + height * 0.0060,
             overlay_thickness,
             smooth_iterations=1,
@@ -1561,7 +2248,9 @@ def create_chest(body, rig, frame, style, seed):
             objects.append(tabard)
 
     if not objects:
-        raise RuntimeError("Procedural chest generation produced no geometry.")
+        raise RuntimeError(
+            "Procedural chest generation produced no geometry."
+        )
 
     return objects
 
@@ -1638,7 +2327,7 @@ def main():
         "bodyMask": ["CHEST", "BACK", "SHOULDER_L", "SHOULDER_R"],
         "armature": rig.name,
         "bodyMesh": body.name,
-        "generator": "blender-body-aware-v1",
+        "generator": "blender-body-aware-v2",
     }
 
     with open(config.output + ".json", "w", encoding="utf-8") as handle:
