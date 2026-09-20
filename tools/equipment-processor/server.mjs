@@ -24,6 +24,7 @@ const hfTokenPath = join(generatorsDir, '.hf-token')
 const bootstrapVenv = join(generatorsDir, '.forge-uv-bootstrap')
 const managedPythonDir = join(generatorsDir, '.forge-python')
 const processor = join(here, 'processor.py')
+const proceduralGenerator = join(here, 'procedural_equipment.py')
 const sparGeneratorScript = join(here, 'spar3d_geometry.py')
 const port = Number(process.env.FORGE_EQUIPMENT_PROCESSOR_PORT || 47831)
 const backgroundJobs = new Map()
@@ -50,7 +51,7 @@ createServer(async (req, res) => {
       const generator = await sparGeneratorHealth()
       sendJson(res, 200, {
         ok: true,
-        version: 10,
+        version: 11,
         blenderAvailable: Boolean(blender),
         blenderPath: blender,
         mannequins: {
@@ -184,6 +185,57 @@ createServer(async (req, res) => {
       return
     }
 
+    if (req.method === 'POST' && url.pathname === '/procedural/generate') {
+      if (!blender) {
+        throw new HttpError(
+          503,
+          'Blender was not found. Install Blender or set BLENDER_PATH before starting the processor.',
+        )
+      }
+
+      const body = bodyType(url.searchParams.get('body'))
+      const slot = slotType(url.searchParams.get('slot'))
+      const style = proceduralStyle(url.searchParams.get('style'))
+      const seed = Math.round(
+        clamp(
+          url.searchParams.get('seed'),
+          0,
+          2147483647,
+          0,
+        ),
+      )
+      const mannequin = mannequinPath(body)
+
+      if (!await exists(mannequin)) {
+        throw new HttpError(
+          409,
+          'The Skillbound ' + body + ' mannequin has not been uploaded yet.',
+        )
+      }
+
+      const job = createJob(
+        'procedural',
+        'Queued body-aware equipment generation.',
+      )
+      job.body = body
+      job.slot = slot
+      job.style = style
+      job.seed = seed
+      backgroundJobs.set(job.id, job)
+
+      void generateProceduralEquipment(
+        job,
+        mannequin,
+      )
+
+      sendJson(
+        res,
+        202,
+        { jobId: job.id },
+      )
+      return
+    }
+
     if (req.method === 'POST' && url.pathname === '/mannequin') {
       const body = bodyType(url.searchParams.get('body'))
       const bytes = await bodyBytes(req)
@@ -310,6 +362,133 @@ async function getHfToken() {
     return (await readFile(hfTokenPath, 'utf8')).trim()
   } catch {
     return ''
+  }
+}
+
+async function generateProceduralEquipment(
+  job,
+  mannequin,
+) {
+  try {
+    job.status = 'running'
+    job.progress = 8
+    job.message = 'Loading Skillbound body template…'
+
+    const outputDir = join(
+      jobsDir,
+      job.id + '-procedural',
+    )
+    await mkdir(
+      outputDir,
+      { recursive: true },
+    )
+    const output = join(
+      outputDir,
+      'equipment.glb',
+    )
+
+    const run = await runCommand(
+      blender,
+      [
+        '--background',
+        '--python',
+        proceduralGenerator,
+        '--',
+        '--mannequin',
+        mannequin,
+        '--output',
+        output,
+        '--body',
+        job.body,
+        '--slot',
+        job.slot,
+        '--style',
+        job.style,
+        '--seed',
+        String(job.seed ?? 0),
+      ],
+      {
+        label:
+          'Forge Procedural Equipment',
+        onLine: (line) =>
+          updateProceduralProgress(
+            job,
+            line,
+          ),
+      },
+    )
+
+    if (!await exists(output)) {
+      throw new Error(
+        'Blender finished without producing procedural equipment.\n'
+        + run.stdout.slice(-2200),
+      )
+    }
+
+    validGlb(
+      await readFile(output),
+      'procedural equipment',
+    )
+
+    job.resultPath = output
+    job.status = 'completed'
+    job.progress = 100
+    job.message =
+      'Body-aware equipment generated and skinned. Ready for review.'
+  } catch (error) {
+    job.status = 'failed'
+    job.error =
+      error instanceof Error
+        ? error.message
+        : String(error)
+    job.message =
+      'Procedural equipment generation failed.'
+  }
+}
+
+function updateProceduralProgress(
+  job,
+  line,
+) {
+  const value =
+    line.toLowerCase()
+
+  if (
+    value.includes(
+      'forge_stage template',
+    )
+  ) {
+    job.progress =
+      Math.max(
+        job.progress,
+        28,
+      )
+    job.message =
+      'Building armor directly from the Skillbound body…'
+  } else if (
+    value.includes(
+      'forge_stage skin',
+    )
+  ) {
+    job.progress =
+      Math.max(
+        job.progress,
+        76,
+      )
+    job.message =
+      'Binding procedural layers to the Skillbound skeleton…'
+  } else if (
+    value.includes(
+      'forge_stage export',
+    )
+  ) {
+    job.progress =
+      Math.max(
+        job.progress,
+        92,
+      )
+    job.message =
+      'Exporting game-ready GLB…'
   }
 }
 
@@ -857,6 +1036,16 @@ async function validateSparModelAccess(
       ),
     )
   }
+}
+
+function proceduralStyle(value) {
+  if (
+    value === 'traveler' ||
+    value === 'acolyte'
+  ) {
+    return value
+  }
+  return 'ranger'
 }
 
 function generatorBackend(value) {
