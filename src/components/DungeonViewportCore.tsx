@@ -239,7 +239,7 @@ export default function DungeonViewport(props: Props) {
     const getPreferredPropHit = (hits: THREE.Intersection[]) => {
       const propHit = hits.find((hit) => hit.object.userData.propId)
       if (!propHit) return undefined
-      const blocker = hits.find((hit) => !hit.object.userData.propId && (hit.object.userData.roomId || hit.object.userData.markerId))
+      const blocker = hits.find((hit) => !hit.object.userData.propId && (hit.object.userData.roomId || hit.object.userData.wallId || hit.object.userData.markerId))
       if (!blocker || propHit.distance <= blocker.distance + 0.7) return propHit
       return undefined
     }
