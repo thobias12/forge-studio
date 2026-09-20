@@ -149,14 +149,6 @@ export function buildConformedTunic(
     if (left) {
       meshes.push(left)
       meshes.push(
-        createLowerArmholeTrim(
-          source,
-          left.geometry,
-          trim,
-          'L',
-        ),
-      )
-      meshes.push(
         createShoulderBridge(
           source,
           torso.geometry,
@@ -181,14 +173,6 @@ export function buildConformedTunic(
 
     if (right) {
       meshes.push(right)
-      meshes.push(
-        createLowerArmholeTrim(
-          source,
-          right.geometry,
-          trim,
-          'R',
-        ),
-      )
       meshes.push(
         createShoulderBridge(
           source,
@@ -547,7 +531,7 @@ function createTorsoTemplate(
       const shoulderTop =
         THREE.MathUtils.smoothstep(
           v,
-          .88,
+          .78,
           1,
         )
       const shoulderSide =
@@ -560,19 +544,12 @@ function createTorsoTemplate(
             0,
             1,
           ),
-          1.6,
-        )
-      const shoulderUp =
-        THREE.MathUtils.clamp(
-          surfaceNormal.y,
-          0,
-          1,
+          1.55,
         )
       const shoulderLift =
-        .0018 *
+        .0024 *
         shoulderTop *
-        shoulderSide *
-        shoulderUp
+        shoulderSide
       position.addScaledVector(
         surfaceNormal,
         shoulderLift,
@@ -4433,219 +4410,6 @@ function createDetailMesh(
     geometry,
     material,
     name,
-  )
-}
-
-function createLowerArmholeTrim(
-  source: THREE.SkinnedMesh,
-  sleeveGeometry: THREE.BufferGeometry,
-  material: THREE.Material,
-  side: 'L' | 'R',
-) {
-  const segments = 18
-  const position =
-    sleeveGeometry.getAttribute(
-      'position',
-    )
-  const rootCenter =
-    new THREE.Vector3()
-
-  for (
-    let segment = 0;
-    segment < segments;
-    segment += 1
-  ) {
-    rootCenter.x +=
-      position.getX(segment)
-    rootCenter.y +=
-      position.getY(segment)
-    rootCenter.z +=
-      position.getZ(segment)
-  }
-  rootCenter.multiplyScalar(
-    1 / segments,
-  )
-
-  let rootRadius = 0
-  for (
-    let segment = 0;
-    segment < segments;
-    segment += 1
-  ) {
-    rootRadius +=
-      new THREE.Vector3(
-        position.getX(segment),
-        position.getY(segment),
-        position.getZ(segment),
-      )
-        .sub(rootCenter)
-        .length()
-  }
-  rootRadius /=
-    segments
-
-  const positions: number[] = []
-  const uvs: number[] = []
-  const indices: number[] = []
-  const influences: SkinInfluence[] = []
-  const pairBySegment =
-    new Map<number, number>()
-
-  for (
-    let segment = 0;
-    segment < segments;
-    segment += 1
-  ) {
-    const outerIndex =
-      segment
-    const innerIndex =
-      segments + segment
-    const outer =
-      new THREE.Vector3(
-        position.getX(outerIndex),
-        position.getY(outerIndex),
-        position.getZ(outerIndex),
-      )
-    const local =
-      outer
-        .clone()
-        .sub(rootCenter)
-
-    // Keep this as a genuinely narrow underarm seam: only the lower
-    // portion of the root receives trim, well away from the chest.
-    if (
-      local.y >
-      rootRadius * -.1
-    ) {
-      continue
-    }
-
-    const inner =
-      new THREE.Vector3(
-        position.getX(innerIndex),
-        position.getY(innerIndex),
-        position.getZ(innerIndex),
-      )
-    const inset =
-      outer
-        .clone()
-        .lerp(
-          inner,
-          .16,
-        )
-
-    const radial =
-      new THREE.Vector3(
-        outer.x,
-        0,
-        outer.z,
-      )
-    if (
-      radial.lengthSq() >
-      1e-6
-    ) {
-      radial
-        .normalize()
-        .multiplyScalar(.0012)
-      outer.add(radial)
-      inset.add(radial)
-    }
-
-    const pair =
-      positions.length / 3
-    pairBySegment.set(
-      segment,
-      pair,
-    )
-
-    positions.push(
-      outer.x,
-      outer.y,
-      outer.z,
-      inset.x,
-      inset.y,
-      inset.z,
-    )
-    uvs.push(
-      segment / segments, 1,
-      segment / segments, 0,
-    )
-    influences.push(
-      readSkinInfluence(
-        sleeveGeometry,
-        outerIndex,
-      ),
-      readSkinInfluence(
-        sleeveGeometry,
-        innerIndex,
-      ),
-    )
-  }
-
-  for (
-    let segment = 0;
-    segment < segments;
-    segment += 1
-  ) {
-    const next =
-      (segment + 1) %
-      segments
-    const a =
-      pairBySegment.get(segment)
-    const c0 =
-      pairBySegment.get(next)
-
-    if (
-      a === undefined ||
-      c0 === undefined
-    ) {
-      continue
-    }
-
-    const b = a + 1
-    const d = c0 + 1
-    indices.push(
-      a, b, c0,
-      c0, b, d,
-    )
-  }
-
-  const geometry =
-    new THREE.BufferGeometry()
-  geometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(
-      positions,
-      3,
-    ),
-  )
-  geometry.setAttribute(
-    'uv',
-    new THREE.Float32BufferAttribute(
-      uvs,
-      2,
-    ),
-  )
-  geometry.setIndex(indices)
-  applySkinAttributes(
-    geometry,
-    influences,
-  )
-  geometry.computeVertexNormals()
-  geometry.computeBoundingSphere()
-
-  const seamMaterial =
-    material.clone()
-  seamMaterial.side =
-    THREE.DoubleSide
-  seamMaterial.needsUpdate =
-    true
-
-  return makeSkinnedTemplate(
-    source,
-    geometry,
-    seamMaterial,
-    `EFV3_LowerArmholeTrim_${side}`,
   )
 }
 
