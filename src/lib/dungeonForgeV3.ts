@@ -644,22 +644,22 @@ function addRoomArchitecture(
       doorway.rotation.y = yaw
       root.add(doorway)
 
-      const postHeight = topDown ? 1.34 : 3.25
-      const postWidth = 0.42
+      const postHeight = topDown ? 1.16 : 3.1
+      const postWidth = 0.34
       const half = Math.max(1.45, edge.width / 2)
       for (const side of [-1, 1]) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.62), materials.stone)
+        const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.48), materials.stone)
         post.position.set(side * half, postHeight / 2, 0)
         post.castShadow = true
         post.receiveShadow = true
         doorway.add(post)
 
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.78), materials.dark)
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.58), materials.dark)
         foot.position.set(side * half, 0.11, 0)
         foot.castShadow = true
         doorway.add(foot)
 
-        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.2, 0.76), materials.cap)
+        const capital = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.16, 0.56), materials.cap)
         capital.position.set(side * half, postHeight - 0.1, 0)
         capital.castShadow = true
         doorway.add(capital)
