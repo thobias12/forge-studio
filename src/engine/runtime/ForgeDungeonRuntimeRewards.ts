@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as THREE from 'three'
+import { rollSkillboundLoot } from '../skillboundItems'
 import type { DungeonEncounter, DungeonMarker } from '../../lib/dungeonPackage'
 
 export function installDungeonRewardMethods(Runtime: any) {
@@ -90,7 +91,9 @@ const dungeonRewardMethods = {
 
   spawnLoot(id: string, itemId: string, x: number, z: number) {
     if (this.loot.some((drop) => drop.id === id)) return false
-    const item = this.gameplay.items.find((candidate) => candidate.id === itemId)
+    const template = this.gameplay.items.find((candidate) => candidate.id === itemId)
+    const item = template ? rollSkillboundLoot(template, this.dungeon.id + ':' + id + ':' + this.gameplay.items.length, template.itemRoll?.level ?? 1) : undefined
+    if (item) { itemId = item.id; if (!this.gameplay.items.some(entry => entry.id === item.id)) this.gameplay.items.push(item) }
     if (!item) {
       this.setMessage(`Loot error: item ${itemId} is missing from Gameplay Forge.`, 5)
       return false

@@ -1,3 +1,4 @@
+import { resolveItemIcon } from '../engine/itemIcons'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import SkillboundDungeonPlayViewport from './SkillboundDungeonPlayViewport'
 import SkillboundOrb from './SkillboundOrb'
@@ -114,12 +115,10 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     let cancelled = false
     const urls: string[] = []
     const load = async () => {
-      const entries = await Promise.all(gameplay.items.map(async (item) => {
-        const iconId = itemVisual(item).inventory.iconAssetId
-        if (!iconId) return undefined
-        const asset = await getAsset(iconId).catch(() => undefined)
-        if (!asset) return undefined
-        const url = URL.createObjectURL(asset.blob)
+      const entries = await Promise.all(gameplay.items.filter(item => snapshot.inventory.includes(item.id)).map(async (item) => {
+        const blob = await resolveItemIcon(item)
+        if (!blob || cancelled) return undefined
+        const url = URL.createObjectURL(blob)
         urls.push(url)
         return [item.id, url] as const
       }))
@@ -130,7 +129,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
       cancelled = true
       urls.forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [gameplay])
+  }, [gameplay, snapshot.inventory.join('|')])
 
   useEffect(() => {
     if (activeDungeonId || !hostRef.current || !gameplay || !runtimeProjectId) return
@@ -234,6 +233,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
       mana: snapshot.mana,
       maxMana: snapshot.maxMana,
       inventory: [...snapshot.inventory],
+      generatedItems: gameplay?.items.filter(item => item.itemRoll?.sourceId),
       equippedWeaponId: snapshot.equipment.MainHand ?? snapshot.equippedWeaponId,
       equipment: { ...snapshot.equipment },
       gold: snapshot.gold,
@@ -243,7 +243,7 @@ export default function SkillboundPlayViewport({ region, profile, paused = false
     setActiveDungeonId(dungeonId)
     nearDungeonRef.current = false
     setNearDungeon(false)
-  }, [dungeonAnchor, paused, snapshot])
+  }, [dungeonAnchor, paused, snapshot, gameplay])
 
   useEffect(() => {
     if (activeDungeonId || !dungeonAnchor || paused) return

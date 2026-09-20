@@ -1,11 +1,11 @@
 import type { ForgeItemDefinition } from './forgeProject'
 
 export type ForgeItemType = 'weapon' | 'armor' | 'offhand' | 'consumable' | 'material' | 'quest' | 'misc'
-export type ForgeWeaponSubtype = 'sword' | 'dagger' | 'axe' | 'mace' | 'staff' | 'spear' | 'bow'
-export type ForgeArmorSubtype = 'helmet' | 'chest' | 'gloves' | 'legs' | 'boots'
+export type ForgeWeaponSubtype = 'sword' | 'dagger' | 'axe' | 'mace' | 'staff' | 'spear' | 'bow' | 'pickaxe' | 'hatchet' | 'sickle'
+export type ForgeArmorSubtype = 'helmet' | 'chest' | 'gloves' | 'legs' | 'boots' | 'cloak' | 'waist'
 export type ForgeOffhandSubtype = 'shield' | 'focus'
-export type ForgeItemSubtype = ForgeWeaponSubtype | ForgeArmorSubtype | ForgeOffhandSubtype | 'potion' | 'food' | 'scroll' | 'crafting-material' | 'quest-item' | 'miscellaneous'
-export type ForgeItemEquipSlot = 'MainHand' | 'OffHand' | 'Head' | 'Chest' | 'Hands' | 'Legs' | 'Feet' | 'None'
+export type ForgeItemSubtype = ForgeWeaponSubtype | ForgeArmorSubtype | ForgeOffhandSubtype | 'potion' | 'food' | 'scroll' | 'crafting-material' | 'quest-item' | 'miscellaneous' | 'amulet' | 'ring' | 'charm'
+export type ForgeItemEquipSlot = 'MainHand' | 'OffHand' | 'Head' | 'Chest' | 'Hands' | 'Legs' | 'Feet' | 'Cape' | 'Waist' | 'Amulet' | 'Ring' | 'Charm' | 'None'
 export type ForgeArmorFitMode = 'rigid' | 'skinned'
 export type ForgeBodyRegion = 'head' | 'hair' | 'torso' | 'upper-arms' | 'forearms' | 'hands' | 'hips' | 'thighs' | 'shins' | 'feet'
 
@@ -32,13 +32,13 @@ export const ITEM_TYPE_OPTIONS: ForgeItemType[] = ['weapon', 'armor', 'offhand',
 export const BODY_REGION_OPTIONS: ForgeBodyRegion[] = ['head', 'hair', 'torso', 'upper-arms', 'forearms', 'hands', 'hips', 'thighs', 'shins', 'feet']
 
 const SUBTYPES: Record<ForgeItemType, ForgeItemSubtype[]> = {
-  weapon: ['sword', 'dagger', 'axe', 'mace', 'staff', 'spear', 'bow'],
-  armor: ['helmet', 'chest', 'gloves', 'legs', 'boots'],
+  weapon: ['sword', 'dagger', 'axe', 'mace', 'staff', 'spear', 'bow', 'pickaxe', 'hatchet', 'sickle'],
+  armor: ['helmet', 'chest', 'gloves', 'legs', 'boots', 'cloak', 'waist'],
   offhand: ['shield', 'focus'],
   consumable: ['potion', 'food', 'scroll'],
   material: ['crafting-material'],
   quest: ['quest-item'],
-  misc: ['miscellaneous'],
+  misc: ['miscellaneous', 'amulet', 'ring', 'charm'],
 }
 
 export function itemClassification(item: ForgeItemDefinition): ItemClassification {
@@ -66,6 +66,11 @@ export function defaultEquipSlot(itemType: ForgeItemType, subtype: ForgeItemSubt
   if (subtype === 'gloves') return 'Hands'
   if (subtype === 'legs') return 'Legs'
   if (subtype === 'boots') return 'Feet'
+  if (subtype === 'cloak') return 'Cape'
+  if (subtype === 'waist') return 'Waist'
+  if (subtype === 'amulet') return 'Amulet'
+  if (subtype === 'ring') return 'Ring'
+  if (subtype === 'charm') return 'Charm'
   return 'None'
 }
 

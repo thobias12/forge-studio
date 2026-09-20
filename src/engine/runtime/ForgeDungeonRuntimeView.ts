@@ -156,7 +156,7 @@ export const dungeonViewMethods = {
   },
 
   playerState(): ForgeAdventurePlayerState {
-    return { health: Math.max(1, this.playerHealth), inventory: [...this.inventory], equippedWeaponId: this.equippedWeaponId }
+    return { generatedItems: this.gameplay.items.filter(item => item.itemRoll?.sourceId), health: Math.max(1, this.playerHealth), inventory: [...this.inventory], equippedWeaponId: this.equippedWeaponId }
   },
 
   makeSnapshot(): ForgeDungeonRuntimeSnapshot {

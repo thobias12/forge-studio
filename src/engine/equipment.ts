@@ -1,7 +1,7 @@
 import type { ForgeGameplayContent, ForgeItemDefinition } from './forgeProject'
 import { itemClassification, type ForgeAuthoredItem, type ForgeItemEquipSlot } from './itemTaxonomy'
 
-export const FORGE_EQUIPMENT_SLOTS = ['Head', 'Chest', 'Hands', 'MainHand', 'OffHand', 'Legs', 'Feet'] as const
+export const FORGE_EQUIPMENT_SLOTS = ['Head', 'Chest', 'Hands', 'MainHand', 'OffHand', 'Legs', 'Feet', 'Cape', 'Waist', 'Amulet', 'Ring', 'Charm'] as const
 export type ForgeEquipmentSlot = typeof FORGE_EQUIPMENT_SLOTS[number]
 export type ForgeEquipmentState = Partial<Record<ForgeEquipmentSlot, string>>
 
@@ -178,7 +178,7 @@ export function isTwoHandedItem(item: ForgeItemDefinition) {
 }
 
 function isTwoHandedSubtype(subtype: string) {
-  return subtype === 'bow' || subtype === 'staff' || subtype === 'spear'
+  return subtype === 'bow' || subtype === 'staff' || subtype === 'spear' || subtype === 'pickaxe'
 }
 
 function taxonomyLabel(value: string) {

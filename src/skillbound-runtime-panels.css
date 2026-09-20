@@ -206,3 +206,7 @@
     grid-template-columns:repeat(auto-fill,minmax(170px,1fr));
   }
 }
+
+.runtime-item-card.rarity-epic { border-color: #b496d6; }
+.runtime-item-card.rarity-legendary { border-color: #e49a59; }
+.runtime-item-card.rarity-unique { border-color: #d87972; }

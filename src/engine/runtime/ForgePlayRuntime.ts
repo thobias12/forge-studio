@@ -1,3 +1,4 @@
+import { rollSkillboundLoot } from '../skillboundItems'
 import { forestPathMaterial, forestWaterMaterial } from '../forestAtmosphere'
 import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../forestGeometry'
 import * as THREE from 'three'
@@ -117,6 +118,7 @@ export type ForgeRuntimeSnapshot = {
   skillCooldown: number
   dodgeCooldown: number
   inventory: string[]
+  generatedItems?: ForgeItemDefinition[]
   equippedWeaponId?: string
   target?: ForgeRuntimeTargetSnapshot
   interaction?: ForgeRuntimeInteractionSnapshot
@@ -262,6 +264,7 @@ export class ForgePlayRuntime {
   private environmentElapsed = 0
   private equippedModel?: THREE.Object3D
   private inventory: string[] = []
+  private lootRollIndex = 0
   private equippedWeaponId: string | undefined
   private focusEnemyId: string | undefined
   private cameraDistance: number = FORGE_WORLD_SCALE.playCameraDistance
@@ -300,6 +303,10 @@ export class ForgePlayRuntime {
 
     const save = loadRuntimeSave(this.saveKey)
     if (save) {
+      this.lootRollIndex = save.lootRollIndex ?? 0
+      for (const item of save.generatedItems ?? []) {
+        if (item.procedural?.version === 1 && !this.gameplay.items.some(entry => entry.id === item.id)) this.gameplay.items.push(item)
+      }
       this.inventory = [...save.inventory]
       this.equippedWeaponId = save.equippedWeaponId
       save.defeatedEnemyIds.forEach((id) => this.defeatedEnemyIds.add(id))
@@ -514,6 +521,8 @@ export class ForgePlayRuntime {
         health: this.playerHealth,
       },
       inventory: [...this.inventory],
+      generatedItems: this.gameplay.items.filter(item => item.itemRoll?.sourceId && (this.inventory.includes(item.id) || this.loot.some(drop => drop.save.itemId === item.id))),
+      lootRollIndex: this.lootRollIndex,
       equippedWeaponId: this.equippedWeaponId,
       defeatedEnemyIds: [...this.defeatedEnemyIds],
       usedInteractionIds: [...this.usedInteractionIds],
@@ -1715,10 +1724,13 @@ export class ForgePlayRuntime {
             ) *
               .65
           )
+        const template = this.gameplay.items.find(item => item.id === rolled.itemId)
+        const generated = template ? rollSkillboundLoot(template, String(this.region.seed) + ':' + sourceId + ':' + this.lootRollIndex++, template.itemRoll?.level ?? 1) : undefined
+        if (generated && !this.gameplay.items.some(item => item.id === generated.id)) this.gameplay.items.push(generated)
         this.spawnLoot(
           {
             id: `${sourceId}:drop:${ordinal}:${rolled.itemId}`,
-            itemId: rolled.itemId,
+            itemId: generated?.id ?? rolled.itemId,
             x: position.x + Math.cos(angle) * radius,
             z: position.z + Math.sin(angle) * radius,
           },
@@ -1761,6 +1773,7 @@ export class ForgePlayRuntime {
         : 0,
       save.z,
     )
+    group.userData.groundY = group.position.y
     this.scene.add(group)
     const drop: RuntimeLoot = { save: { ...save }, group, fallback, age: 0 }
     this.loot.push(drop)
@@ -2074,8 +2087,8 @@ export class ForgePlayRuntime {
       const drop = this.loot[index]
       drop.age += delta
       drop.fallback.rotation.y += delta * 1.8
-      drop.group.position.y =
-        Math.sin(drop.age * 3.2) * .08
+      drop.group.position.y = (drop.group.userData.groundY ?? 0) +
+        (drop.model ? 0 : Math.sin(drop.age * 3.2) * .08)
 
       const dx =
         drop.group.position.x - playerX

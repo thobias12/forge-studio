@@ -1,3 +1,4 @@
+import type { ForgeItemDefinition } from '../forgeProject'
 import type { ForgeEquipmentState } from '../equipment'
 import type { ForgeInventoryPackLayout } from '../inventoryPack'
 
@@ -17,6 +18,8 @@ export type ForgeRuntimeSave = {
   generationVersion: number
   player: { x: number; z: number; health: number }
   inventory: string[]
+  generatedItems?: ForgeItemDefinition[]
+  lootRollIndex?: number
   inventoryLayout?: ForgeInventoryPackLayout
   equippedWeaponId?: string
   equipment?: ForgeEquipmentState

@@ -1,3 +1,5 @@
+import { buildGeneratedItemModel } from '../skillboundItemModels'
+import { recipeForItem } from '../skillboundItems'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getAsset } from '../../lib/library'
@@ -7,6 +9,19 @@ import type { ForgeItemDefinition, ForgeItemSocket, ForgeItemTransform } from '.
 export type ForgeRuntimeItemMode = 'drop' | 'equipped'
 
 export async function bindRuntimeItemModel(target: THREE.Object3D, item: ForgeItemDefinition, mode: ForgeRuntimeItemMode) {
+  if (recipeForItem(item)) {
+    const root = await buildGeneratedItemModel(item)
+    if (!root) return undefined
+    const visual = itemVisual(item)
+    applyRuntimeItemTransform(root, mode === 'drop' ? visual.drop.transform : visual.equipped.transform)
+    if (mode === 'drop') {
+      root.updateMatrixWorld(true)
+      const box = new THREE.Box3().setFromObject(root)
+      root.position.y += visual.drop.groundOffset - box.min.y
+    }
+    target.add(root)
+    return root
+  }
   const assetId = resolveItemModelAssetId(item, mode)
   if (!assetId) return undefined
   const asset = await getAsset(assetId)

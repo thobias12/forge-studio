@@ -1,3 +1,5 @@
+import { buildGeneratedItemModel, disposeGeneratedModel } from './skillboundItemModels'
+import { recipeForItem } from './skillboundItems'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getAsset } from '../lib/library'
@@ -58,11 +60,11 @@ export function resolveItemModelAssetId(item: ForgeItemDefinition, mode: 'invent
 
 export async function renderItemIconBlob(item: ForgeItemDefinition, size = 256): Promise<Blob> {
   const assetId = resolveItemModelAssetId(item, 'inventory')
-  if (!assetId) throw new Error('Assign a master model before generating an inventory icon.')
-  const asset = await getAsset(assetId)
-  if (!asset) throw new Error('The selected master model is not available in the Shared Library.')
-
-  const objectUrl = URL.createObjectURL(asset.blob)
+  const generated = recipeForItem(item) ? await buildGeneratedItemModel(item) : undefined
+  const asset = !generated && assetId ? await getAsset(assetId) : undefined
+  if (!generated && !asset) throw new Error('Assign a model or Skillbound recipe before generating an icon.')
+  const objectUrl = asset ? URL.createObjectURL(asset.blob) : undefined
+  let model: THREE.Object3D | undefined = generated
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true })
   renderer.setPixelRatio(1)
   renderer.setSize(size, size, false)
@@ -70,9 +72,9 @@ export async function renderItemIconBlob(item: ForgeItemDefinition, size = 256):
   renderer.setClearColor(0x000000, 0)
 
   try {
-    const gltf = await new GLTFLoader().loadAsync(objectUrl)
     const scene = new THREE.Scene()
-    const root = gltf.scene
+    const root = generated ?? (await new GLTFLoader().loadAsync(objectUrl!)).scene
+    model = root
     scene.add(root)
     scene.add(new THREE.HemisphereLight(0xeaf3ff, 0x1b2028, 2.1))
     const key = new THREE.DirectionalLight(0xffffff, 3.1)
@@ -105,7 +107,9 @@ export async function renderItemIconBlob(item: ForgeItemDefinition, size = 256):
       renderer.domElement.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Forge could not encode the item icon.')), 'image/png')
     })
   } finally {
-    URL.revokeObjectURL(objectUrl)
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+    if (model) disposeGeneratedModel(model)
     renderer.dispose()
+    renderer.forceContextLoss()
   }
 }

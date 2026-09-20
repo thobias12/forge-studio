@@ -1,3 +1,5 @@
+import { withGeneratedItems } from '../engine/skillboundItems'
+import { resolveItemIcon } from '../engine/itemIcons'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BarChart3, Backpack, Coins, Footprints, Heart, ListFilter, Shield, Sparkles, Swords, WandSparkles, Zap } from 'lucide-react'
 import CharacterForgePreview from './CharacterForgePreview'
@@ -50,7 +52,7 @@ type CommonProps = {
 
 export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }: CommonProps) {
   const config = useMemo(() => blueprintToConfig(profile.blueprint), [profile.blueprint])
-  const gameplay = useMemo(() => resolveGameplayForRole(workspace.gameplay, profile.blueprint.role), [workspace.gameplay, profile.blueprint.role])
+  const gameplay = useMemo(() => resolveGameplayForRole(withGeneratedItems(workspace.gameplay, snapshot?.generatedItems), profile.blueprint.role), [workspace.gameplay, profile.blueprint.role, snapshot?.generatedItems])
   const equipment = normalizeEquipment(snapshot?.equipment, snapshot?.equippedWeaponId)
   const stats = equipmentStats(gameplay, equipment)
   const primary = gameplay.abilities.find((ability) => ability.id === gameplay.player.basicAbility)
@@ -115,10 +117,10 @@ export function SkillboundCharacterRuntimePanel({ profile, snapshot, workspace }
 export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }: CommonProps) {
   const gameplay = useMemo(
     () => resolveGameplayForRole(
-      workspace.gameplay,
+      withGeneratedItems(workspace.gameplay, snapshot?.generatedItems),
       profile.blueprint.role,
     ),
-    [workspace.gameplay, profile.blueprint.role],
+    [workspace.gameplay, profile.blueprint.role, snapshot?.generatedItems],
   )
   const equipment = normalizeEquipment(
     snapshot?.equipment,
@@ -143,7 +145,7 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
     'all' | 'weapons' | 'armor' | 'offhand'
   >('all')
   const [rarity, setRarity] = useState<
-    'all' | 'common' | 'magic' | 'rare'
+    'all' | ForgeItemDefinition['rarity']
   >('all')
   const [sort, setSort] = useState<
     'recent' | 'type' | 'rarity' | 'power'
@@ -412,7 +414,7 @@ export function SkillboundInventoryRuntimePanel({ profile, snapshot, workspace }
             )}
           </div>
           <div className="runtime-inventory-filter-line rarity-line">
-            {(['all', 'common', 'magic', 'rare'] as const).map(
+            {(['all', 'common', 'magic', 'rare', 'epic', 'legendary', 'unique'] as const).map(
               (value) => <button
                 type="button"
                 key={value}
@@ -725,15 +727,14 @@ function RuntimeItemIcon({ item }: { item: ForgeItemDefinition }) {
   useEffect(() => {
     let cancelled = false
     let url = ''
-    const iconId = itemVisual(item).inventory.iconAssetId
-    if (!iconId) { setSrc(undefined); return }
-    void getAsset(iconId).then((asset) => {
-      if (!asset || cancelled) return
-      url = URL.createObjectURL(asset.blob)
+    setSrc(undefined)
+    void resolveItemIcon(item).then((blob) => {
+      if (!blob || cancelled) return
+      url = URL.createObjectURL(blob)
       setSrc(url)
-    }).catch(() => setSrc(undefined))
+    }).catch(() => { if (!cancelled) setSrc(undefined) })
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
-  }, [item.id, item.visual?.inventory.iconAssetId])
+  }, [item.id, item.visual?.inventory.iconAssetId, JSON.stringify(item.procedural)])
   return <div className="runtime-item-icon">{src ? <img src={src} alt=""/> : <i style={{ background: item.color }}/>}</div>
 }
 

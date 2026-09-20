@@ -144,6 +144,7 @@ export class ForgeDungeonRuntime {
     this.dungeon = dungeon
     this.runtimeDungeon = withCryptRuntimeCollision(dungeon) as ForgeProjectDungeonDefinition
     this.gameplay = gameplay
+    for (const item of initial.generatedItems ?? []) if (!gameplay.items.some(entry => entry.id === item.id)) gameplay.items.push(item)
     this.options = options
     this.playerHealth = THREE.MathUtils.clamp(initial.health, 1, gameplay.player.maxHealth)
     this.inventory = [...initial.inventory]
