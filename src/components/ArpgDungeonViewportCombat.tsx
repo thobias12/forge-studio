@@ -90,7 +90,8 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     const cameraForward = new THREE.Vector3(-CAMERA_OFFSET.x, 0, -CAMERA_OFFSET.z).normalize()
     const cameraRight = new THREE.Vector3(-cameraForward.z, 0, cameraForward.x)
     const flickerLights: FlickerLight[] = []
-    const roomWallMeshes: THREE.Mesh[] = []
+    const roomWallNodes: THREE.Object3D[] = []
+    const roomWallFactor = new Map<THREE.Object3D, number>()
     const fadedOccluders = new Map<THREE.Mesh, number>()
     const destructibles = new Map<string, RuntimeDestructible>()
     const brokenPropIds = new Set<string>()
@@ -231,7 +232,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     }
 
     const rebuild = () => {
-      fadedOccluders.clear(); roomWallMeshes.length = 0; destructibles.clear(); enemies.clear(); encounters.clear(); runtimeLockedDoorIds.clear(); doors.clear()
+      fadedOccluders.clear(); roomWallNodes.length = 0; roomWallFactor.clear(); destructibles.clear(); enemies.clear(); encounters.clear(); runtimeLockedDoorIds.clear(); doors.clear()
       for (const particle of dust.splice(0)) disposeObject(particle.mesh)
       for (const drop of lootDrops.splice(0)) disposeObject(drop.mesh)
       for (const fx of attackFx.splice(0)) disposeObject(fx.mesh)
@@ -254,9 +255,13 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       }
       for (const wall of current.walls ?? []) addRuntimeWall(world, wall, atmosphere)
       world.traverse((object) => {
-        const mesh = object as THREE.Mesh
-        if (!mesh.isMesh || !inheritedRuntimeData(mesh, 'wallSide') || !inheritedRuntimeData(mesh, 'roomId')) return
-        roomWallMeshes.push(mesh)
+        const roomId = inheritedRuntimeData(object, 'roomId')
+        const sides = runtimeWallSides(object)
+        if (!roomId || !sides.length || object === world) return
+        const parentRoomId = object.parent ? inheritedRuntimeData(object.parent, 'roomId') : undefined
+        const parentSides = object.parent ? runtimeWallSides(object.parent) : []
+        if (parentRoomId === roomId && parentSides.length) return
+        roomWallNodes.push(object)
       })
       for (const prop of dungeonProps(current)) { const group = addBuiltinProp(world, prop, atmosphere, flickerLights); if (prop.source === 'library') registerLibraryProp(prop, group, atmosphere) }
       for (const item of current.markers) if (item.type !== 'enemy' && !(item.type === 'loot' && Boolean(item.data.requiresClear))) addMarker(world, item, doors)
@@ -367,6 +372,58 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       for (let i = attackFx.length - 1; i >= 0; i--) { const fx = attackFx[i]; fx.life -= dt; const material = fx.mesh.material as THREE.MeshBasicMaterial; material.opacity = Math.max(0, fx.life / 0.18) * 0.62; fx.mesh.scale.multiplyScalar(1 + dt * 3); if (fx.life <= 0) { disposeObject(fx.mesh); attackFx.splice(i, 1) } }
     }
 
+    const ensureRoomWallTransform = (object: THREE.Object3D) => {
+      if (object.userData.arpgWallBaseY === undefined) {
+        object.userData.arpgWallBaseY = object.position.y
+        object.userData.arpgWallBaseScaleY = object.scale.y
+      }
+      object.traverse((child) => {
+        const light = child as THREE.PointLight
+        if (!light.isPointLight) return
+        if (light.userData.arpgWallBaseIntensity === undefined) {
+          light.userData.arpgWallBaseIntensity = light.intensity
+        }
+      })
+    }
+
+    const setRoomWallFactor = (object: THREE.Object3D, factor: number) => {
+      ensureRoomWallTransform(object)
+      const baseY = Number(object.userData.arpgWallBaseY ?? object.position.y)
+      const baseScaleY = Number(object.userData.arpgWallBaseScaleY ?? object.scale.y)
+      object.position.y = baseY * factor
+      object.scale.y = baseScaleY * factor
+      object.traverse((child) => {
+        const light = child as THREE.PointLight
+        if (!light.isPointLight) return
+        const baseIntensity = Number(light.userData.arpgWallBaseIntensity ?? light.intensity)
+        light.intensity = baseIntensity * THREE.MathUtils.lerp(0.1, 1, factor)
+      })
+    }
+
+    const updateRoomCutaway = (dt: number) => {
+      const current = valueRef.current
+      const activeRoom = current.rooms.find((room) => pointInsideRoom(room, playerPosition.x, playerPosition.z, 0))
+      const cutSides = activeRoom ? roomSidesFacingCamera(activeRoom, camera.position) : undefined
+
+      for (const object of roomWallNodes) {
+        const roomId = String(inheritedRuntimeData(object, 'roomId') ?? '')
+        const room = current.rooms.find((item) => item.id === roomId)
+        let target = 1
+        if (activeRoom && room?.id === activeRoom.id && cutSides) {
+          const sides = runtimeWallSides(object)
+          if (sides.some((side) => cutSides.has(side))) {
+            target = THREE.MathUtils.clamp(1.02 / Math.max(1, activeRoom.height), 0.16, 0.38)
+          }
+        }
+        const currentFactor = roomWallFactor.get(object) ?? 1
+        const speed = target < currentFactor ? 16 : 10
+        const next = THREE.MathUtils.lerp(currentFactor, target, 1 - Math.exp(-speed * dt))
+        setRoomWallFactor(object, next)
+        if (target === 1 && next >= 0.998) roomWallFactor.delete(object)
+        else roomWallFactor.set(object, next)
+      }
+    }
+
     const ensureFadeMaterial = (mesh: THREE.Mesh) => { if (mesh.userData.arpgFadeMaterial) return; mesh.material = Array.isArray(mesh.material) ? mesh.material.map((material) => material.clone()) : mesh.material.clone(); mesh.userData.arpgFadeMaterial = true; mesh.userData.arpgOriginalCastShadow = mesh.castShadow }
     const setOpacity = (mesh: THREE.Mesh, opacity: number) => { ensureFadeMaterial(mesh); const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material], transparent = opacity < 0.995; for (const material of materials) { if (material.transparent !== transparent) { material.transparent = transparent; material.needsUpdate = true } material.opacity = opacity; material.depthWrite = !transparent } mesh.castShadow = transparent ? false : Boolean(mesh.userData.arpgOriginalCastShadow) }
     const isOccluder = (mesh: THREE.Mesh) => { if (mesh.userData.arpgOccluder) return true; if (!mesh.userData.roomId) return false; mesh.geometry.computeBoundingBox(); const box = mesh.geometry.boundingBox; if (!box) return false; const size = new THREE.Vector3(); box.getSize(size); return size.y > 0.52 }
@@ -389,15 +446,6 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
         }
       }
 
-      const activeRoom = valueRef.current.rooms.find((room) => pointInsideRoom(room, playerPosition.x, playerPosition.z, 0))
-      if (activeRoom) {
-        const cutSides = roomSidesFacingCamera(activeRoom, camera.position)
-        for (const mesh of roomWallMeshes) {
-          if (String(inheritedRuntimeData(mesh, 'roomId') ?? '') !== activeRoom.id) continue
-          const side = inheritedRuntimeData(mesh, 'wallSide') as Side | undefined
-          if (side && cutSides.has(side)) hits.add(mesh)
-        }
-      }
       return hits
     }
     const updateOcclusion = (dt: number) => { const blocked = blockedOccluders(), fadeOut = 1 - Math.exp(-13 * dt), fadeIn = 1 - Math.exp(-8 * dt); for (const mesh of blocked) { const next = THREE.MathUtils.lerp(fadedOccluders.get(mesh) ?? 1, OCCLUDER_OPACITY, fadeOut); setOpacity(mesh, next); fadedOccluders.set(mesh, next) } for (const [mesh, current] of [...fadedOccluders.entries()]) { if (blocked.has(mesh)) continue; const next = THREE.MathUtils.lerp(current, 1, fadeIn); if (next >= 0.995) { setOpacity(mesh, 1); fadedOccluders.delete(mesh) } else { setOpacity(mesh, next); fadedOccluders.set(mesh, next) } } }
@@ -420,7 +468,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       if (!frozen) { updatePlayer(dt); updateEnemies(dt, now); updateDestruction(dt); updateDoors() }
       const seconds = now * 0.001
       for (const entry of flickerLights) { const noise = Math.sin(seconds * entry.speed + entry.phase) * 0.09 + Math.sin(seconds * entry.speed * 2.17 + entry.phase * 0.41) * 0.035; entry.light.intensity = entry.base * (1 + noise) }
-      updateOcclusion(dt); updateHud(now); renderer.render(scene, camera); frame = requestAnimationFrame(tick)
+      updateRoomCutaway(dt); updateOcclusion(dt); updateHud(now); renderer.render(scene, camera); frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
 
@@ -514,11 +562,11 @@ function addRuntimeWall(parent: THREE.Group, wall: DungeonWall, atmosphere: Dung
 }
 
 function addBaseRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[], crypt: boolean) { const group = new THREE.Group(); group.position.set(room.x, room.floorLevel, room.z); group.rotation.y = THREE.MathUtils.degToRad(room.rotation); parent.add(group); const floorMaterial = new THREE.MeshStandardMaterial({ color: tintRoomFloor(atmosphere.floor, room.type, atmosphere), roughness: crypt ? 0.8 : 0.62, metalness: 0.02, emissive: crypt ? new THREE.Color(atmosphere.floor).multiplyScalar(.12) : new THREE.Color(0x000000), emissiveIntensity: crypt ? .32 : 0 }); const floor = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.18, room.depth), floorMaterial); floor.position.y = 0.09; floor.receiveShadow = true; group.add(floor); const wallMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: crypt ? 0.93 : 0.86, metalness: 0.01 }), darkMaterial = new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96 }); for (const side of ['north','south','west','east'] as Side[]) addWallWithOpenings(group, room, side, openings.filter((opening) => opening.side === side), Math.max(0.12, wallThickness), wallMaterial, darkMaterial); if (!crypt) { const inset = 0.16; for (const [x,z] of [[-room.width/2+inset,-room.depth/2+inset],[room.width/2-inset,-room.depth/2+inset],[-room.width/2+inset,room.depth/2-inset],[room.width/2-inset,room.depth/2-inset]] as Array<[number,number]>) { const column = markOccluder(new THREE.Mesh(new THREE.BoxGeometry(0.36, room.height, 0.36), darkMaterial)); column.position.set(x, room.height/2, z); column.castShadow = true; column.receiveShadow = true; group.add(column) } addRoomLights(group, room, atmosphere, flickerLights, crypt) } }
-function addWallWithOpenings(group: THREE.Group, room: DungeonRoom, side: Side, openings: RoomOpening[], thickness: number, material: THREE.Material, darkMaterial: THREE.Material) { const horizontal = side === 'north' || side === 'south', total = horizontal ? room.width : room.depth, half = total / 2; const intervals = mergeIntervals(openings.map((opening) => ({ start: Math.max(-half, opening.offset-opening.openingWidth/2), end: Math.min(half, opening.offset+opening.openingWidth/2) }))); const doorHeight = Math.min(2.45, Math.max(1.9, room.height-0.4)); let cursor = -half; for (const interval of intervals) { addWallSegment(group, room, side, cursor, interval.start, thickness, room.height, material, darkMaterial); const openingLength = interval.end-interval.start; if (openingLength > 0.05 && room.height > doorHeight+0.12) { const lintelHeight = room.height-doorHeight, center = (interval.start+interval.end)/2; const lintel = markOccluder(horizontal ? new THREE.Mesh(new THREE.BoxGeometry(openingLength,lintelHeight,thickness),material) : new THREE.Mesh(new THREE.BoxGeometry(thickness,lintelHeight,openingLength),material)); if (horizontal) lintel.position.set(center,doorHeight+lintelHeight/2,(side==='south'?1:-1)*room.depth/2); else lintel.position.set((side==='east'?1:-1)*room.width/2,doorHeight+lintelHeight/2,center); lintel.castShadow=true; lintel.receiveShadow=true; group.add(lintel) } cursor=interval.end } addWallSegment(group,room,side,cursor,half,thickness,room.height,material,darkMaterial) }
+function addWallWithOpenings(group: THREE.Group, room: DungeonRoom, side: Side, openings: RoomOpening[], thickness: number, material: THREE.Material, darkMaterial: THREE.Material) { const horizontal = side === 'north' || side === 'south', total = horizontal ? room.width : room.depth, half = total / 2; const intervals = mergeIntervals(openings.map((opening) => ({ start: Math.max(-half, opening.offset-opening.openingWidth/2), end: Math.min(half, opening.offset+opening.openingWidth/2) }))); const doorHeight = Math.min(2.45, Math.max(1.9, room.height-0.4)); let cursor = -half; for (const interval of intervals) { addWallSegment(group, room, side, cursor, interval.start, thickness, room.height, material, darkMaterial); const openingLength = interval.end-interval.start; if (openingLength > 0.05 && room.height > doorHeight+0.12) { const lintelHeight = room.height-doorHeight, center = (interval.start+interval.end)/2; const lintel = markOccluder(horizontal ? new THREE.Mesh(new THREE.BoxGeometry(openingLength,lintelHeight,thickness),material) : new THREE.Mesh(new THREE.BoxGeometry(thickness,lintelHeight,openingLength),material)); if (horizontal) lintel.position.set(center,doorHeight+lintelHeight/2,(side==='south'?1:-1)*room.depth/2); else lintel.position.set((side==='east'?1:-1)*room.width/2,doorHeight+lintelHeight/2,center); lintel.userData.roomId=room.id; lintel.userData.wallSide=side; lintel.castShadow=true; lintel.receiveShadow=true; group.add(lintel) } cursor=interval.end } addWallSegment(group,room,side,cursor,half,thickness,room.height,material,darkMaterial) }
 function addWallSegment(group: THREE.Group, room: DungeonRoom, side: Side, start: number, end: number, thickness: number, height: number, material: THREE.Material, darkMaterial: THREE.Material) { const length=end-start; if(length<=0.04)return; const horizontal=side==='north'||side==='south', center=(start+end)/2; const wall=markOccluder(horizontal?new THREE.Mesh(new THREE.BoxGeometry(length,height,thickness),material):new THREE.Mesh(new THREE.BoxGeometry(thickness,height,length),material)); if(horizontal)wall.position.set(center,height/2,(side==='south'?1:-1)*room.depth/2);else wall.position.set((side==='east'?1:-1)*room.width/2,height/2,center); wall.userData.roomId=room.id; wall.userData.wallSide=side; wall.castShadow=true;wall.receiveShadow=true;group.add(wall); const base=markOccluder(horizontal?new THREE.Mesh(new THREE.BoxGeometry(length,.26,thickness+.08),darkMaterial):new THREE.Mesh(new THREE.BoxGeometry(thickness+.08,.26,length),darkMaterial));base.position.copy(wall.position);base.position.y=.13;base.userData.roomId=room.id;base.userData.wallSide=side;group.add(base) }
 function addRoomLights(group: THREE.Group, room: DungeonRoom, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[], crypt: boolean) { const y=Math.min(1.72,room.height*.55), positions:Array<[number,number,number]>=[[-room.width/2+.38,y,-room.depth*.22],[room.width/2-.38,y,room.depth*.22]]; positions.forEach(([x,py,z],index)=>{ const bracket=new THREE.Mesh(new THREE.BoxGeometry(.08,.48,.08),new THREE.MeshStandardMaterial({color:0x28221f,roughness:.72,metalness:.34}));bracket.position.set(x,py-.22,z);bracket.rotation.z=x<0?-.34:.34;group.add(bracket); const flame=new THREE.Mesh(new THREE.SphereGeometry(.07,8,6),new THREE.MeshStandardMaterial({color:atmosphere.torch,emissive:atmosphere.torch,emissiveIntensity:crypt?2.05:2.4,roughness:.3}));flame.scale.set(.78,1.55,.78);flame.position.set(x,py+.13,z);group.add(flame); if(index===0||room.type==='boss'||room.type==='elite'){const base=atmosphere.torchIntensity*(crypt?.66:.88),light=new THREE.PointLight(atmosphere.torch,base,crypt?11.5:9.5,crypt?1.55:1.75);light.position.copy(flame.position);group.add(light);flickerLights.push({light,base,phase:Math.random()*Math.PI*2,speed:5.2+Math.random()*1.6})} }); const accent=roomAccent(room.type,atmosphere);if(accent!==undefined){const light=new THREE.PointLight(accent,room.type==='boss'?1.45:.72,room.type==='boss'?Math.max(room.width,room.depth)*.82:5.8,1.9);light.position.set(0,1.15,0);group.add(light)} }
 function addBaseCorridor(parent: THREE.Group, from: DungeonConnection, to: DungeonConnection, width: number, atmosphere: DungeonAtmosphere) { const floorMaterial=new THREE.MeshStandardMaterial({color:atmosphere.corridorFloor,roughness:.8,metalness:.02}),wallMaterial=new THREE.MeshStandardMaterial({color:atmosphere.corridorWall,roughness:.93});const mid={x:to.x,z:from.z}; addCorridorSegment(parent,from.x,from.z,mid.x,mid.z,width,floorMaterial,wallMaterial);addCorridorSegment(parent,mid.x,mid.z,to.x,to.z,width,floorMaterial,wallMaterial) }
-function addCorridorSegment(parent: THREE.Group,x1:number,z1:number,x2:number,z2:number,width:number,floorMaterial:THREE.Material,wallMaterial:THREE.Material){const dx=x2-x1,dz=z2-z1,length=Math.hypot(dx,dz);if(length<.25)return;const angle=Math.atan2(dx,dz),floor=new THREE.Mesh(new THREE.BoxGeometry(width,.14,length),floorMaterial);floor.position.set((x1+x2)/2,.07,(z1+z2)/2);floor.rotation.y=angle;floor.receiveShadow=true;parent.add(floor);for(const side of[-1,1]){const wall=markOccluder(new THREE.Mesh(new THREE.BoxGeometry(.22,2.55,length),wallMaterial));wall.position.set(floor.position.x+Math.cos(angle)*(width/2+.11)*side,1.275,floor.position.z-Math.sin(angle)*(width/2+.11)*side);wall.rotation.y=angle;wall.castShadow=true;wall.receiveShadow=true;parent.add(wall)}}
+function addCorridorSegment(parent: THREE.Group,x1:number,z1:number,x2:number,z2:number,width:number,floorMaterial:THREE.Material,wallMaterial:THREE.Material){const dx=x2-x1,dz=z2-z1,length=Math.hypot(dx,dz);if(length<.25)return;const angle=Math.atan2(dx,dz),floor=new THREE.Mesh(new THREE.BoxGeometry(width,.14,length),floorMaterial);floor.position.set((x1+x2)/2,.07,(z1+z2)/2);floor.rotation.y=angle;floor.receiveShadow=true;parent.add(floor);const wallHeight=1.02;for(const side of[-1,1]){const wall=markOccluder(new THREE.Mesh(new THREE.BoxGeometry(.22,wallHeight,length),wallMaterial));wall.position.set(floor.position.x+Math.cos(angle)*(width/2+.11)*side,wallHeight/2,floor.position.z-Math.sin(angle)*(width/2+.11)*side);wall.rotation.y=angle;wall.castShadow=true;wall.receiveShadow=true;parent.add(wall)}}
 function addBuiltinProp(parent:THREE.Group,prop:DungeonProp,atmosphere:DungeonAtmosphere,flickerLights:FlickerLight[]){const group=new THREE.Group();group.position.set(prop.x,prop.y,prop.z);group.rotation.y=THREE.MathUtils.degToRad(prop.rotationY);group.scale.setScalar(prop.scale);group.userData.propId=prop.id;parent.add(group);const stone=new THREE.MeshStandardMaterial({color:atmosphere.wall,roughness:.9}),wood=new THREE.MeshStandardMaterial({color:0x5a4030,roughness:.9}),metal=new THREE.MeshStandardMaterial({color:0x4f565c,roughness:.65,metalness:.32});const add=(object:THREE.Object3D,occluder=false)=>{object.traverse((child)=>{child.userData.propId=prop.id;const mesh=child as THREE.Mesh;if(!mesh.isMesh)return;mesh.castShadow=true;mesh.receiveShadow=true;if(occluder)mesh.userData.arpgOccluder=true});group.add(object)};if(prop.source==='library')return group;if(prop.assetRef==='pillar'){const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.35,.42,2.6,10),stone);shaft.position.y=1.3;const base=new THREE.Mesh(new THREE.BoxGeometry(.92,.22,.92),stone);base.position.y=.11;add(shaft,true);add(base,true)}else if(prop.assetRef==='torch'){const stem=new THREE.Mesh(new THREE.CylinderGeometry(.05,.06,.8,8),wood);stem.position.y=.55;stem.rotation.z=.25;const flame=new THREE.Mesh(new THREE.SphereGeometry(.1,9,7),new THREE.MeshStandardMaterial({color:atmosphere.torch,emissive:atmosphere.torch,emissiveIntensity:2.6,roughness:.3}));flame.scale.y=1.35;flame.position.set(.1,1.02,0);const light=new THREE.PointLight(atmosphere.torch,atmosphere.torchIntensity,9,1.75);light.position.copy(flame.position);flickerLights.push({light,base:atmosphere.torchIntensity,phase:Math.random()*Math.PI*2,speed:5.8+Math.random()*2});add(stem);add(flame);group.add(light)}else if(prop.assetRef==='statue'){const base=new THREE.Mesh(new THREE.BoxGeometry(.9,.4,.9),stone);base.position.y=.2;const body=new THREE.Mesh(new THREE.CapsuleGeometry(.3,1.1,5,8),stone);body.position.y=1.25;const head=new THREE.Mesh(new THREE.SphereGeometry(.27,12,9),stone);head.position.y=2.15;add(base,true);add(body,true);add(head,true)}else if(prop.assetRef==='barrel'){const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.42,.42,.9,12),wood);barrel.position.y=.45;add(barrel)}else if(prop.assetRef==='crate'){const crate=new THREE.Mesh(new THREE.BoxGeometry(.9,.9,.9),wood);crate.position.y=.45;add(crate)}else if(prop.assetRef==='rubble'){const random=seededRandom(stringSeed(prop.id));for(let i=0;i<6;i++){const radius=.14+random()*.14,rock=new THREE.Mesh(new THREE.DodecahedronGeometry(radius,0),stone);rock.position.set((random()-.5)*1.1,radius,(random()-.5)*1.1);rock.rotation.set(random(),random(),random());add(rock)}}else{for(let i=-2;i<=2;i++){const spike=new THREE.Mesh(new THREE.ConeGeometry(.12,.8,6),metal);spike.position.set(i*.25,.4,0);add(spike)}}return group}
 function addMarker(parent:THREE.Group,item:DungeonMarker,doors?:Map<string,RuntimeDoor>){const group=new THREE.Group();group.position.set(item.x,item.y,item.z);parent.add(group);if(item.type==='door'){group.rotation.y=THREE.MathUtils.degToRad(Number(item.data.yaw??0));const frame=new THREE.MeshStandardMaterial({color:0x4b382b,roughness:.85}),panelMaterial=new THREE.MeshStandardMaterial({color:0x7d5b38,roughness:.78}),panel=new THREE.Mesh(new THREE.BoxGeometry(.16,2.25,1.65),panelMaterial);panel.position.y=1.13;const defaultLocked=Boolean(item.data.locked);if(!defaultLocked){panel.rotation.y=Math.PI/2;panel.position.x=.82;panel.position.z=-.78}const left=new THREE.Mesh(new THREE.BoxGeometry(.24,2.55,.22),frame);left.position.set(0,1.27,-.94);const right=left.clone();right.position.z=.94;const top=new THREE.Mesh(new THREE.BoxGeometry(.24,.24,2.1),frame);top.position.set(0,2.45,0);group.add(panel,left,right,top);doors?.set(item.id,{panel,defaultLocked})}else if(item.type==='portal'){const portal=new THREE.Mesh(new THREE.TorusGeometry(.62,.1,10,24),new THREE.MeshBasicMaterial({color:0x9f74ff}));portal.rotation.y=Math.PI/2;group.add(portal)}else if(item.type==='light'){const light=new THREE.PointLight(String(item.data.color??'#ffb45f'),Number(item.data.intensity??2),7,2);light.position.y=1.6;group.add(light)}else if(item.type==='loot'){const loot=new THREE.Mesh(new THREE.OctahedronGeometry(.24),new THREE.MeshStandardMaterial({color:0xc89b42,emissive:0x7d5f22,emissiveIntensity:.35}));loot.position.y=.35;group.add(loot)}else if(item.type==='trigger'){const trigger=new THREE.Mesh(new THREE.RingGeometry(Math.max(.5,(item.radius??2)-.08),item.radius??2,32),new THREE.MeshBasicMaterial({color:0x9f6a3c,transparent:true,opacity:.18,side:THREE.DoubleSide,depthWrite:false}));trigger.rotation.x=-Math.PI/2;trigger.position.y=.04;group.add(trigger)}}
 function spawnBreakDust(parent:THREE.Group, output:DustParticle[], prop:DungeonProp, definition:DungeonDestructible){const kind=definition.template==='crate'||definition.template==='barrel'||definition.template==='chest'?'wood':definition.template==='stone-pot'?'stone':'ceramic';const color=new THREE.Color(kind==='wood'?0x8b684d:kind==='stone'?0x899195:0x9b8776),random=seededRandom(stringSeed(`${prop.id}-${Date.now()}`));for(let i=0;i<22;i++){const size=.025+random()*.06,mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(size,0),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.34,depthWrite:false}));mesh.position.set(prop.x+(random()-.5)*.7*prop.scale,prop.y+.2+random()*.75*prop.scale,prop.z+(random()-.5)*.7*prop.scale);parent.add(mesh);const life=.35+random()*.25;output.push({mesh,velocity:new THREE.Vector3((random()-.5)*2.6,.8+random()*2.2,(random()-.5)*2.6),life,totalLife:life})}}
