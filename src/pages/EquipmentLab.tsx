@@ -319,25 +319,6 @@ export default function EquipmentLab() {
     }
   }, [])
 
-  useEffect(
-    () => () => {
-      if (rawUrl) {
-        URL.revokeObjectURL(
-          rawUrl,
-        )
-      }
-      if (processedUrl) {
-        URL.revokeObjectURL(
-          processedUrl,
-        )
-      }
-    },
-    [
-      rawUrl,
-      processedUrl,
-    ],
-  )
-
   const selectFile = (
     file?: File,
   ) => {

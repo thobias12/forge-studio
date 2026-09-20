@@ -160,15 +160,20 @@ async function readProcessorError(
   response: Response,
   fallback: string,
 ) {
+  const text =
+    await response.text()
+
+  if (!text) {
+    return fallback
+  }
+
   try {
     const payload =
-      await response.json() as {
+      JSON.parse(text) as {
         error?: string
       }
     return payload.error || fallback
   } catch {
-    const text =
-      await response.text()
-    return text || fallback
+    return text
   }
 }
