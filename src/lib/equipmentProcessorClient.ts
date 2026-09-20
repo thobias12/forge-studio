@@ -10,14 +10,26 @@ export type EquipmentLabSlot =
   | 'main-hand'
   | 'off-hand'
 
+export type EquipmentGeneratorBackend =
+  | 'spar3d'
+  | 'triposr'
+
 export type EquipmentGeneratorHealth = {
-  backend: 'triposr'
+  backend: EquipmentGeneratorBackend
   label: string
   installed: boolean
   ready: boolean
   setupRunning?: boolean
   pythonAvailable?: boolean
+  needsAccessToken?: boolean
+  modelAccessUrl?: string
+  tokenUrl?: string
+  license?: string
   message?: string
+  legacy?: {
+    backend: 'triposr'
+    ready: boolean
+  }
 }
 
 export type EquipmentProcessorHealth = {
@@ -79,9 +91,46 @@ export async function checkEquipmentProcessor(
     EquipmentProcessorHealth
 }
 
-export async function startLocalGeneratorSetup() {
+export async function saveGeneratorAccessToken(
+  token: string,
+) {
   const response = await fetch(
-    EQUIPMENT_PROCESSOR_URL + '/generator/setup',
+    EQUIPMENT_PROCESSOR_URL +
+      '/generator/access-token',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type':
+          'text/plain; charset=utf-8',
+      },
+      body: token,
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await readProcessorError(
+        response,
+        'Could not save the local generator access token.',
+      ),
+    )
+  }
+}
+
+export async function startLocalGeneratorSetup(
+  backend:
+    EquipmentGeneratorBackend =
+      'spar3d',
+) {
+  const query =
+    new URLSearchParams({
+      backend,
+    })
+
+  const response = await fetch(
+    EQUIPMENT_PROCESSOR_URL +
+      '/generator/setup?' +
+      query.toString(),
     {
       method: 'POST',
     },
@@ -106,11 +155,15 @@ export async function startLocal3DGeneration(
   options: {
     fileName: string
     quality: 'draft' | 'standard' | 'high'
+    backend?: EquipmentGeneratorBackend
   },
 ) {
   const query =
     new URLSearchParams({
       quality: options.quality,
+      backend:
+        options.backend ??
+        'spar3d',
     })
 
   const response = await fetch(
