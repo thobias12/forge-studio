@@ -205,6 +205,18 @@ function moveEnemyAway(runtime: any, enemy: any, delta: number, mode: EnemyMode)
   const desired = enemy.preferredRange ?? preferredRange(enemy.definition)
   if (distance >= desired - .18 || distance <= .001) return
 
+  const attackHoldDistance = Math.max(
+    enemy.retreatRange ?? retreatRange(enemy.definition),
+    desired * .72,
+  )
+  if (distance < attackHoldDistance) {
+    if (mode === 'dungeon') {
+      enemy.attackTimer = Math.max(Number(enemy.attackTimer ?? 0), .16)
+    } else {
+      enemy.attackCooldown = Math.max(Number(enemy.attackCooldown ?? 0), .16)
+    }
+  }
+
   toEnemy.normalize()
   const side = hashUnit(`${enemy.id}:combat-side`) > .5 ? 1 : -1
   const tangent = new THREE.Vector3(-toEnemy.z, 0, toEnemy.x)
@@ -323,6 +335,16 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   ensureEnemyState(enemy)
   enemy.attackTarget.copy(runtime.player.position)
   enemy.attackTargetValid = true
+
+  const toPlayer = runtime.player.position
+    .clone()
+    .sub(enemy.group.position)
+    .setY(0)
+  if (toPlayer.lengthSq() > .001) {
+    enemy.group.rotation.y = Math.atan2(toPlayer.x, toPlayer.z)
+    enemy.group.updateMatrixWorld(true)
+  }
+
   baseBegin.call(runtime, enemy)
 
   const style = enemy.attackStyle
@@ -332,12 +354,12 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   const material = telegraph.material
   if (material?.color) material.color.set(combatColor(enemy.definition))
 
-  if (style === 'area') {
-    telegraph.position.set(
-      enemy.attackTarget.x - enemy.group.position.x,
-      .045,
-      enemy.attackTarget.z - enemy.group.position.z,
+  if (style === 'area' || style === 'projectile') {
+    enemy.group.updateMatrixWorld(true)
+    const localTarget = enemy.group.worldToLocal(
+      enemy.attackTarget.clone(),
     )
+    telegraph.position.set(localTarget.x, .045, localTarget.z)
   } else {
     telegraph.position.set(0, .045, 0)
   }
@@ -813,6 +835,22 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     this.emitState?.()
   }
 
+  proto.setCombatLabTimeScale = function (scale: number) {
+    const value = THREE.MathUtils.clamp(
+      Number.isFinite(scale) ? scale : 1,
+      .2,
+      1,
+    )
+    this.__forgeCombatLabTimeScale = value
+    this.setMessage?.(
+      value < .999
+        ? `Combat Lab · ${value.toFixed(2)}× slow motion.`
+        : 'Combat Lab · normal speed.',
+      1.2,
+    )
+    this.emitState?.()
+  }
+
   proto.makeSnapshot = function (...args: any[]) {
     return {
       ...roleTargetSnapshot(
@@ -821,6 +859,11 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
         'overworld',
       ),
       combatLabInvulnerable: Boolean(this.__forgeCombatLabInvulnerable),
+      combatLabTimeScale: THREE.MathUtils.clamp(
+        Number(this.__forgeCombatLabTimeScale ?? 1),
+        .2,
+        1,
+      ),
     }
   }
 }
