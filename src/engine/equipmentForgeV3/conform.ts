@@ -115,16 +115,6 @@ export function buildConformedTunic(
 
   const meshes = [torso]
 
-  if (recipe.neckline === 'round') {
-    meshes.push(
-      createFrontSeamSmoothingPanel(
-        source,
-        torso.geometry,
-        cloth,
-      ),
-    )
-  }
-
   if (recipe.sleeve !== 'none') {
     const left = createSleeveTemplate(
       source,
@@ -585,14 +575,32 @@ function createTorsoTemplate(
           segments +
         next
 
-      indices.push(
-        a,
-        c,
-        b,
-        b,
-        c,
-        d,
-      )
+      if (
+        segment === segments - 1 &&
+        ring >= rings - 6
+      ) {
+        // The circular grid closes at the center-front V. Using the
+        // default diagonal here stacks the upper seam triangles into a
+        // visible dark kite. Flip only these seam quads so the diagonal
+        // follows the chest surface instead of crossing the V apex.
+        indices.push(
+          a,
+          c,
+          d,
+          a,
+          d,
+          b,
+        )
+      } else {
+        indices.push(
+          a,
+          c,
+          b,
+          b,
+          c,
+          d,
+        )
+      }
     }
   }
 
@@ -800,185 +808,6 @@ function createTorsoTemplate(
     geometry,
     material,
     'EFV3_TunicFitted',
-  )
-}
-
-function createFrontSeamSmoothingPanel(
-  source: THREE.SkinnedMesh,
-  torsoGeometry: THREE.BufferGeometry,
-  material: THREE.Material,
-) {
-  const sourcePosition =
-    torsoGeometry.getAttribute(
-      'position',
-    )
-  const rowStart = 14
-  const rowEnd = 18
-  const columnOffsets = [
-    -3,
-    -2,
-    -1,
-    0,
-    1,
-    2,
-    3,
-  ]
-  const widthByRing = [
-    .55,
-    .82,
-    1,
-    .78,
-    .42,
-  ]
-  const positions: number[] = []
-  const uvs: number[] = []
-  const indices: number[] = []
-  const influences: SkinInfluence[] = []
-
-  for (
-    let row = rowStart;
-    row <= rowEnd;
-    row += 1
-  ) {
-    const width =
-      widthByRing[
-        row - rowStart
-      ]
-    const centerIndex =
-      row * 48
-    const centerPoint =
-      new THREE.Vector3(
-        sourcePosition.getX(
-          centerIndex,
-        ),
-        sourcePosition.getY(
-          centerIndex,
-        ),
-        sourcePosition.getZ(
-          centerIndex,
-        ),
-      )
-    const centerInfluence =
-      readSkinInfluence(
-        torsoGeometry,
-        centerIndex,
-      )
-
-    for (
-      let column = 0;
-      column <
-        columnOffsets.length;
-      column += 1
-    ) {
-      const offset =
-        columnOffsets[column]
-      const segment =
-        (offset + 48) % 48
-      const sourceIndex =
-        row * 48 + segment
-      const sourcePoint =
-        new THREE.Vector3(
-          sourcePosition.getX(
-            sourceIndex,
-          ),
-          sourcePosition.getY(
-            sourceIndex,
-          ),
-          sourcePosition.getZ(
-            sourceIndex,
-          ),
-        )
-      const point =
-        centerPoint
-          .clone()
-          .lerp(
-            sourcePoint,
-            width,
-          )
-      const radial =
-        new THREE.Vector3(
-          point.x,
-          0,
-          point.z,
-        )
-
-      if (
-        radial.lengthSq() >
-        1e-7
-      ) {
-        point.addScaledVector(
-          radial.normalize(),
-          .00135,
-        )
-      }
-
-      positions.push(
-        point.x,
-        point.y,
-        point.z,
-      )
-      uvs.push(
-        column /
-          (columnOffsets.length -
-            1),
-        (row - rowStart) /
-          (rowEnd - rowStart),
-      )
-
-      const sourceInfluence =
-        readSkinInfluence(
-          torsoGeometry,
-          sourceIndex,
-        )
-      influences.push(
-        blendSkinInfluence(
-          centerInfluence,
-          sourceInfluence,
-          width,
-        ),
-      )
-    }
-  }
-
-  const columns =
-    columnOffsets.length
-  const rows =
-    rowEnd - rowStart
-
-  for (
-    let row = 0;
-    row < rows;
-    row += 1
-  ) {
-    for (
-      let column = 0;
-      column < columns - 1;
-      column += 1
-    ) {
-      const a =
-        row * columns + column
-      const b = a + 1
-      const c0 =
-        (row + 1) *
-          columns +
-        column
-      const d = c0 + 1
-
-      indices.push(
-        a, c0, b,
-        b, c0, d,
-      )
-    }
-  }
-
-  return createDetailMesh(
-    source,
-    positions,
-    uvs,
-    indices,
-    influences,
-    material,
-    'EFV3_FrontSeamSmoothingPanel',
   )
 }
 
