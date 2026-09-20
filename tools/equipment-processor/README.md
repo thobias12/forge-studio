@@ -123,3 +123,9 @@ Procedural layer predicates are now evaluated against the untouched Skillbound s
 Live diagnostics proved the garment predicates were correct (for example 2715 source vertices matched the base chest) while the copied layer still ended with zero vertices. The remaining fault was Blender Edit Mode selection state on duplicated glTF meshes.
 
 Forge now cuts procedural layers with `bmesh` directly: load the copied mesh datablock, delete every BMesh vertex whose original index is not in the source-body keep set, write the BMesh back, and update the mesh. No Edit Mode or selection flags are involved. `FORGE_LAYER` diagnostics now include both vertex and polygon counts.
+
+## v1.81.5 torso-weight mask and landmark neckline
+
+The first successful procedural Ranger chest revealed that pure geometric height/width cuts could still select unrelated arm, hand and pelvis vertices. Forge now builds a torso mask from the source body's skin weights. Vertices driven by spine/pelvis/chest/breast/clavicle groups are allowed; vertices dominated by arm/hand/leg/head groups are rejected. A strict central spatial fallback is used only if an unexpected rig naming scheme leaves too few weighted torso vertices.
+
+The torso width/depth frame is then recalculated from the masked vertices. Chest top/hem contours are anchored to the imported pelvis/chest/neck/shoulder landmarks rather than fixed whole-body fractions. This produces a higher neckline, narrower armholes and prevents chest accessories from appearing on forearms, hands or thighs.
