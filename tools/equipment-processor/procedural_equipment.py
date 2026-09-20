@@ -13,9 +13,9 @@ from mathutils.kdtree import KDTree
 STYLES = {
     "ranger": {
         "name": "Ranger Field Vest",
-        "cloth": "#294333",
-        "leather": "#2b1c14",
-        "trim": "#84613b",
+        "cloth": "#20372a",
+        "leather": "#342117",
+        "trim": "#6b4b2e",
         "accent": "#6b3038",
         "metal": "#7d8589",
         "length": 0.515,
@@ -2946,7 +2946,7 @@ def build_ranger_top_trim(
             )
             v = (
                 top_v
-                - row * 0.010
+                - row * 0.006
             )
             vertices.append(
                 ranger_angle_point(
@@ -3132,18 +3132,9 @@ def create_ranger_authored_chest(
             lower + 0.095,
             lower + 0.135,
             lower + 0.172,
-            center_top - 0.050,
-            center_top - 0.010,
+            center_top - 0.065,
+            center_top - 0.032,
         ]
-        top_values = [
-            center_top - 0.020,
-            center_top + 0.010,
-            shoulder_top - 0.010,
-        ]
-        if side_sign < 0:
-            top_values = list(
-                reversed(top_values)
-            )
 
         panel_vertices, panel_faces = (
             build_surface_patch(
@@ -3153,8 +3144,7 @@ def create_ranger_authored_chest(
                 "front",
                 rows,
                 columns,
-                height * 0.0060,
-                top_values=top_values,
+                height * 0.0055,
             )
         )
         panel = create_authored_mesh(
@@ -3195,20 +3185,11 @@ def create_ranger_authored_chest(
                     lower + 0.060,
                     lower + 0.105,
                     lower + 0.150,
-                    center_top - 0.060,
-                    center_top - 0.020,
+                    center_top - 0.065,
+                    center_top - 0.034,
                 ],
                 columns,
-                height * 0.0055,
-                top_values=[
-                    center_top - 0.018,
-                    center_top + 0.004,
-                    center_top + 0.018,
-                ] if side_sign > 0 else [
-                    center_top + 0.018,
-                    center_top + 0.004,
-                    center_top - 0.018,
-                ],
+                height * 0.0050,
             )
         )
         back_panel = create_authored_mesh(
@@ -3231,7 +3212,7 @@ def create_ranger_authored_chest(
             frame,
             style,
             surface_samples,
-            height * 0.0085,
+            height * 0.0070,
         )
     )
     strap = create_authored_mesh(
@@ -3241,7 +3222,7 @@ def create_ranger_authored_chest(
         leather,
         strap_vertices,
         strap_faces,
-        height * 0.00165,
+        height * 0.00135,
     )
     if strap:
         objects.append(strap)
@@ -3256,7 +3237,7 @@ def create_ranger_authored_chest(
             surface_samples,
             belt_center - 0.011,
             belt_center + 0.012,
-            height * 0.0068,
+            height * 0.0055,
         )
     )
     belt = create_authored_mesh(
@@ -3266,7 +3247,7 @@ def create_ranger_authored_chest(
         leather,
         belt_vertices,
         belt_faces,
-        height * 0.00175,
+        height * 0.00145,
     )
     if belt:
         objects.append(belt)
@@ -3276,7 +3257,7 @@ def create_ranger_authored_chest(
             frame,
             style,
             surface_samples,
-            height * 0.0048,
+            height * 0.0033,
         )
     )
     top_trim = create_authored_mesh(
@@ -3286,7 +3267,7 @@ def create_ranger_authored_chest(
         trim,
         top_trim_vertices,
         top_trim_faces,
-        height * 0.00100,
+        height * 0.00072,
     )
     if top_trim:
         objects.append(top_trim)
@@ -3297,8 +3278,8 @@ def create_ranger_authored_chest(
             style,
             surface_samples,
             lower,
-            lower + 0.010,
-            height * 0.0040,
+            lower + 0.006,
+            height * 0.0028,
         )
     )
     hem = create_authored_mesh(
@@ -3308,7 +3289,7 @@ def create_ranger_authored_chest(
         trim,
         hem_vertices,
         hem_faces,
-        height * 0.00100,
+        height * 0.00070,
     )
     if hem:
         objects.append(hem)
