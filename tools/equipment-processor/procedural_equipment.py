@@ -153,28 +153,41 @@ def pose_bone_world_position(rig, bone):
     return rig.matrix_world @ bone.head
 
 
+def dominant_axis(vector, excluded=None):
+    excluded = set(excluded or [])
+    candidates = [
+        axis
+        for axis in range(3)
+        if axis not in excluded
+    ]
+    if not candidates:
+        raise RuntimeError(
+            "Could not resolve a free body axis."
+        )
+    return max(
+        candidates,
+        key=lambda axis: abs(vector[axis]),
+    )
+
+
+def axis_name(axis):
+    return ["X", "Y", "Z"][axis]
+
+
 def body_frame(body, rig):
     points = [
         body.matrix_world @ vertex.co
         for vertex in body.data.vertices
     ]
-
-    # SkillboundHumanoidV1 has a fixed authoring convention:
-    # X = left/right, Y = up, +Z = forward.
-    # Do not infer axes from total dimensions: a T-pose arm span can
-    # legitimately be wider than the character is tall.
-    vertical_axis = 1
-    width_axis = 0
-    depth_axis = 2
+    if not points:
+        raise RuntimeError(
+            "The Skillbound body has no vertices."
+        )
 
     full_min, full_max = robust_bounds(
         points,
         0.01,
         0.99,
-    )
-    height = max(
-        full_max.y - full_min.y,
-        0.001,
     )
 
     pelvis = pose_bone_world_position(
@@ -194,6 +207,15 @@ def body_frame(body, rig):
             "spine_02",
         ),
     )
+    head = pose_bone_world_position(
+        rig,
+        find_pose_bone(
+            rig,
+            "head",
+            "head_01",
+            "neck_01",
+        ),
+    )
     left_shoulder = pose_bone_world_position(
         rig,
         find_pose_bone(
@@ -211,24 +233,122 @@ def body_frame(body, rig):
         ),
     )
 
-    center_x = percentile(
-        [point.x for point in points],
-        0.5,
-    )
-    center_z = percentile(
-        [point.z for point in points],
-        0.5,
+    # glTF is Y-up, while Blender is Z-up. Blender's importer converts
+    # the asset, so the original Skillbound authoring axes must NOT be
+    # hard-coded here. Resolve the imported frame from the skeleton.
+    if pelvis is not None and head is not None:
+        vertical_vector = head - pelvis
+        vertical_axis = dominant_axis(
+            vertical_vector,
+        )
+        vertical_sign = (
+            1.0
+            if vertical_vector[vertical_axis] >= 0
+            else -1.0
+        )
+    elif pelvis is not None and chest is not None:
+        vertical_vector = chest - pelvis
+        vertical_axis = dominant_axis(
+            vertical_vector,
+        )
+        vertical_sign = (
+            1.0
+            if vertical_vector[vertical_axis] >= 0
+            else -1.0
+        )
+    else:
+        spans = full_max - full_min
+        vertical_axis = max(
+            range(3),
+            key=lambda axis: spans[axis],
+        )
+        vertical_sign = 1.0
+
+    if (
+        left_shoulder is not None
+        and right_shoulder is not None
+    ):
+        shoulder_vector = (
+            left_shoulder
+            - right_shoulder
+        )
+        width_axis = dominant_axis(
+            shoulder_vector,
+            excluded={vertical_axis},
+        )
+    else:
+        spans = full_max - full_min
+        width_axis = max(
+            [
+                axis
+                for axis in range(3)
+                if axis != vertical_axis
+            ],
+            key=lambda axis: spans[axis],
+        )
+
+    depth_axis = next(
+        axis
+        for axis in range(3)
+        if axis not in {
+            vertical_axis,
+            width_axis,
+        }
     )
 
-    if pelvis is not None and chest is not None:
-        torso_center_y = (
-            pelvis.y + chest.y
+    vertical_values = [
+        point[vertical_axis]
+        * vertical_sign
+        for point in points
+    ]
+    vertical_min = percentile(
+        vertical_values,
+        0.01,
+    )
+    vertical_max = percentile(
+        vertical_values,
+        0.99,
+    )
+    height = max(
+        vertical_max - vertical_min,
+        0.001,
+    )
+
+    center = Vector((
+        percentile(
+            [point.x for point in points],
+            0.5,
+        ),
+        percentile(
+            [point.y for point in points],
+            0.5,
+        ),
+        percentile(
+            [point.z for point in points],
+            0.5,
+        ),
+    ))
+
+    if (
+        pelvis is not None
+        and chest is not None
+    ):
+        torso_center_signed = (
+            pelvis[vertical_axis]
+            * vertical_sign
+            + chest[vertical_axis]
+            * vertical_sign
         ) * 0.5
     else:
-        torso_center_y = (
-            full_min.y
+        torso_center_signed = (
+            vertical_min
             + height * 0.64
         )
+
+    center[vertical_axis] = (
+        torso_center_signed
+        * vertical_sign
+    )
 
     shoulder_half_width = None
     if (
@@ -237,112 +357,212 @@ def body_frame(body, rig):
     ):
         shoulder_half_width = (
             abs(
-                left_shoulder.x
-                - right_shoulder.x
+                left_shoulder[width_axis]
+                - right_shoulder[width_axis]
             )
             * 0.5
         )
+
+    torso_band_low = (
+        vertical_min
+        + height * 0.46
+    )
+    torso_band_high = (
+        vertical_min
+        + height * 0.81
+    )
+
+    central_band = [
+        point
+        for point in points
+        if (
+            torso_band_low
+            <= (
+                point[vertical_axis]
+                * vertical_sign
+            )
+            <= torso_band_high
+        )
+    ]
 
     if (
         shoulder_half_width is None
         or shoulder_half_width
         < height * 0.06
     ):
-        # Fallback: estimate the torso from a narrow central body band,
-        # intentionally excluding most T-pose arm vertices.
-        central = [
-            point
-            for point in points
-            if (
-                full_min.y
-                + height * 0.50
-                <= point.y
-                <= full_min.y
-                + height * 0.78
+        width_distances = [
+            abs(
+                point[width_axis]
+                - center[width_axis]
             )
-        ]
-        xs = [
-            abs(point.x - center_x)
-            for point in central
+            for point in central_band
         ]
         shoulder_half_width = max(
-            percentile(xs, 0.72),
+            percentile(
+                width_distances,
+                0.74,
+            ),
             height * 0.11,
         )
 
-    torso_band_low = (
-        full_min.y + height * 0.46
-    )
-    torso_band_high = (
-        full_min.y + height * 0.81
-    )
-    torso_x_limit = (
-        shoulder_half_width * 1.12
+    torso_width_limit = (
+        shoulder_half_width
+        * 1.12
     )
 
     torso = [
         point
-        for point in points
+        for point in central_band
         if (
-            torso_band_low
-            <= point.y
-            <= torso_band_high
-            and abs(
-                point.x - center_x
+            abs(
+                point[width_axis]
+                - center[width_axis]
             )
-            <= torso_x_limit
+            <= torso_width_limit
         )
     ]
 
     if len(torso) < 64:
-        torso = [
-            point
-            for point in points
-            if (
-                torso_band_low
-                <= point.y
-                <= torso_band_high
-            )
-        ]
+        torso = central_band
 
-    torso_min, torso_max = robust_bounds(
-        torso,
-        0.04,
-        0.96,
-    )
+    if len(torso) < 64:
+        raise RuntimeError(
+            "Could not isolate enough Skillbound torso vertices. "
+            + "Resolved axes were vertical="
+            + axis_name(vertical_axis)
+            + ", width="
+            + axis_name(width_axis)
+            + "."
+        )
 
-    center = Vector((
-        center_x,
-        torso_center_y,
-        center_z,
-    ))
+    torso_width_values = [
+        point[width_axis]
+        for point in torso
+    ]
+    torso_depth_values = [
+        point[depth_axis]
+        for point in torso
+    ]
 
     torso_width = max(
-        torso_max.x - torso_min.x,
+        percentile(
+            torso_width_values,
+            0.96,
+        )
+        - percentile(
+            torso_width_values,
+            0.04,
+        ),
         shoulder_half_width * 1.45,
-        height * 0.20,
+        height * 0.16,
     )
     torso_depth = max(
-        torso_max.z - torso_min.z,
-        height * 0.10,
+        percentile(
+            torso_depth_values,
+            0.96,
+        )
+        - percentile(
+            torso_depth_values,
+            0.04,
+        ),
+        height * 0.08,
+    )
+
+    positive_depth = (
+        percentile(
+            torso_depth_values,
+            0.96,
+        )
+        - center[depth_axis]
+    )
+    negative_depth = (
+        center[depth_axis]
+        - percentile(
+            torso_depth_values,
+            0.04,
+        )
+    )
+    front_sign = (
+        1.0
+        if positive_depth >= negative_depth
+        else -1.0
     )
 
     print(
         "FORGE_FRAME "
         + json.dumps({
             "axes": {
-                "width": "X",
-                "vertical": "Y",
-                "forward": "+Z",
+                "width": axis_name(
+                    width_axis,
+                ),
+                "vertical": axis_name(
+                    vertical_axis,
+                ),
+                "verticalSign":
+                    vertical_sign,
+                "depth": axis_name(
+                    depth_axis,
+                ),
+                "frontSign":
+                    front_sign,
             },
-            "height": round(height, 5),
-            "torsoWidth": round(torso_width, 5),
-            "torsoDepth": round(torso_depth, 5),
+            "height": round(
+                height,
+                5,
+            ),
+            "torsoWidth": round(
+                torso_width,
+                5,
+            ),
+            "torsoDepth": round(
+                torso_depth,
+                5,
+            ),
             "shoulderHalfWidth": round(
                 shoulder_half_width,
                 5,
             ),
-            "torsoVertices": len(torso),
+            "torsoVertices": len(
+                torso,
+            ),
+            "bones": {
+                "pelvis": (
+                    list(
+                        round(
+                            value,
+                            5,
+                        )
+                        for value
+                        in pelvis
+                    )
+                    if pelvis is not None
+                    else None
+                ),
+                "chest": (
+                    list(
+                        round(
+                            value,
+                            5,
+                        )
+                        for value
+                        in chest
+                    )
+                    if chest is not None
+                    else None
+                ),
+                "head": (
+                    list(
+                        round(
+                            value,
+                            5,
+                        )
+                        for value
+                        in head
+                    )
+                    if head is not None
+                    else None
+                ),
+            },
         }),
         flush=True,
     )
@@ -352,14 +572,15 @@ def body_frame(body, rig):
         "max": full_max,
         "height": height,
         "vertical": vertical_axis,
+        "vertical_sign": vertical_sign,
+        "vertical_min": vertical_min,
         "width": width_axis,
         "depth": depth_axis,
         "center": center,
         "torso_width": torso_width,
         "torso_depth": torso_depth,
-        "front_sign": 1.0,
+        "front_sign": front_sign,
     }
-
 
 def hex_rgb(value):
     value = value.lstrip("#")
@@ -509,12 +730,31 @@ def normalized_components(point, frame):
     depth = frame["depth"]
     height = frame["height"]
 
-    v = (point[vertical] - frame["min"][vertical]) / height
-    dw = point[width] - frame["center"][width]
-    dd = point[depth] - frame["center"][depth]
+    signed_vertical = (
+        point[vertical]
+        * frame["vertical_sign"]
+    )
+    v = (
+        signed_vertical
+        - frame["vertical_min"]
+    ) / height
+    dw = (
+        point[width]
+        - frame["center"][width]
+    )
+    dd = (
+        point[depth]
+        - frame["center"][depth]
+    )
 
-    half_width = max(frame["torso_width"] * 0.5, 1e-5)
-    half_depth = max(frame["torso_depth"] * 0.5, 1e-5)
+    half_width = max(
+        frame["torso_width"] * 0.5,
+        1e-5,
+    )
+    half_depth = max(
+        frame["torso_depth"] * 0.5,
+        1e-5,
+    )
 
     return (
         v,
