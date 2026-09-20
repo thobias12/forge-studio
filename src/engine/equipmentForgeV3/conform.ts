@@ -460,8 +460,22 @@ function createTorsoTemplate(
       // visible in v1.76.0.
       position.y = targetY
 
-      const radialNormal =
+      const surfaceNormal =
         nearest.normal.clone()
+      if (
+        surfaceNormal.lengthSq() <
+        1e-5
+      ) {
+        surfaceNormal.set(
+          position.x,
+          0,
+          position.z,
+        )
+      }
+      surfaceNormal.normalize()
+
+      const radialNormal =
+        surfaceNormal.clone()
       radialNormal.y = 0
       if (
         radialNormal.lengthSq() <
@@ -524,6 +538,44 @@ function createTorsoTemplate(
       position.addScaledVector(
         radialNormal,
         extra,
+      )
+
+      // Keep only the shoulder crown microscopically clear of the source
+      // body. A tiny true-surface-normal lift prevents isolated body
+      // triangles from breaking through in the top-down QA without
+      // puffing the chest or changing the fitted silhouette.
+      const shoulderTop =
+        THREE.MathUtils.smoothstep(
+          v,
+          .88,
+          1,
+        )
+      const shoulderSide =
+        Math.pow(
+          THREE.MathUtils.clamp(
+            1 -
+              Math.abs(
+                radialNormal.z,
+              ),
+            0,
+            1,
+          ),
+          1.6,
+        )
+      const shoulderUp =
+        THREE.MathUtils.clamp(
+          surfaceNormal.y,
+          0,
+          1,
+        )
+      const shoulderLift =
+        .0018 *
+        shoulderTop *
+        shoulderSide *
+        shoulderUp
+      position.addScaledVector(
+        surfaceNormal,
+        shoulderLift,
       )
 
       ringPositions.push(position)
@@ -2220,10 +2272,38 @@ function createVestOverlay(
       segment < segments;
       segment += 1
     ) {
-      // Leave a clean split down the front of the leather vest.
+      // Shape the split as a real V opening instead of two parallel
+      // rails. The opening widens toward the upper chest so the leather
+      // edges cannot cross at the neckline.
+      const rowGap =
+        Math.max(
+          Math.round(
+            THREE.MathUtils.lerp(
+              7,
+              11,
+              row /
+                Math.max(
+                  1,
+                  localRows,
+                ),
+            ),
+          ),
+          Math.round(
+            THREE.MathUtils.lerp(
+              7,
+              11,
+              (row + 1) /
+                Math.max(
+                  1,
+                  localRows,
+                ),
+            ),
+          ),
+        )
       const frontGap =
-        segment <= 7 ||
-        segment >= segments - 7
+        segment <= rowGap ||
+        segment >=
+          segments - rowGap
       if (frontGap) continue
 
       const next =
@@ -3649,27 +3729,59 @@ function createVestDetailTrim(
 ) {
   const rowCount = 10
   const columnCount = 48
+  const leftEdgePath =
+    Array.from(
+      { length: rowCount },
+      (_, row) => ({
+        row,
+        column:
+          8 +
+          Math.round(
+            (row /
+              Math.max(
+                1,
+                rowCount - 1,
+              )) *
+              4,
+          ),
+      }),
+    )
+  const rightEdgePath =
+    Array.from(
+      { length: rowCount },
+      (_, row) => ({
+        row,
+        column:
+          40 -
+          Math.round(
+            (row /
+              Math.max(
+                1,
+                rowCount - 1,
+              )) *
+              4,
+          ),
+      }),
+    )
 
   return [
-    createGridColumnStrip(
+    // Follow the widening split so the front leather reads as two fitted
+    // vest edges instead of straight procedural rails meeting in an X.
+    createGridPathStrip(
       source,
       vestGeometry,
-      rowCount,
       columnCount,
-      8,
-      9,
+      leftEdgePath,
       material,
       'EFV3_VestEdge_L',
       'radial',
       .0022,
     ),
-    createGridColumnStrip(
+    createGridPathStrip(
       source,
       vestGeometry,
-      rowCount,
       columnCount,
-      40,
-      41,
+      rightEdgePath,
       material,
       'EFV3_VestEdge_R',
       'radial',
@@ -3694,8 +3806,8 @@ function createVestDetailTrim(
       columnCount,
       9,
       8,
-      8,
-      40,
+      12,
+      36,
       material,
       'EFV3_VestShoulderSeam',
       'radial',
@@ -4399,12 +4511,11 @@ function createLowerArmholeTrim(
         .clone()
         .sub(rootCenter)
 
-    // Only keep the lower half of the sleeve root plus a very small
-    // transition margin. This closes the visible underarm seam while
-    // making it geometrically impossible for the trim to cross the chest.
+    // Keep this as a genuinely narrow underarm seam: only the lower
+    // portion of the root receives trim, well away from the chest.
     if (
       local.y >
-      rootRadius * .08
+      rootRadius * -.1
     ) {
       continue
     }
@@ -4420,7 +4531,7 @@ function createLowerArmholeTrim(
         .clone()
         .lerp(
           inner,
-          .46,
+          .16,
         )
 
     const radial =
@@ -4435,7 +4546,7 @@ function createLowerArmholeTrim(
     ) {
       radial
         .normalize()
-        .multiplyScalar(.0017)
+        .multiplyScalar(.0012)
       outer.add(radial)
       inset.add(radial)
     }
