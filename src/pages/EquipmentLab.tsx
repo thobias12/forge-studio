@@ -879,60 +879,66 @@ export default function EquipmentLab() {
             </div>
           )}
 
-          <div className="equipment-lab-divider" />
-
-          <header>
-            <span className="eyebrow">AUTO PROCESS</span>
-            <h2>Fit settings</h2>
-          </header>
-
-          <label className="equipment-lab-field">
-            <span>Fit</span>
-            <select
-              value={fit}
-              onChange={(event) =>
-                setFit(event.target.value as 'tight' | 'normal' | 'loose')}
+          {showExperimental && (
+            <div className="equipment-lab-experimental-fit">
+            <div className="equipment-lab-divider" />
+  
+            <header>
+              <span className="eyebrow">AUTO PROCESS</span>
+              <h2>Fit settings</h2>
+            </header>
+  
+            <label className="equipment-lab-field">
+              <span>Fit</span>
+              <select
+                value={fit}
+                onChange={(event) =>
+                  setFit(event.target.value as 'tight' | 'normal' | 'loose')}
+              >
+                <option value="tight">Tight</option>
+                <option value="normal">Normal</option>
+                <option value="loose">Loose</option>
+              </select>
+            </label>
+  
+            <label className="equipment-lab-field">
+              <span>Surface clearance <b>{clearanceMm} mm</b></span>
+              <input
+                type="range"
+                min="1"
+                max="12"
+                step="1"
+                value={clearanceMm}
+                onChange={(event) => setClearanceMm(Number(event.target.value))}
+              />
+            </label>
+  
+            <label className="equipment-lab-field">
+              <span>Polygon budget</span>
+              <select
+                value={polyLimit}
+                onChange={(event) => setPolyLimit(Number(event.target.value))}
+              >
+                <option value={12000}>12k</option>
+                <option value={25000}>25k</option>
+                <option value={50000}>50k</option>
+              </select>
+            </label>
+  
+            <button
+              className="secondary-button equipment-lab-process"
+              disabled={!rawFile || !connected || busy}
+              onClick={runProcessor}
             >
-              <option value="tight">Tight</option>
-              <option value="normal">Normal</option>
-              <option value="loose">Loose</option>
-            </select>
-          </label>
-
-          <label className="equipment-lab-field">
-            <span>Surface clearance <b>{clearanceMm} mm</b></span>
-            <input
-              type="range"
-              min="1"
-              max="12"
-              step="1"
-              value={clearanceMm}
-              onChange={(event) => setClearanceMm(Number(event.target.value))}
-            />
-          </label>
-
-          <label className="equipment-lab-field">
-            <span>Polygon budget</span>
-            <select
-              value={polyLimit}
-              onChange={(event) => setPolyLimit(Number(event.target.value))}
-            >
-              <option value={12000}>12k</option>
-              <option value={25000}>25k</option>
-              <option value={50000}>50k</option>
-            </select>
-          </label>
-
-          <button
-            className="secondary-button equipment-lab-process"
-            disabled={!rawFile || !connected || busy}
-            onClick={runProcessor}
-          >
-            {state === 'uploading' || state === 'processing'
-              ? <LoaderCircle className="spin" size={16} />
-              : <WandSparkles size={16} />}
-            Process Raw GLB Only
-          </button>
+              {state === 'uploading' || state === 'processing'
+                ? <LoaderCircle className="spin" size={16} />
+                : <WandSparkles size={16} />}
+              Process Raw GLB Only
+            </button>
+  
+  
+            </div>
+          )}
 
           {!mannequinBlob && (
             <div className="equipment-lab-warning">
@@ -963,7 +969,13 @@ export default function EquipmentLab() {
         </aside>
 
         <main className="equipment-lab-workspace">
-          <div className="equipment-lab-view-grid">
+          <div
+            className={
+              'equipment-lab-view-grid ' +
+              (!showExperimental ? 'single' : '')
+            }
+          >
+            {showExperimental && (
             <article className="equipment-lab-preview-card">
               <header>
                 <div><span>RAW</span><strong>Generated / imported mesh</strong></div>
@@ -989,6 +1001,7 @@ export default function EquipmentLab() {
                 )}
               </div>
             </article>
+            )}
 
             <article className="equipment-lab-preview-card processed">
               <header>
@@ -1018,8 +1031,10 @@ export default function EquipmentLab() {
                 <span className="eyebrow">PIPELINE</span>
                 <h2>
                   {proceduralResult
-                    ? 'Recipe → Skillbound'
-                    : 'Reference → Skillbound'}
+                    ? 'Generated chest → Skillbound'
+                    : showExperimental
+                      ? 'Reference → Skillbound'
+                      : 'Equipment generator'}
                 </h2>
               </div>
               {state === 'ready' && (
