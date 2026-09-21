@@ -1587,6 +1587,39 @@ function updateRangedReposition(
   return true
 }
 
+function empowerNearbyAllies(
+  runtime: any,
+  source: any,
+  mode: EnemyMode,
+  duration = 4,
+) {
+  const color = '#9b6ee7'
+  for (const ally of combatEnemies(runtime, mode)) {
+    if (ally === source || ally.health <= 0) continue
+    if (
+      mode === 'dungeon' &&
+      ally.encounterId !== source.encounterId
+    ) {
+      continue
+    }
+    const distance = Math.hypot(
+      ally.group.position.x - source.group.position.x,
+      ally.group.position.z - source.group.position.z,
+    )
+    if (distance > 5.8) continue
+    ally.__forgeEmpowerRemaining = Math.max(
+      Number(ally.__forgeEmpowerRemaining ?? 0),
+      duration,
+    )
+    runtime.spawnPulse?.(
+      ally.group.position,
+      color,
+      .72,
+      .12,
+    )
+  }
+}
+
 function ensureHazardState(runtime: any) {
   runtime.__forgeEnemyHazards ??= []
   return runtime.__forgeEnemyHazards as any[]
@@ -1716,7 +1749,13 @@ function updateEnemyIdentityKit(
   }
   enemy.specialCooldownRemaining = Math.max(
     0,
-    Number(enemy.specialCooldownRemaining ?? 0) - delta,
+    Number(enemy.specialCooldownRemaining ?? 0) -
+      delta *
+        (Number(enemy.__forgeEmpowerRemaining ?? 0) > 0 ? 1.22 : 1),
+  )
+  enemy.__forgeEmpowerRemaining = Math.max(
+    0,
+    Number(enemy.__forgeEmpowerRemaining ?? 0) - delta,
   )
 
   const action = enemy.__forgeIdentityAction
@@ -2226,10 +2265,15 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
 function finishAttackState(runtime: any, enemy: any, mode: EnemyMode) {
   enemy.telegraph.visible = false
   enemy.telegraph.position.set(0, .045, 0)
+  const empowerScale =
+    Number(enemy.__forgeEmpowerRemaining ?? 0) > 0
+      ? .8
+      : 1
   if (mode === 'dungeon') {
-    enemy.attackTimer = enemy.attackCooldown
+    enemy.attackTimer = enemy.attackCooldown * empowerScale
   } else {
-    enemy.attackCooldown = enemy.definition.attackCooldown
+    enemy.attackCooldown =
+      enemy.definition.attackCooldown * empowerScale
   }
   enemy.recoveryRemaining = Math.max(
     enemy.recoveryRemaining ?? 0,
@@ -2771,6 +2815,18 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
           enemy,
           'overworld',
         )
+        empowerNearbyAllies(
+          this,
+          enemy,
+          'overworld',
+          4.2,
+        )
+        empowerNearbyAllies(
+          this,
+          enemy,
+          'dungeon',
+          4.2,
+        )
         enemy.__forgeGraveZoneCast = false
         enemy.specialCooldownRemaining = specialCooldownFor(enemy)
       }
@@ -2915,6 +2971,20 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     const projectiles = ensureProjectileState(this)
     for (let index = projectiles.length - 1; index >= 0; index -= 1) {
       removeProjectile(this, projectiles, index)
+    }
+    const hazards = ensureHazardState(this)
+    for (let index = hazards.length - 1; index >= 0; index -= 1) {
+      const hazard = hazards[index]
+      hazard.group?.parent?.remove(hazard.group)
+      hazard.group?.traverse?.((child: any) => {
+        child.geometry?.dispose?.()
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material: any) => material.dispose?.())
+        } else {
+          child.material?.dispose?.()
+        }
+      })
+      hazards.splice(index, 1)
     }
     this.setMessage?.('Combat Lab cleared.', 1.4)
     this.emitState?.()
