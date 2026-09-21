@@ -46,7 +46,7 @@ export default function SkillboundItemGeneratorPanel() {
     }finally{if(root)disposeGeneratedModel(root)}
   })
   const label=(s:string)=>s.charAt(0).toUpperCase()+s.slice(1)
-  return <section className="item-generator-panel">
+  return <section className="item-generator-panel skillbound-item-generator">
     <header><div><span>SKILLBOUND EQUIPMENT GENERATOR</span><strong>{item.name}</strong><small>Original 3D parts · persistent recipes · fitted equipment</small></div>{icon&&<img src={icon} width={80} height={80} alt={`${item.name} inventory icon`}/>}</header>
     <div className="item-generator-body"><div className="item-generator-preview"><SkillboundItemPreview item={item} bodyType={body} mode={mode}/><div className="item-generator-actions">{(['item','drop','equipped'] as const).map(value=><button key={value} className={mode===value?'active':''} onClick={()=>setMode(value)}>{label(value)}</button>)}<select aria-label="Fitting body" value={body} onChange={e=>setBody(e.target.value as SkillboundBodyType)}><option value="female">Female Base v1</option><option value="male">Male Base v1</option></select></div></div>
     <div className="item-generator-controls">
@@ -64,3 +64,4 @@ export default function SkillboundItemGeneratorPanel() {
     <small>Replaces old model assignments in the project. Existing library files and the male/female foundation bodies remain available. Tools are equipment models; harvesting actions are not yet implemented.</small>
   </section>
 }
+
