@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.90.2`  
+> **Current Forge version:** `v1.90.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,12 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.90.3 adds a proper **Dungeon Wave Arrival** presentation so encounter enemies no longer pop into existence when a trigger activates.
+
+Each newly spawned dungeon enemy now begins with a compact role-colored arrival cue at its authored/formation position. The body remains hidden during a short anticipation window, then rises from below the floor and scales smoothly into place. Individual enemies receive a small deterministic delay offset so a wave materializes as an event rather than every enemy appearing on the same frame. Boss arrivals use a longer, larger version of the same treatment.
+
+Enemies are combat-locked for the entire arrival sequence: they cannot move, wind up, fire, cast or collide into an attack while materializing. Once the emergence completes, the cue cleans itself up, the enemy returns to its intended authored scale/height, and normal Combat v3 behavior resumes. This works for Dungeon Forge → Test Dungeon and normal Skillbound dungeon play because both now share the same runtime.
 
 Forge v1.90.2 is a Dungeon Combat readability/hotfix pass based on the first shared-runtime Dungeon Forge test.
 
