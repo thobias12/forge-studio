@@ -902,29 +902,29 @@ function startDungeonArrival(runtime: any, enemy: any) {
   const role = enemy.combatRole ?? roleOf(enemy.definition)
   const color = new THREE.Color(combatColor(enemy.definition))
   const cueDelay =
-    (enemy.boss ? .42 : .24) +
-    hashUnit(`${enemy.id}:arrival-delay`) * (enemy.boss ? .08 : .16)
-  const emergeDuration = enemy.boss ? .78 : .56
+    (enemy.boss ? .48 : .28) +
+    hashUnit(`${enemy.id}:arrival-delay`) * (enemy.boss ? .08 : .12)
+  const emergeDuration = enemy.boss ? .78 : .58
   const duration = cueDelay + emergeDuration
   const baseScale = Math.max(.01, Number(enemy.group.scale.x || 1))
   const baseY = enemy.group.position.y
   const ringRadius =
-    enemy.boss ? 1.28 :
-      role === 'brute' ? .92 :
-        role === 'caster' ? .8 :
-          .72
+    enemy.boss ? 1.34 :
+      role === 'brute' ? .96 :
+        role === 'caster' ? .84 :
+          .74
 
   const effect = new THREE.Group()
   effect.position.set(
     enemy.group.position.x,
-    baseY + .035,
+    baseY + .03,
     enemy.group.position.z,
   )
 
   const ringMaterial = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: .62,
+    opacity: .34,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     toneMapped: false,
@@ -932,37 +932,59 @@ function startDungeonArrival(runtime: any, enemy: any) {
   })
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(
-      ringRadius * .72,
+      ringRadius * .8,
       ringRadius,
-      enemy.boss ? 40 : 30,
+      enemy.boss ? 44 : 30,
     ),
     ringMaterial,
   )
   ring.rotation.x = -Math.PI / 2
   effect.add(ring)
 
-  const glowMaterial = new THREE.MeshBasicMaterial({
+  const wispMaterials: THREE.MeshBasicMaterial[] = []
+  const wisps: THREE.Mesh[] = []
+  const wispCount = enemy.boss ? 9 : role === 'brute' ? 7 : 6
+  for (let index = 0; index < wispCount; index += 1) {
+    const angle =
+      index / wispCount * Math.PI * 2 +
+      hashUnit(`${enemy.id}:arrival-wisp:${index}`) * .38
+    const radius =
+      ringRadius *
+      (.42 + hashUnit(`${enemy.id}:arrival-radius:${index}`) * .34)
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    const wisp = new THREE.Mesh(
+      new THREE.TetrahedronGeometry(
+        enemy.boss ? .11 : .075,
+        0,
+      ),
+      material,
+    )
+    wisp.position.set(
+      Math.cos(angle) * radius,
+      .04,
+      Math.sin(angle) * radius,
+    )
+    wisp.scale.set(.7, .18, .7)
+    wisp.rotation.y = angle
+    effect.add(wisp)
+    wisps.push(wisp)
+    wispMaterials.push(material)
+  }
+
+  const light = new THREE.PointLight(
     color,
-    transparent: true,
-    opacity: .14,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    toneMapped: false,
-    side: THREE.DoubleSide,
-  })
-  const glow = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      ringRadius * .48,
-      ringRadius * .7,
-      enemy.boss ? 2.8 : 2.15,
-      20,
-      1,
-      true,
-    ),
-    glowMaterial,
+    enemy.boss ? .9 : .42,
+    enemy.boss ? 5 : 3.4,
   )
-  glow.position.y = enemy.boss ? 1.3 : 1
-  effect.add(glow)
+  light.position.y = enemy.boss ? .9 : .62
+  effect.add(light)
 
   ;(runtime.world ?? runtime.scene)?.add(effect)
 
@@ -975,11 +997,13 @@ function startDungeonArrival(runtime: any, enemy: any) {
     baseY,
     effect,
     ringMaterial,
-    glowMaterial,
+    wisps,
+    wispMaterials,
+    light,
   }
 
   enemy.group.scale.setScalar(baseScale * .001)
-  enemy.group.position.y = baseY - (enemy.boss ? .52 : .38)
+  enemy.group.position.y = baseY - (enemy.boss ? .46 : .32)
   enemy.staggerRemaining = Math.max(
     Number(enemy.staggerRemaining ?? 0),
     duration + .12,
@@ -989,16 +1013,6 @@ function startDungeonArrival(runtime: any, enemy: any) {
     duration + .2,
   )
   enemy.telegraph.visible = false
-  runtime.spawnPulse?.(
-    new THREE.Vector3(
-      enemy.group.position.x,
-      baseY,
-      enemy.group.position.z,
-    ),
-    `#${color.getHexString()}`,
-    ringRadius * 1.15,
-    .14,
-  )
 }
 
 function finishDungeonArrival(runtime: any, enemy: any) {
@@ -1033,6 +1047,11 @@ function updateDungeonArrivals(runtime: any, delta: number) {
       0,
       1,
     )
+    const cueProgress = THREE.MathUtils.clamp(
+      arrival.age / Math.max(.01, arrival.cueDelay),
+      0,
+      1,
+    )
     const emergeProgress = THREE.MathUtils.clamp(
       (arrival.age - arrival.cueDelay) /
         Math.max(.01, arrival.emergeDuration),
@@ -1040,37 +1059,56 @@ function updateDungeonArrivals(runtime: any, delta: number) {
       1,
     )
     const eased = 1 - Math.pow(1 - emergeProgress, 3)
-    const cueProgress = THREE.MathUtils.clamp(
-      arrival.age / Math.max(.01, arrival.cueDelay),
-      0,
-      1,
-    )
 
     if (arrival.age < arrival.cueDelay) {
       enemy.group.scale.setScalar(arrival.baseScale * .001)
       enemy.group.position.y =
-        arrival.baseY - (enemy.boss ? .52 : .38)
+        arrival.baseY - (enemy.boss ? .46 : .32)
     } else {
+      // Rise naturally out of the floor without the old full-height
+      // translucent cylinder that read like a debug spawn volume.
       enemy.group.scale.setScalar(
-        arrival.baseScale * (.08 + eased * .92),
+        arrival.baseScale * (.62 + eased * .38),
       )
       enemy.group.position.y =
         arrival.baseY -
-        (1 - eased) * (enemy.boss ? .52 : .38)
+        (1 - eased) * (enemy.boss ? .46 : .32)
     }
 
-    arrival.effect.rotation.y += delta * (enemy.boss ? 1.4 : 2.2)
-    arrival.effect.scale.setScalar(
-      .78 + cueProgress * .2 + emergeProgress * .12,
-    )
+    arrival.effect.rotation.y +=
+      delta * (enemy.boss ? .52 : .82)
     arrival.ringMaterial.opacity =
       arrival.age < arrival.cueDelay
-        ? .18 + cueProgress * .58
-        : .76 * (1 - emergeProgress * .82)
-    arrival.glowMaterial.opacity =
+        ? .12 + cueProgress * .42
+        : .54 * (1 - emergeProgress)
+
+    for (let index = 0; index < arrival.wisps.length; index += 1) {
+      const wisp = arrival.wisps[index]
+      const material = arrival.wispMaterials[index]
+      const stagger =
+        (index / Math.max(1, arrival.wisps.length)) * .16
+      const localProgress = THREE.MathUtils.clamp(
+        (emergeProgress - stagger) / Math.max(.01, 1 - stagger),
+        0,
+        1,
+      )
+      const rise = Math.sin(localProgress * Math.PI)
+      wisp.position.y =
+        .04 +
+        localProgress * (enemy.boss ? 1.7 : 1.2)
+      wisp.scale.y = .18 + rise * (enemy.boss ? 4.8 : 3.5)
+      wisp.rotation.x += delta * (1.6 + index * .07)
+      wisp.rotation.z += delta * (1.1 + index * .05)
+      material.opacity =
+        arrival.age < arrival.cueDelay
+          ? cueProgress * .18
+          : rise * (enemy.boss ? .56 : .4)
+    }
+
+    arrival.light.intensity =
       arrival.age < arrival.cueDelay
-        ? .04 + cueProgress * (enemy.boss ? .2 : .13)
-        : .08 + Math.sin(emergeProgress * Math.PI) * (enemy.boss ? .26 : .18)
+        ? (enemy.boss ? .9 : .42) * cueProgress
+        : (enemy.boss ? 1.35 : .68) * (1 - emergeProgress * .7)
 
     enemy.staggerRemaining = Math.max(
       Number(enemy.staggerRemaining ?? 0),
@@ -1085,11 +1123,13 @@ function updateDungeonArrivals(runtime: any, delta: number) {
 
     if (totalProgress >= 1) {
       finishDungeonArrival(runtime, enemy)
-      runtime.spawnPulse?.(
+      spawnSparkBurst(
+        runtime,
         enemy.group.position,
         `#${new THREE.Color(combatColor(enemy.definition)).getHexString()}`,
-        enemy.boss ? 1.55 : 1.02,
-        .12,
+        enemy.boss ? 12 : 6,
+        enemy.boss ? .9 : .52,
+        .3,
       )
     }
   }
