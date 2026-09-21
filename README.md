@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.90.0`  
+> **Current Forge version:** `v1.90.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,12 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.90.1 removes the split between Dungeon Forge's old Quick ARPG combat simulator and the real Skillbound dungeon runtime. **Dungeon Forge → Test Dungeon** now snapshots the dungeon currently open in the editor and launches it through the same `SkillboundDungeonPlayViewport` / `ForgeDungeonRuntime` path used by normal Skillbound dungeon play.
+
+That means Dungeon Forge testing now exercises the same Combat v3 enemy roles, poise and elite modifiers, ranged projectiles, caster area telegraphs, Dungeon Runs v2 wave director, Encounter Forge/Boss Forge profiles, boss phases, rewards, player skills/equipment, HUD, shared camera, collision and return-portal flow as the actual game. Changes tested there no longer need to be duplicated into a separate preview combat implementation.
+
+The **Walk** button remains intentionally lightweight and is only for geometry, collision, scale and navigation inspection. The previous **Quick ARPG** button is removed so it cannot be mistaken for production combat behavior.
 
 Forge v1.90.0 is the first **Combat v3 + Dungeon Runs v2** release.
 
