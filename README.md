@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.0`  
+> **Current Forge version:** `v1.92.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,14 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.1 is the **Combat v4 gameplay-video polish** pass. Review of a full Hollow Vault run showed three presentation problems that were technically working but reading poorly in motion.
+
+Enemy wave arrivals no longer use the tall translucent cylinder that looked like a debug teleport volume. Dungeon enemies now announce a spawn with a restrained ground rune, small rising additive wisps and a brief light pulse, then rise out of the floor. The arrival still prevents attacks until the enemy is fully present, so waves remain readable without enemies popping into existence.
+
+The locked sanctum return portal has also been redesigned. The previous portal used two horizontal red rings, which looked almost identical to attack/skill telegraphs and appeared to be stale combat circles during the Warden fight. The locked portal is now a very dim upright doorway with a subdued floor disc; after the Warden is cleared it becomes a bright green upright portal with an illuminated core.
+
+The Vault Warden spawn marker was moved away from the generated central sanctum centerpiece so the boss no longer emerges through the altar. Boss-phase summons now arrive on a wider 4.2–5.8m formation around the Warden instead of the old 2.3–3.5m ring, preventing boss + adds from collapsing into one unreadable melee pile. Skillbound content revision is now 14 so cached workspaces receive the corrected sanctum spawn position.
 
 Forge v1.92.0 is the **Combat v4 — Enemy Identity & Encounters** release. It keeps the Combat v3 spacing, poise, telegraph and presentation foundation, but gives each Skillbound enemy role a signature gameplay kit instead of relying on one normal attack loop.
 
