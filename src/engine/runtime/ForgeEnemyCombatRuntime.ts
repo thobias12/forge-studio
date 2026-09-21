@@ -80,6 +80,67 @@ function roleHealthColor(role: string, elite: boolean, boss: boolean) {
   return 0xc9574f
 }
 
+function decorateFallbackRole(enemy: any, definition: any, role: string) {
+  const placeholder = enemy.group?.getObjectByName?.('__forge_placeholder')
+  if (!placeholder || placeholder.userData.forgeCombatRoleDecorated) return
+  placeholder.userData.forgeCombatRoleDecorated = true
+
+  const accentColor = new THREE.Color(combatColor(definition))
+  const accent = new THREE.MeshStandardMaterial({
+    color: accentColor,
+    roughness: .68,
+    metalness: role === 'ranged' ? .32 : .08,
+    emissive: accentColor.clone().multiplyScalar(.08),
+    emissiveIntensity: .4,
+  })
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x241f1d,
+    roughness: .78,
+    metalness: .12,
+  })
+  const add = (mesh: THREE.Mesh) => {
+    mesh.castShadow = true
+    placeholder.add(mesh)
+    return mesh
+  }
+
+  if (role === 'brute') {
+    const left = add(new THREE.Mesh(new THREE.BoxGeometry(.42, .26, .58), dark))
+    const right = add(new THREE.Mesh(new THREE.BoxGeometry(.42, .26, .58), dark))
+    left.position.set(-.48, 1.42, 0)
+    right.position.set(.48, 1.42, 0)
+    const plate = add(new THREE.Mesh(new THREE.BoxGeometry(.72, .48, .14), accent))
+    plate.position.set(0, 1.18, .55)
+  } else if (role === 'ranged') {
+    const stock = add(new THREE.Mesh(new THREE.BoxGeometry(1.08, .1, .12), dark))
+    stock.position.set(0, 1.16, .55)
+    const bow = add(new THREE.Mesh(new THREE.TorusGeometry(.42, .035, 6, 18, Math.PI), accent))
+    bow.rotation.set(Math.PI / 2, 0, Math.PI / 2)
+    bow.position.set(0, 1.16, .62)
+  } else if (role === 'caster') {
+    const staff = add(new THREE.Mesh(new THREE.CylinderGeometry(.035, .045, 1.72, 7), dark))
+    staff.position.set(.52, .94, .08)
+    staff.rotation.z = -.08
+    const orb = add(new THREE.Mesh(
+      new THREE.SphereGeometry(.13, 10, 8),
+      new THREE.MeshStandardMaterial({
+        color: accentColor,
+        emissive: accentColor,
+        emissiveIntensity: 1.8,
+        roughness: .28,
+      }),
+    ))
+    orb.position.set(.59, 1.82, .08)
+  } else {
+    const left = add(new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .62), accent))
+    const right = add(new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .62), accent))
+    left.position.set(-.4, .98, .32)
+    right.position.set(.4, .98, .32)
+    left.rotation.z = -.28
+    right.rotation.z = .28
+  }
+}
+
 function ensureEnemyState(enemy: any) {
   if (!enemy || enemy.__forgeCombatV3) return
   const definition = enemy.definition ?? {}
@@ -106,6 +167,7 @@ function ensureEnemyState(enemy: any) {
   enemy.poiseRecoveryDelay = 0
   enemy.attackTarget = new THREE.Vector3()
   enemy.attackTargetValid = false
+  decorateFallbackRole(enemy, definition, role)
 
   if (enemy.elite && !enemy.boss) {
     const roll = hashUnit(`${enemy.id}:elite-modifier`)
@@ -149,6 +211,10 @@ function ensureEnemyState(enemy: any) {
 
   if (enemy.telegraph?.geometry) {
     const style = styleOf(definition)
+    enemy.telegraph.visible = false
+    const telegraphMaterial = enemy.telegraph.material
+    if (telegraphMaterial) telegraphMaterial.opacity = 0
+
     if (style === 'projectile') {
       enemy.telegraph.geometry.dispose?.()
       enemy.telegraph.geometry = new THREE.RingGeometry(.38, .64, 32)
@@ -156,9 +222,18 @@ function ensureEnemyState(enemy: any) {
       const radius = Math.max(1.1, Number(definition.areaRadius ?? 1.9))
       enemy.telegraph.geometry.dispose?.()
       enemy.telegraph.geometry = new THREE.RingGeometry(
-        radius * .76,
+        radius * .78,
         radius,
         40,
+      )
+    } else {
+      const outer = Math.max(.72, Number(definition.attackRange ?? 1.5) * .82)
+      const inner = Math.max(.56, outer - .16)
+      enemy.telegraph.geometry.dispose?.()
+      enemy.telegraph.geometry = new THREE.RingGeometry(
+        inner,
+        outer,
+        28,
       )
     }
   }
@@ -329,6 +404,86 @@ function registerPoiseHit(
     .18,
   )
   return { broken: true, stagger: breakStagger }
+}
+
+function combatEnemies(runtime: any, mode: EnemyMode) {
+  return mode === 'dungeon'
+    ? [...runtime.enemies.values()]
+    : [...runtime.enemies]
+}
+
+function attackSlotAvailable(
+  runtime: any,
+  enemy: any,
+  mode: EnemyMode,
+) {
+  if (enemy.boss) return true
+  ensureEnemyState(enemy)
+
+  const style = enemy.attackStyle
+  const active = combatEnemies(runtime, mode).filter((other: any) => {
+    if (other === enemy || other.health <= 0) return false
+    if (mode === 'dungeon' && other.encounterId !== enemy.encounterId) {
+      return false
+    }
+    ensureEnemyState(other)
+    return (
+      Number(other.windupRemaining ?? 0) > 0 ||
+      Number(other.recoveryRemaining ?? 0) > .08
+    )
+  })
+
+  const winding = active.filter(
+    (other: any) => Number(other.windupRemaining ?? 0) > 0,
+  )
+  if (winding.length >= 3) return false
+
+  const sameStyle = active.filter(
+    (other: any) => other.attackStyle === style,
+  ).length
+
+  if (style === 'melee') return sameStyle < 2
+  if (style === 'area') return sameStyle < 1
+  if (style === 'projectile') return sameStyle < 1
+  return true
+}
+
+function deferDungeonAttack(enemy: any) {
+  const jitter = hashUnit(`${enemy.id}:attack-slot`) * .12
+  enemy.attackTimer = Math.max(
+    Number(enemy.attackTimer ?? 0),
+    .14 + jitter,
+  )
+  if (enemy.telegraph) enemy.telegraph.visible = false
+}
+
+function refineDungeonTelegraphs(runtime: any) {
+  for (const enemy of runtime.enemies.values()) {
+    const telegraph = enemy.telegraph
+    if (!telegraph?.visible || enemy.health <= 0) continue
+    ensureEnemyState(enemy)
+
+    const material = telegraph.material
+    if (!material) continue
+    const progress = THREE.MathUtils.clamp(
+      1 -
+        Number(enemy.windupRemaining ?? 0) /
+          Math.max(.01, Number(enemy.windupDuration ?? .4)),
+      0,
+      1,
+    )
+
+    if (enemy.attackStyle === 'melee') {
+      material.opacity = .06 + progress * .38
+      telegraph.scale.setScalar(.9 + progress * .08)
+    } else if (enemy.attackStyle === 'projectile') {
+      material.opacity = .08 + progress * .48
+      telegraph.scale.setScalar(.9 + progress * .1)
+    } else {
+      material.opacity = .1 + progress * .56
+      telegraph.scale.setScalar(.92 + progress * .08)
+    }
+  }
 }
 
 function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
@@ -899,12 +1054,18 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       addCombatOrbit(this, enemy, delta, 'dungeon')
     }
     const result = baseUpdateEnemies.call(this, delta)
+    refineDungeonTelegraphs(this)
     updateProjectiles(this, delta, 'dungeon')
     updateDungeonDeaths(this, delta)
     return result
   }
 
   proto.beginEnemyAttack = function (enemy: any) {
+    ensureEnemyState(enemy)
+    if (!attackSlotAvailable(this, enemy, 'dungeon')) {
+      deferDungeonAttack(enemy)
+      return
+    }
     return beginRoleAttack(this, enemy, baseBeginEnemyAttack)
   }
 

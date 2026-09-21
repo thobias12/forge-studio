@@ -176,13 +176,13 @@ export function createStarterDungeon(): ForgeDungeonPackage {
   const bossEdge = corridor(combat.id, boss.id)
 
   const checkpoint = marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance checkpoint', { checkpointId: 'entrance' })
-  const combatSpawn = marker('enemy', combat.x, 0.3, combat.z, combat.id, 'Skeleton pack', { family: 'undead', count: 7, eliteChance: 0.1, difficulty: 1 })
+  const combatSpawn = marker('enemy', combat.x, 0.3, combat.z, combat.id, 'Drowned ambush', { family: 'road-wretch', count: 7, eliteChance: 0.1, difficulty: 1 })
   const combatEncounterId = crypto.randomUUID()
   const combatTrigger = marker('trigger', combat.x, 0.15, combat.z, combat.id, 'Crossroads encounter trigger', { action: 'start-encounter', targetId: combatEncounterId, once: true })
   combatTrigger.radius = Math.max(3.8, Math.min(combat.width, combat.depth) * 0.32)
 
   const treasureLoot = marker('loot', treasure.x, 0.3, treasure.z, treasure.id, 'Treasure chest', { tier: 'rare', requiresClear: false })
-  const bossSpawn = marker('enemy', boss.x, 0.3, boss.z, boss.id, 'Boss spawn', { family: 'crypt-warden', count: 1, eliteChance: 1, difficulty: 3 })
+  const bossSpawn = marker('enemy', boss.x, 0.3, boss.z, boss.id, 'Vault Warden spawn', { family: 'crypt-brute', count: 1, eliteChance: 1, difficulty: 3 })
   const bossReward = marker('loot', boss.x + 3.2, 0.3, boss.z + 0.8, boss.id, 'Boss reliquary', { tier: 'legendary', requiresClear: true })
   const bossEncounterId = crypto.randomUUID()
   const bossTrigger = marker('trigger', boss.x, 0.15, boss.z, boss.id, 'Boss arena trigger', { action: 'start-encounter', targetId: bossEncounterId, once: true })
@@ -196,13 +196,13 @@ export function createStarterDungeon(): ForgeDungeonPackage {
   const encounters: DungeonEncounter[] = [
     {
       id: combatEncounterId, name: 'Crossroads Ambush', roomId: combat.id, trigger: 'marker', triggerMarkerId: combatTrigger.id,
-      spawnMarkerIds: [combatSpawn.id], lockDoorIds: [], rewardMarkerIds: [], family: 'undead', count: 7,
-      eliteChance: 0.1, difficulty: 1, boss: false, once: true,
+      spawnMarkerIds: [combatSpawn.id], lockDoorIds: [], rewardMarkerIds: [], family: 'road-wretch', count: 7,
+      eliteChance: 0.1, difficulty: 1, boss: false, once: true, encounterProfileId: 'hollow-vault-ambush',
     },
     {
-      id: bossEncounterId, name: 'Crypt Warden', roomId: boss.id, trigger: 'marker', triggerMarkerId: bossTrigger.id,
-      spawnMarkerIds: [bossSpawn.id], lockDoorIds: [bossDoor.id], rewardMarkerIds: [bossReward.id], family: 'crypt-warden', count: 1,
-      eliteChance: 1, difficulty: 3, boss: true, once: true,
+      id: bossEncounterId, name: 'Vault Warden', roomId: boss.id, trigger: 'marker', triggerMarkerId: bossTrigger.id,
+      spawnMarkerIds: [bossSpawn.id], lockDoorIds: [bossDoor.id], rewardMarkerIds: [bossReward.id], family: 'crypt-brute', count: 1,
+      eliteChance: 1, difficulty: 3, boss: true, once: true, bossProfileId: 'vault-warden',
     },
   ]
 
@@ -260,12 +260,18 @@ export function encounterForRoom(roomValue: DungeonRoom, overrides: Partial<Dung
     spawnMarkerIds: [],
     lockDoorIds: [],
     rewardMarkerIds: [],
-    family: 'undead',
+    family: boss ? 'crypt-brute' : 'road-wretch',
     count: boss ? 1 : elite ? 4 : 7,
     eliteChance: boss ? 1 : elite ? 0.75 : 0.12,
     difficulty: boss ? 3 : elite ? 2 : 1,
     boss,
     once: true,
+    encounterProfileId: boss
+      ? undefined
+      : elite
+        ? 'ossuary-guard'
+        : 'hollow-vault-ambush',
+    bossProfileId: boss ? 'vault-warden' : undefined,
     ...overrides,
   }
 }

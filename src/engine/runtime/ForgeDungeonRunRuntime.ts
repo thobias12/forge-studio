@@ -102,11 +102,23 @@ function encounterCanActivate(runtime: any, state: any) {
   )
 }
 
+function enemyRole(runtime: any, enemyId: string) {
+  const definition =
+    runtime.gameplay?.enemies?.find(
+      (candidate: any) => candidate.id === enemyId,
+    ) ??
+    runtime.resolveEnemyDefinition?.(enemyId)
+  return String(definition?.role ?? 'skirmisher')
+}
+
 function spawnPosition(
   runtime: any,
   state: any,
   waveIndex: number,
   serial: number,
+  enemyId: string,
+  waveSlot: number,
+  waveCount: number,
 ) {
   const encounter = state.definition
   const room = runtime.dungeon.rooms.find(
@@ -126,24 +138,86 @@ function spawnPosition(
     ),
   )
   const marker = spawns[serial % Math.max(1, spawns.length)]
-  const radius = encounter.boss
-    ? 0
-    : .95 + Math.sqrt(serial % 9) * .9
-  const angle =
-    serial * 2.399963229728653 + random() * .58
+
+  if (encounter.boss) {
+    return {
+      room,
+      x: marker?.x ?? room.x,
+      z: marker?.z ?? room.z,
+    }
+  }
+
+  const role = enemyRole(runtime, enemyId)
+  const ranged = role === 'ranged' || role === 'caster'
+  const ringFactor =
+    ranged ? .9 :
+      role === 'brute' ? .76 :
+        .68
+  const halfWidth = Math.max(2.2, room.width / 2 - 1.45)
+  const halfDepth = Math.max(2.2, room.depth / 2 - 1.45)
+  const markerOffset = marker
+    ? Math.hypot(marker.x - room.x, marker.z - room.z)
+    : 0
+  const explicitMarker =
+    Boolean(marker) &&
+    markerOffset > Math.min(room.width, room.depth) * .16
+  const baseAngle =
+    (waveSlot / Math.max(1, waveCount)) * Math.PI * 2 +
+    waveIndex * .73 +
+    random() * .2
+
+  let fallback: { x: number; z: number } | undefined
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const angle = baseAngle + attempt * .73
+    const inward = Math.floor(attempt / 3) * .07
+    const factor = Math.max(.48, ringFactor - inward)
+    let x: number
+    let z: number
+
+    if (explicitMarker && marker) {
+      const localRadius =
+        1.15 +
+        (waveSlot % 3) * .48 +
+        (ranged ? .55 : 0)
+      x = marker.x + Math.cos(angle) * localRadius
+      z = marker.z + Math.sin(angle) * localRadius
+    } else {
+      x = room.x + Math.cos(angle) * halfWidth * factor
+      z = room.z + Math.sin(angle) * halfDepth * factor
+    }
+
+    x = THREE.MathUtils.clamp(
+      x,
+      room.x - room.width / 2 + 1.25,
+      room.x + room.width / 2 - 1.25,
+    )
+    z = THREE.MathUtils.clamp(
+      z,
+      room.z - room.depth / 2 + 1.25,
+      room.z + room.depth / 2 - 1.25,
+    )
+    fallback ??= { x, z }
+
+    const playerDistance = Math.hypot(
+      x - runtime.player.position.x,
+      z - runtime.player.position.z,
+    )
+    if (playerDistance < (ranged ? 4.7 : 3.15)) continue
+    if (
+      typeof runtime.canWalkAt === 'function' &&
+      !runtime.canWalkAt(x, z, .58)
+    ) {
+      continue
+    }
+
+    return { room, x, z }
+  }
 
   return {
     room,
-    x: THREE.MathUtils.clamp(
-      (marker?.x ?? room.x) + Math.cos(angle) * radius,
-      room.x - room.width / 2 + 1.15,
-      room.x + room.width / 2 - 1.15,
-    ),
-    z: THREE.MathUtils.clamp(
-      (marker?.z ?? room.z) + Math.sin(angle) * radius,
-      room.z - room.depth / 2 + 1.15,
-      room.z + room.depth / 2 - 1.15,
-    ),
+    x: fallback?.x ?? room.x,
+    z: fallback?.z ?? room.z,
   }
 }
 
@@ -187,6 +261,15 @@ function spawnWave(runtime: any, state: any) {
   state.waveDelay = 0
 
   let localSerial = 0
+  const waveCount = wave.entries.reduce(
+    (total, entry) =>
+      total +
+      (state.definition.boss
+        ? Math.min(1, entry.count)
+        : Math.min(12, entry.count)),
+    0,
+  )
+
   for (const entry of wave.entries) {
     const count = state.definition.boss
       ? Math.min(1, entry.count)
@@ -198,6 +281,9 @@ function spawnWave(runtime: any, state: any) {
         state,
         index,
         state.spawnSerial + localSerial,
+        entry.enemyId,
+        localSerial,
+        waveCount,
       )
       if (!position) continue
 

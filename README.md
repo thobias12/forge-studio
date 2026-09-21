@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.90.1`  
+> **Current Forge version:** `v1.90.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.90.2 is a Dungeon Combat readability/hotfix pass based on the first shared-runtime Dungeon Forge test.
+
+Dungeon Forge starter and auto-created Skillbound crypt encounters now bind directly to the authored Combat v3 profiles instead of the legacy `undead` / `crypt-warden` fallbacks. Standard combat rooms default to **Drowned Crossroads Ambush**, elite rooms to **Ossuary Guard**, and boss rooms to **Vault Warden**. The Dungeon Forge Encounter inspector now exposes the active Encounter Forge or Boss Forge profile and shows its authored wave/phase count, so a room can no longer silently look like a production encounter while actually running a manual one-wave fallback.
+
+Dungeon Runs v2 wave spawning now uses role-aware formations. Centered spawn markers distribute melee enemies around the encounter perimeter while Arbalists and Channelers prefer the outer ring; explicit off-center spawn markers remain respected. Spawn candidates avoid appearing directly on top of the player and validate against dungeon navigation where possible.
+
+Dungeon combat crowding is also stricter. Enemies have role-aware soft spacing plus a hard overlap floor, with extra room reserved for Brutes. The runtime limits simultaneous attack commitments so a whole pack cannot enter windup at once: normal melee pressure is capped at two committed attackers, with projectile and area attackers paced separately. Ground telegraphs are thinner and less opaque, while world-space enemy health bars are hidden because they rotated with enemies and appeared as floating rods in the isometric camera. Target health/poise remains in the HUD.
+
+Until authored enemy character assets are attached, the fallback enemy silhouettes now carry simple role cues: Brutes gain shoulder/plate mass, Arbalists a crossbow silhouette, Channelers a staff/orb, and Skirmishers paired blades. These are testing fallbacks, not final enemy art.
 
 Forge v1.90.1 removes the split between Dungeon Forge's old Quick ARPG combat simulator and the real Skillbound dungeon runtime. **Dungeon Forge → Test Dungeon** now snapshots the dungeon currently open in the editor and launches it through the same `SkillboundDungeonPlayViewport` / `ForgeDungeonRuntime` path used by normal Skillbound dungeon play.
 

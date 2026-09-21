@@ -845,12 +845,17 @@ export const dungeonGameplayMethods = {
     const x = enemy.group.position.x
     const z = enemy.group.position.z
 
+    const role = String((enemy as any).combatRole ?? enemy.definition?.role ?? 'skirmisher')
+    const playerSpacing = Math.max(
+      FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing,
+      role === 'brute' ? 1.58 : role === 'skirmisher' ? 1.42 : 1.34,
+    )
     let playerDx = x - this.player.position.x
     let playerDz = z - this.player.position.z
     let playerDistance = Math.hypot(playerDx, playerDz)
     if (
       playerDistance <
-      FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing
+      playerSpacing
     ) {
       if (playerDistance < 1e-4) {
         const angle =
@@ -862,9 +867,9 @@ export const dungeonGameplayMethods = {
         playerDistance = 1
       }
       const weight =
-        (FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing -
+        (playerSpacing -
           playerDistance) /
-        FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing
+        playerSpacing
       force.x += (playerDx / playerDistance) * weight * 2.5
       force.z += (playerDz / playerDistance) * weight * 2.5
     }
@@ -880,10 +885,14 @@ export const dungeonGameplayMethods = {
       let dx = x - other.group.position.x
       let dz = z - other.group.position.z
       let distance = Math.hypot(dx, dz)
-      if (
-        distance >=
-        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
-      ) {
+      const otherRole = String((other as any).combatRole ?? other.definition?.role ?? 'skirmisher')
+      const spacing = Math.max(
+        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing,
+        role === 'brute' || otherRole === 'brute' ? 1.82 :
+          role === 'ranged' || role === 'caster' || otherRole === 'ranged' || otherRole === 'caster' ? 1.62 :
+            1.55,
+      )
+      if (distance >= spacing) {
         continue
       }
       if (distance < 1e-4) {
@@ -898,9 +907,9 @@ export const dungeonGameplayMethods = {
         distance = 1
       }
       const weight =
-        (FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing -
+        (spacing -
           distance) /
-        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
+        spacing
       force.x += (dx / distance) * weight * 1.55
       force.z += (dz / distance) * weight * 1.55
     }
@@ -920,8 +929,7 @@ export const dungeonGameplayMethods = {
     force.set(0, 0, 0)
     const x = enemy.group.position.x
     const z = enemy.group.position.z
-    const spacing =
-      FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
+    const role = String((enemy as any).combatRole ?? enemy.definition?.role ?? 'skirmisher')
 
     for (const other of this.enemies.values()) {
       if (
@@ -934,6 +942,13 @@ export const dungeonGameplayMethods = {
       const dx = x - other.group.position.x
       const dz = z - other.group.position.z
       const distanceSq = dx * dx + dz * dz
+      const otherRole = String((other as any).combatRole ?? other.definition?.role ?? 'skirmisher')
+      const spacing = Math.max(
+        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing,
+        role === 'brute' || otherRole === 'brute' ? 1.82 :
+          role === 'ranged' || role === 'caster' || otherRole === 'ranged' || otherRole === 'caster' ? 1.62 :
+            1.55,
+      )
       if (
         distanceSq <= 1e-6 ||
         distanceSq >= spacing * spacing
@@ -1026,12 +1041,37 @@ export const dungeonGameplayMethods = {
       nextX - this.player.position.x,
       nextZ - this.player.position.z,
     )
+    const role = String((enemy as any).combatRole ?? enemy.definition?.role ?? 'skirmisher')
+    const hardPlayerSpacing = role === 'brute' ? 1.34 : 1.16
     if (
-      nextPlayerDistance <
-        FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing &&
+      nextPlayerDistance < hardPlayerSpacing &&
       nextPlayerDistance < currentPlayerDistance
     ) {
       return
+    }
+
+    for (const other of this.enemies.values()) {
+      if (
+        other === enemy ||
+        other.health <= 0 ||
+        other.encounterId !== enemy.encounterId
+      ) {
+        continue
+      }
+      const otherRole = String((other as any).combatRole ?? other.definition?.role ?? 'skirmisher')
+      const hardSpacing =
+        role === 'brute' || otherRole === 'brute' ? 1.34 : 1.08
+      const currentDistance = Math.hypot(
+        enemy.group.position.x - other.group.position.x,
+        enemy.group.position.z - other.group.position.z,
+      )
+      const nextDistance = Math.hypot(
+        nextX - other.group.position.x,
+        nextZ - other.group.position.z,
+      )
+      if (nextDistance < hardSpacing && nextDistance < currentDistance) {
+        return
+      }
     }
 
     enemy.group.position.x = nextX
