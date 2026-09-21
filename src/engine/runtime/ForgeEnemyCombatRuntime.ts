@@ -2103,6 +2103,13 @@ function spawnEnemyAttackReleaseFx(runtime: any, enemy: any) {
 function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   ensureEnemyState(enemy)
   enemy.__forgeAttackRelease = undefined
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  enemy.__forgeVolleyShot =
+    role === 'ranged' &&
+    enemy.specialCooldownRemaining <= 0
+  enemy.__forgeGraveZoneCast =
+    role === 'caster' &&
+    enemy.specialCooldownRemaining <= 0
   enemy.attackTarget.copy(runtime.player.position)
   enemy.attackTargetValid = true
 
@@ -2116,6 +2123,20 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   }
 
   baseBegin.call(runtime, enemy)
+
+  if (enemy.__forgeVolleyShot) {
+    enemy.windupDuration = Math.min(
+      1.45,
+      Math.max(.2, Number(enemy.windupDuration ?? .6) * 1.18),
+    )
+    enemy.windupRemaining = enemy.windupDuration
+  } else if (enemy.__forgeGraveZoneCast) {
+    enemy.windupDuration = Math.min(
+      1.55,
+      Math.max(.25, Number(enemy.windupDuration ?? .85) * 1.14),
+    )
+    enemy.windupRemaining = enemy.windupDuration
+  }
 
   const style = enemy.attackStyle
   const telegraph = enemy.telegraph
@@ -2149,7 +2170,13 @@ function finishAttackState(runtime: any, enemy: any, mode: EnemyMode) {
   )
 }
 
-function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
+function spawnProjectile(
+  runtime: any,
+  enemy: any,
+  mode: EnemyMode,
+  spreadAngle = 0,
+  damageScale = 1,
+) {
   const definition = enemy.definition
   const color = combatColor(definition)
   const radius = THREE.MathUtils.clamp(
@@ -2173,6 +2200,12 @@ function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
   direction.y *= .16
   if (direction.lengthSq() < .001) direction.set(0, 0, -1)
   direction.normalize()
+  if (Math.abs(spreadAngle) > .0001) {
+    direction.applyAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      spreadAngle,
+    )
+  }
 
   const group = new THREE.Group()
   const shaftMaterial = new THREE.MeshStandardMaterial({
@@ -2245,7 +2278,9 @@ function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
     mesh: group,
     velocity: direction.clone().multiplyScalar(speed),
     source: enemy.group.position.clone(),
-    damage: enemy.damage ?? definition.attackDamage,
+    damage:
+      (enemy.damage ?? definition.attackDamage) *
+      Math.max(.1, damageScale),
     radius,
     age: 0,
     lifetime: 3.2,
@@ -2280,6 +2315,7 @@ function resolveAreaAttack(runtime: any, enemy: any, mode: EnemyMode) {
   if (Math.hypot(dx, dz) <= radius) {
     damagePlayer(runtime, enemy.damage ?? definition.attackDamage, enemy.group.position, mode, color)
   }
+  return target
 }
 
 function damagePlayer(
