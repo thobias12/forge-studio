@@ -1,2 +1,2 @@
-export const FORGE_VERSION = '1.90.1'
+export const FORGE_VERSION = '1.90.2'
 export const FORGE_BUILD = (import.meta.env.VITE_FORGE_BUILD ?? 'dev').slice(0, 7)
