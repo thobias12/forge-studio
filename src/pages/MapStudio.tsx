@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Box, BoxSelect, ChevronRight, CircleDot, DoorOpen, Download, Gem, Grid3X3, Lightbulb,
-  Map as MapIcon, MousePointer2, Network, Play, RotateCcw, Save, ShieldAlert, Skull, Sparkles,
+  Box, BoxSelect, ChevronRight, CircleDot, Download, Gem, Grid3X3, Lightbulb,
+  Gamepad2, Map as MapIcon, MousePointer2, Network, Play, RotateCcw, Save, ShieldAlert, Skull, Sparkles, X,
   Spline, Square, Trash2, WandSparkles, Waypoints,
 } from 'lucide-react'
 import DungeonViewport, { type DungeonTool, type ResizeSide } from '../components/DungeonViewport'
-import ArpgDungeonViewport from '../components/ArpgDungeonViewport'
 import DungeonMinimap from '../components/DungeonMinimap'
-import { listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import SkillboundDungeonPlayViewport from '../components/SkillboundDungeonPlayViewport'
+import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
+import { loadSkillboundWorkspace, type ForgeProjectDungeonDefinition, type ForgeProjectWorkspace } from '../engine/forgeProject'
+import { resolveGameplayForRole } from '../engine/playerLoadout'
+import { getActivePlayerProfileId, listPlayerProfiles, type SkillboundPlayerProfile } from '../engine/playerProfiles'
+import type { ForgeAdventurePlayerState } from '../engine/runtime/ForgeAdventureSession'
+import { itemVisual } from '../engine/itemPresentation'
 import {
   DEFAULT_DUNGEON_BRIGHTNESS, DEFAULT_DUNGEON_GENERATION, corridor, createStarterDungeon, dungeonBlob, generateDungeon, getRoomConnection, marker, room, validateDungeon, wall,
-  type DungeonEncounter, type DungeonGenerationSettings, type DungeonMarker, type DungeonRoom, type DungeonRoomType, type DungeonTheme, type DungeonTriggerAction, type DungeonWall, type ForgeDungeonPackage,
+  type DungeonEncounter, type DungeonGenerationSettings, type DungeonMarker, type DungeonRoom, type DungeonRoomTemplate, type DungeonRoomType, type DungeonTheme, type DungeonTriggerAction, type DungeonWall, type ForgeDungeonPackage,
 } from '../lib/dungeonPackage'
 import {
   compileSkillboundRuntime, ensureRoomEncounter, getRoomEncounter, patchRoomEncounter, removeRoomEncounter, setEncounterDoor,
@@ -21,11 +26,13 @@ import {
 } from '../lib/dungeonProps'
 import '../map-studio.css'
 import '../map-studio-props.css'
+import '../skillbound-runtime.css'
+import '../skillbound-orbs.css'
 
 const tools: Array<{ id: DungeonTool; label: string; icon: typeof MousePointer2 }> = [
   { id: 'select', label: 'Select', icon: MousePointer2 }, { id: 'room', label: 'Room', icon: Square },
   { id: 'wall', label: 'Wall', icon: Grid3X3 }, { id: 'corridor', label: 'Corridor', icon: Spline }, { id: 'prop', label: 'Prop', icon: Box },
-  { id: 'door', label: 'Door', icon: DoorOpen }, { id: 'enemy', label: 'Enemy', icon: Skull },
+  { id: 'enemy', label: 'Enemy', icon: Skull },
   { id: 'loot', label: 'Loot', icon: Gem }, { id: 'checkpoint', label: 'Checkpoint', icon: CircleDot },
   { id: 'portal', label: 'Portal', icon: Waypoints }, { id: 'trigger', label: 'Trigger', icon: BoxSelect },
   { id: 'light', label: 'Light', icon: Lightbulb }, { id: 'erase', label: 'Erase', icon: Trash2 },
@@ -36,7 +43,7 @@ const roomTypes: Array<{ id: DungeonRoomType; label: string }> = [
   { id: 'secret', label: 'Secret' }, { id: 'utility', label: 'Utility' },
 ]
 const themes: DungeonTheme[] = ['crypt', 'castle', 'cave', 'cathedral', 'mine', 'sewer', 'void']
-const triggerActions: DungeonTriggerAction[] = ['start-encounter','open-door','close-door','spawn-enemies','grant-loot','activate-shrine','set-checkpoint','exit-dungeon']
+const triggerActions: DungeonTriggerAction[] = ['start-encounter','spawn-enemies','grant-loot','activate-shrine','set-checkpoint','exit-dungeon']
 type PropBrush = { source: 'builtin' | 'library'; assetRef: string; name: string }
 
 export default function MapStudio() {
@@ -51,11 +58,15 @@ export default function MapStudio() {
   const [selectedPropId, setSelectedPropId] = useState<string>()
   const [selectedWallId, setSelectedWallId] = useState<string>()
   const [corridorStartId, setCorridorStartId] = useState<string>()
-  const [topDown, setTopDown] = useState(false)
   const [playtest, setPlaytest] = useState(false)
   const [flowOpen, setFlowOpen] = useState(true)
   const [status, setStatus] = useState('Select rooms to drag or resize them. Combat rooms can now own encounter logic, gates and rewards.')
   const [generationJob, setGenerationJob] = useState<{ active: boolean; progress: number; label: string }>({ active: false, progress: 0, label: '' })
+  const [runtimeWorkspace, setRuntimeWorkspace] = useState<ForgeProjectWorkspace>()
+  const [runtimeProfile, setRuntimeProfile] = useState<SkillboundPlayerProfile>()
+  const [runtimeDungeon, setRuntimeDungeon] = useState<ForgeProjectDungeonDefinition>()
+  const [runtimeItemIcons, setRuntimeItemIcons] = useState<Record<string, string>>({})
+  const [runtimeLoading, setRuntimeLoading] = useState(false)
   const validation = useMemo(() => validateDungeon(value), [value])
   const selectedRoom = value.rooms.find((item) => item.id === selectedRoomId)
   const selectedMarker = value.markers.find((item) => item.id === selectedMarkerId)
@@ -63,6 +74,29 @@ export default function MapStudio() {
   const selectedWall = (value.walls ?? []).find((item) => item.id === selectedWallId)
   const selectedEncounter = selectedRoom ? getRoomEncounter(value, selectedRoom.id) : undefined
   const dungeonBrightness = value.settings.brightness ?? DEFAULT_DUNGEON_BRIGHTNESS
+  const runtimeGameplay = useMemo(
+    () => runtimeWorkspace && runtimeProfile
+      ? resolveGameplayForRole(runtimeWorkspace.gameplay, runtimeProfile.blueprint.role)
+      : undefined,
+    [runtimeWorkspace, runtimeProfile],
+  )
+  const runtimeInitialState = useMemo<ForgeAdventurePlayerState | undefined>(() => {
+    if (!runtimeGameplay) return undefined
+    const inventory = [...runtimeGameplay.player.startingItems]
+    const equippedWeaponId = inventory.find((id) => runtimeGameplay.items.find((item) => item.id === id)?.slot === 'weapon')
+    const maxMana = Math.max(1, Number((runtimeGameplay.player as any).maxMana ?? 100))
+    return {
+      health: runtimeGameplay.player.maxHealth,
+      inventory,
+      equippedWeaponId,
+      gold: 0,
+      xp: 0,
+      level: 1,
+      mana: maxMana,
+      maxMana,
+    }
+  }, [runtimeGameplay])
+
 
 
   useEffect(() => {
@@ -73,6 +107,38 @@ export default function MapStudio() {
     }).catch(() => undefined)
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadSkillboundWorkspace().then((workspace) => {
+      if (!cancelled) setRuntimeWorkspace(workspace)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!runtimeGameplay) {
+      setRuntimeItemIcons({})
+      return
+    }
+    let cancelled = false
+    const urls: string[] = []
+    void Promise.all(runtimeGameplay.items.map(async (item) => {
+      const iconId = itemVisual(item).inventory.iconAssetId
+      if (!iconId) return undefined
+      const asset = await getAsset(iconId).catch(() => undefined)
+      if (!asset) return undefined
+      const url = URL.createObjectURL(asset.blob)
+      urls.push(url)
+      return [item.id, url] as const
+    })).then((entries) => {
+      if (!cancelled) setRuntimeItemIcons(Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, string]>))
+    })
+    return () => {
+      cancelled = true
+      urls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [runtimeGameplay])
 
   const mutate = (next: DungeonWithProps, message?: string) => {
     setValue({ ...next, updatedAt: new Date().toISOString() })
@@ -150,7 +216,7 @@ export default function MapStudio() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('input,select,textarea') || playtest || topDown) return
+      if (target?.closest('input,select,textarea') || playtest || runtimeDungeon) return
       if ((event.key === 'Delete' || event.key === 'Backspace') && (selectedRoomId || selectedMarkerId || selectedPropId || selectedWallId)) { event.preventDefault(); deleteSelection(); return }
       if (selectedPropId && (event.key.toLowerCase() === 'q' || event.key.toLowerCase() === 'e')) {
         event.preventDefault(); const delta = event.key.toLowerCase() === 'q' ? -15 : 15
@@ -164,7 +230,7 @@ export default function MapStudio() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedRoomId, selectedMarkerId, selectedPropId, selectedWallId, value, playtest, topDown])
+  }, [selectedRoomId, selectedMarkerId, selectedPropId, selectedWallId, value, playtest, runtimeDungeon])
 
   const placeProp = (x: number, z: number) => {
     const targetRoom = nearestRoom(value.rooms, x, z)
@@ -269,6 +335,40 @@ export default function MapStudio() {
     for (const item of value.rooms) if (['combat','elite','boss'].includes(item.type)) next = ensureRoomEncounter(next, item.id)
     mutate(next, `Encounter logic prepared for ${next.logic?.encounters.length ?? 0} combat rooms.`)
   }
+  const exitProjectRuntime = useCallback(() => {
+    setRuntimeDungeon(undefined)
+    setStatus('Dungeon Forge runtime test ended. Dungeon changes remain in the editor.')
+  }, [])
+
+  const launchProjectRuntime = async () => {
+    if (runtimeLoading || generationJob.active) return
+    setRuntimeLoading(true)
+    try {
+      const workspace = await loadSkillboundWorkspace()
+      const profiles = listPlayerProfiles()
+      const activeId = getActivePlayerProfileId()
+      const profile = profiles.find((item) => item.id === activeId) ?? profiles[0]
+      if (!profile) {
+        setStatus('No Skillbound character exists yet. Create a character in Play Project first, then return to Dungeon Forge.')
+        return
+      }
+      const snapshot = structuredClone(value) as DungeonWithProps
+      const dungeon: ForgeProjectDungeonDefinition = {
+        ...snapshot,
+        id: `forge-live-test-${snapshot.seed}`,
+      }
+      setRuntimeWorkspace(workspace)
+      setRuntimeProfile(profile)
+      setRuntimeDungeon(dungeon)
+      setPlaytest(false)
+      setStatus(`Dungeon Forge test started with ${profile.name}. This is the same runtime used by Skillbound dungeon play: Combat v3, Dungeon Runs v2, rewards, boss phases, camera and collision.`)
+    } catch (reason) {
+      setStatus(reason instanceof Error ? `Could not start Play Project runtime: ${reason.message}` : 'Could not start Play Project runtime.')
+    } finally {
+      setRuntimeLoading(false)
+    }
+  }
+
   const proceduralGenerate = async () => {
     if (generationJob.active) return
     const paint = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
@@ -313,10 +413,10 @@ export default function MapStudio() {
   const exportSkillbound = () => {
     const runtime = compileSkillboundRuntime(value)
     download(dungeonBlob(value as ForgeDungeonPackage), `${slug(value.name)}.forge-dungeon.json`)
-    setStatus(`Skillbound package exported: ${runtime.encounters.length} encounters, ${runtime.doors.length} doors, ${runtime.triggers.length} triggers.`)
+    setStatus(`Skillbound package exported: ${runtime.encounters.length} encounters and ${runtime.triggers.length} triggers. Door/gate authoring is temporarily disabled.`)
   }
 
-  return <div className="map-studio-page">
+  return <div className={`map-studio-page ${runtimeDungeon ? 'map-live-runtime-active' : ''}`}>
     <aside className="map-left-panel">
       <div className="map-panel-title"><MapIcon size={15} /> DUNGEON FORGE</div>
       <div className="map-mode-card"><span>CREATION MODE</span><strong>Interior Dungeon Builder</strong><em>Skillbound ARPG</em></div>
@@ -324,7 +424,7 @@ export default function MapStudio() {
         <div className="map-section-title">LIGHTING</div>
         <div className="map-lighting-head"><strong>Brightness</strong><output>{Math.round(dungeonBrightness * 100)}%</output></div>
         <input className="map-brightness-slider" type="range" min={0.55} max={2.5} step={0.05} value={dungeonBrightness} onChange={(e)=>mutate({...value,settings:{...value.settings,brightness:Number(e.target.value)}})} />
-        <div className="map-lighting-scale"><span>Darker</span><span>Shared in Edit · ARPG · Walk</span><span>Brighter</span></div>
+        <div className="map-lighting-scale"><span>Darker</span><span>Shared in Edit · Test Dungeon · Walk</span><span>Brighter</span></div>
         <div className="map-lighting-presets">
           <button onClick={()=>mutate({...value,settings:{...value.settings,brightness:0.9}})}>90%</button>
           <button onClick={()=>mutate({...value,settings:{...value.settings,brightness:DEFAULT_DUNGEON_BRIGHTNESS}})}>Default</button>
@@ -338,8 +438,8 @@ export default function MapStudio() {
     </aside>
 
     <main className="map-workspace">
-      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions"><button className={topDown?'active play':''} onClick={()=>{setTopDown(!topDown);setPlaytest(false)}}><Grid3X3 size={14}/> {topDown?'Exit ARPG':'ARPG'}</button><button className={playtest?'active play':''} onClick={()=>{setPlaytest(!playtest);setTopDown(false)}}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button disabled={generationJob.active} onClick={()=>void proceduralGenerate()}><RotateCcw size={14}/> {generationJob.active?'Generating…':'Regenerate'}</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></div></header>
-      <div className="map-viewport-wrap">{generationJob.active&&<div className="map-generation-overlay"><div className="map-generation-card"><WandSparkles size={22}/><strong>Generating Dungeon</strong><span>{generationJob.label}</span><div className="map-generation-track"><i style={{width:`${generationJob.progress}%`}}/></div><output>{generationJob.progress}%</output></div></div>}{topDown?<ArpgDungeonViewport value={value}/>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} selectedWallId={selectedWallId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onWallClick={onWallClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp} onRoomDraw={drawRoom} onWallDraw={drawWall}/>} {!playtest&&!topDown&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{value.logic?.encounters.length ?? 0} encounters</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.walls?.length ?? 0} walls</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
+      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions">{runtimeDungeon?<><div className="map-live-runtime-badge"><Gamepad2 size={13}/><span>SHARED RUNTIME TEST</span><strong>{runtimeProfile?.name??'Skillbound Hero'}</strong></div><button className="active play" onClick={exitProjectRuntime}><X size={14}/> Exit Dungeon Test</button></>:<><button className={playtest?'active play':''} onClick={()=>setPlaytest(!playtest)}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button className="map-play-project-button" disabled={runtimeLoading||generationJob.active} onClick={()=>void launchProjectRuntime()}><Gamepad2 size={14}/> {runtimeLoading?'Loading…':'Test Dungeon'}</button><button disabled={generationJob.active} onClick={()=>void proceduralGenerate()}><RotateCcw size={14}/> {generationJob.active?'Generating…':'Regenerate'}</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></>}</div></header>
+      <div className="map-viewport-wrap">{generationJob.active&&<div className="map-generation-overlay"><div className="map-generation-card"><WandSparkles size={22}/><strong>Generating Dungeon</strong><span>{generationJob.label}</span><div className="map-generation-track"><i style={{width:`${generationJob.progress}%`}}/></div><output>{generationJob.progress}%</output></div></div>}{runtimeDungeon&&runtimeWorkspace&&runtimeProfile&&runtimeGameplay&&runtimeInitialState?<div className="map-live-runtime-host"><SkillboundDungeonPlayViewport dungeon={runtimeDungeon} gameplay={runtimeGameplay} projectId={`${runtimeWorkspace.manifest.id}:dungeon-forge:${runtimeProfile.id}`} initialState={runtimeInitialState} characterBlueprint={runtimeProfile.blueprint} uiTheme={runtimeWorkspace.ui.theme} hudLayout={runtimeWorkspace.ui.hud} itemIcons={runtimeItemIcons} onExit={exitProjectRuntime}/></div>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} selectedWallId={selectedWallId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onWallClick={onWallClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp} onRoomDraw={drawRoom} onWallDraw={drawWall}/>} {!runtimeDungeon&&!playtest&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{value.logic?.encounters.length ?? 0} encounters</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.walls?.length ?? 0} walls</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
       <section className={`map-flow ${flowOpen?'open':''}`}><button className="map-flow-header" onClick={()=>setFlowOpen(!flowOpen)}><Network size={14}/><strong>DUNGEON FLOW</strong><span>{flowOpen?'Hide':'Show'}</span></button>{flowOpen&&<div className="map-flow-body">{value.rooms.map((item,index)=>{const roomEncounter=getRoomEncounter(value,item.id);return <div key={item.id} className={`flow-node ${item.type} ${selectedRoomId===item.id?'selected':''}`} onClick={()=>{setSelectedRoomId(item.id);setSelectedMarkerId(undefined);setSelectedPropId(undefined);setTool('select')}}><span>{item.type}</span><strong>{item.name}</strong>{roomEncounter&&<em className="flow-encounter">{roomEncounter.boss?'BOSS':`${roomEncounter.count}× ${roomEncounter.family}`}</em>}{index<value.rooms.length-1&&<ChevronRight size={14}/>}</div>})}</div>}</section>
       <footer className="map-status"><span>{status}</span><b>{validation.ok?'Ready for Skillbound export':validation.warnings[0]}</b></footer>
     </main>
@@ -348,22 +448,29 @@ export default function MapStudio() {
       <div className="map-panel-title"><Sparkles size={15}/> INSPECTOR</div>
       <section className="map-inspector-section minimap-section"><div className="map-section-title">MINIMAP PREVIEW</div><DungeonMinimap value={value} selectedRoomId={selectedRoomId} onSelectRoom={(roomId)=>{setSelectedRoomId(roomId);setSelectedMarkerId(undefined);setSelectedPropId(undefined);setTool('select')}}/></section>
       {!selectedRoom&&!selectedMarker&&!selectedProp&&!selectedWall&&<div className="map-empty-inspector"><MousePointer2 size={28}/><strong>Select something</strong><span>Rooms have direct resize handles. Combat rooms can own encounter logic and gates.</span></div>}
-      {selectedRoom&&<><RoomInspector room={selectedRoom} onPatch={patchRoom}/><EncounterInspector room={selectedRoom} encounter={selectedEncounter} doors={value.markers.filter((item)=>item.type==='door'&&item.roomId===selectedRoom.id)} onCreate={createEncounter} onPatch={patchEncounter} onDoor={toggleEncounterDoor} onRemove={deleteEncounter}/></>}
+      {selectedRoom&&<><RoomInspector room={selectedRoom} onPatch={patchRoom}/><EncounterInspector room={selectedRoom} encounter={selectedEncounter} doors={value.markers.filter((item)=>item.type==='door'&&item.roomId===selectedRoom.id)} encounterProfiles={runtimeWorkspace?.encounterProfiles??[]} bossProfiles={runtimeWorkspace?.bossProfiles??[]} onCreate={createEncounter} onPatch={patchEncounter} onDoor={toggleEncounterDoor} onRemove={deleteEncounter}/></>}
       {selectedMarker&&<MarkerInspector marker={selectedMarker} onPatch={patchMarker}/>} {selectedProp&&<PropInspector prop={selectedProp} onPatch={patchProp}/>} {selectedWall&&<WallInspector wall={selectedWall} onPatch={patchWall}/>}<section className="map-validation-panel"><div className="map-section-title">VALIDATION</div>{validation.ok?<div className="validation-ok"><Sparkles size={14}/> Layout, boss flow and encounter references are valid.</div>:validation.warnings.map((warning,index)=><div key={`${warning}-${index}`} className="validation-warning"><ShieldAlert size={13}/> {warning}</div>)}</section>
     </aside>
   </div>
 }
 
-function RoomInspector({room,onPatch}:{room:DungeonRoom;onPatch:(patch:Partial<DungeonRoom>)=>void}){return <><section className="map-inspector-section"><div className="map-section-title">ROOM</div><label>Name<input value={room.name} onChange={(e)=>onPatch({name:e.target.value})}/></label><label>Type<select value={room.type} onChange={(e)=>onPatch({type:e.target.value as DungeonRoomType})}>{roomTypes.map((item)=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></section><section className="map-inspector-section"><div className="map-section-title">TRANSFORM</div><div className="map-room-summary"><strong>Drag + resize directly</strong><span>Drag inside the room to move it. Drag a cyan edge handle to resize while the opposite wall stays fixed. Hold Shift for fine/free movement.</span></div><div className="map-number-grid"><NumberField label="X" value={room.x} onChange={(x)=>onPatch({x})}/><NumberField label="Z" value={room.z} onChange={(z)=>onPatch({z})}/><NumberField label="Width" value={room.width} min={3} onChange={(width)=>onPatch({width})}/><NumberField label="Depth" value={room.depth} min={3} onChange={(depth)=>onPatch({depth})}/><NumberField label="Height" value={room.height} min={2} step={0.1} onChange={(height)=>onPatch({height})}/><label>Rotation<select value={room.rotation} onChange={(e)=>onPatch({rotation:Number(e.target.value) as DungeonRoom['rotation']})}><option value={0}>0°</option><option value={90}>90°</option><option value={180}>180°</option><option value={270}>270°</option></select></label></div></section></>}
+function RoomInspector({room,onPatch}:{room:DungeonRoom;onPatch:(patch:Partial<DungeonRoom>)=>void}){return <><section className="map-inspector-section"><div className="map-section-title">ROOM</div><label>Name<input value={room.name} onChange={(e)=>onPatch({name:e.target.value})}/></label><label>Type<select value={room.type} onChange={(e)=>onPatch({type:e.target.value as DungeonRoomType})}>{roomTypes.map((item)=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Art Template<select value={room.template??''} onChange={(e)=>onPatch({template:(e.target.value||undefined) as DungeonRoomTemplate|undefined})}><option value="">Auto from room type</option>{roomTemplates.map((item)=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Shape<select value={room.shape??'rect'} onChange={(e)=>onPatch({shape:e.target.value as NonNullable<DungeonRoom['shape']>})}><option value="rect">Hall / Rectangle</option><option value="cross">Crossroads</option><option value="octagon">Octagonal</option></select></label></section><section className="map-inspector-section"><div className="map-section-title">TRANSFORM</div><div className="map-room-summary"><strong>Drag + resize directly</strong><span>Drag inside the room to move it. Drag a cyan edge handle to resize while the opposite wall stays fixed. Hold Shift for fine/free movement.</span></div><div className="map-number-grid"><NumberField label="X" value={room.x} onChange={(x)=>onPatch({x})}/><NumberField label="Z" value={room.z} onChange={(z)=>onPatch({z})}/><NumberField label="Width" value={room.width} min={3} onChange={(width)=>onPatch({width})}/><NumberField label="Depth" value={room.depth} min={3} onChange={(depth)=>onPatch({depth})}/><NumberField label="Height" value={room.height} min={2} step={0.1} onChange={(height)=>onPatch({height})}/><label>Rotation<select value={room.rotation} onChange={(e)=>onPatch({rotation:Number(e.target.value) as DungeonRoom['rotation']})}><option value={0}>0°</option><option value={90}>90°</option><option value={180}>180°</option><option value={270}>270°</option></select></label></div></section></>}
 
-function EncounterInspector({room,encounter,doors,onCreate,onPatch,onDoor,onRemove}:{room:DungeonRoom;encounter?:DungeonEncounter;doors:DungeonMarker[];onCreate:()=>void;onPatch:(patch:Partial<DungeonEncounter>)=>void;onDoor:(id:string,enabled:boolean)=>void;onRemove:()=>void}){
+function EncounterInspector({room,encounter,doors,encounterProfiles,bossProfiles,onCreate,onPatch,onDoor,onRemove}:{room:DungeonRoom;encounter?:DungeonEncounter;doors:DungeonMarker[];encounterProfiles:ForgeProjectWorkspace['encounterProfiles'];bossProfiles:ForgeProjectWorkspace['bossProfiles'];onCreate:()=>void;onPatch:(patch:Partial<DungeonEncounter>)=>void;onDoor:(id:string,enabled:boolean)=>void;onRemove:()=>void}){
   if(!encounter)return <section className="map-inspector-section encounter-card"><div className="map-section-title">ENCOUNTER</div><div className="map-room-summary"><strong>No encounter assigned</strong><span>Create a room encounter to spawn enemies, lock gates and release rewards when cleared.</span></div><button className="logic-primary" onClick={onCreate}><Skull size={13}/> Create Encounter</button></section>
-  return <section className="map-inspector-section encounter-card"><div className="map-section-title">ENCOUNTER LOGIC</div><label>Name<input value={encounter.name} onChange={(e)=>onPatch({name:e.target.value})}/></label><label>Enemy family<input value={encounter.family} onChange={(e)=>onPatch({family:e.target.value})}/></label><div className="map-number-grid"><NumberField label="Count" value={encounter.count} min={1} step={1} onChange={(count)=>onPatch({count})}/><NumberField label="Elite chance" value={encounter.eliteChance} min={0} step={0.05} onChange={(eliteChance)=>onPatch({eliteChance:Math.max(0,Math.min(1,eliteChance))})}/><NumberField label="Difficulty" value={encounter.difficulty} min={1} step={1} onChange={(difficulty)=>onPatch({difficulty})}/><label>Boss<select value={String(encounter.boss)} onChange={(e)=>onPatch({boss:e.target.value==='true'})}><option value="false">No</option><option value="true">Yes</option></select></label></div><label>Activation<select value={encounter.trigger} onChange={(e)=>onPatch({trigger:e.target.value as DungeonEncounter['trigger']})}><option value="marker">Trigger volume</option><option value="room-enter">Room enter</option></select></label><label>Run<select value={String(encounter.once)} onChange={(e)=>onPatch({once:e.target.value==='true'})}><option value="true">Once per run</option><option value="false">Repeatable</option></select></label><div className="logic-summary"><span>{encounter.spawnMarkerIds.length} spawn group{encounter.spawnMarkerIds.length===1?'':'s'}</span><span>{encounter.rewardMarkerIds.length} reward{encounter.rewardMarkerIds.length===1?'':'s'}</span></div><div className="map-section-title sub">ENCOUNTER GATES</div>{doors.length===0?<div className="logic-muted">Place a Door on a corridor opening to use encounter locking.</div>:doors.map((door)=><label key={door.id} className="logic-check"><input type="checkbox" checked={encounter.lockDoorIds.includes(door.id)} onChange={(e)=>onDoor(door.id,e.target.checked)}/><span>{door.name}</span></label>)}<button className="logic-danger" onClick={onRemove}>Remove Encounter</button><div className="logic-room-id">Room: {room.name}</div></section>
+  const encounterProfile=encounterProfiles.find((item)=>item.id===encounter.encounterProfileId)
+  const bossProfile=bossProfiles.find((item)=>item.id===encounter.bossProfileId)
+  const encounterWaveCount=encounterProfile?.waves?.length??0
+  const bossPhaseCount=bossProfile?.phases?.length??0
+  const profileSummary=encounter.boss
+    ? bossProfile?(String(bossPhaseCount)+' Boss Forge phase'+(bossPhaseCount===1?'':'s')+' · '+bossProfile.name):'Manual boss fallback'
+    : encounterProfile?(String(encounterWaveCount)+' Encounter Forge wave'+(encounterWaveCount===1?'':'s')+' · '+encounterProfile.name):'Manual single-wave fallback'
+  return <section className="map-inspector-section encounter-card"><div className="map-section-title">ENCOUNTER LOGIC</div><label>Name<input value={encounter.name} onChange={(e)=>onPatch({name:e.target.value})}/></label>{encounter.boss?<label>Boss Forge profile<select value={encounter.bossProfileId??''} onChange={(e)=>onPatch({bossProfileId:e.target.value||undefined,encounterProfileId:undefined})}><option value="">Manual fallback</option>{bossProfiles.map((profile)=><option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>:<label>Encounter Forge profile<select value={encounter.encounterProfileId??''} onChange={(e)=>onPatch({encounterProfileId:e.target.value||undefined,bossProfileId:undefined})}><option value="">Manual single wave</option>{encounterProfiles.map((profile)=><option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>}<div className="map-room-summary"><strong>{profileSummary}</strong><span>{encounter.boss?'Boss Forge drives the enemy identity and phase changes at runtime.':'Encounter Forge drives the mixed enemy wave composition at runtime.'}</span></div><label>Fallback enemy family<input value={encounter.family} onChange={(e)=>onPatch({family:e.target.value})}/></label><div className="map-number-grid"><NumberField label="Fallback count" value={encounter.count} min={1} step={1} onChange={(count)=>onPatch({count})}/><NumberField label="Elite chance" value={encounter.eliteChance} min={0} step={0.05} onChange={(eliteChance)=>onPatch({eliteChance:Math.max(0,Math.min(1,eliteChance))})}/><NumberField label="Difficulty" value={encounter.difficulty} min={1} step={1} onChange={(difficulty)=>onPatch({difficulty})}/><label>Boss<select value={String(encounter.boss)} onChange={(e)=>{const boss=e.target.value==='true';onPatch({boss,encounterProfileId:boss?undefined:encounter.encounterProfileId,bossProfileId:boss?(encounter.bossProfileId??'vault-warden'):undefined})}}><option value="false">No</option><option value="true">Yes</option></select></label></div><label>Activation<select value={encounter.trigger} onChange={(e)=>onPatch({trigger:e.target.value as DungeonEncounter['trigger']})}><option value="marker">Trigger volume</option><option value="room-enter">Room enter</option></select></label><label>Run<select value={String(encounter.once)} onChange={(e)=>onPatch({once:e.target.value==='true'})}><option value="true">Once per run</option><option value="false">Repeatable</option></select></label><div className="logic-summary"><span>{encounter.spawnMarkerIds.length} spawn group{encounter.spawnMarkerIds.length===1?'':'s'}</span><span>{encounter.rewardMarkerIds.length} reward{encounter.rewardMarkerIds.length===1?'':'s'}</span></div><div className="map-section-title sub">ENCOUNTER GATES</div><div className="logic-muted">Gate/door authoring is temporarily disabled while the dungeon transition system is being redesigned.</div><button className="logic-danger" onClick={onRemove}>Remove Encounter</button><div className="logic-room-id">Room: {room.name}</div></section>
 }
 
 function MarkerInspector({marker,onPatch}:{marker:DungeonMarker;onPatch:(patch:Partial<DungeonMarker>)=>void}){const data=marker.data,patchData=(key:string,val:string|number|boolean)=>onPatch({data:{...data,[key]:val}});return <><section className="map-inspector-section"><div className="map-section-title">{marker.type.toUpperCase()}</div><label>Name<input value={marker.name} onChange={(e)=>onPatch({name:e.target.value})}/></label>{marker.type==='trigger'&&<NumberField label="Radius" value={marker.radius??2} min={0.5} step={0.25} onChange={(radius)=>onPatch({radius})}/>}</section>{marker.type==='door'&&<section className="map-inspector-section"><label>Locked by default<select value={String(Boolean(data.locked))} onChange={(e)=>patchData('locked',e.target.value==='true')}><option value="false">No</option><option value="true">Yes</option></select></label><label>Encounter ID<input value={String(data.encounterId??'')} onChange={(e)=>patchData('encounterId',e.target.value)}/></label></section>}{marker.type==='enemy'&&<section className="map-inspector-section"><label>Enemy family<input value={String(data.family??'undead')} onChange={(e)=>patchData('family',e.target.value)}/></label><div className="map-number-grid"><NumberField label="Count" value={Number(data.count??5)} min={1} step={1} onChange={(count)=>patchData('count',count)}/><NumberField label="Elite chance" value={Number(data.eliteChance??0.1)} min={0} step={0.05} onChange={(eliteChance)=>patchData('eliteChance',Math.max(0,Math.min(1,eliteChance)))}/><NumberField label="Difficulty" value={Number(data.difficulty??1)} min={1} step={1} onChange={(difficulty)=>patchData('difficulty',difficulty)}/></div></section>}{marker.type==='trigger'&&<section className="map-inspector-section"><label>Action<select value={String(data.action??'start-encounter')} onChange={(e)=>patchData('action',e.target.value)}>{triggerActions.map((action)=><option key={action} value={action}>{action}</option>)}</select></label><label>Target ID<input value={String(data.targetId??'')} onChange={(e)=>patchData('targetId',e.target.value)}/></label><label>Once<select value={String(data.once??true)} onChange={(e)=>patchData('once',e.target.value==='true')}><option value="true">Yes</option><option value="false">No</option></select></label></section>}{marker.type==='loot'&&<section className="map-inspector-section"><label>Loot tier<select value={String(data.tier??'rare')} onChange={(e)=>patchData('tier',e.target.value)}><option value="common">Common</option><option value="magic">Magic</option><option value="rare">Rare</option><option value="legendary">Legendary</option></select></label><label>Requires clear<select value={String(Boolean(data.requiresClear))} onChange={(e)=>patchData('requiresClear',e.target.value==='true')}><option value="false">No</option><option value="true">Yes</option></select></label></section>}{marker.type==='portal'&&<section className="map-inspector-section"><label>Action<select value={String(data.action??'exit-dungeon')} onChange={(e)=>patchData('action',e.target.value)}><option value="exit-dungeon">Exit dungeon</option><option value="portal">Portal target</option></select></label><label>Requires encounter<input value={String(data.requiresEncounterId??'')} onChange={(e)=>patchData('requiresEncounterId',e.target.value)}/></label></section>}{marker.type==='checkpoint'&&<section className="map-inspector-section"><label>Checkpoint ID<input value={String(data.checkpointId??'checkpoint')} onChange={(e)=>patchData('checkpointId',e.target.value)}/></label></section>}{marker.type==='light'&&<section className="map-inspector-section"><label>Color<input type="color" value={String(data.color??'#ffb45f')} onChange={(e)=>patchData('color',e.target.value)}/><NumberField label="Intensity" value={Number(data.intensity??2)} min={0} step={0.1} onChange={(intensity)=>patchData('intensity',intensity)}/></label></section>}</>}
 function PropInspector({prop,onPatch}:{prop:DungeonProp;onPatch:(patch:Partial<DungeonProp>)=>void}){return <><section className="map-inspector-section"><div className="map-section-title">PROP</div><label>Name<input value={prop.name} onChange={(e)=>onPatch({name:e.target.value})}/></label><div className="map-room-summary"><strong>{prop.source==='library'?'Shared Library asset':'Built-in dungeon prop'}</strong><span>Drag it directly in Select mode. Q / E rotates by 15°.</span></div></section><section className="map-inspector-section"><div className="map-section-title">TRANSFORM</div><div className="map-number-grid"><NumberField label="X" value={prop.x} onChange={(x)=>onPatch({x})}/><NumberField label="Z" value={prop.z} onChange={(z)=>onPatch({z})}/><NumberField label="Y" value={prop.y} step={0.1} onChange={(y)=>onPatch({y})}/><NumberField label="Rotation" value={prop.rotationY} step={15} onChange={(rotationY)=>onPatch({rotationY:normalizeDegrees(rotationY)})}/><NumberField label="Scale" value={prop.scale} min={0.1} step={0.1} onChange={(scale)=>onPatch({scale:Math.max(0.1,scale)})}/><label>Collision<select value={String(prop.collision)} onChange={(e)=>onPatch({collision:e.target.value==='true'})}><option value="true">On</option><option value="false">Off</option></select></label></div></section></>}
-function WallInspector({wall,onPatch}:{wall:DungeonWall;onPatch:(patch:Partial<DungeonWall>)=>void}){return <><section className="map-inspector-section"><div className="map-section-title">MODULAR WALL</div><label>Name<input value={wall.name} onChange={(e)=>onPatch({name:e.target.value})}/></label><div className="map-room-summary"><strong>Independent wall segment</strong><span>Use the Wall tool to drag more masonry anywhere in the layout. These walls also block movement in Walk and ARPG preview.</span></div></section><section className="map-inspector-section"><div className="map-section-title">GEOMETRY</div><div className="map-number-grid"><NumberField label="Start X" value={wall.x1} onChange={(x1)=>onPatch({x1})}/><NumberField label="Start Z" value={wall.z1} onChange={(z1)=>onPatch({z1})}/><NumberField label="End X" value={wall.x2} onChange={(x2)=>onPatch({x2})}/><NumberField label="End Z" value={wall.z2} onChange={(z2)=>onPatch({z2})}/><NumberField label="Height" value={wall.height} min={1} step={.1} onChange={(height)=>onPatch({height})}/><NumberField label="Thickness" value={wall.thickness} min={.15} step={.05} onChange={(thickness)=>onPatch({thickness})}/></div></section></>}
+function WallInspector({wall,onPatch}:{wall:DungeonWall;onPatch:(patch:Partial<DungeonWall>)=>void}){return <><section className="map-inspector-section"><div className="map-section-title">MODULAR WALL</div><label>Name<input value={wall.name} onChange={(e)=>onPatch({name:e.target.value})}/></label><div className="map-room-summary"><strong>Independent wall segment</strong><span>Use the Wall tool to drag more masonry anywhere in the layout. These walls also block movement in Walk and the shared Test Dungeon runtime.</span></div></section><section className="map-inspector-section"><div className="map-section-title">GEOMETRY</div><div className="map-number-grid"><NumberField label="Start X" value={wall.x1} onChange={(x1)=>onPatch({x1})}/><NumberField label="Start Z" value={wall.z1} onChange={(z1)=>onPatch({z1})}/><NumberField label="End X" value={wall.x2} onChange={(x2)=>onPatch({x2})}/><NumberField label="End Z" value={wall.z2} onChange={(z2)=>onPatch({z2})}/><NumberField label="Height" value={wall.height} min={1} step={.1} onChange={(height)=>onPatch({height})}/><NumberField label="Thickness" value={wall.thickness} min={.15} step={.05} onChange={(thickness)=>onPatch({thickness})}/></div></section></>}
 function NumberField({label,value,min,step=0.5,onChange}:{label:string;value:number;min?:number;step?:number;onChange:(value:number)=>void}){return <label>{label}<input type="number" value={Number(value.toFixed(2))} min={min} step={step} onChange={(e)=>onChange(Number(e.target.value))}/></label>}
 
 function removeMarkerReference(value:DungeonWithProps,markerId:string):DungeonWithProps{return{...value,markers:value.markers.filter((item)=>item.id!==markerId),logic:value.logic?{...value.logic,completionPortalId:value.logic.completionPortalId===markerId?undefined:value.logic.completionPortalId,encounters:value.logic.encounters.map((encounter)=>({...encounter,trigger:encounter.triggerMarkerId===markerId?'room-enter':encounter.trigger,triggerMarkerId:encounter.triggerMarkerId===markerId?undefined:encounter.triggerMarkerId,spawnMarkerIds:encounter.spawnMarkerIds.filter((id)=>id!==markerId),lockDoorIds:encounter.lockDoorIds.filter((id)=>id!==markerId),rewardMarkerIds:encounter.rewardMarkerIds.filter((id)=>id!==markerId)}))}:value.logic,updatedAt:new Date().toISOString()}}
@@ -375,5 +482,18 @@ function isMapPropAsset(item:LibraryAsset){return item.kind==='glb'&&(item.categ
 function isMarkerTool(tool:DungeonTool):tool is Extract<DungeonTool,'enemy'|'loot'|'checkpoint'|'portal'|'trigger'|'light'>{return['enemy','loot','checkpoint','portal','trigger','light'].includes(tool)}
 function snap(v:number,g:number){return Math.round(v/g)*g}function roundTo(v:number,g:number){return Math.round(v/g)*g}function THREE_RAD(v:number){return v*Math.PI/180}function normalizeDegrees(v:number){return((v%360)+360)%360}function titleCase(v:string){return v.charAt(0).toUpperCase()+v.slice(1)}function slug(v:string){return v.trim().replace(/[^a-z0-9_-]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'skillbound-dungeon'}
 function download(blob:Blob,filename:string){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+const roomTemplates: Array<{id:DungeonRoomTemplate;label:string}> = [
+  {id:'threshold',label:'Threshold'},
+  {id:'burial-chamber',label:'Burial Chamber'},
+  {id:'crossroads',label:'Crossroads'},
+  {id:'ossuary-gallery',label:'Ossuary Gallery'},
+  {id:'warden-hall',label:'Warden Hall'},
+  {id:'reliquary',label:'Reliquary'},
+  {id:'shrine-hall',label:'Shrine Hall'},
+  {id:'warden-sanctum',label:'Warden Sanctum'},
+  {id:'sealed-ossuary',label:'Sealed Ossuary'},
+  {id:'storage-vault',label:'Storage Vault'},
+]
+
 function prefabHint(type:DungeonRoomType){return({entrance:'spawn + checkpoint',combat:'standard encounter',treasure:'reward branch',elite:'hard encounter + gate',shrine:'rest / buff',boss:'boss encounter + gate',secret:'hidden branch',utility:'custom space'}as const)[type]}
 function toolHint(tool:DungeonTool,start?:string){if(tool==='select')return'Drag rooms/props to move them. Select modular walls to edit their endpoints and thickness.';if(tool==='room')return'Click-drag on the floor to draw a new room. Tiny drags use the room preset minimum.';if(tool==='wall')return'Click-drag to draw an independent brick wall segment.';if(tool==='prop')return'Click anywhere on a room/floor to place the selected prop.';if(tool==='corridor')return start?'Click the destination room.':'Click the first room, then another.';if(tool==='door')return'Click a connected room to install a door; encounter rooms link it automatically.';if(tool==='erase')return'Click an object to delete it.';return'Click a room or floor to place this gameplay marker.'}

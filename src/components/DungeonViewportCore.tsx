@@ -6,9 +6,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
-import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
+import { dungeonPropBlocksMovement, dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomAtV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomAtV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../lib/dungeonForgeV3'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
 export type ResizeSide = 'north' | 'south' | 'east' | 'west'
@@ -91,7 +91,7 @@ export default function DungeonViewport(props: Props) {
     scene.add(ambient)
     // Authoring fill keeps masonry legible in the editor without flattening the
     // darker Walk/ARPG presentation.
-    const editorFill = new THREE.AmbientLight(0xb99878, 0)
+    const editorFill = new THREE.AmbientLight(initialAtmosphere.sky, 0)
     scene.add(editorFill)
     const key = new THREE.DirectionalLight(initialAtmosphere.key, initialAtmosphere.keyIntensity)
     key.position.set(16, 24, 10)
@@ -168,6 +168,7 @@ export default function DungeonViewport(props: Props) {
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
       ambient.intensity = lighting.ambientIntensity
+      editorFill.color.setHex(atmosphere.sky)
       editorFill.intensity = lighting.fillIntensity
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
@@ -361,7 +362,10 @@ export default function DungeonViewport(props: Props) {
       for (const prop of dungeonProps(current)) {
         addDungeonProp(dungeonGroup, prop, assetMap.get(prop.assetRef), prop.id === state.selectedPropId && !immersive, immersive, loader, atmosphere, flickerLights)
       }
-      for (const item of current.markers) addMarker(dungeonGroup, item, item.id === state.selectedMarkerId && !immersive, immersive)
+      for (const item of current.markers) {
+        if (item.type === 'door') continue
+        addMarker(dungeonGroup, item, item.id === state.selectedMarkerId && !immersive, immersive)
+      }
       addAtmosphereParticles(dungeonGroup, current, atmosphere, immersive, atmospherePoints)
       refreshCutawayNodes()
     }
@@ -702,10 +706,15 @@ export default function DungeonViewport(props: Props) {
       const move = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).multiplyScalar(forwardAmount).add(new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(rightAmount))
       if (move.lengthSq() > 1) move.normalize()
       move.multiplyScalar((keys.has('ShiftLeft') || keys.has('ShiftRight') ? 6.8 : 3.8) * dt)
-      const tx = camera.position.x + move.x
-      const tz = camera.position.z + move.z
-      if (canWalkAt(current, tx, camera.position.z)) camera.position.x = tx
-      if (canWalkAt(current, camera.position.x, tz)) camera.position.z = tz
+      const resolved = resolveDungeonSlideV3(
+        camera.position.x,
+        camera.position.z,
+        move.x,
+        move.z,
+        (x, z) => canWalkAt(current, x, z),
+      )
+      camera.position.x = resolved.x
+      camera.position.z = resolved.z
       camera.position.y = floorHeightAt(current, camera.position.x, camera.position.z) + 1.68
     }
 
@@ -1369,7 +1378,20 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
     light.position.y = 1.6
     group.add(light)
   } else if (item.type === 'trigger') {
-    object = new THREE.Mesh(new THREE.CylinderGeometry(item.radius ?? 2, item.radius ?? 2, 0.08, 24), new THREE.MeshBasicMaterial({ color, wireframe: true }))
+    const radius = item.radius ?? 2
+    const points: THREE.Vector3[] = []
+    for (let index = 0; index < 64; index += 1) {
+      const angle = index / 64 * Math.PI * 2
+      points.push(new THREE.Vector3(Math.cos(angle) * radius, 0.08, Math.sin(angle) * radius))
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points)
+    object = new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: selected ? 0.95 : 0.58,
+      depthTest: false,
+    }))
+    object.renderOrder = 22
   } else {
     object = new THREE.Mesh(item.type === 'enemy' ? new THREE.OctahedronGeometry(0.42) : new THREE.SphereGeometry(0.34, 14, 10), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2 }))
   }
@@ -1387,12 +1409,12 @@ function addMarker(parent: THREE.Group, item: DungeonMarker, selected: boolean, 
 function canWalkAt(value: DungeonWithProps, x: number, z: number) {
   const radius = 0.3
   const inside = value.theme === 'crypt'
-    ? dungeonContainsPointV3(value, x, z, radius)
+    ? dungeonNavigationContainsV3(value, x, z, radius)
     : value.rooms.some((room) => pointInsideRoom(room, x, z, radius)) || pointInsideCorridor(value, x, z, radius)
   if (!inside) return false
-  for (const item of value.markers) if (item.type === 'door' && Boolean(item.data.locked) && pointInsideDoor(item, x, z, radius)) return false
+  if (value.theme === 'crypt' && dungeonArtCollidesV3(value, x, z, radius)) return false
   for (const wall of value.walls ?? []) if (pointNearWall(wall, x, z, radius)) return false
-  for (const prop of dungeonProps(value)) if (prop.collision && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
+  for (const prop of dungeonProps(value)) if (dungeonPropBlocksMovement(prop) && Math.hypot(x - prop.x, z - prop.z) < propCollisionRadius(prop) + radius) return false
   return true
 }
 function pointNearWall(wall: DungeonWall, x: number, z: number, margin: number) {

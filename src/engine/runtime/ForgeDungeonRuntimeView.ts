@@ -8,6 +8,11 @@ import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity } from './ForgeDungeonRuntimeHelpers'
+import { FORGE_GAMEPLAY_FEEL, forgeExpAlpha } from './ForgeGameplayFeel'
+import {
+  forgeSnapGameplayCamera,
+  forgeUpdateGameplayCamera,
+} from './ForgeGameplayCamera'
 
 export const dungeonViewMethods = {
   updatePortal(delta: number) {
@@ -19,20 +24,40 @@ export const dungeonViewMethods = {
 
   updateCamera(delta: number) {
     this.cameraShake = Math.max(0, this.cameraShake - delta * 2.7)
-    const desired = this.player.position.clone().add(this.cameraOffset())
-    if (this.cameraShake > 0) {
-      const strength = this.cameraShake * 0.7
-      desired.x += Math.sin(performance.now() * 0.061) * strength
-      desired.y += Math.sin(performance.now() * 0.083) * strength * 0.45
-      desired.z += Math.cos(performance.now() * 0.073) * strength
-    }
-    this.camera.position.lerp(desired, 1 - Math.pow(0.0008, delta))
-    this.camera.lookAt(this.player.position.x, 0.8, this.player.position.z)
+    this.cameraDistance = THREE.MathUtils.lerp(
+      this.cameraDistance,
+      this.cameraDistanceTarget,
+      forgeExpAlpha(
+        FORGE_GAMEPLAY_FEEL.camera.zoomResponse,
+        delta,
+      ),
+    )
+
+    forgeUpdateGameplayCamera({
+      camera: this.camera,
+      focus: this.cameraFocus,
+      playerPosition: this.player.position,
+      playerVelocity: this.playerVelocity,
+      mouseWorld: this.mouseWorld,
+      pointerTracked: this.pointerTracked,
+      distance: this.cameraDistance,
+      delta,
+      shake: this.cameraShake,
+      tempFocus: this.tempCameraFocus,
+      tempAim: this.tempAim,
+      tempOffset: this.tempCamera,
+    })
   },
 
   snapCamera() {
-    this.camera.position.copy(this.player.position).add(this.cameraOffset())
-    this.camera.lookAt(this.player.position.x, 0.8, this.player.position.z)
+    this.cameraDistance = this.cameraDistanceTarget
+    forgeSnapGameplayCamera({
+      camera: this.camera,
+      focus: this.cameraFocus,
+      playerPosition: this.player.position,
+      distance: this.cameraDistance,
+      tempOffset: this.tempCamera,
+    })
   },
 
   updateOcclusion(delta: number) {
@@ -64,8 +89,6 @@ export const dungeonViewMethods = {
       else { setMeshOpacity(mesh, next); this.fadedOccluders.set(mesh, next) }
     }
   },
-
-  cameraOffset() { return new THREE.Vector3(this.cameraDistance * 0.58, this.cameraDistance * 0.74, this.cameraDistance * 0.58) },
 
   updateEffects(delta: number) {
     for (const effect of [...this.effects]) {
@@ -105,10 +128,12 @@ export const dungeonViewMethods = {
   },
 
   spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
-    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false })
+    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false, toneMapped: false })
     const mesh = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 32), material)
     mesh.rotation.x = -Math.PI / 2
-    mesh.position.set(position.x, 0.055, position.z)
+    const floorY = this.floorHeightAt?.(position.x, position.z) ?? Number(position.y ?? 0)
+    mesh.position.set(position.x, floorY + 0.125, position.z)
+    mesh.renderOrder = 18
     this.scene.add(mesh)
     this.effects.push({ mesh, age: 0, duration, maxScale: Math.max(1, radius) })
   },
@@ -125,14 +150,28 @@ export const dungeonViewMethods = {
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
     const sprite = new THREE.Sprite(material)
-    sprite.position.set(position.x, 2.4, position.z); sprite.scale.set(2.1, 1.05, 1)
+    const sequence = ++this.damageNumberSequence
+    const angle = sequence * 2.399963229728653
+    const lane = sequence % 4
+    const spread = .12 + lane * .045
+    sprite.position.set(
+      position.x + Math.cos(angle) * spread,
+      2.24 + (lane % 3) * .11,
+      position.z + Math.sin(angle) * spread,
+    )
+    sprite.scale.set(1.76, .88, 1)
     this.scene.add(sprite)
-    this.textEffects.push({ sprite, age: 0, duration: 0.68 })
+    this.textEffects.push({ sprite, age: 0, duration: .56 })
   },
 
   async spawnBoundVfx(assetId: string | undefined, position: THREE.Vector3) {
     try {
-      const effect = await spawnLibraryVfx(this.scene, assetId, position.clone())
+      const spawnPosition = position.clone()
+      const floorY = this.floorHeightAt?.(spawnPosition.x, spawnPosition.z) ?? Number(spawnPosition.y ?? 0)
+      // V3 floor bricks top out around y + .09. Older runtime VFX used .08 as
+      // their ground clamp, which placed ground emitters inside the masonry.
+      spawnPosition.y = Math.max(spawnPosition.y, floorY + 0.16)
+      const effect = await spawnLibraryVfx(this.scene, assetId, spawnPosition)
       if (!effect) return
       if (this.disposed) { effect.dispose(); return }
       this.libraryVfx.push(effect)

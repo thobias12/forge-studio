@@ -3,12 +3,12 @@
   "version": 1,
   "id": "vault-warden",
   "name": "Vault Warden",
-  "enemyId": "road-wretch",
-  "healthMultiplier": 5.5,
-  "damageMultiplier": 1.9,
-  "moveSpeedMultiplier": 0.92,
-  "attackCooldownMultiplier": 0.95,
-  "scale": 1.18,
+  "enemyId": "crypt-brute",
+  "healthMultiplier": 4.8,
+  "damageMultiplier": 1.7,
+  "moveSpeedMultiplier": 0.96,
+  "attackCooldownMultiplier": 0.92,
+  "scale": 1.28,
   "rewardLootTableId": "road-wretch-drops",
   "guaranteedItemId": "rusted-sword",
   "phases": [
@@ -31,8 +31,8 @@
       "moveSpeedMultiplier": 1.08,
       "attackCooldownMultiplier": 0.88,
       "windupMultiplier": 0.9,
-      "message": "The Warden calls the drowned guard to its side.",
-      "summonEnemyId": "road-wretch",
+      "message": "The Warden calls bone arbalists to the gallery.",
+      "summonEnemyId": "bone-arbalist",
       "summonCount": 2
     },
     {
@@ -43,9 +43,9 @@
       "moveSpeedMultiplier": 1.16,
       "attackCooldownMultiplier": 0.7,
       "windupMultiplier": 0.72,
-      "message": "The Vault Warden breaks its chains and enters a frenzy.",
-      "summonEnemyId": "road-wretch",
-      "summonCount": 3
+      "message": "The Warden tears free as grave-light floods the sanctum.",
+      "summonEnemyId": "grave-channeler",
+      "summonCount": 2
     }
   ]
 }

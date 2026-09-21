@@ -1,5 +1,16 @@
 export type DungeonTheme = 'crypt' | 'castle' | 'cave' | 'cathedral' | 'mine' | 'sewer' | 'void'
 export type DungeonRoomType = 'entrance' | 'combat' | 'treasure' | 'elite' | 'shrine' | 'boss' | 'secret' | 'utility'
+export type DungeonRoomTemplate =
+  | 'threshold'
+  | 'burial-chamber'
+  | 'crossroads'
+  | 'ossuary-gallery'
+  | 'warden-hall'
+  | 'reliquary'
+  | 'shrine-hall'
+  | 'warden-sanctum'
+  | 'sealed-ossuary'
+  | 'storage-vault'
 export type DungeonScalePreset = 'standard' | 'grand' | 'massive'
 export const DEFAULT_DUNGEON_BRIGHTNESS = 1.35
 export type DungeonMarkerType = 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light'
@@ -17,6 +28,7 @@ export type DungeonRoom = {
   rotation: 0 | 90 | 180 | 270
   floorLevel: number
   shape?: 'rect' | 'cross' | 'octagon'
+  template?: DungeonRoomTemplate
   tags: string[]
 }
 
@@ -83,6 +95,8 @@ export type DungeonEncounter = {
   difficulty: number
   boss: boolean
   once: boolean
+  encounterProfileId?: string
+  bossProfileId?: string
 }
 
 export type DungeonLogicState = {
@@ -153,18 +167,22 @@ export function createStarterDungeon(): ForgeDungeonPackage {
   combat.shape = 'cross'
   treasure.shape = 'rect'
   boss.shape = 'octagon'
+  entrance.template = 'threshold'
+  combat.template = 'crossroads'
+  treasure.template = 'reliquary'
+  boss.template = 'warden-sanctum'
   const entranceEdge = corridor(entrance.id, combat.id)
   const treasureEdge = corridor(combat.id, treasure.id)
   const bossEdge = corridor(combat.id, boss.id)
 
   const checkpoint = marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance checkpoint', { checkpointId: 'entrance' })
-  const combatSpawn = marker('enemy', combat.x, 0.3, combat.z, combat.id, 'Skeleton pack', { family: 'undead', count: 7, eliteChance: 0.1, difficulty: 1 })
+  const combatSpawn = marker('enemy', combat.x, 0.3, combat.z, combat.id, 'Drowned ambush', { family: 'road-wretch', count: 7, eliteChance: 0.1, difficulty: 1 })
   const combatEncounterId = crypto.randomUUID()
   const combatTrigger = marker('trigger', combat.x, 0.15, combat.z, combat.id, 'Crossroads encounter trigger', { action: 'start-encounter', targetId: combatEncounterId, once: true })
   combatTrigger.radius = Math.max(3.8, Math.min(combat.width, combat.depth) * 0.32)
 
   const treasureLoot = marker('loot', treasure.x, 0.3, treasure.z, treasure.id, 'Treasure chest', { tier: 'rare', requiresClear: false })
-  const bossSpawn = marker('enemy', boss.x, 0.3, boss.z, boss.id, 'Boss spawn', { family: 'crypt-warden', count: 1, eliteChance: 1, difficulty: 3 })
+  const bossSpawn = marker('enemy', boss.x, 0.3, boss.z, boss.id, 'Vault Warden spawn', { family: 'crypt-brute', count: 1, eliteChance: 1, difficulty: 3 })
   const bossReward = marker('loot', boss.x + 3.2, 0.3, boss.z + 0.8, boss.id, 'Boss reliquary', { tier: 'legendary', requiresClear: true })
   const bossEncounterId = crypto.randomUUID()
   const bossTrigger = marker('trigger', boss.x, 0.15, boss.z, boss.id, 'Boss arena trigger', { action: 'start-encounter', targetId: bossEncounterId, once: true })
@@ -178,13 +196,13 @@ export function createStarterDungeon(): ForgeDungeonPackage {
   const encounters: DungeonEncounter[] = [
     {
       id: combatEncounterId, name: 'Crossroads Ambush', roomId: combat.id, trigger: 'marker', triggerMarkerId: combatTrigger.id,
-      spawnMarkerIds: [combatSpawn.id], lockDoorIds: [], rewardMarkerIds: [], family: 'undead', count: 7,
-      eliteChance: 0.1, difficulty: 1, boss: false, once: true,
+      spawnMarkerIds: [combatSpawn.id], lockDoorIds: [], rewardMarkerIds: [], family: 'road-wretch', count: 7,
+      eliteChance: 0.1, difficulty: 1, boss: false, once: true, encounterProfileId: 'hollow-vault-ambush',
     },
     {
-      id: bossEncounterId, name: 'Crypt Warden', roomId: boss.id, trigger: 'marker', triggerMarkerId: bossTrigger.id,
-      spawnMarkerIds: [bossSpawn.id], lockDoorIds: [bossDoor.id], rewardMarkerIds: [bossReward.id], family: 'crypt-warden', count: 1,
-      eliteChance: 1, difficulty: 3, boss: true, once: true,
+      id: bossEncounterId, name: 'Vault Warden', roomId: boss.id, trigger: 'marker', triggerMarkerId: bossTrigger.id,
+      spawnMarkerIds: [bossSpawn.id], lockDoorIds: [bossDoor.id], rewardMarkerIds: [bossReward.id], family: 'crypt-brute', count: 1,
+      eliteChance: 1, difficulty: 3, boss: true, once: true, bossProfileId: 'vault-warden',
     },
   ]
 
@@ -242,12 +260,18 @@ export function encounterForRoom(roomValue: DungeonRoom, overrides: Partial<Dung
     spawnMarkerIds: [],
     lockDoorIds: [],
     rewardMarkerIds: [],
-    family: 'undead',
+    family: boss ? 'crypt-brute' : 'road-wretch',
     count: boss ? 1 : elite ? 4 : 7,
     eliteChance: boss ? 1 : elite ? 0.75 : 0.12,
     difficulty: boss ? 3 : elite ? 2 : 1,
     boss,
     once: true,
+    encounterProfileId: boss
+      ? undefined
+      : elite
+        ? 'ossuary-guard'
+        : 'hollow-vault-ambush',
+    bossProfileId: boss ? 'vault-warden' : undefined,
     ...overrides,
   }
 }
@@ -396,6 +420,7 @@ export function generateDungeon(
     entranceBase.depth * scale,
   )
   entrance.shape = 'rect'
+  entrance.template = 'threshold'
   rooms.push(entrance)
   markers.push(marker('checkpoint', entrance.x, 0.3, entrance.z, entrance.id, 'Entrance Checkpoint', { checkpointId: 'entrance' }))
 
@@ -441,6 +466,7 @@ export function generateDungeon(
         depth,
       )
       candidate.shape = generatedRoomShape(type, random)
+      candidate.template = generatedRoomTemplate(type, candidate.shape, random)
       if (!rooms.some((existing) => roomBoundsOverlap(existing, candidate, 5.5 * scale))) {
         direction = candidateDirection
         next = candidate
@@ -458,6 +484,7 @@ export function generateDungeon(
         depth,
       )
       next.shape = generatedRoomShape(type, random)
+      next.template = generatedRoomTemplate(type, next.shape, random)
     }
 
     rooms.push(next)
@@ -506,6 +533,7 @@ export function generateDungeon(
         depth,
       )
       candidate.shape = generatedRoomShape(branchType, random)
+      candidate.template = generatedRoomTemplate(branchType, candidate.shape, random)
       if (!rooms.some((existing) => roomBoundsOverlap(existing, candidate, 4.2 * scale))) branch = candidate
     }
     if (!branch) continue
@@ -626,6 +654,22 @@ function resolveGeneration(input: Partial<DungeonGenerationSettings>): DungeonGe
     corridorWidth: Math.max(3.8, Math.min(8, input.corridorWidth ?? DEFAULT_DUNGEON_GENERATION.corridorWidth)),
     scalePreset: preset,
   }
+}
+
+function generatedRoomTemplate(
+  type: DungeonRoomType,
+  shape: NonNullable<DungeonRoom['shape']>,
+  random: () => number,
+): DungeonRoomTemplate {
+  if (type === 'entrance') return 'threshold'
+  if (type === 'boss') return 'warden-sanctum'
+  if (type === 'elite') return 'warden-hall'
+  if (type === 'treasure') return 'reliquary'
+  if (type === 'shrine') return 'shrine-hall'
+  if (type === 'secret') return 'sealed-ossuary'
+  if (type === 'utility') return 'storage-vault'
+  if (shape === 'cross') return 'crossroads'
+  return random() < 0.46 ? 'ossuary-gallery' : 'burial-chamber'
 }
 
 function generatedRoomShape(type: DungeonRoomType, random: () => number): NonNullable<DungeonRoom['shape']> {

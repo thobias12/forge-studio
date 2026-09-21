@@ -3,6 +3,7 @@ import type { ForgeAnimationActionId, ForgeAnimationEvent } from '../animationBi
 import type { ForgeCharacterBlueprint } from '../characterBlueprint'
 import { playLibraryAudio } from './ForgeAnimationAudio'
 import { bindCharacterBlueprint } from './ForgeBlueprintRuntime'
+import { preloadLibraryVfx } from './ForgeAssetRuntime'
 import { installForgeSkillRuntime } from './ForgeSkillRuntime'
 import { registerSkillboundRuntime, unregisterSkillboundRuntime } from './SkillboundRuntimeBridge'
 
@@ -23,7 +24,17 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
       const binding = await bindCharacterBlueprint(this.player, blueprint, 1.95, animationTargetId)
       if (this.disposed) { binding.dispose(); return }
       this.playerVisual = binding
-      if (binding && !binding.getAnimationRuntimeV3?.() && this.preloadAbilityAnimations) {
+      const animationRuntime = binding.getAnimationRuntimeV3?.()
+      if (animationRuntime) {
+        const authoredVfx: Array<string | undefined> = []
+        for (const action of ['attackPrimary', 'attackHeavy', 'cast', 'block', 'hit', 'stagger', 'dodge', 'death', 'equip', 'unequip']) {
+          for (const event of animationRuntime.getEvents?.(action) ?? []) {
+            if (event.kind === 'vfx') authoredVfx.push(event.assetId)
+          }
+        }
+        void preloadLibraryVfx(authoredVfx).catch(() => undefined)
+      }
+      if (binding && !animationRuntime && this.preloadAbilityAnimations) {
         await this.preloadAbilityAnimations(binding)
       }
       if (!this.disposed && this.refreshEquippedModel) void this.refreshEquippedModel()
@@ -50,9 +61,48 @@ export function installPlayerProfileRuntime(RuntimeClass: { prototype: any }) {
   wrapNoopWhenPaused(proto, 'updatePlayer')
   wrapNoopWhenPaused(proto, 'updateEnemies')
   wrapNoopWhenPaused(proto, 'updateLoot')
+  wrapDodgePresentation(proto)
   wrapNoopWhenPaused(proto, 'startDodge')
   wrapTimedAbility(proto)
   installForgeSkillRuntime(RuntimeClass)
+}
+
+function wrapDodgePresentation(proto: any) {
+  const original = proto.startDodge
+  if (typeof original !== 'function') return
+  proto.startDodge = function (...args: unknown[]) {
+    const beforeRemaining = Number(this.dodgeRemaining ?? 0)
+    const beforeCooldown = Number(this.dodgeCooldown ?? 0)
+    const result = original.apply(this, args)
+    const started =
+      beforeRemaining <= 0 &&
+      beforeCooldown <= 0 &&
+      Number(this.dodgeRemaining ?? 0) > 0
+    if (!started) return result
+
+    const events =
+      this.playerVisual
+        ?.getAnimationRuntimeV3?.()
+        ?.getEvents('dodge') ?? []
+
+    for (const event of events) {
+      if ((event.kind !== 'vfx' && event.kind !== 'sfx') || !event.assetId) continue
+      const fire = () => {
+        if (this.disposed || this.__forgeProfilePaused) return
+        if (event.kind === 'vfx') {
+          const position = this.player?.position?.clone?.() ?? this.player?.position
+          if (position) position.y = Number(position.y ?? 0) + 0.12
+          try { void this.spawnBoundVfx?.(event.assetId, position) } catch { /* authored dodge VFX stays optional */ }
+        } else {
+          void playLibraryAudio(event.assetId, { volume: .9, playbackRate: .985 + Math.random() * .03 })
+        }
+      }
+      const delay = Math.max(0, Number(event.time || 0) * 1000)
+      if (delay < 12) fire()
+      else window.setTimeout(fire, delay)
+    }
+    return result
+  }
 }
 
 function wrapTimedAbility(proto: any) {

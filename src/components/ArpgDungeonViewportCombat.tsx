@@ -2,11 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getRoomConnection, type DungeonConnection, type DungeonEncounter, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
-import { dungeonProps, type DungeonDestructible, type DungeonProp, type DungeonWithProps } from '../lib/dungeonProps'
+import { dungeonPropBlocksMovement, dungeonProps, type DungeonDestructible, type DungeonProp, type DungeonWithProps } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, dungeonContainsPointV3, dungeonFloorHeightV3, dungeonRoomContainsV3 } from '../lib/dungeonForgeV3'
+import { addDungeonMasonryV3, dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3, dungeonRoomContainsV3, resolveDungeonSlideV3 } from '../lib/dungeonForgeV3'
 import { getAsset, listAssets } from '../lib/library'
 import { definitionFromMetadata, findDestructibleRoot, isForgeDestructibleMetadata, playDestructibleBreakSound } from '../lib/destructibleAsset'
+import { FORGE_WORLD_SCALE } from '../engine/worldScale'
+import {
+  forgeGameplayCameraOffset,
+  forgeSnapGameplayCamera,
+  forgeUpdateGameplayCamera,
+} from '../engine/runtime/ForgeGameplayCamera'
 import '../arpg-combat.css'
 
 type Props = { value: DungeonWithProps }
@@ -24,11 +30,6 @@ type RuntimeEncounter = { encounter: DungeonEncounter; active: boolean; cleared:
 type AttackFx = { mesh: THREE.Mesh; life: number }
 type Hud = { hp: number; maxHp: number; gold: number; encounter: string; alive: number; total: number }
 
-const CAMERA_OFFSET = new THREE.Vector3(5.4, 15.8, 7.2)
-const CAMERA_FOV = 35
-const CAMERA_LOOK_AHEAD = 1.55
-const CAMERA_FOLLOW_RATE = 10.5
-const CAMERA_FOCUS_RATE = 8.5
 const WALK_SPEED = 4.2
 const SPRINT_SPEED = 7.2
 const OCCLUDER_OPACITY = 0.075
@@ -60,7 +61,12 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(initialAtmosphere.background)
     scene.fog = new THREE.FogExp2(initialAtmosphere.fog, initialLighting.fogDensity)
-    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.08, 220)
+    const camera = new THREE.PerspectiveCamera(
+      FORGE_WORLD_SCALE.playCameraFov,
+      1,
+      0.08,
+      220,
+    )
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -73,7 +79,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
 
     const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialLighting.ambientIntensity)
     scene.add(ambient)
-    const sceneFill = new THREE.AmbientLight(0xb99878, initialLighting.fillIntensity)
+    const sceneFill = new THREE.AmbientLight(initialAtmosphere.sky, initialLighting.fillIntensity)
     scene.add(sceneFill)
     const key = new THREE.DirectionalLight(initialAtmosphere.key, initialLighting.keyIntensity)
     key.position.set(12, 22, 9); key.castShadow = true; key.shadow.mapSize.set(1024, 1024)
@@ -82,13 +88,34 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
 
     const world = new THREE.Group(); scene.add(world)
     const avatar = createAvatar(); avatar.scale.setScalar(1.08); scene.add(avatar)
+    const readabilityLight = new THREE.PointLight(initialAtmosphere.sky, 0.34, 5.6, 2.15)
+    readabilityLight.name = 'DungeonReadabilityLight'
+    readabilityLight.position.set(0, 2.7, 0)
+    readabilityLight.castShadow = false
+    avatar.add(readabilityLight)
     const loader = new GLTFLoader()
     const keys = new Set<string>()
     const occlusionRay = new THREE.Raycaster()
     const playerPosition = new THREE.Vector3()
+    const playerVelocity = new THREE.Vector3()
     const cameraFocus = new THREE.Vector3()
-    const cameraForward = new THREE.Vector3(-CAMERA_OFFSET.x, 0, -CAMERA_OFFSET.z).normalize()
-    const cameraRight = new THREE.Vector3(-cameraForward.z, 0, cameraForward.x)
+    const tempCameraFocus = new THREE.Vector3()
+    const tempCameraAim = new THREE.Vector3()
+    const tempCameraOffset = new THREE.Vector3()
+    const cameraBaseOffset = forgeGameplayCameraOffset(
+      FORGE_WORLD_SCALE.playCameraDistance,
+      new THREE.Vector3(),
+    )
+    const cameraForward = new THREE.Vector3(
+      -cameraBaseOffset.x,
+      0,
+      -cameraBaseOffset.z,
+    ).normalize()
+    const cameraRight = new THREE.Vector3(
+      -cameraForward.z,
+      0,
+      cameraForward.x,
+    )
     const flickerLights: FlickerLight[] = []
     const roomWallNodes: THREE.Object3D[] = []
     const roomWallFactor = new Map<THREE.Object3D, number>()
@@ -125,21 +152,38 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       ambient.color.setHex(atmosphere.sky)
       ambient.groundColor.setHex(atmosphere.ground)
       ambient.intensity = lighting.ambientIntensity
+      sceneFill.color.setHex(atmosphere.sky)
       sceneFill.intensity = lighting.fillIntensity
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
+      readabilityLight.color.setHex(atmosphere.sky)
+      readabilityLight.intensity = current.theme === 'crypt'
+        ? THREE.MathUtils.lerp(0.28, 0.42, THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1))
+        : 0
       renderer.toneMappingExposure = lighting.exposure
       return atmosphere
     }
 
-    const focusTarget = () => playerPosition.clone().addScaledVector(cameraForward, CAMERA_LOOK_AHEAD).add(new THREE.Vector3(0, 0.82, 0))
     const spawnPlayer = (current: DungeonWithProps) => {
       const checkpoint = current.markers.find((item) => item.type === 'checkpoint')
       const entrance = current.rooms.find((room) => room.type === 'entrance') ?? current.rooms[0]
       if (!entrance) return
-      playerPosition.set(checkpoint?.x ?? entrance.x, entrance.floorLevel, checkpoint?.z ?? entrance.z)
-      avatar.position.copy(playerPosition); avatar.visible = true
-      cameraFocus.copy(focusTarget()); camera.position.copy(playerPosition).add(CAMERA_OFFSET); camera.lookAt(cameraFocus); playerInitialized = true
+      playerPosition.set(
+        checkpoint?.x ?? entrance.x,
+        entrance.floorLevel,
+        checkpoint?.z ?? entrance.z,
+      )
+      playerVelocity.set(0, 0, 0)
+      avatar.position.copy(playerPosition)
+      avatar.visible = true
+      forgeSnapGameplayCamera({
+        camera,
+        focus: cameraFocus,
+        playerPosition,
+        distance: FORGE_WORLD_SCALE.playCameraDistance,
+        tempOffset: tempCameraOffset,
+      })
+      playerInitialized = true
     }
 
     const chooseCharacterAsset = (encounter: DungeonEncounter) => {
@@ -264,7 +308,11 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
         roomWallNodes.push(object)
       })
       for (const prop of dungeonProps(current)) { const group = addBuiltinProp(world, prop, atmosphere, flickerLights); if (prop.source === 'library') registerLibraryProp(prop, group, atmosphere) }
-      for (const item of current.markers) if (item.type !== 'enemy' && !(item.type === 'loot' && Boolean(item.data.requiresClear))) addMarker(world, item, doors)
+      for (const item of current.markers) {
+        if (['enemy', 'trigger', 'checkpoint', 'door'].includes(item.type)) continue
+        if (item.type === 'loot' && Boolean(item.data.requiresClear)) continue
+        addMarker(world, item, doors)
+      }
       buildEncounters(current)
       if (!playerInitialized || !canWalkAt(current, playerPosition.x, playerPosition.z, brokenPropIds, runtimeLockedDoorIds)) spawnPlayer(current)
     }
@@ -316,11 +364,61 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
     window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp); window.addEventListener('blur', onBlur); renderer.domElement.addEventListener('pointerdown', onPointerDown)
 
     const updatePlayer = (dt: number) => {
-      const current = valueRef.current, forwardAmount = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), rightAmount = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0)
-      if (forwardAmount || rightAmount) { const move = cameraForward.clone().multiplyScalar(forwardAmount).add(cameraRight.clone().multiplyScalar(rightAmount)); if (move.lengthSq() > 1) move.normalize(); move.multiplyScalar((keys.has('ShiftLeft') || keys.has('ShiftRight') ? SPRINT_SPEED : WALK_SPEED) * dt); const nextX = playerPosition.x + move.x, nextZ = playerPosition.z + move.z; if (canWalkAt(current, nextX, playerPosition.z, brokenPropIds, runtimeLockedDoorIds)) playerPosition.x = nextX; if (canWalkAt(current, playerPosition.x, nextZ, brokenPropIds, runtimeLockedDoorIds)) playerPosition.z = nextZ; avatar.rotation.y = Math.atan2(move.x, move.z) }
-      playerPosition.y = floorHeightAt(current, playerPosition.x, playerPosition.z); avatar.position.lerp(playerPosition, 1 - Math.exp(-20 * dt)); camera.position.lerp(playerPosition.clone().add(CAMERA_OFFSET), 1 - Math.exp(-CAMERA_FOLLOW_RATE * dt))
-      if (cameraShake > 0.001) { camera.position.x += (Math.random() - 0.5) * cameraShake; camera.position.y += (Math.random() - 0.5) * cameraShake * 0.55; camera.position.z += (Math.random() - 0.5) * cameraShake; cameraShake *= Math.exp(-15 * dt) }
-      cameraFocus.lerp(focusTarget(), 1 - Math.exp(-CAMERA_FOCUS_RATE * dt)); camera.lookAt(cameraFocus)
+      const current = valueRef.current
+      const forwardAmount =
+        (keys.has('KeyW') ? 1 : 0) -
+        (keys.has('KeyS') ? 1 : 0)
+      const rightAmount =
+        (keys.has('KeyD') ? 1 : 0) -
+        (keys.has('KeyA') ? 1 : 0)
+      const beforeX = playerPosition.x
+      const beforeZ = playerPosition.z
+
+      if (forwardAmount || rightAmount) {
+        const move = cameraForward
+          .clone()
+          .multiplyScalar(forwardAmount)
+          .add(cameraRight.clone().multiplyScalar(rightAmount))
+        if (move.lengthSq() > 1) move.normalize()
+        move.multiplyScalar(
+          (keys.has('ShiftLeft') || keys.has('ShiftRight')
+            ? SPRINT_SPEED
+            : WALK_SPEED) * dt,
+        )
+        const resolved = resolveDungeonSlideV3(
+          playerPosition.x,
+          playerPosition.z,
+          move.x,
+          move.z,
+          (x, z) =>
+            canWalkAt(
+              current,
+              x,
+              z,
+              brokenPropIds,
+              runtimeLockedDoorIds,
+            ),
+        )
+        playerPosition.x = resolved.x
+        playerPosition.z = resolved.z
+        avatar.rotation.y = Math.atan2(move.x, move.z)
+      }
+
+      playerPosition.y = floorHeightAt(
+        current,
+        playerPosition.x,
+        playerPosition.z,
+      )
+      const safeDt = Math.max(.001, dt)
+      playerVelocity.set(
+        (playerPosition.x - beforeX) / safeDt,
+        0,
+        (playerPosition.z - beforeZ) / safeDt,
+      )
+      avatar.position.lerp(
+        playerPosition,
+        1 - Math.exp(-20 * dt),
+      )
     }
 
     const activateEncounters = (current: DungeonWithProps) => {
@@ -369,7 +467,7 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       for (const runtime of destructibles.values()) if (brokenPropIds.has(runtime.prop.id)) for (const mesh of runtime.meshes) { const velocity = mesh.userData.breakVelocity as THREE.Vector3 | undefined, angular = mesh.userData.breakAngular as THREE.Vector3 | undefined; if (!velocity || !angular || !mesh.visible) continue; const age = Number(mesh.userData.breakAge ?? 0) + dt; mesh.userData.breakAge = age; if (age >= runtime.definition.fragmentLifetime) { mesh.visible = false; continue } velocity.y -= 9.8 * dt; mesh.position.addScaledVector(velocity, dt); mesh.rotation.x += angular.x * dt; mesh.rotation.y += angular.y * dt; mesh.rotation.z += angular.z * dt; const floorRadius = Number(mesh.userData.breakFloorRadius ?? 0.06); if (mesh.position.y < floorRadius && velocity.y < 0) { mesh.position.y = floorRadius; velocity.y *= -runtime.definition.bounce; velocity.x *= 0.76; velocity.z *= 0.76; angular.multiplyScalar(0.84) } }
       for (let i = dust.length - 1; i >= 0; i--) { const particle = dust[i]; particle.life -= dt; particle.velocity.y -= 4.2 * dt; particle.mesh.position.addScaledVector(particle.velocity, dt); particle.mesh.rotation.x += dt * 3; particle.mesh.rotation.y += dt * 2; (particle.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, particle.life / particle.totalLife) * 0.34; if (particle.life <= 0) { disposeObject(particle.mesh); dust.splice(i, 1) } }
       for (let i = lootDrops.length - 1; i >= 0; i--) { const drop = lootDrops[i]; drop.mesh.rotation.y += dt * 1.8; drop.mesh.position.y += Math.sin(performance.now() * 0.004 + i) * 0.0008; if (Math.hypot(drop.mesh.position.x - playerPosition.x, drop.mesh.position.z - playerPosition.z) < 0.72) { gold += drop.value; disposeObject(drop.mesh); lootDrops.splice(i, 1) } }
-      for (let i = attackFx.length - 1; i >= 0; i--) { const fx = attackFx[i]; fx.life -= dt; const material = fx.mesh.material as THREE.MeshBasicMaterial; material.opacity = Math.max(0, fx.life / 0.18) * 0.62; fx.mesh.scale.multiplyScalar(1 + dt * 3); if (fx.life <= 0) { disposeObject(fx.mesh); attackFx.splice(i, 1) } }
+      for (let i = attackFx.length - 1; i >= 0; i--) { const fx = attackFx[i]; fx.life -= dt; const material = fx.mesh.material as THREE.MeshBasicMaterial; material.opacity = Math.max(0, fx.life / 0.16) * 0.5; fx.mesh.scale.multiplyScalar(1 + dt * 3); if (fx.life <= 0) { disposeObject(fx.mesh); attackFx.splice(i, 1) } }
     }
 
     const ensureRoomWallTransform = (object: THREE.Object3D) => {
@@ -465,7 +563,30 @@ export default function ArpgDungeonViewportCombat({ value }: Props) {
       if (signature !== lastSignature) { lastSignature = signature; rebuild() }
       if (!playerInitialized) spawnPlayer(current)
       const frozen = now < freezeUntil
-      if (!frozen) { updatePlayer(dt); updateEnemies(dt, now); updateDestruction(dt); updateDoors() }
+      if (!frozen) {
+        updatePlayer(dt)
+        updateEnemies(dt, now)
+        updateDestruction(dt)
+        updateDoors()
+      } else {
+        playerVelocity.multiplyScalar(Math.exp(-16 * dt))
+      }
+
+      cameraShake *= Math.exp(-15 * dt)
+      forgeUpdateGameplayCamera({
+        camera,
+        focus: cameraFocus,
+        playerPosition,
+        playerVelocity,
+        distance: FORGE_WORLD_SCALE.playCameraDistance,
+        delta: dt,
+        shake: cameraShake,
+        tempFocus: tempCameraFocus,
+        tempAim: tempCameraAim,
+        tempOffset: tempCameraOffset,
+        now,
+      })
+
       const seconds = now * 0.001
       for (const entry of flickerLights) { const noise = Math.sin(seconds * entry.speed + entry.phase) * 0.09 + Math.sin(seconds * entry.speed * 2.17 + entry.phase * 0.41) * 0.035; entry.light.intensity = entry.base * (1 + noise) }
       updateRoomCutaway(dt); updateOcclusion(dt); updateHud(now); renderer.render(scene, camera); frame = requestAnimationFrame(tick)
@@ -583,10 +704,10 @@ function addMarker(parent:THREE.Group,item:DungeonMarker,doors?:Map<string,Runti
 function spawnBreakDust(parent:THREE.Group, output:DustParticle[], prop:DungeonProp, definition:DungeonDestructible){const kind=definition.template==='crate'||definition.template==='barrel'||definition.template==='chest'?'wood':definition.template==='stone-pot'?'stone':'ceramic';const color=new THREE.Color(kind==='wood'?0x8b684d:kind==='stone'?0x899195:0x9b8776),random=seededRandom(stringSeed(`${prop.id}-${Date.now()}`));for(let i=0;i<22;i++){const size=.025+random()*.06,mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(size,0),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.34,depthWrite:false}));mesh.position.set(prop.x+(random()-.5)*.7*prop.scale,prop.y+.2+random()*.75*prop.scale,prop.z+(random()-.5)*.7*prop.scale);parent.add(mesh);const life=.35+random()*.25;output.push({mesh,velocity:new THREE.Vector3((random()-.5)*2.6,.8+random()*2.2,(random()-.5)*2.6),life,totalLife:life})}}
 function spawnLoot(parent:THREE.Group,x:number,y:number,z:number,value:number):RuntimeLoot{const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(.22),new THREE.MeshStandardMaterial({color:0xd9af58,emissive:0x76551f,emissiveIntensity:.75,roughness:.3,metalness:.08}));mesh.position.set(x,y,z);mesh.castShadow=true;parent.add(mesh);return{mesh,value}}
 function spawnHitFx(parent:THREE.Group,position:THREE.Vector3){const mesh=new THREE.Mesh(new THREE.SphereGeometry(.16,8,6),new THREE.MeshBasicMaterial({color:0xffd18a,transparent:true,opacity:.7,depthWrite:false}));mesh.position.copy(position).add(new THREE.Vector3(0,.9,0));parent.add(mesh);setTimeout(()=>disposeObject(mesh),120)}
-function spawnAttackArc(parent:THREE.Group,output:AttackFx[],position:THREE.Vector3,yaw:number){const mesh=new THREE.Mesh(new THREE.RingGeometry(.7,1.45,26,1,-Math.PI*.38,Math.PI*.76),new THREE.MeshBasicMaterial({color:0xcfe9f7,transparent:true,opacity:.62,side:THREE.DoubleSide,depthWrite:false}));mesh.rotation.x=-Math.PI/2;mesh.rotation.z=-yaw;mesh.position.copy(position);mesh.position.y+=.08;parent.add(mesh);output.push({mesh,life:.18})}
-function createAvatar(){const group=new THREE.Group();group.visible=false;const bodyMaterial=new THREE.MeshStandardMaterial({color:0x55636d,roughness:.66,metalness:.05,emissive:0x1a252c,emissiveIntensity:.34}),accentMaterial=new THREE.MeshStandardMaterial({color:0xb2c6d1,roughness:.5,metalness:.08,emissive:0x25343d,emissiveIntensity:.3}),body=new THREE.Mesh(new THREE.CapsuleGeometry(.28,.72,5,9),bodyMaterial);body.position.y=.86;const head=new THREE.Mesh(new THREE.SphereGeometry(.22,12,9),accentMaterial);head.position.y=1.55;const ring=new THREE.Mesh(new THREE.RingGeometry(.38,.5,28),new THREE.MeshBasicMaterial({color:0xb8dff1,transparent:true,opacity:.56,side:THREE.DoubleSide,depthWrite:false}));ring.rotation.x=-Math.PI/2;ring.position.y=.025;body.castShadow=true;head.castShadow=true;group.add(body,head,ring);return group}
+function spawnAttackArc(parent:THREE.Group,output:AttackFx[],position:THREE.Vector3,yaw:number){const mesh=new THREE.Mesh(new THREE.RingGeometry(.54,.76,22,1,-Math.PI*.42,Math.PI*.84),new THREE.MeshBasicMaterial({color:0xd9edf7,transparent:true,opacity:.5,side:THREE.DoubleSide,depthWrite:false,depthTest:true}));const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));mesh.position.copy(position).addScaledVector(forward,.82);mesh.position.y+=.92;mesh.rotation.y=yaw;mesh.rotation.z=-.32;mesh.renderOrder=8;parent.add(mesh);output.push({mesh,life:.16})}
+function createAvatar(){const group=new THREE.Group();group.visible=false;const bodyMaterial=new THREE.MeshStandardMaterial({color:0x55636d,roughness:.66,metalness:.05,emissive:0x1a252c,emissiveIntensity:.34}),accentMaterial=new THREE.MeshStandardMaterial({color:0xb2c6d1,roughness:.5,metalness:.08,emissive:0x25343d,emissiveIntensity:.3}),body=new THREE.Mesh(new THREE.CapsuleGeometry(.28,.72,5,9),bodyMaterial);body.position.y=.86;const head=new THREE.Mesh(new THREE.SphereGeometry(.22,12,9),accentMaterial);head.position.y=1.55;body.castShadow=true;head.castShadow=true;group.add(body,head);return group}
 function mergeIntervals(intervals:Array<{start:number;end:number}>){const sorted=intervals.filter((item)=>item.end>item.start).sort((a,b)=>a.start-b.start),result:Array<{start:number;end:number}>=[];for(const interval of sorted){const last=result[result.length-1];if(!last||interval.start>last.end+.05)result.push({...interval});else last.end=Math.max(last.end,interval.end)}return result}
-function canWalkAt(value:DungeonWithProps,x:number,z:number,broken:Set<string>,runtimeLocked:Set<string>){const radius=.3;const inside=value.theme==='crypt'?dungeonContainsPointV3(value,x,z,radius):value.rooms.some((room)=>pointInsideRoom(room,x,z,radius))||pointInsideCorridor(value,x,z,radius);if(!inside)return false;for(const item of value.markers)if(item.type==='door'&&(Boolean(item.data.locked)||runtimeLocked.has(item.id))&&pointInsideDoor(item,x,z,radius))return false;for(const wall of value.walls??[])if(pointNearWall(wall,x,z,radius))return false;for(const prop of dungeonProps(value))if(prop.collision&&!broken.has(prop.id)&&Math.hypot(x-prop.x,z-prop.z)<propCollisionRadius(prop)+radius)return false;return true}
+function canWalkAt(value:DungeonWithProps,x:number,z:number,broken:Set<string>,runtimeLocked:Set<string>){const radius=.3;const inside=value.theme==='crypt'?dungeonNavigationContainsV3(value,x,z,radius):value.rooms.some((room)=>pointInsideRoom(room,x,z,radius))||pointInsideCorridor(value,x,z,radius);if(!inside)return false;if(value.theme==='crypt'&&dungeonArtCollidesV3(value,x,z,radius))return false;for(const wall of value.walls??[])if(pointNearWall(wall,x,z,radius))return false;for(const prop of dungeonProps(value))if(dungeonPropBlocksMovement(prop)&&!broken.has(prop.id)&&Math.hypot(x-prop.x,z-prop.z)<propCollisionRadius(prop)+radius)return false;return true}
 function pointNearWall(wall:DungeonWall,x:number,z:number,margin:number){const dx=wall.x2-wall.x1,dz=wall.z2-wall.z1,lenSq=dx*dx+dz*dz,t=lenSq>.0001?Math.max(0,Math.min(1,((x-wall.x1)*dx+(z-wall.z1)*dz)/lenSq)):0,px=wall.x1+dx*t,pz=wall.z1+dz*t;return Math.hypot(x-px,z-pz)<=wall.thickness/2+margin}
 function propCollisionRadius(prop:DungeonProp){const base=prop.assetRef==='pillar'?.45:prop.assetRef==='statue'?.5:prop.assetRef==='rubble'?.25:prop.assetRef==='spikes'?.55:prop.destructible?.enabled?.56:.45;return base*prop.scale}
 function pointInsideRoom(room:DungeonRoom,x:number,z:number,margin:number){return dungeonRoomContainsV3(room,x,z,margin)}

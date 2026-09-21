@@ -1,17 +1,24 @@
 export type PickupFeedbackKind = 'gold' | 'xp'
 
-type WebkitAudioWindow = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }
+type WebkitAudioWindow = Window & typeof globalThis & {
+  webkitAudioContext?: typeof AudioContext
+}
 
 let audioContext: AudioContext | undefined
+let master: GainNode | undefined
+let compressor: DynamicsCompressorNode | undefined
 let primed = false
-const lastScheduledAt: Record<PickupFeedbackKind, number> = { gold: 0, xp: 0 }
+let goldPhrase = 0
+let lastGoldScheduledAt = 0
 
 export function primePickupFeedbackAudio() {
   if (primed || typeof window === 'undefined') return
   primed = true
   const unlock = () => {
-    const context = ensureAudioContext()
-    if (context?.state === 'suspended') void context.resume().catch(() => undefined)
+    const context = ensureAudioGraph()
+    if (context?.state === 'suspended') {
+      void context.resume().catch(() => undefined)
+    }
     window.removeEventListener('pointerdown', unlock, true)
     window.removeEventListener('keydown', unlock, true)
   }
@@ -19,119 +26,158 @@ export function primePickupFeedbackAudio() {
   window.addEventListener('keydown', unlock, true)
 }
 
-export function playPickupFeedbackSound(kind: PickupFeedbackKind, amount = 1, delaySeconds = 0) {
-  const context = ensureAudioContext()
-  if (!context) return
-  if (context.state === 'suspended') void context.resume().catch(() => undefined)
+export function playPickupFeedbackSound(
+  kind: PickupFeedbackKind,
+  amount = 1,
+  delaySeconds = 0,
+) {
+  // XP is intentionally visual-only.
+  if (kind !== 'gold') return
 
-  const spacing = kind === 'gold' ? 0.055 : 0.07
+  const context = ensureAudioGraph()
+  if (!context || !master) return
+  if (context.state === 'suspended') {
+    void context.resume().catch(() => undefined)
+  }
+
   const requested = context.currentTime + Math.max(0, delaySeconds)
-  const when = Math.max(requested, lastScheduledAt[kind] + spacing)
-  lastScheduledAt[kind] = when
-  const intensity = Math.min(1.35, 0.88 + Math.log10(Math.max(1, amount) + 1) * 0.2)
+  const when = Math.max(requested, lastGoldScheduledAt + .065)
+  const separated = when - lastGoldScheduledAt > .68
+  lastGoldScheduledAt = when
 
-  if (kind === 'gold') playGoldClink(context, when, intensity)
-  else playXpPing(context, when, intensity)
+  if (separated) goldPhrase = 0
+  else goldPhrase = (goldPhrase + 1) % 5
+
+  playGoldClink(context, when, goldPhrase, amount)
+}
+
+export function playLevelUpFeedbackSound(delaySeconds = 0) {
+  const context = ensureAudioGraph()
+  if (!context || !master) return
+  if (context.state === 'suspended') {
+    void context.resume().catch(() => undefined)
+  }
+
+  const when = context.currentTime + Math.max(0, delaySeconds)
+  playTone(context, 392, 392, .38, .045, when, 'sine', .014)
+  playTone(context, 523.25, 523.25, .42, .065, when + .045, 'sine', .012)
+  playTone(context, 659.25, 659.25, .36, .052, when + .115, 'sine', .012)
+  playTone(context, 783.99, 783.99, .32, .035, when + .18, 'sine', .014)
 }
 
 export function previewPickupFeedbackSound(kind: PickupFeedbackKind) {
-  const context = ensureAudioContext()
+  const context = ensureAudioGraph()
   if (!context) return
-  if (context.state === 'suspended') void context.resume().catch(() => undefined)
-  playPickupFeedbackSound(kind, kind === 'gold' ? 42 : 186, kind === 'gold' ? 0.31 : 0.35)
+  if (context.state === 'suspended') {
+    void context.resume().catch(() => undefined)
+  }
+  playPickupFeedbackSound(kind, kind === 'gold' ? 42 : 186, .02)
 }
 
-function ensureAudioContext() {
+function ensureAudioGraph() {
   if (audioContext) return audioContext
   if (typeof window === 'undefined') return undefined
-  const AudioContextCtor = window.AudioContext ?? (window as WebkitAudioWindow).webkitAudioContext
+
+  const AudioContextCtor =
+    window.AudioContext ??
+    (window as WebkitAudioWindow).webkitAudioContext
   if (!AudioContextCtor) return undefined
+
   audioContext = new AudioContextCtor({ latencyHint: 'interactive' })
+
+  compressor = audioContext.createDynamicsCompressor()
+  compressor.threshold.value = -18
+  compressor.knee.value = 10
+  compressor.ratio.value = 3.2
+  compressor.attack.value = .002
+  compressor.release.value = .08
+
+  master = audioContext.createGain()
+  master.gain.value = .58
+  master.connect(compressor)
+  compressor.connect(audioContext.destination)
+
   return audioContext
 }
 
-function playGoldClink(context: AudioContext, when: number, intensity: number) {
-  const master = context.createGain()
-  master.gain.setValueAtTime(0.0001, when)
-  master.gain.exponentialRampToValueAtTime(0.12 * intensity, when + 0.004)
-  master.gain.exponentialRampToValueAtTime(0.0001, when + 0.115)
-  master.connect(context.destination)
+function playGoldClink(
+  context: AudioContext,
+  when: number,
+  phrase: number,
+  amount: number,
+) {
+  const notes = [1, 1.059, 1.122, 1.189, 1.335]
+  const note = notes[phrase] ?? 1
+  const weight = Math.min(
+    1.08,
+    .9 + Math.log10(Math.max(1, amount) + 1) * .055,
+  )
 
-  const pitch = 0.97 + Math.random() * 0.07
-  const primary = context.createOscillator()
-  primary.type = 'triangle'
-  primary.frequency.setValueAtTime(2150 * pitch, when)
-  primary.frequency.exponentialRampToValueAtTime(1280 * pitch, when + 0.085)
-  primary.connect(master)
-  primary.start(when)
-  primary.stop(when + 0.12)
-
-  const sparkleGain = context.createGain()
-  sparkleGain.gain.setValueAtTime(0.0001, when)
-  sparkleGain.gain.exponentialRampToValueAtTime(0.052 * intensity, when + 0.003)
-  sparkleGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.075)
-  sparkleGain.connect(context.destination)
-  const sparkle = context.createOscillator()
-  sparkle.type = 'sine'
-  sparkle.frequency.setValueAtTime(3650 * pitch, when)
-  sparkle.frequency.exponentialRampToValueAtTime(2480 * pitch, when + 0.062)
-  sparkle.connect(sparkleGain)
-  sparkle.start(when)
-  sparkle.stop(when + 0.082)
-
-  addTransientNoise(context, when, 0.032, 3600, 0.035 * intensity)
+  // A short rounded bell-like "ching": clear attack, warm body, no noise layer.
+  playTone(
+    context,
+    1180 * note,
+    1320 * note,
+    .115,
+    .052 * weight,
+    when,
+    'sine',
+    .0025,
+  )
+  playTone(
+    context,
+    1760 * note,
+    1650 * note,
+    .09,
+    .019 * weight,
+    when + .014,
+    'sine',
+    .0025,
+  )
+  playTone(
+    context,
+    660 * note,
+    760 * note,
+    .07,
+    .012 * weight,
+    when + .006,
+    'sine',
+    .003,
+  )
 }
 
-function playXpPing(context: AudioContext, when: number, intensity: number) {
-  const master = context.createGain()
-  master.gain.setValueAtTime(0.0001, when)
-  master.gain.exponentialRampToValueAtTime(0.085 * intensity, when + 0.006)
-  master.gain.exponentialRampToValueAtTime(0.0001, when + 0.17)
-  master.connect(context.destination)
+function playTone(
+  context: AudioContext,
+  startFrequency: number,
+  endFrequency: number,
+  duration: number,
+  volume: number,
+  when: number,
+  type: OscillatorType,
+  attack: number,
+) {
+  if (!master) return
 
-  const pitch = 0.98 + Math.random() * 0.05
-  const low = context.createOscillator()
-  low.type = 'sine'
-  low.frequency.setValueAtTime(880 * pitch, when)
-  low.frequency.exponentialRampToValueAtTime(1160 * pitch, when + 0.115)
-  low.connect(master)
-  low.start(when)
-  low.stop(when + 0.18)
-
-  const highGain = context.createGain()
-  highGain.gain.setValueAtTime(0.0001, when)
-  highGain.gain.exponentialRampToValueAtTime(0.042 * intensity, when + 0.008)
-  highGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.13)
-  highGain.connect(context.destination)
-  const high = context.createOscillator()
-  high.type = 'triangle'
-  high.frequency.setValueAtTime(1760 * pitch, when)
-  high.frequency.exponentialRampToValueAtTime(2310 * pitch, when + 0.105)
-  high.connect(highGain)
-  high.start(when)
-  high.stop(when + 0.145)
-
-  addTransientNoise(context, when + 0.005, 0.045, 4800, 0.018 * intensity)
-}
-
-function addTransientNoise(context: AudioContext, when: number, duration: number, cutoff: number, gainValue: number) {
-  const frames = Math.max(1, Math.floor(context.sampleRate * duration))
-  const buffer = context.createBuffer(1, frames, context.sampleRate)
-  const data = buffer.getChannelData(0)
-  for (let index = 0; index < frames; index += 1) data[index] = Math.random() * 2 - 1
-
-  const source = context.createBufferSource()
-  source.buffer = buffer
-  const filter = context.createBiquadFilter()
-  filter.type = 'highpass'
-  filter.frequency.setValueAtTime(cutoff, when)
   const gain = context.createGain()
-  gain.gain.setValueAtTime(0.0001, when)
-  gain.gain.exponentialRampToValueAtTime(gainValue, when + 0.002)
-  gain.gain.exponentialRampToValueAtTime(0.0001, when + duration)
-  source.connect(filter)
-  filter.connect(gain)
-  gain.connect(context.destination)
-  source.start(when)
-  source.stop(when + duration)
+  gain.gain.setValueAtTime(.0001, when)
+  gain.gain.exponentialRampToValueAtTime(
+    Math.max(.0002, volume),
+    when + Math.max(.002, attack),
+  )
+  gain.gain.exponentialRampToValueAtTime(
+    .0001,
+    when + duration,
+  )
+  gain.connect(master)
+
+  const oscillator = context.createOscillator()
+  oscillator.type = type
+  oscillator.frequency.setValueAtTime(startFrequency, when)
+  oscillator.frequency.exponentialRampToValueAtTime(
+    Math.max(20, endFrequency),
+    when + duration,
+  )
+  oscillator.connect(gain)
+  oscillator.start(when)
+  oscillator.stop(when + duration + .01)
 }

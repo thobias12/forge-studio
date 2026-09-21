@@ -1,11 +1,11 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.85.0`  
+> **Current Forge version:** `v1.91.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
 > **Live build:** https://thobias12.github.io/forge-studio/  
-> **Last handbook update:** 2026-09-19
+> **Last handbook update:** 2026-09-20
 
 Forge Studio is a browser-based game-development workspace and runtime used to build **Skillbound**. It combines world authoring, gameplay content, characters, animation, equipment, VFX, audio, UI, models, props, dungeons, validation, and the playable Three.js runtime in one project.
 
@@ -193,6 +193,88 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.91.0 is the **Combat v3 Presentation Polish** release. It keeps the existing Combat v3 mechanics and focuses on making enemy actions readable and satisfying in both normal Skillbound play and Dungeon Forge → Test Dungeon.
+
+The old featureless cylinder fallback enemies are replaced by articulated low-poly role rigs whenever no authored enemy character asset is attached. Road Wretches use a lean dual-blade silhouette, Crypt Brutes use a broad armored torso and mace, Bone Arbalists use a hood/quiver/crossbow silhouette, and Grave Channelers use a robe, hood and glowing staff orb. Elite fallback enemies also gain a small role-colored crown cue. These rigs are still procedural fallbacks rather than final authored enemy assets, but they now read as actual combatants instead of debug capsules.
+
+Fallback rigs now animate from the real combat state: walking drives a simple stride, melee windups pull weapons back, Brutes raise for a heavy slam, Arbalists aim before firing, Channelers raise the staff and intensify the orb, attack release produces a fast follow-through, and stagger/hit events kick the body off balance. Bound authored enemy assets continue using their animation bindings while the fallback rig stays hidden.
+
+Enemy telegraphs and attacks are also more role-specific. Melee ground warnings are directional arcs instead of full circles. Wretch releases produce a quick slash arc, Brute releases add a heavier shock/spark response, and Arbalists now fire a physical low-poly bolt with shaft, metal tip, fletching and a short luminous streak instead of a glowing sphere. Bolt impacts produce compact sparks. Channeler area attacks now erupt with a brief role-colored ground disc, rising magical shards and an impact burst in addition to any authored VFX binding.
+
+Hit presentation now layers directional body recoil and spark bursts on top of the existing knockback/hit-stop. Poise breaks receive a stronger gold-toned burst so a break is visually distinct from a normal hit. Dungeon deaths now carry their incoming momentum, tip/fall, sink slightly, shrink and fade while shedding role-colored fragments before the runtime hides the corpse. Channelers get a small magical collapse treatment; Brutes and bosses use heavier bursts.
+
+The presentation effects are driven by the shared Combat v3 runtime, so the same enemy pose, projectile, caster-impact, hit and death behavior is used in overworld combat and the shared dungeon runtime wherever the relevant role exists.
+
+Forge v1.90.4 fixes a shared dungeon runtime stall exposed by Combat v3 encounter spawning. Encounter Forge/Boss Forge's enemy spawn path predated the newer combat state and did not initialize `knockback`, `staggerRemaining`, or `recoveryRemaining`. The Combat v3 dungeon update then attempted to call `enemy.knockback.lengthSq()`, throwing every frame. The camera/render loop remained alive by design, which made the failure look like several unrelated bugs: enemies stood still and never attacked, attack/dodge/skill rings stopped expiring, and lethal hits could leave an enemy white and standing because the damage handler threw before `killEnemy()`.
+
+All dungeon enemy spawn paths now initialize the complete mechanical combat state, and Combat v3 also normalizes those fields defensively before every decorated enemy enters shared AI. Legacy or future authored spawn paths therefore receive a valid `THREE.Vector3` knockback accumulator plus finite stagger/recovery/windup timers automatically.
+
+The dungeon frame loop is also more fault-isolated. Player/encounter updates, enemy AI, transient VFX/loot/portal updates, and camera/rendering run in separate guarded stages. Temporary attack, dodge and skill effects are aged out before secondary runtime systems, so a future enemy/loot/VFX error cannot strand ground rings in the scene. With the underlying exception removed, hit emissive now decays normally, enemy AI resumes after arrival lockout, lethal hits reach the real death flow, and dead enemies disappear after their death presentation.
+
+Forge v1.90.3 adds a proper **Dungeon Wave Arrival** presentation so encounter enemies no longer pop into existence when a trigger activates.
+
+Each newly spawned dungeon enemy now begins with a compact role-colored arrival cue at its authored/formation position. The body remains hidden during a short anticipation window, then rises from below the floor and scales smoothly into place. Individual enemies receive a small deterministic delay offset so a wave materializes as an event rather than every enemy appearing on the same frame. Boss arrivals use a longer, larger version of the same treatment.
+
+Enemies are combat-locked for the entire arrival sequence: they cannot move, wind up, fire, cast or collide into an attack while materializing. Once the emergence completes, the cue cleans itself up, the enemy returns to its intended authored scale/height, and normal Combat v3 behavior resumes. This works for Dungeon Forge → Test Dungeon and normal Skillbound dungeon play because both now share the same runtime.
+
+Forge v1.90.2 is a Dungeon Combat readability/hotfix pass based on the first shared-runtime Dungeon Forge test.
+
+Dungeon Forge starter and auto-created Skillbound crypt encounters now bind directly to the authored Combat v3 profiles instead of the legacy `undead` / `crypt-warden` fallbacks. Standard combat rooms default to **Drowned Crossroads Ambush**, elite rooms to **Ossuary Guard**, and boss rooms to **Vault Warden**. The Dungeon Forge Encounter inspector now exposes the active Encounter Forge or Boss Forge profile and shows its authored wave/phase count, so a room can no longer silently look like a production encounter while actually running a manual one-wave fallback.
+
+Dungeon Runs v2 wave spawning now uses role-aware formations. Centered spawn markers distribute melee enemies around the encounter perimeter while Arbalists and Channelers prefer the outer ring; explicit off-center spawn markers remain respected. Spawn candidates avoid appearing directly on top of the player and validate against dungeon navigation where possible.
+
+Dungeon combat crowding is also stricter. Enemies have role-aware soft spacing plus a hard overlap floor, with extra room reserved for Brutes. The runtime limits simultaneous attack commitments so a whole pack cannot enter windup at once: normal melee pressure is capped at two committed attackers, with projectile and area attackers paced separately. Ground telegraphs are thinner and less opaque, while world-space enemy health bars are hidden because they rotated with enemies and appeared as floating rods in the isometric camera. Target health/poise remains in the HUD.
+
+Until authored enemy character assets are attached, the fallback enemy silhouettes now carry simple role cues: Brutes gain shoulder/plate mass, Arbalists a crossbow silhouette, Channelers a staff/orb, and Skirmishers paired blades. These are testing fallbacks, not final enemy art.
+
+Forge v1.90.1 removes the split between Dungeon Forge's old Quick ARPG combat simulator and the real Skillbound dungeon runtime. **Dungeon Forge → Test Dungeon** now snapshots the dungeon currently open in the editor and launches it through the same `SkillboundDungeonPlayViewport` / `ForgeDungeonRuntime` path used by normal Skillbound dungeon play.
+
+That means Dungeon Forge testing now exercises the same Combat v3 enemy roles, poise and elite modifiers, ranged projectiles, caster area telegraphs, Dungeon Runs v2 wave director, Encounter Forge/Boss Forge profiles, boss phases, rewards, player skills/equipment, HUD, shared camera, collision and return-portal flow as the actual game. Changes tested there no longer need to be duplicated into a separate preview combat implementation.
+
+The **Walk** button remains intentionally lightweight and is only for geometry, collision, scale and navigation inspection. The previous **Quick ARPG** button is removed so it cannot be mistaken for production combat behavior.
+
+Forge v1.90.0 is the first **Combat v3 + Dungeon Runs v2** release.
+
+**Combat v3 / Enemy Combat Foundation** replaces the one-behavior enemy loop with four authored combat roles that share the same runtime in overworld and dungeon play. `Road Wretch` is now a fast skirmisher that pressures and orbits melee range, `Crypt Brute` is a slower high-poise frontliner, `Bone Arbalist` maintains distance and fires dodgeable projectiles, and `Grave Channeler` maintains distance and telegraphs ground-targeted area attacks. Ranged and caster attacks snapshot a visible target during windup so moving or dodging out of the telegraph is meaningful instead of the attack silently tracking the player.
+
+Enemies now have **poise** in addition to health. Normal hits can produce small reactions without permanently stun-locking tougher enemies, while sustained pressure or a heavier finisher breaks poise and opens a stronger stagger window. Poise recovers after a short no-hit delay. Elite enemies receive a deterministic modifier based on their runtime identity: **Bulwark** increases poise, **Relentless** attacks more aggressively, and **Swift** moves faster. Target HUDs identify the enemy role/modifier and render a gold poise bar under health. Dungeon deaths also gain a directional collapse/drift instead of remaining perfectly static until removal.
+
+The Play Project now includes a **Combat Lab** panel for repeatable tuning without changing saved encounter progress. It can spawn mixed packs or individual archetypes around the current hero, clear all lab enemies, toggle invulnerability, and run combat at 1×, 0.5× or 0.25× simulation speed for inspecting telegraphs, dodges, combo contact, poise breaks and stagger timing. Lab enemies are transient and do not count as authored encounter progress.
+
+**Dungeon Runs v2** changes Hollow Vault from a set of pre-spawned rooms into a directed run. Encounter Forge profiles can now author mixed enemy waves with their own messages and timing. The runtime activates encounters in authored run order, locks encounter doors as appropriate, spawns only the active wave, waits for it to be cleared, announces reinforcements, and only completes the room after the final wave. The HUD shows dungeon-run progress plus current wave state.
+
+The bundled Hollow Vault now uses that director. Drowned Crossroads is a three-wave escalation from skirmishers into ranged/caster crossfire and a brute-backed final push. Ossuary Guard is a three-wave elite encounter with brutes, arbalists and channelers. The Vault Warden is now based on the Crypt Brute combat identity and keeps the existing Boss Forge phase system: later phases call in Bone Arbalists and then Grave Channelers before the final reward/return-portal flow. Encounter reward profiles, boss guaranteed rewards, door state, XP/gold rewards and the shared v1.89.4 gameplay camera remain integrated.
+
+Combat v3 runtime extensions live in `src/engine/runtime/ForgeEnemyCombatRuntime.ts`. Dungeon wave/run sequencing lives in `src/engine/runtime/ForgeDungeonRunRuntime.ts`. Enemy role fields are part of `ForgeEnemyDefinition`, Encounter Forge profiles can author `waves`, and dungeon encounters now expose `encounterProfileId` / `bossProfileId` as first-class package fields. Bundled Skillbound content revision is now 12 so existing workspaces can advance to the new four-enemy roster.
+
+Forge v1.89.4 fixes the dungeon-only camera freeze and makes playable camera behavior shared instead of mode-specific. The overworld and full dungeon runtime now call the same `ForgeGameplayCamera.ts` implementation for framing, follow smoothing, velocity look-ahead, cursor aim look-ahead, camera shake, zoom response, offset angle and look-at height. Dungeon FOV, default distance, zoom limits and wheel step now come from the same `FORGE_WORLD_SCALE` camera contract as overworld play.
+
+The dungeon frame loop also isolates camera/occlusion updates from combat and encounter simulation. A gameplay exception can still be logged without preventing the camera from following the player on that frame, removing the failure mode where the dungeon remained rendered and movable while the camera appeared frozen. Dungeon Forge's Quick ARPG preview now uses the same camera FOV, offset, follow math and movement look-ahead so its framing stays aligned with Play Project.
+
+Forge v1.89.3 is the Combat v2 readability/spacing pass based directly on recorded Wanderer gameplay. Melee lunges now stop at a front-facing contact distance instead of carrying the player through enemies, and the three combo arcs are tightened so primary attacks read as forward cleaves rather than near-360-degree hits. Hit 3 keeps the strongest lunge/impact presentation but is still contact-clamped.
+
+Combatants now maintain active spacing during chase, stagger, windup, and recovery. Enemies push away from the player when they get too close, push apart from nearby encounter members, and dungeon enemies blend separation plus a small deterministic tangential bias into their approach so packs spread around the player instead of stacking in one point. Dungeon enemy movement also refuses steps that would move farther inside the player spacing radius.
+
+Routine hit flash is now a short warm emissive accent instead of the strong white wash, damage numbers use smaller staggered lanes and shorter lifetimes to reduce pile-up, and the three melee impact pulses scale progressively so the third strike reads more clearly as the finisher.
+
+Forge v1.89.0 introduces the first Combat v2 foundation pass. Primary melee now chains through three mechanically distinct hits instead of repeating one cadence: each step has its own windup, active frame, recovery, arc width, forward lunge, damage weight, knockback, hit-stop and stagger, with the third swing acting as the finisher. The combo resets after a short pause and uses a wider buffered-input window for cleaner click chaining.
+
+Melee damage resolves on the active/contact frame after the lunge. Dodge can cancel once a hit has committed (active/recovery) but cannot erase the windup commitment. Enemy reactions now include directional recoil, stagger windows, explicit post-attack recovery, and clearer growing telegraphs. Dungeon elites and bosses resist stagger/knockback so they cannot be permanently locked down, and dungeon enemy hits now add player recoil plus a short hit-stop. Overworld and dungeon runtimes share the same Combat v2 tuning in `ForgeGameplayFeel.ts`.
+
+Forge v1.88.3 refines reward feedback around the latest dungeon-lighting build. Gold now drops as one stylized four-coin pile per defeated enemy instead of three separate pickup objects. The pile uses overlapping embossed coins, bright additive rims, a warm ground aura, small glints, a compact launch/settle and a fast magnet pull so it reads clearly and feels more valuable on dark terrain.
+
+Gold audio plays only when the pile is actually collected. The cue is a short softer bell-like chime and is no longer delayed until the HUD arrival. XP is fully silent: kills still grant XP immediately and keep the violet world/HUD animation, but routine XP feedback does not play pickup or level-up audio from this reward path.
+
+Forge v1.88.1 refines reward feel after the v1.88.0 gameplay overhaul. XP is no longer a physical world pickup: kills grant XP immediately, show a short violet ring/mote burst at the defeated enemy, emit the HUD XP feedback immediately and preserve level-up handling/save persistence. Gold remains physical but now uses three cleaner coins, a tighter low scatter, at most one tiny bounce and an early high-acceleration magnet snap instead of the previous float-heavy drop.
+
+Reward HUD flights are shorter and more responsive. XP gain text appears immediately at the kill location while the XP-bar arrival follows quickly; gold counter impacts land in roughly half the previous time. Pickup audio was simplified around the Evergrow reward philosophy: gold uses a restrained ascending metallic phrase across rapid pickups, XP uses a quiet rising two-tone cue, and noisy transient/body layers were removed.
+
+Forge v1.88.0 is a full gameplay-feel pass for Skillbound's playable runtime. Overworld and dungeon play now share fast acceleration/deceleration, stepped collision sliding, attack input buffering, held-primary repeat, explicit windup/impact/recovery phases, attack-phase movement, predictive velocity/aim camera look-ahead, and smooth target-based wheel zoom. Dodge can cancel recovery but not an uncommitted attack, keeping actions readable without making movement feel locked.
+
+Reward collection was rebuilt alongside combat. Enemy gold and XP now launch physically, bounce, settle, then accelerate into the player; gold renders as small multi-coin piles and XP has a separate violet crystal/halo language. Collected rewards use longer curved HUD flights with trails and stronger target impacts. Pickup audio is layered Web Audio rather than a single ping: gold combines body/transient/metallic partials, XP uses a rising harmonic shimmer, and level-up adds an ascending accent.
+
+Shared feel tuning lives in `src/engine/runtime/ForgeGameplayFeel.ts`. Physical reward behavior lives in `src/engine/runtime/ForgeRewardPickupRuntime.ts`, HUD flights in `src/components/HudPickupFlights.tsx`, and reward synthesis in `src/lib/pickupFeedbackAudio.ts`.
 
 Forge v1.81.7 keeps cursor aiming locked to the live camera even when the mouse is stationary while the player/camera moves. The runtime now reprojects the saved screen cursor every rendered frame and again at cast time, and untargeted Chain Lightning ends exactly at the resolved terrain cursor point.
 
@@ -1259,6 +1341,179 @@ Do not confuse project-authoring state, asset-library state, and gameplay save s
 ---
 
 # Current release history
+
+## v1.89.2 — Dungeon live-test render stability
+
+- fixes a Play Project live-test failure where the HUD could remain visible while the Three.js dungeon canvas rendered nothing
+- removes the extra real PointLight that v1.89.1 added to every sconce for warm bounce; the same cozy bounce remains represented by the enlarged additive floor/wall glow instead of doubling shader light count
+- adds a hard budget of 10 V3 dynamic torch PointLights so generated dungeons cannot create an unbounded number of real-time lights
+- fixtures beyond the light budget still keep their animated flame, ember VFX and warm additive pool, so visual dressing remains intact without increasing shader complexity
+- replaces the player-follow SpotLight with a small local neutral PointLight to simplify the live shader while keeping character readability
+- Quick ARPG uses the same simplified player readability light
+- live Dungeon Runtime now isolates gameplay/update exceptions from rendering: a frame-update error is logged once, but the already-built dungeon continues to render instead of disappearing behind the HUD
+- keeps the v1.89.1 readable materials, larger soft torch pools and restored scene depth
+
+
+## v1.89.1 — Cozy depth lighting pass
+
+- preserves the brighter crypt stone/material values from the readability pass so floors and walls stay visible
+- reduces broad neutral ambient/fill slightly to restore depth instead of making the whole dungeon uniformly grey
+- keeps a cool neutral indirect baseline so geometry between torches remains readable
+- expands the visible torch/candle light pools and softens their falloff
+- adds a second wide, low-intensity warm bounce light to sconces so nearby walls and floors pick up cozy reflected warmth without turning the whole scene orange
+- boss/special-room fixtures get a slightly broader bounce radius while ordinary sconces remain restrained
+- replaces the wide player-follow PointLight with a localized soft neutral SpotLight aimed at the character and nearby floor, preserving player readability without flattening the room
+- Quick ARPG uses the same localized readability spotlight so editor combat preview and Play Project live testing stay visually aligned
+- animated flames, ember particles, dark iron sconces, readable stone and black exterior void remain unchanged
+- rebased cleanly on top of Forge v1.89.0 Combat v2
+
+
+## v1.88.4 — High-readability crypt lighting without losing atmosphere
+
+- significantly raises the physical albedo of crypt floor/wall/corridor stone instead of relying only on stronger global lights, preventing black-crushed masonry while preserving warm/cool separation
+- keeps the outside void nearly black so the dungeon silhouette and exploration mood remain intact
+- raises neutral hemisphere, fill, key and exposure modestly on top of the brighter stone palette
+- increases the subtle V3 floor/wall self-fill so brick shapes remain legible in areas between sconces without looking emissive
+- adds a soft neutral **player readability light** to the real Play Project dungeon runtime; it follows the character, has no shadows and is deliberately weaker/desaturated compared with torch light
+- adds the same player-centered readability light to Quick ARPG so both gameplay test modes read consistently
+- player readability light scales with the existing Dungeon Forge brightness setting rather than using a fixed hard-coded brightness
+- warm sconces/candles, flame VFX, embers and local radial light pools from v1.88.1 remain unchanged and continue to provide the dungeon's primary atmosphere
+
+
+## v1.88.2 — Crypt readability rebalance
+
+- keeps the new local torch/candle flame VFX and warm light pools from v1.88.1 unchanged
+- raises the neutral crypt hemisphere/ambient contribution so floors, walls, enemies and the player remain readable between fixtures
+- increases neutral fill light substantially without reintroducing the old global orange/brown wash
+- restores a stronger neutral directional/key contribution so brick relief and silhouettes remain visible in unlit areas
+- slightly raises crypt exposure at normal brightness while preserving darker black voids outside the authored dungeon
+- the existing Dungeon Forge brightness slider still scales the shared lighting profile across Editor, Walk, Quick ARPG and Play Project live testing
+
+
+## v1.88.1 — Cozy dungeon lighting, door removal and smooth wall sliding
+
+- temporarily removes Door from Dungeon Forge authoring and hides legacy door markers in Editor, Quick ARPG and Play Project live testing while the gate/transition system is redesigned
+- legacy door markers no longer block player movement, and encounter gate UI clearly reports that the old door system is disabled
+- replaces centre-only / margin-shrunk wall collision with a circular 12-point player-footprint check against the unified V3 floor union
+- adds a shared angled slide resolver so Play Project live testing, Quick ARPG and Walk flow naturally along straight, curved and concave walls instead of sticking on corners
+- keeps the collision footprint close to the visible character while still preventing the character from standing inside wall space
+- limits default prop collision to substantial physical props; torches, rubble and floor-detail/spike props are decorative/non-blocking
+- rebalances Crypt lighting so global ambient/fill/key light is darker and more neutral while local warm fixtures provide the atmosphere
+- rebuilds V3 wall lights as dark iron sconces with wall plates, brackets and cups instead of simple primitive torch posts
+- adds animated two-layer flame VFX, additive flame glow, deterministic intensity flicker and rising ember particles to dungeon sconces
+- rotates corridor sconces inward toward the playable path and spaces them more deliberately
+- adds soft radial floor-light pools beneath sconces to create warm local pools and stronger light/dark rhythm inspired by the Evergrow reference
+- adds sparse candle clusters to entrance, reliquary and shrine room templates; candles have animated flame/ember VFX and never add collision
+- preserves the Dungeon Forge brightness control so global readability can still be adjusted without flattening the local torch contrast
+
+
+## v1.87.4 — Neutral crypt palette + surface wall collision
+
+- replaces the brown/gold crypt wash with a neutral charcoal/grey-brown masonry palette; warmth now comes primarily from local torch light instead of the entire ambient/key/fill rig
+- removes the fixed warm ambient-fill color from Dungeon Forge, Quick ARPG and the real Play Project dungeon runtime; fill now follows the neutral crypt sky color
+- top-down/ARPG no longer renders procedural corridor buttresses, special-room support columns or doorway jamb stacks; those architectural extras are reserved for Walk mode
+- lowers and thins the top-down perimeter wall silhouette so it reads more like Evergrow-style low masonry rather than chunky freestanding blocks
+- moves V3 perimeter wall geometry outward from the logical floor boundary so the wall no longer occupies the player's navigation surface
+- replaces radius-inflated wall collision with **surface-boundary navigation**: the player's centre stays on the authored walkable floor union instead of shrinking every room/corridor by the capsule radius
+- this removes the invisible safety ring and greatly reduces snagging on concave corners/curved corridor edges while still preventing the player centre from crossing into the void
+- Play Project live testing, Quick ARPG and Walk now all use the same surface-boundary wall rule
+- substantial prop collision and explicit manual-wall collision remain separate and unchanged
+
+
+## v1.87.3 — Dungeon prop density + collision cleanup
+
+- removes the bright/golden treasure material treatment from physical dungeon props; reliquary accents now use muted aged stone/bronze instead of saturated gold
+- cuts procedural dressing density significantly so rooms keep large clean combat/readability areas instead of being filled with scattered props
+- Crossroads no longer uses a solid broken-plinth obstacle; small rubble/bones/urns remain purely decorative floor detail
+- art collision is now limited to genuinely substantial freestanding objects: sarcophagi, statues, shrine/reliquary structures, boss dais, large crate stacks and sealed tombs
+- doorway jambs, wall-attached buttresses, torches and decorative floor clutter no longer add extra circular blockers
+- special-room wall supports are reduced again; ordinary rooms have none and Warden Sanctum/Warden Hall only use sparse structural accents
+- doorway masonry is slimmer and reads as part of the wall instead of freestanding columns
+- V3 wall clearance drops from 0.30 to 0.06 beyond the normal player radius, allowing the player to walk naturally close to walls without entering them or snagging early
+- the same wall-clearance rule is shared by Play Project live testing, Quick ARPG and Walk
+
+
+## v1.87.2 — Sparse Evergrow-style dungeon architecture
+
+- removes the dense freestanding-column treatment from ordinary rooms and corridors; regular crypt spaces now read primarily as brick walls/floors with sparse structural accents
+- ordinary rooms no longer receive automatic corner pillars; only Warden Hall, Shrine Hall and Warden Sanctum templates get limited wall-integrated supports
+- corridor support spacing is reduced dramatically and supports alternate sides instead of appearing in pairs every few metres
+- structural accents are now shallow wall buttresses/recesses rather than bright freestanding square pillars
+- doorway posts/capitals are slimmer and visually integrated into the wall opening
+- trim/cap stone is darker, rougher and less saturated so warm torch light no longer turns every support into a gold column
+- collision is intentionally limited to substantial objects: sarcophagi, statues, altars/reliquaries, boss dais, crate stacks, doorway posts and the sparse structural buttresses
+- decorative ground clutter such as rubble, bones, urns, floor cracks/damp patches and freestanding torches no longer blocks movement
+- art collision continues to share deterministic placements with the renderer so large visible objects remain physically trustworthy
+
+
+## v1.87.1 — Live dungeon VFX + wall collision
+
+- fixes Play Project skill effects being hidden inside the V3 brick floor by lifting bound VFX and fallback pulses above the authored masonry surface
+- preloads ability/enemy VFX in the real dungeon runtime so the first cast/hit does not wait on library parsing
+- preloads VFX referenced by Animation Studio events on the active character
+- authored Dodge/Dash animation VFX/SFX events now fire through the shared player runtime in both normal Play Project and Dungeon Forge live testing
+- brings the shared Chain Lightning runtime into dungeons, including animated chained bolts, impact timing, branching arcs and linked impact VFX
+- Dungeon Play now uses semantic Animation V3 attack/cast actions just like the outdoor Play runtime
+- adds extra perimeter clearance for the player capsule so V3 room/corridor walls cannot be visually entered or crossed
+- applies the same V3 wall-thickness clearance to Quick ARPG and Walk tests for consistent collision between all Dungeon Forge test modes
+
+
+## v1.87.0 — Dungeon Forge × Play Project live runtime
+
+- adds a new **Play Project** button directly to Dungeon Forge; it launches the currently-authored dungeon through the same Skillbound dungeon gameplay runtime used by the real Play Project
+- uses the active Skillbound player profile/Character Forge blueprint instead of the grey Dungeon Forge capsule, including the actual body/character binding and equipped weapon runtime
+- uses the role-resolved Play Project gameplay loadout, real primary attack, 1–5 skill hotbar, mana, dodge, encounter/boss combat, loot, inventory and equipment runtime
+- renders the real Skillbound HUD theme/layout in the Dungeon Forge live test, including health/resource orbs, hotbar, XP, gold, target bars, interaction prompts and inventory modules
+- live tests use an isolated test state with the active character's configured starting loadout so Dungeon Forge testing does not overwrite the player's adventure save
+- the Play Project dungeon runtime now consumes the same Dungeon Forge V3 crypt geometry, room shapes, curved corridors, authored art collision and brightness profile as Editor/Quick ARPG
+- removes the legacy hidden crypt collision injection from the real dungeon runtime
+- adds V3 art collision/manual wall collision to real Play Project dungeon movement and uses V3 floor heights/room silhouettes for player and enemy movement
+- Dungeon Forge expands to a full-width gameplay test surface while Play Project live test is active; Exit Live Test returns immediately to authoring without discarding edits
+
+
+## v1.86.1 — Dungeon V3 art collision pass
+
+- derives gameplay collision from the same deterministic room/corridor placements used by the V3 art renderer instead of a separate partial obstacle list
+- sarcophagi, reliquaries, shrine altars, boss dais pieces, statues, crate stacks and crossroads plinths now block player movement
+- modular room corner supports, doorway posts and corridor support pillars now have matching collision
+- freestanding corridor torches receive small physical collision so visible fixtures can no longer be walked through
+- corridor support spacing is now identical in ARPG and Walk so visible architecture and collision stay one-to-one
+- collision data is cached per dungeon state to keep movement checks inexpensive
+
+
+## v1.86.0 — Dungeon Forge V3 art pass
+
+- turns the V3 structural remake into an authored crypt kit instead of a bare procedural blockout
+- generated rooms now carry explicit art templates: Threshold, Burial Chamber, Crossroads, Ossuary Gallery, Warden Hall, Reliquary, Shrine Hall, Warden Sanctum, Sealed Ossuary, and Storage Vault
+- room templates are editable directly from the Dungeon Forge inspector alongside room shape
+- perimeter masonry now has heavier base courses, brighter cap stones, seeded damaged/broken segments, and clearer silhouette layering
+- doorway connections get modular posts, capitals, frames and walk-mode lintels instead of reading as holes cut into generic walls
+- room/corridor edges gain modular support pillars, damaged supports, corridor recesses and periodic arch structure
+- corridors receive seeded freestanding torch fixtures and bounded point-light coverage, matching the authored lighting rhythm used in Evergrow-style crypt spaces
+- floor masonry now has chipped/dropped stones, subtle rotation/height variation, seeded cracks and damp patches while remaining instanced
+- room dressing is template-aware: sarcophagi, bone piles, reliquaries, shrine altars, statues, banners, boss dais pieces, urns, rubble and storage stacks
+- large visible dressing pieces share deterministic ARPG/Walk collision so visible art and movement agree
+- central shrine/reward/boss interaction spaces stay approachable rather than being blocked by decoration collision
+- all dressing remains deterministic from dungeon seed/room id and does not require authored external assets
+
+
+## v1.85.2 — Dungeon V3 gameplay cleanup
+
+- removes the persistent ground ring around the ARPG player that appeared as bright broken streaks while moving across the brick floor
+- moves the melee attack FX off the ground into a short raised forward slash so attacks no longer flash/light the floor
+- ignores legacy hidden `__crypt-collision-*` helper props from pre-V3 saves, removing invisible blockers around rooms
+- visible/user-authored props remain collision-authoritative; V3 structural movement continues to use the visible walkable dungeon surface
+
+
+## v1.85.1 — Dungeon Forge V3 visual QA pass
+
+- fixes the huge orange radial/pizza artifacts in the editor by replacing trigger wireframe cylinders with clean radius outlines
+- hides trigger/checkpoint authoring markers from ARPG gameplay
+- brightens the V3 staggered masonry baseline so rooms and curved corridors remain readable between torch pools
+- makes top-down perimeter masonry thicker, taller and easier to read against the void
+- expands torch dressing to four visible wall fixtures per room while keeping real point-light count bounded
+- widens and strengthens warm torch pools without changing the user's brightness control
+
 
 ## v1.85.0 — Dungeon Forge V3 structural remake
 

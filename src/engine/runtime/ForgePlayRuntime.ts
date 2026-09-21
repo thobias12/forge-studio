@@ -81,6 +81,22 @@ import {
   normalizeChainConfig,
   resolveForgeChainTargets,
 } from './ForgeChainLightningRuntime'
+import {
+  FORGE_GAMEPLAY_FEEL,
+  forgeAbilityActionCooldown,
+  forgeAbilityTiming,
+  forgeAttackMovementMultiplier,
+  forgeCanDodgeCancelAction,
+  forgeExpAlpha,
+  forgeMeleeComboProfile,
+  forgeMovementResponse,
+  forgeWheelDistanceTarget,
+  type ForgePlayerActionPhase,
+} from './ForgeGameplayFeel'
+import {
+  forgeSnapGameplayCamera,
+  forgeUpdateGameplayCamera,
+} from './ForgeGameplayCamera'
 
 export type ForgeRuntimeTargetSnapshot = {
   id: string
@@ -153,6 +169,8 @@ type RuntimeEnemy = {
   attackCooldown: number
   windupRemaining: number
   windupDuration: number
+  staggerRemaining: number
+  recoveryRemaining: number
   knockback: THREE.Vector3
   path: THREE.Vector3[]
   pathIndex: number
@@ -195,10 +213,20 @@ type RuntimeInteraction = {
 
 type RuntimeEffect = { mesh: THREE.Mesh; age: number; duration: number; maxScale: number }
 type RuntimeTextEffect = { sprite: THREE.Sprite; age: number; duration: number }
+type RuntimePlayerAction = {
+  ability: ForgeAbilityDefinition
+  aim: THREE.Vector3
+  phase: ForgePlayerActionPhase
+  remaining: number
+  activeDuration: number
+  recoveryDuration: number
+  comboStep: number
+  impacted: boolean
+}
 
 const PLAYER_RADIUS = 0.58
 const ENEMY_RADIUS = 0.62
-const DODGE_DURATION = 0.19
+const DODGE_DURATION = FORGE_GAMEPLAY_FEEL.dodgeDuration
 
 function chainLightningTravelDuration(distance: number) {
   return THREE.MathUtils.clamp(
@@ -245,14 +273,18 @@ export class ForgePlayRuntime {
   private readonly saveKey: string
   private readonly resizeObserver: ResizeObserver
   private readonly dodgeDirection = new THREE.Vector3()
+  private readonly playerVelocity = new THREE.Vector3()
+  private readonly cameraFocus = new THREE.Vector3()
   private readonly tempMove = new THREE.Vector3()
   private readonly tempForward = new THREE.Vector3()
   private readonly tempRight = new THREE.Vector3()
   private readonly tempAim = new THREE.Vector3()
   private readonly tempCamera = new THREE.Vector3()
+  private readonly tempCameraFocus = new THREE.Vector3()
   private readonly tempActorNext = new THREE.Vector3()
   private readonly tempEnemyDirection = new THREE.Vector3()
   private readonly tempEnemySeparation = new THREE.Vector3()
+  private readonly tempCombatSpacing = new THREE.Vector3()
   private navigation!: ForgeNavigationGrid
   private playerVisual?: ForgeCharacterVisualBinding
   private ambientVisuals?: WorldAmbientVisuals
@@ -268,6 +300,7 @@ export class ForgePlayRuntime {
   private equippedWeaponId: string | undefined
   private focusEnemyId: string | undefined
   private cameraDistance: number = FORGE_WORLD_SCALE.playCameraDistance
+  private cameraDistanceTarget: number = FORGE_WORLD_SCALE.playCameraDistance
   private playerHealth = 100
   private dodgeRemaining = 0
   private dodgeCooldown = 0
@@ -287,6 +320,13 @@ export class ForgePlayRuntime {
   private pointerTracked = false
   private testPackSequence = 0
   private playerMoving = false
+  private playerAction: RuntimePlayerAction | undefined
+  private bufferedAbility: ForgeAbilityDefinition | undefined
+  private bufferedAbilityRemaining = 0
+  private primaryHeld = false
+  private meleeComboStep = -1
+  private meleeComboResetRemaining = 0
+  private damageNumberSequence = 0
   private activeInteractionId: string | undefined
   private interactionHeld = false
   private interactionHoldProgress = 0
@@ -361,6 +401,9 @@ export class ForgePlayRuntime {
     window.addEventListener('blur', this.onBlur)
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove)
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown)
+    this.renderer.domElement.addEventListener('pointerup', this.onPointerUp)
+    this.renderer.domElement.addEventListener('pointercancel', this.onPointerUp)
+    this.renderer.domElement.addEventListener('pointerleave', this.onPointerUp)
     this.renderer.domElement.addEventListener('wheel', this.onWheel, { passive: false })
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu)
     this.resize()
@@ -384,6 +427,9 @@ export class ForgePlayRuntime {
     window.removeEventListener('blur', this.onBlur)
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove)
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown)
+    this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp)
+    this.renderer.domElement.removeEventListener('pointercancel', this.onPointerUp)
+    this.renderer.domElement.removeEventListener('pointerleave', this.onPointerUp)
     this.renderer.domElement.removeEventListener('wheel', this.onWheel)
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu)
     if (this.equippedModel) {
@@ -867,6 +913,8 @@ export class ForgePlayRuntime {
       attackCooldown: 0,
       windupRemaining: 0,
       windupDuration: definition.attackWindup ?? 0.42,
+      staggerRemaining: 0,
+      recoveryRemaining: 0,
       knockback: new THREE.Vector3(),
       path: [],
       pathIndex: 0,
@@ -949,6 +997,7 @@ export class ForgePlayRuntime {
   }
   private onBlur = () => {
     this.keys.clear()
+    this.primaryHeld = false
     this.interactionHeld = false
     this.interactionHoldProgress = 0
   }
@@ -987,17 +1036,23 @@ export class ForgePlayRuntime {
 
   private onPointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return
+    this.primaryHeld = true
     const ability = this.getPrimaryAbility()
     if (ability) this.performAbility(ability)
     event.preventDefault()
   }
 
+  private onPointerUp = (event: PointerEvent) => {
+    if (event.button === 0 || event.type !== 'pointerup') this.primaryHeld = false
+  }
+
   private onWheel = (event: WheelEvent) => {
-    this.cameraDistance = THREE.MathUtils.clamp(
-      this.cameraDistance +
-        Math.sign(event.deltaY) * FORGE_WORLD_SCALE.playCameraWheelStep,
+    this.cameraDistanceTarget = forgeWheelDistanceTarget(
+      this.cameraDistanceTarget,
+      event.deltaY,
       FORGE_WORLD_SCALE.playCameraMinDistance,
       FORGE_WORLD_SCALE.playCameraMaxDistance,
+      FORGE_WORLD_SCALE.playCameraWheelStep,
     )
     event.preventDefault()
   }
@@ -1007,17 +1062,23 @@ export class ForgePlayRuntime {
     const delta = Math.min(0.05, Math.max(0, (now - this.lastFrame) / 1000))
     this.lastFrame = now
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
-    const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
-    this.updateCooldowns(delta)
+    const combatLabTimeScale = THREE.MathUtils.clamp(
+      Number((this as any).__forgeCombatLabTimeScale ?? 1),
+      .2,
+      1,
+    )
+    const scaledDelta = delta * combatLabTimeScale
+    const simulationDelta = this.hitStopRemaining > 0 ? 0 : scaledDelta
+    this.updateCooldowns(scaledDelta)
     this.updatePlayer(simulationDelta)
     this.updateInteractions(simulationDelta)
     this.updateEnemies(simulationDelta)
-    this.updateCorpses(delta)
+    this.updateCorpses(scaledDelta)
     this.updateLoot(simulationDelta)
-    this.updateEffects(delta)
-    this.updateLibraryVfx(delta)
-    this.updateChainLightningEffects(delta)
-    this.updateTextEffects(delta)
+    this.updateEffects(scaledDelta)
+    this.updateLibraryVfx(scaledDelta)
+    this.updateChainLightningEffects(scaledDelta)
+    this.updateTextEffects(scaledDelta)
     this.updateCamera(delta)
     if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     this.updateCameraOcclusion(delta)
@@ -1157,6 +1218,17 @@ export class ForgePlayRuntime {
   private updateCooldowns(delta: number) {
     for (const [id, value] of this.cooldowns) this.cooldowns.set(id, Math.max(0, value - delta))
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta)
+    if (this.meleeComboResetRemaining > 0) {
+      this.meleeComboResetRemaining = Math.max(
+        0,
+        this.meleeComboResetRemaining - delta,
+      )
+      if (this.meleeComboResetRemaining <= 0) this.meleeComboStep = -1
+    }
+    if (this.bufferedAbilityRemaining > 0) {
+      this.bufferedAbilityRemaining = Math.max(0, this.bufferedAbilityRemaining - delta)
+      if (this.bufferedAbilityRemaining <= 0) this.bufferedAbility = undefined
+    }
     if (this.messageRemaining > 0) {
       this.messageRemaining -= delta
       if (this.messageRemaining <= 0) this.message = ''
@@ -1164,55 +1236,62 @@ export class ForgePlayRuntime {
   }
 
   private updatePlayer(delta: number) {
+    this.updatePlayerAction(delta)
     let moving = false
+
     if (this.dodgeRemaining > 0) {
-      const speed =
-        this.playerDefinition.dodgeDistance /
-        DODGE_DURATION
-      this.tempMove
-        .copy(this.dodgeDirection)
-        .multiplyScalar(speed * delta)
-      this.moveActor(
-        this.player,
-        this.tempMove,
-        PLAYER_RADIUS,
-      )
-      this.dodgeRemaining = Math.max(
-        0,
-        this.dodgeRemaining - delta,
-      )
+      const speed = this.playerDefinition.dodgeDistance / DODGE_DURATION
+      this.playerVelocity.copy(this.dodgeDirection).multiplyScalar(speed)
+      this.tempMove.copy(this.playerVelocity).multiplyScalar(delta)
+      this.moveActor(this.player, this.tempMove, PLAYER_RADIUS)
+      this.dodgeRemaining = Math.max(0, this.dodgeRemaining - delta)
       moving = true
     } else {
-      const move = this.getMoveDirection()
-      if (move.lengthSq() > 0) {
-        move.multiplyScalar(
-          this.playerDefinition.moveSpeed * delta,
-        )
-        this.moveActor(
-          this.player,
-          move,
-          PLAYER_RADIUS,
-        )
-        moving = true
+      const input = this.getMoveDirection()
+      const movementMultiplier = forgeAttackMovementMultiplier(this.playerAction?.phase)
+      const desiredX = input.x * this.playerDefinition.moveSpeed * movementMultiplier
+      const desiredZ = input.z * this.playerDefinition.moveSpeed * movementMultiplier
+      const response = forgeMovementResponse(
+        this.playerVelocity.x,
+        this.playerVelocity.z,
+        desiredX,
+        desiredZ,
+      )
+      const alpha = forgeExpAlpha(response, delta)
+      this.playerVelocity.x = THREE.MathUtils.lerp(this.playerVelocity.x, desiredX, alpha)
+      this.playerVelocity.z = THREE.MathUtils.lerp(this.playerVelocity.z, desiredZ, alpha)
+      this.playerVelocity.y = 0
+      if (
+        input.lengthSq() < .001 &&
+        this.playerVelocity.lengthSq() <
+          FORGE_GAMEPLAY_FEEL.movement.stopSpeed *
+          FORGE_GAMEPLAY_FEEL.movement.stopSpeed
+      ) {
+        this.playerVelocity.set(0, 0, 0)
       }
+      if (this.playerVelocity.lengthSq() > .001) {
+        this.tempMove.copy(this.playerVelocity).multiplyScalar(delta)
+        this.moveActor(this.player, this.tempMove, PLAYER_RADIUS)
+      }
+      moving = this.playerVelocity.lengthSq() > .04
     }
 
-    this.tempAim
+    const aim = this.playerAction?.aim ?? this.tempAim
       .copy(this.mouseWorld)
       .sub(this.player.position)
       .setY(0)
-    if (this.tempAim.lengthSq() > .01) {
-      this.player.rotation.y = Math.atan2(
-        this.tempAim.x,
-        this.tempAim.z,
+    if (aim.lengthSq() > .01) {
+      const targetAngle = Math.atan2(aim.x, aim.z)
+      const difference = Math.atan2(
+        Math.sin(targetAngle - this.player.rotation.y),
+        Math.cos(targetAngle - this.player.rotation.y),
       )
+      this.player.rotation.y += difference * forgeExpAlpha(28, delta)
     }
 
     if (moving !== this.playerMoving) {
       this.playerMoving = moving
-      this.playerVisual?.play(
-        moving ? 'move' : 'idle',
-      )
+      if (!this.playerAction) this.playerVisual?.play(moving ? 'move' : 'idle')
     }
     this.playerVisual?.update(delta)
   }
@@ -1232,6 +1311,12 @@ export class ForgePlayRuntime {
 
   private startDodge() {
     if (this.dodgeCooldown > 0 || this.dodgeRemaining > 0) return
+    if (!forgeCanDodgeCancelAction(this.playerAction?.phase)) return
+    this.playerAction = undefined
+    this.bufferedAbility = undefined
+    this.bufferedAbilityRemaining = 0
+    this.meleeComboStep = -1
+    this.meleeComboResetRemaining = 0
     const direction = this.getMoveDirection()
     if (direction.lengthSq() < 0.01) {
       direction.copy(this.mouseWorld).sub(this.player.position).setY(0)
@@ -1284,62 +1369,259 @@ export class ForgePlayRuntime {
   }
 
   private performAbility(ability: ForgeAbilityDefinition) {
+    if (this.playerHealth <= 0) return
+    if (
+      this.dodgeRemaining > 0 ||
+      this.playerAction ||
+      (this.cooldowns.get(ability.id) ?? 0) > 0
+    ) {
+      this.bufferedAbility = ability
+      this.bufferedAbilityRemaining = FORGE_GAMEPLAY_FEEL.inputBufferSeconds
+      return
+    }
+    this.startAbilityAction(ability)
+  }
+
+  private startAbilityAction(ability: ForgeAbilityDefinition) {
     if ((this.cooldowns.get(ability.id) ?? 0) > 0 || this.playerHealth <= 0) return
     if (this.pointerTracked) this.updateMouseWorldFromPointerRay()
     const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
-    if (aim.lengthSq() < 0.01) aim.set(0, 0, -1)
+    if (aim.lengthSq() < .01) aim.set(0, 0, -1)
     aim.normalize()
-    const damage = ability.damage + this.getEquippedDamageBonus()
+    const primaryMelee =
+      ability.id === this.playerDefinition.basicAbility &&
+      ability.input === 'primary' &&
+      ability.kind === 'melee'
+    const comboStep = primaryMelee
+      ? this.meleeComboResetRemaining > 0
+        ? (this.meleeComboStep + 1) % 3
+        : 0
+      : 0
+    if (primaryMelee) {
+      this.meleeComboStep = comboStep
+      this.meleeComboResetRemaining =
+        FORGE_GAMEPLAY_FEEL.combat.comboResetSeconds
+    } else {
+      this.meleeComboStep = -1
+      this.meleeComboResetRemaining = 0
+    }
+
+    const timing = forgeAbilityTiming(ability, comboStep)
+    this.playerAction = {
+      ability,
+      aim,
+      phase: 'windup',
+      remaining: timing.windup,
+      activeDuration: timing.active,
+      recoveryDuration: timing.recovery,
+      comboStep,
+      impacted: false,
+    }
+    this.cooldowns.set(
+      ability.id,
+      forgeAbilityActionCooldown(ability, comboStep),
+    )
     const animationV3 = this.playerVisual?.getAnimationRuntimeV3()
     if (animationV3) {
-      const action =
-        ability.id === this.playerDefinition.basicAbility
-          ? 'attackPrimary'
-          : 'cast'
-      if (!animationV3.playAction(action)) {
+      if (primaryMelee) {
+        // Forge V3 currently exposes primary + heavy attack actions.
+        // Hit two keeps the primary animation but has distinct mechanical
+        // timing/arc/lunge; the finisher uses heavy when authored.
+        const played =
+          comboStep === 2
+            ? animationV3.playAction('attackHeavy')
+            : animationV3.playAction('attackPrimary')
+        if (!played) animationV3.playAction('attackPrimary')
+      } else if (!animationV3.playAction('cast')) {
         animationV3.playAction('attackPrimary')
       }
     } else {
       const clipName = this.abilityAnimationClipNames.get(ability.id)
-      if (
-        !clipName ||
-        !this.playerVisual?.playClipName(clipName, false)
-      ) {
+      if (!clipName || !this.playerVisual?.playClipName(clipName, false)) {
         this.playerVisual?.play('attack', false)
       }
     }
+    this.emitState()
+  }
+
+  private updatePlayerAction(delta: number) {
+    const action = this.playerAction
+    if (!action) {
+      if (
+        this.bufferedAbility &&
+        this.bufferedAbilityRemaining > 0 &&
+        (this.cooldowns.get(this.bufferedAbility.id) ?? 0) <= 0 &&
+        this.dodgeRemaining <= 0
+      ) {
+        const buffered = this.bufferedAbility
+        this.bufferedAbility = undefined
+        this.bufferedAbilityRemaining = 0
+        this.startAbilityAction(buffered)
+      } else if (this.primaryHeld && this.dodgeRemaining <= 0) {
+        const primary = this.getPrimaryAbility()
+        if (primary && (this.cooldowns.get(primary.id) ?? 0) <= 0) {
+          this.startAbilityAction(primary)
+        }
+      }
+      return
+    }
+
+    if (action.phase === 'windup' && this.pointerTracked) {
+      const aim = this.mouseWorld.clone().sub(this.player.position).setY(0)
+      if (aim.lengthSq() > .01) action.aim.copy(aim.normalize())
+    }
+
+    action.remaining -= delta
+    if (action.remaining > 0) return
+
+    if (action.phase === 'windup') {
+      action.phase = 'active'
+      action.remaining = action.activeDuration
+      if (!action.impacted) {
+        action.impacted = true
+        if (
+          action.ability.input === 'primary' &&
+          action.ability.kind === 'melee'
+        ) {
+          const combo = forgeMeleeComboProfile(action.comboStep)
+          const lungeDistance = this.meleeLungeDistance(
+            action.aim,
+            combo.lunge,
+          )
+          if (lungeDistance > .001) {
+            this.tempMove
+              .copy(action.aim)
+              .multiplyScalar(lungeDistance)
+            this.moveActor(this.player, this.tempMove, PLAYER_RADIUS)
+          }
+          this.playerVelocity.multiplyScalar(.42)
+        }
+        this.resolveAbilityImpact(
+          action.ability,
+          action.aim,
+          action.comboStep,
+        )
+      }
+      return
+    }
+
+    if (action.phase === 'active') {
+      action.phase = 'recovery'
+      action.remaining = action.recoveryDuration
+      return
+    }
+
+    this.playerAction = undefined
+    if (this.playerMoving) this.playerVisual?.play('move')
+    else this.playerVisual?.play('idle')
+  }
+
+  private meleeLungeDistance(
+    aim: THREE.Vector3,
+    requested: number,
+  ) {
+    let nearest = Infinity
+    for (const enemy of this.enemies) {
+      if (enemy.health <= 0) continue
+      const toEnemy = this.tempActorNext
+        .copy(enemy.group.position)
+        .sub(this.player.position)
+        .setY(0)
+      const distanceSq = toEnemy.lengthSq()
+      if (distanceSq <= 1e-6) {
+        nearest = 0
+        continue
+      }
+      const distance = Math.sqrt(distanceSq)
+      const forward = toEnemy.dot(aim)
+      if (forward <= 0) continue
+      const facing = forward / distance
+      if (facing < .6) continue
+      const lateralSq = Math.max(
+        0,
+        distanceSq - forward * forward,
+      )
+      if (lateralSq > 1.05 * 1.05) continue
+      nearest = Math.min(nearest, distance)
+    }
+
+    if (!Number.isFinite(nearest)) return requested
+    return THREE.MathUtils.clamp(
+      nearest - FORGE_GAMEPLAY_FEEL.combat.lungeContactDistance,
+      0,
+      requested,
+    )
+  }
+
+  private resolveAbilityImpact(
+    ability: ForgeAbilityDefinition,
+    aim: THREE.Vector3,
+    comboStep = 0,
+  ) {
+    const primaryMelee =
+      ability.input === 'primary' &&
+      ability.kind === 'melee'
+    const combo = primaryMelee
+      ? forgeMeleeComboProfile(comboStep)
+      : undefined
+    const damage =
+      (ability.damage + this.getEquippedDamageBonus()) *
+      (combo?.damageMultiplier ?? 1)
     if (ability.delivery === 'chain') {
       this.performChainAbility(ability, aim, damage)
-      this.cooldowns.set(ability.id, ability.cooldown)
-      this.emitState()
       return
     }
 
     if (ability.kind === 'melee') {
-      const impact = this.player.position.clone().addScaledVector(aim, Math.max(1, ability.range * 0.5))
-      this.spawnPulse(impact, ability.color, ability.radius, 0.24)
+      const impact = this.player.position.clone().addScaledVector(
+        aim,
+        Math.max(1, ability.range * .5),
+      )
+      const impactScale =
+        combo?.step === 2
+          ? 1.18
+          : combo?.step === 1
+            ? .96
+            : .8
+      this.spawnPulse(
+        impact,
+        ability.color,
+        ability.radius * impactScale,
+        combo?.step === 2 ? .18 : .13,
+      )
       void this.spawnBoundVfx(ability.vfxAssetId, impact)
       for (const enemy of [...this.enemies]) {
         const toEnemy = enemy.group.position.clone().sub(this.player.position).setY(0)
         const distance = toEnemy.length()
         if (distance > ability.range + ENEMY_RADIUS) continue
-        const facing = distance > 0.001 ? toEnemy.normalize().dot(aim) : 1
-        if (facing >= 0.1) this.damageEnemy(enemy, damage, aim, ability.color)
-      }
-    } else {
-      const target = this.getGroundAimPoint(ability.range)
-      this.spawnPulse(target, ability.color, ability.radius, 0.55)
-      void this.spawnBoundVfx(ability.vfxAssetId, target)
-      for (const enemy of [...this.enemies]) {
-        if (enemy.group.position.distanceTo(target) <= ability.radius + ENEMY_RADIUS) {
-          const direction = enemy.group.position.clone().sub(target).setY(0)
-          if (direction.lengthSq() > 0.001) direction.normalize(); else direction.copy(aim)
-          this.damageEnemy(enemy, damage, direction, ability.color)
+        const facing = distance > .001 ? toEnemy.normalize().dot(aim) : 1
+        if (facing >= (combo?.arcDot ?? .08)) {
+          this.damageEnemy(
+            enemy,
+            damage,
+            aim,
+            ability.color,
+            'standard',
+            combo?.knockbackMultiplier ?? 1,
+            combo?.hitStop,
+            combo?.cameraShake,
+            combo?.staggerSeconds,
+          )
         }
       }
+      return
     }
-    this.cooldowns.set(ability.id, ability.cooldown)
-    this.emitState()
+
+    const target = this.getGroundAimPoint(ability.range)
+    this.spawnPulse(target, ability.color, ability.radius, .55)
+    void this.spawnBoundVfx(ability.vfxAssetId, target)
+    for (const enemy of [...this.enemies]) {
+      if (enemy.group.position.distanceTo(target) > ability.radius + ENEMY_RADIUS) continue
+      const direction = enemy.group.position.clone().sub(target).setY(0)
+      if (direction.lengthSq() > .001) direction.normalize()
+      else direction.copy(aim)
+      this.damageEnemy(enemy, damage, direction, ability.color)
+    }
   }
 
   private getChainCastOrigin(aim: THREE.Vector3) {
@@ -1533,22 +1815,37 @@ export class ForgePlayRuntime {
     direction: THREE.Vector3,
     color: string,
     presentation: 'standard' | 'chain' = 'standard',
+    knockbackMultiplier = 1,
+    hitStop?: number,
+    cameraShake?: number,
+    staggerSeconds?: number,
   ) {
     this.focusEnemyId = enemy.id
     enemy.health = Math.max(0, enemy.health - damage)
     const normalized = direction.clone().setY(0)
     if (normalized.lengthSq() > 0.001) normalized.normalize()
-    enemy.knockback.addScaledVector(normalized, Math.min(5.5, 2.7 + damage * 0.025))
+    enemy.knockback.addScaledVector(
+      normalized,
+      Math.min(6.8, (2.7 + damage * .025) * knockbackMultiplier),
+    )
     enemy.windupRemaining = 0
+    enemy.staggerRemaining = Math.max(
+      enemy.staggerRemaining,
+      staggerSeconds ??
+        (presentation === 'chain'
+          ? .045
+          : FORGE_GAMEPLAY_FEEL.combat.enemyStaggerSeconds),
+    )
+    enemy.recoveryRemaining = 0
     enemy.telegraph.visible = false
     enemy.visual?.play('hit', false)
     enemy.bodyMaterial.emissive.set(
       presentation === 'chain'
         ? new THREE.Color(color)
-        : new THREE.Color(0xffffff),
+        : new THREE.Color(0xf0cfa8),
     )
     enemy.bodyMaterial.emissiveIntensity =
-      presentation === 'chain' ? .72 : 1
+      presentation === 'chain' ? .46 : .34
     const ratio = Math.max(0.001, enemy.health / enemy.definition.maxHealth)
     enemy.healthFill.scale.x = ratio
     enemy.healthFill.position.x = -(1 - ratio) * 0.64
@@ -1567,11 +1864,11 @@ export class ForgePlayRuntime {
     }
     this.hitStopRemaining = Math.max(
       this.hitStopRemaining,
-      presentation === 'chain' ? .012 : .035,
+      hitStop ?? (presentation === 'chain' ? .012 : .035),
     )
     this.cameraShake = Math.max(
       this.cameraShake,
-      presentation === 'chain' ? .09 : .22,
+      cameraShake ?? (presentation === 'chain' ? .09 : .22),
     )
     if (enemy.health <= 0) this.killEnemy(enemy)
   }
@@ -1831,6 +2128,14 @@ export class ForgePlayRuntime {
         0,
         enemy.attackCooldown - delta,
       )
+      enemy.staggerRemaining = Math.max(
+        0,
+        enemy.staggerRemaining - delta,
+      )
+      enemy.recoveryRemaining = Math.max(
+        0,
+        enemy.recoveryRemaining - delta,
+      )
       enemy.repathRemaining = Math.max(
         0,
         enemy.repathRemaining - delta,
@@ -1838,7 +2143,7 @@ export class ForgePlayRuntime {
 
       // Avoid allocating a new Color for every enemy every frame.
       enemy.bodyMaterial.emissive.multiplyScalar(
-        Math.max(0, 1 - delta * 22),
+        Math.max(0, 1 - delta * 46),
       )
 
       const dx = playerX - enemy.group.position.x
@@ -1887,6 +2192,19 @@ export class ForgePlayRuntime {
         enemy.knockback.multiplyScalar(
           Math.max(0, 1 - delta * 8.5),
         )
+      }
+
+      this.resolveEnemyCombatSpacing(enemy, delta)
+
+      if (enemy.staggerRemaining > 0) {
+        this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+        continue
+      }
+      if (enemy.recoveryRemaining > 0) {
+        this.setEnemyMoving(enemy, false)
+        enemy.telegraph.visible = false
+        continue
       }
 
       const distance = Math.hypot(
@@ -1968,7 +2286,7 @@ export class ForgePlayRuntime {
           enemy,
           this.tempEnemySeparation,
         ),
-        .7,
+        1.05,
       )
       .normalize()
 
@@ -1985,6 +2303,67 @@ export class ForgePlayRuntime {
       direction,
       ENEMY_RADIUS,
     )
+  }
+
+  private resolveEnemyCombatSpacing(
+    enemy: RuntimeEnemy,
+    delta: number,
+  ) {
+    const force = this.tempCombatSpacing.set(0, 0, 0)
+    const x = enemy.group.position.x
+    const z = enemy.group.position.z
+
+    let playerDx = x - this.player.position.x
+    let playerDz = z - this.player.position.z
+    let playerDistance = Math.hypot(playerDx, playerDz)
+    if (playerDistance < FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing) {
+      if (playerDistance < 1e-4) {
+        const angle = hashUnit(`${enemy.id}:player-spacing`) * Math.PI * 2
+        playerDx = Math.cos(angle)
+        playerDz = Math.sin(angle)
+        playerDistance = 1
+      }
+      const weight =
+        (FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing -
+          playerDistance) /
+        FORGE_GAMEPLAY_FEEL.combat.playerEnemySpacing
+      force.x += (playerDx / playerDistance) * weight * 2.4
+      force.z += (playerDz / playerDistance) * weight * 2.4
+    }
+
+    for (const other of this.enemies) {
+      if (other === enemy || other.health <= 0) continue
+      let dx = x - other.group.position.x
+      let dz = z - other.group.position.z
+      let distance = Math.hypot(dx, dz)
+      if (
+        distance >= FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
+      ) {
+        continue
+      }
+      if (distance < 1e-4) {
+        const angle =
+          hashUnit(`${enemy.id}:${other.id}:spacing`) *
+          Math.PI *
+          2
+        dx = Math.cos(angle)
+        dz = Math.sin(angle)
+        distance = 1
+      }
+      const weight =
+        (FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing -
+          distance) /
+        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
+      force.x += (dx / distance) * weight * 1.45
+      force.z += (dz / distance) * weight * 1.45
+    }
+
+    const strength = force.length()
+    if (strength <= .001) return
+    force.multiplyScalar(
+      Math.min(.14, strength * delta * 8.5) / strength,
+    )
+    this.moveActor(enemy.group, force, ENEMY_RADIUS)
   }
 
   private enemySeparation(
@@ -2005,16 +2384,20 @@ export class ForgePlayRuntime {
         dx * dx + dz * dz
       if (
         distanceSq <= 1e-6 ||
-        distanceSq >= 3.24
+        distanceSq >=
+          FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing *
+          FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
       ) {
         continue
       }
 
       const distance =
         Math.sqrt(distanceSq)
+      const spacing =
+        FORGE_GAMEPLAY_FEEL.combat.enemyEnemySpacing
       const weight =
-        (1.8 - distance) /
-        (1.8 * distance)
+        (spacing - distance) /
+        (spacing * distance)
       force.x += dx * weight
       force.z += dz * weight
     }
@@ -2036,6 +2419,11 @@ export class ForgePlayRuntime {
   private resolveEnemyAttack(enemy: RuntimeEnemy) {
     enemy.telegraph.visible = false
     enemy.attackCooldown = enemy.definition.attackCooldown
+    enemy.recoveryRemaining = Math.max(
+      enemy.recoveryRemaining,
+      FORGE_GAMEPLAY_FEEL.combat.enemyRecoverySeconds +
+        enemy.windupDuration * .16,
+    )
     const distance = enemy.group.position.distanceTo(this.player.position)
     if (distance > enemy.definition.attackRange + 0.55) { this.spawnPulse(enemy.group.position, '#804a3c', 0.8, 0.15); return }
     if (this.dodgeRemaining > 0) { this.spawnPulse(this.player.position, '#88bca0', 1.1, 0.18); this.setMessage('Dodged.', 0.8); return }
@@ -2200,67 +2588,41 @@ export class ForgePlayRuntime {
   }
 
   private updateCamera(delta: number) {
-    this.cameraShake = Math.max(
-      0,
-      this.cameraShake - delta * 2.7,
+    this.cameraShake = Math.max(0, this.cameraShake - delta * 2.7)
+    this.cameraDistance = THREE.MathUtils.lerp(
+      this.cameraDistance,
+      this.cameraDistanceTarget,
+      forgeExpAlpha(
+        FORGE_GAMEPLAY_FEEL.camera.zoomResponse,
+        delta,
+      ),
     )
-    const desired = this.cameraOffset(
-      this.tempCamera,
-    ).add(this.player.position)
 
-    if (this.cameraShake > 0) {
-      const strength =
-        this.cameraShake * .7
-      const now = performance.now()
-      desired.x +=
-        Math.sin(now * .061) * strength
-      desired.y +=
-        Math.sin(now * .083) *
-        strength *
-        .45
-      desired.z +=
-        Math.cos(now * .073) * strength
-    }
-
-    this.camera.position.lerp(
-      desired,
-      1 - Math.pow(.0008, delta),
-    )
-    this.camera.lookAt(
-      this.player.position.x,
-      this.player.position.y +
-        FORGE_WORLD_SCALE.playCameraLookAtHeight,
-      this.player.position.z,
-    )
+    forgeUpdateGameplayCamera({
+      camera: this.camera,
+      focus: this.cameraFocus,
+      playerPosition: this.player.position,
+      playerVelocity: this.playerVelocity,
+      mouseWorld: this.mouseWorld,
+      pointerTracked: this.pointerTracked,
+      distance: this.cameraDistance,
+      delta,
+      shake: this.cameraShake,
+      tempFocus: this.tempCameraFocus,
+      tempAim: this.tempAim,
+      tempOffset: this.tempCamera,
+    })
   }
 
   private snapCamera() {
-    this.camera.position
-      .copy(this.player.position)
-      .add(
-        this.cameraOffset(
-          this.tempCamera,
-        ),
-      )
-    this.camera.lookAt(
-      this.player.position.x,
-      this.player.position.y +
-        FORGE_WORLD_SCALE.playCameraLookAtHeight,
-      this.player.position.z,
-    )
-  }
-
-  private cameraOffset(
-    target: THREE.Vector3,
-  ) {
-    return target.set(
-      this.cameraDistance *
-        FORGE_WORLD_SCALE.playCameraHorizontalScale,
-      this.cameraDistance *
-        FORGE_WORLD_SCALE.playCameraVerticalScale,
-      this.cameraDistance *
-        FORGE_WORLD_SCALE.playCameraHorizontalScale,
-    )
+    this.cameraDistance = this.cameraDistanceTarget
+    forgeSnapGameplayCamera({
+      camera: this.camera,
+      focus: this.cameraFocus,
+      playerPosition: this.player.position,
+      distance: this.cameraDistance,
+      tempOffset: this.tempCamera,
+    })
   }
 
   private moveActor(
@@ -2268,51 +2630,72 @@ export class ForgePlayRuntime {
     delta: THREE.Vector3,
     radius: number,
   ) {
-    const next = this.tempActorNext
-      .copy(actor.position)
-      .add(delta)
-
-    next.x = THREE.MathUtils.clamp(
-      next.x,
-      this.region.bounds.minX + radius,
-      this.region.bounds.maxX - radius,
+    const distance = Math.hypot(delta.x, delta.z)
+    if (distance <= 0) return
+    const steps = Math.max(
+      1,
+      Math.ceil(distance / FORGE_GAMEPLAY_FEEL.movement.collisionStep),
     )
-    next.z = THREE.MathUtils.clamp(
-      next.z,
-      this.region.bounds.minZ + radius,
-      this.region.bounds.maxZ - radius,
-    )
+    const stepX = delta.x / steps
+    const stepZ = delta.z / steps
 
-    for (const obstacle of this.obstacles) {
-      let dx = next.x - obstacle.x
-      let dz = next.z - obstacle.z
-      let distance = Math.hypot(dx, dz)
-      const minimum =
-        radius + obstacle.radius
-      if (distance >= minimum) continue
-      if (distance < .0001) {
-        dx = 1
-        dz = 0
-        distance = 1
+    for (let index = 0; index < steps; index += 1) {
+      const currentX = actor.position.x
+      const currentZ = actor.position.z
+      const nextX = THREE.MathUtils.clamp(
+        currentX + stepX,
+        this.region.bounds.minX + radius,
+        this.region.bounds.maxX - radius,
+      )
+      const nextZ = THREE.MathUtils.clamp(
+        currentZ + stepZ,
+        this.region.bounds.minZ + radius,
+        this.region.bounds.maxZ - radius,
+      )
+
+      if (!this.actorPositionBlocked(nextX, nextZ, radius)) {
+        actor.position.x = nextX
+        actor.position.z = nextZ
+        continue
       }
-      next.x =
-        obstacle.x +
-        (dx / distance) * minimum
-      next.z =
-        obstacle.z +
-        (dz / distance) * minimum
+
+      const xOpen = !this.actorPositionBlocked(nextX, currentZ, radius)
+      const zOpen = !this.actorPositionBlocked(currentX, nextZ, radius)
+      if (xOpen && zOpen) {
+        if (Math.abs(stepX) >= Math.abs(stepZ)) {
+          actor.position.x = nextX
+          if (!this.actorPositionBlocked(actor.position.x, nextZ, radius)) {
+            actor.position.z = nextZ
+          }
+        } else {
+          actor.position.z = nextZ
+          if (!this.actorPositionBlocked(nextX, actor.position.z, radius)) {
+            actor.position.x = nextX
+          }
+        }
+      } else if (xOpen) {
+        actor.position.x = nextX
+      } else if (zOpen) {
+        actor.position.z = nextZ
+      }
     }
 
-    actor.position.x = next.x
-    actor.position.z = next.z
     if (this.region.version >= 2) {
-      actor.position.y =
-        runtimeWalkSurfaceHeight(
-          this.region,
-          next.x,
-          next.z,
-        )
+      actor.position.y = runtimeWalkSurfaceHeight(
+        this.region,
+        actor.position.x,
+        actor.position.z,
+      )
     }
+  }
+
+  private actorPositionBlocked(x: number, z: number, radius: number) {
+    for (const obstacle of this.obstacles) {
+      if (Math.hypot(x - obstacle.x, z - obstacle.z) < radius + obstacle.radius) {
+        return true
+      }
+    }
+    return false
   }
 
   private spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
@@ -2358,13 +2741,21 @@ export class ForgePlayRuntime {
       depthTest: false,
     })
     const sprite = new THREE.Sprite(material)
-    sprite.position.set(position.x, 2.4, position.z)
-    sprite.scale.set(2.1, 1.05, 1)
+    const sequence = ++this.damageNumberSequence
+    const angle = sequence * 2.399963229728653
+    const lane = sequence % 4
+    const spread = .12 + lane * .045
+    sprite.position.set(
+      position.x + Math.cos(angle) * spread,
+      2.24 + (lane % 3) * .11,
+      position.z + Math.sin(angle) * spread,
+    )
+    sprite.scale.set(1.76, .88, 1)
     this.scene.add(sprite)
     this.textEffects.push({
       sprite,
       age: 0,
-      duration: 0.68,
+      duration: .56,
     })
   }
 

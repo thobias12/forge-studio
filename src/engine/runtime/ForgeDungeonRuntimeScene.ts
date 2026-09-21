@@ -1,10 +1,11 @@
 // @ts-nocheck
 import * as THREE from 'three'
 import { itemVisual } from '../itemPresentation'
-import { dungeonAtmosphere, tintRoomFloor } from '../../lib/dungeonAtmosphere'
+import { dungeonAtmosphere, dungeonLightingProfile, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
+import { addDungeonMasonryV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity } from './ForgeDungeonRuntimeHelpers'
@@ -13,8 +14,10 @@ const INTERACT_DISTANCE = 2.65
 export const dungeonSceneMethods = {
   buildLighting() {
     const atmosphere = dungeonAtmosphere(this.dungeon.theme)
-    this.scene.add(new THREE.HemisphereLight(atmosphere.sky, atmosphere.ground, atmosphere.ambient * 1.15))
-    const key = new THREE.DirectionalLight(atmosphere.key, atmosphere.keyIntensity)
+    const lighting = dungeonLightingProfile(atmosphere, this.dungeon.settings)
+    this.scene.add(new THREE.HemisphereLight(atmosphere.sky, atmosphere.ground, lighting.ambientIntensity))
+    this.scene.add(new THREE.AmbientLight(atmosphere.sky, lighting.fillIntensity))
+    const key = new THREE.DirectionalLight(atmosphere.key, lighting.keyIntensity)
     key.position.set(12, 22, 9)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
@@ -27,34 +30,41 @@ export const dungeonSceneMethods = {
 
   buildDungeon() {
     const atmosphere = dungeonAtmosphere(this.dungeon.theme)
-    const roomMap = new Map(this.runtimeDungeon.rooms.map((room) => [room.id, room]))
-    const openings = new Map<string, RoomOpening[]>()
     const flickerLights: CryptFlickerLight[] = []
-    const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
 
-    for (const edge of this.runtimeDungeon.corridors) {
-      const fromRoom = roomMap.get(edge.fromRoomId)
-      const toRoom = roomMap.get(edge.toRoomId)
-      if (!fromRoom || !toRoom) continue
-      const from = getRoomConnection(fromRoom, toRoom, edge.width)
-      const to = getRoomConnection(toRoom, fromRoom, edge.width)
-      addOpening(fromRoom.id, { ...from, corridorId: edge.id })
-      addOpening(toRoom.id, { ...to, corridorId: edge.id })
-      addCorridorFloor(this.world, from, to, edge.width, atmosphere.corridorFloor)
-      if (this.dungeon.theme === 'crypt') {
-        const start = this.world.children.length
-        addCryptCorridorEnvironment(this.world, from, to, edge.width, atmosphere, `${edge.id}-${this.dungeon.seed}`, false)
-        this.world.children.slice(start).forEach(markOccluderTree)
+    if (this.dungeon.theme === 'crypt') {
+      // Play Project and Dungeon Forge now share the exact V3 geometry/art
+      // renderer. This removes the old parallel "game dungeon" appearance.
+      addDungeonMasonryV3(this.world, this.runtimeDungeon, atmosphere, flickerLights, 'arpg')
+    } else {
+      const roomMap = new Map(this.runtimeDungeon.rooms.map((room) => [room.id, room]))
+      const openings = new Map<string, RoomOpening[]>()
+      const addOpening = (roomId: string, opening: RoomOpening) => openings.set(roomId, [...(openings.get(roomId) ?? []), opening])
+
+      for (const edge of this.runtimeDungeon.corridors) {
+        const fromRoom = roomMap.get(edge.fromRoomId)
+        const toRoom = roomMap.get(edge.toRoomId)
+        if (!fromRoom || !toRoom) continue
+        const from = getRoomConnection(fromRoom, toRoom, edge.width)
+        const to = getRoomConnection(toRoom, fromRoom, edge.width)
+        addOpening(fromRoom.id, { ...from, corridorId: edge.id })
+        addOpening(toRoom.id, { ...to, corridorId: edge.id })
+        addCorridorFloor(this.world, from, to, edge.width, atmosphere.corridorFloor)
+        if (this.dungeon.theme === 'crypt') {
+          const start = this.world.children.length
+          addCryptCorridorEnvironment(this.world, from, to, edge.width, atmosphere, `${edge.id}-${this.dungeon.seed}`, false)
+          this.world.children.slice(start).forEach(markOccluderTree)
+        }
       }
-    }
 
-    for (const room of this.runtimeDungeon.rooms) {
-      const roomOpenings = openings.get(room.id) ?? []
-      addRoomShell(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, tintRoomFloor(atmosphere.floor, room.type, atmosphere).getHex(), atmosphere.wall, atmosphere.wallDark)
-      if (this.dungeon.theme === 'crypt') {
-        const start = this.world.children.length
-        addCryptRoomEnvironment(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, atmosphere, flickerLights, false)
-        this.world.children.slice(start).forEach(markOccluderTree)
+      for (const room of this.runtimeDungeon.rooms) {
+        const roomOpenings = openings.get(room.id) ?? []
+        addRoomShell(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, tintRoomFloor(atmosphere.floor, room.type, atmosphere).getHex(), atmosphere.wall, atmosphere.wallDark)
+        if (this.dungeon.theme === 'crypt') {
+          const start = this.world.children.length
+          addCryptRoomEnvironment(this.world, room, roomOpenings, this.dungeon.settings.wallThickness, atmosphere, flickerLights, false)
+          this.world.children.slice(start).forEach(markOccluderTree)
+        }
       }
     }
 
@@ -80,6 +90,21 @@ export const dungeonSceneMethods = {
     this.player.add(this.playerPlaceholder)
     this.equippedModelAnchor.position.set(...fallbackSocketPosition('RightHand'))
     this.player.add(this.equippedModelAnchor)
+    if (this.dungeon.theme === 'crypt') {
+      const atmosphere = dungeonAtmosphere(this.dungeon.theme)
+      const lighting = dungeonLightingProfile(atmosphere, this.dungeon.settings)
+      const normalized = THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1)
+      const visibility = new THREE.PointLight(
+        atmosphere.sky,
+        THREE.MathUtils.lerp(0.28, 0.42, normalized),
+        5.6,
+        2.15,
+      )
+      visibility.name = 'DungeonReadabilityLight'
+      visibility.position.set(0, 2.7, 0)
+      visibility.castShadow = false
+      this.player.add(visibility)
+    }
     const spawn = this.dungeon.markers.find((marker) => marker.type === 'checkpoint')
     const entrance = this.dungeon.rooms.find((room) => room.type === 'entrance') ?? this.dungeon.rooms[0]
     this.player.position.set(spawn?.x ?? entrance?.x ?? 0, entrance?.floorLevel ?? 0, spawn?.z ?? entrance?.z ?? 0)
@@ -131,6 +156,10 @@ export const dungeonSceneMethods = {
     healthBack.position.set(0, 2.48, 0)
     const healthFill = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.055, 0.065), new THREE.MeshBasicMaterial({ color: boss ? 0xdc525a : 0xc9574f }))
     healthFill.position.set(0, 2.48, -0.035)
+    // Target health is rendered in the HUD. These world-space bars otherwise
+    // rotate with the enemy and look like floating rods in the isometric view.
+    healthBack.visible = false
+    healthFill.visible = false
     const telegraph = new THREE.Mesh(
       new THREE.RingGeometry(Math.max(0.45, definition.attackRange * 0.55), Math.max(0.55, definition.attackRange * 0.72), 32),
       new THREE.MeshBasicMaterial({ color: 0xe8644d, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }),
@@ -159,6 +188,9 @@ export const dungeonSceneMethods = {
       attackTimer: random() * 0.5,
       windupRemaining: 0,
       windupDuration: definition.attackWindup ?? 0.42,
+      staggerRemaining: 0,
+      recoveryRemaining: 0,
+      knockback: new THREE.Vector3(),
       boss,
       elite,
       moving: false,

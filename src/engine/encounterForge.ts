@@ -1,3 +1,17 @@
+export type ForgeEncounterWaveEntry = {
+  enemyId: string
+  count: number
+  eliteChance?: number
+}
+
+export type ForgeEncounterWaveDefinition = {
+  id: string
+  name: string
+  delay?: number
+  message?: string
+  entries: ForgeEncounterWaveEntry[]
+}
+
 export type ForgeEncounterProfile = {
   format: 'forge-encounter-profile'
   version: 1
@@ -10,6 +24,9 @@ export type ForgeEncounterProfile = {
   difficulty: number
   introMessage?: string
   rewardLootTableId?: string
+  betweenWaveDelay?: number
+  completionMessage?: string
+  waves?: ForgeEncounterWaveDefinition[]
 }
 
 export type ForgeBossPhaseDefinition = {
@@ -54,6 +71,8 @@ export function createEncounterProfile(id: string = crypto.randomUUID()): ForgeE
     eliteChance: 0.1,
     difficulty: 1,
     introMessage: 'Enemies approach.',
+    betweenWaveDelay: 1.2,
+    waves: [],
   }
 }
 
