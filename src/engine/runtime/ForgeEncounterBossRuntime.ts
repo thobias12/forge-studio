@@ -202,9 +202,19 @@ export function installEncounterBossRuntime(Runtime: any) {
       const count = Math.min(8, Math.max(0, Math.round(phase.summonCount)))
       for (let i = 0; i < count; i += 1) {
         const angle = i / Math.max(1, count) * Math.PI * 2 + random() * 0.45
-        const radius = 2.3 + random() * 1.2
-        const x = THREE.MathUtils.clamp(boss.group.position.x + Math.cos(angle) * radius, room.x - room.width / 2 + 1, room.x + room.width / 2 - 1)
-        const z = THREE.MathUtils.clamp(boss.group.position.z + Math.sin(angle) * radius, room.z - room.depth / 2 + 1, room.z + room.depth / 2 - 1)
+        // Keep phase adds out of the boss's immediate melee footprint.
+        // The previous 2.3–3.5m ring collapsed boss + adds into one visual pile.
+        const radius = 4.2 + random() * 1.6
+        const x = THREE.MathUtils.clamp(
+          boss.group.position.x + Math.cos(angle) * radius,
+          room.x - room.width / 2 + 1.35,
+          room.x + room.width / 2 - 1.35,
+        )
+        const z = THREE.MathUtils.clamp(
+          boss.group.position.z + Math.sin(angle) * radius,
+          room.z - room.depth / 2 + 1.35,
+          room.z + room.depth / 2 - 1.35,
+        )
         const summonEncounter: any = {
           ...state.definition,
           family: definition.id,
