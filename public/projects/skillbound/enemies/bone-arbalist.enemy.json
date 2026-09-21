@@ -22,5 +22,7 @@
   "projectileSpeed": 12.5,
   "projectileRadius": 0.18,
   "scale": 0.98,
-  "telegraphColor": "#e0b36c"
+  "telegraphColor": "#e0b36c",
+  "specialCooldown": 4.4,
+  "volleyCount": 3
 }
