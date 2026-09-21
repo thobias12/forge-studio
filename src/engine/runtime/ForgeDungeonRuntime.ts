@@ -173,6 +173,8 @@ export class ForgeDungeonRuntime {
   private totalEnemyCount = 0
   private chainCastSequence = 0
   private runtimeFrameErrorLogged = false
+  private runtimeEnemyErrorLogged = false
+  private runtimeEffectsErrorLogged = false
   private runtimeCameraErrorLogged = false
 
   constructor(host: HTMLElement, dungeon: ForgeProjectDungeonDefinition, gameplay: ForgeGameplayContent, initial: ForgeAdventurePlayerState, options: ForgeDungeonRuntimeOptions) {
@@ -340,14 +342,32 @@ export class ForgeDungeonRuntime {
     if (this.disposed) return
     const delta = Math.min(0.05, Math.max(0, (now - this.lastFrame) / 1000))
     this.lastFrame = now
+    this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
+    const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
 
     try {
-      this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta)
-      const simulationDelta = this.hitStopRemaining > 0 ? 0 : delta
       this.updateCooldowns(delta)
       this.activateEncounters()
       this.updatePlayer(simulationDelta)
+    } catch (reason) {
+      if (!this.runtimeFrameErrorLogged) {
+        this.runtimeFrameErrorLogged = true
+        console.error('[ForgeDungeonRuntime] player/encounter frame update failed; continuing remaining runtime systems.', reason)
+      }
+    }
+
+    // Enemy AI is isolated from transient VFX cleanup. A malformed enemy can
+    // no longer freeze dash/ability rings, hit flashes, loot, or corpse flow.
+    try {
       this.updateEnemies(simulationDelta)
+    } catch (reason) {
+      if (!this.runtimeEnemyErrorLogged) {
+        this.runtimeEnemyErrorLogged = true
+        console.error('[ForgeDungeonRuntime] enemy update failed; continuing VFX and render systems.', reason)
+      }
+    }
+
+    try {
       this.updateLoot(simulationDelta)
       this.updateEffects(delta)
       this.updateTextEffects(delta)
@@ -357,9 +377,9 @@ export class ForgeDungeonRuntime {
       this.emitElapsed += delta
       if (this.emitElapsed >= 0.1) { this.emitElapsed = 0; this.emitState() }
     } catch (reason) {
-      if (!this.runtimeFrameErrorLogged) {
-        this.runtimeFrameErrorLogged = true
-        console.error('[ForgeDungeonRuntime] gameplay frame update failed; camera/render remain active.', reason)
+      if (!this.runtimeEffectsErrorLogged) {
+        this.runtimeEffectsErrorLogged = true
+        console.error('[ForgeDungeonRuntime] transient runtime update failed; render/camera remain active.', reason)
       }
     }
 
