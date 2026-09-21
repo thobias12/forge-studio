@@ -72,6 +72,36 @@ function combatColor(definition: any) {
   )
 }
 
+const COMBAT_GROUND_FX_CLEARANCE = .16
+
+function combatGroundY(
+  runtime: any,
+  position: THREE.Vector3,
+  clearance = COMBAT_GROUND_FX_CLEARANCE,
+) {
+  const floorY = runtime.floorHeightAt?.(
+    position.x,
+    position.z,
+  )
+  if (Number.isFinite(floorY)) {
+    return Number(floorY) + clearance
+  }
+  return Number(position.y ?? 0) + clearance
+}
+
+function placeGroundFx(
+  runtime: any,
+  object: THREE.Object3D,
+  position: THREE.Vector3,
+  clearance = COMBAT_GROUND_FX_CLEARANCE,
+) {
+  object.position.set(
+    position.x,
+    combatGroundY(runtime, position, clearance),
+    position.z,
+  )
+}
+
 function roleHealthColor(role: string, elite: boolean, boss: boolean) {
   if (boss) return 0xdc525a
   if (elite) return 0xe58a4f
@@ -915,10 +945,11 @@ function startDungeonArrival(runtime: any, enemy: any) {
           .74
 
   const effect = new THREE.Group()
-  effect.position.set(
-    enemy.group.position.x,
-    baseY + .03,
-    enemy.group.position.z,
+  placeGroundFx(
+    runtime,
+    effect,
+    enemy.group.position,
+    .15,
   )
 
   const ringMaterial = new THREE.MeshBasicMaterial({
@@ -1294,8 +1325,7 @@ function spawnSpecialLineCue(
   duration: number,
 ) {
   const group = new THREE.Group()
-  group.position.copy(origin)
-  group.position.y += .045
+  placeGroundFx(runtime, group, origin)
   group.rotation.y = Math.atan2(direction.x, direction.z)
 
   const material = new THREE.MeshBasicMaterial({
@@ -1695,8 +1725,7 @@ function spawnHazardZone(
   color = combatColor(enemy.definition),
 ) {
   const group = new THREE.Group()
-  group.position.copy(position)
-  group.position.y += .035
+  placeGroundFx(runtime, group, position)
 
   const discMaterial = new THREE.MeshBasicMaterial({
     color,
@@ -1726,7 +1755,7 @@ function spawnHazardZone(
     ringMaterial,
   )
   ring.rotation.x = -Math.PI / 2
-  ring.position.y = .008
+  ring.position.y = .012
   group.add(disc, ring)
   ;(runtime.world ?? runtime.scene)?.add(group)
 
@@ -2082,8 +2111,7 @@ function spawnMeleeReleaseFx(runtime: any, enemy: any) {
   }
 
   const group = new THREE.Group()
-  group.position.copy(enemy.group.position)
-  group.position.y += .12
+  placeGroundFx(runtime, group, enemy.group.position)
   group.rotation.y = enemy.group.rotation.y
   const angle = role === 'skirmisher' ? Math.PI * .62 : Math.PI * .5
   const material = new THREE.MeshBasicMaterial({
@@ -2125,7 +2153,7 @@ function spawnCasterImpactFx(
   radius: number,
 ) {
   const group = new THREE.Group()
-  group.position.copy(position)
+  placeGroundFx(runtime, group, position)
   const materials: THREE.Material[] = []
   const parts: THREE.Object3D[] = []
 
@@ -2143,7 +2171,7 @@ function spawnCasterImpactFx(
     discMaterial,
   )
   disc.rotation.x = -Math.PI / 2
-  disc.position.y = .05
+  disc.position.y = .012
   group.add(disc)
   materials.push(discMaterial)
 
@@ -2310,20 +2338,30 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   const material = telegraph.material
   if (material?.color) material.color.set(combatColor(enemy.definition))
 
-  if (style === 'area' || style === 'projectile') {
-    enemy.group.updateMatrixWorld(true)
-    const localTarget = enemy.group.worldToLocal(
-      enemy.attackTarget.clone(),
-    )
-    telegraph.position.set(localTarget.x, .045, localTarget.z)
-  } else {
-    telegraph.position.set(0, .045, 0)
-  }
+  enemy.group.updateMatrixWorld(true)
+  const worldGroundTarget =
+    style === 'area' || style === 'projectile'
+      ? enemy.attackTarget.clone()
+      : enemy.group.position.clone()
+  worldGroundTarget.y = combatGroundY(
+    runtime,
+    worldGroundTarget,
+  )
+  const localTarget = enemy.group.worldToLocal(
+    worldGroundTarget,
+  )
+  telegraph.position.copy(localTarget)
+  telegraph.renderOrder = 22
 }
 
 function finishAttackState(runtime: any, enemy: any, mode: EnemyMode) {
   enemy.telegraph.visible = false
-  enemy.telegraph.position.set(0, .045, 0)
+  enemy.group.updateMatrixWorld(true)
+  const resetWorld = enemy.group.position.clone()
+  resetWorld.y = combatGroundY(runtime, resetWorld)
+  enemy.telegraph.position.copy(
+    enemy.group.worldToLocal(resetWorld),
+  )
   const empowerScale =
     Number(enemy.__forgeEmpowerRemaining ?? 0) > 0
       ? .8
