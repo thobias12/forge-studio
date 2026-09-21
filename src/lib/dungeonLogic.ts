@@ -46,7 +46,7 @@ export function ensureRoomEncounter<T extends ForgeDungeonPackage>(value: T, roo
 
   const nextMarkers = [...value.markers]
   const base = encounterForRoom(targetRoom)
-  const family = value.theme === 'crypt' ? (targetRoom.type === 'boss' ? 'crypt-warden' : 'undead') : value.theme
+  const family = value.theme === 'crypt' ? (targetRoom.type === 'boss' ? 'crypt-brute' : 'road-wretch') : value.theme
   const spawn = marker('enemy', targetRoom.x, targetRoom.floorLevel + 0.3, targetRoom.z, targetRoom.id, targetRoom.type === 'boss' ? 'Boss Spawn' : 'Encounter Spawn', {
     family, count: base.count, eliteChance: base.eliteChance, difficulty: base.difficulty, encounterId: base.id,
   })
