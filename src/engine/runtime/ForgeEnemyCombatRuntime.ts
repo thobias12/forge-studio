@@ -80,66 +80,631 @@ function roleHealthColor(role: string, elite: boolean, boss: boolean) {
   return 0xc9574f
 }
 
+function roleMaterial(
+  color: THREE.ColorRepresentation,
+  options: {
+    emissive?: THREE.ColorRepresentation
+    emissiveIntensity?: number
+    roughness?: number
+    metalness?: number
+  } = {},
+) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: options.roughness ?? .7,
+    metalness: options.metalness ?? .08,
+    emissive: options.emissive ?? 0x000000,
+    emissiveIntensity: options.emissiveIntensity ?? 0,
+  })
+}
+
+function rolePart(
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  name: string,
+) {
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = name
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  return mesh
+}
+
+function limbPivot(
+  length: number,
+  radius: number,
+  material: THREE.Material,
+  name: string,
+) {
+  const pivot = new THREE.Group()
+  pivot.name = name
+  const limb = rolePart(
+    new THREE.CylinderGeometry(
+      radius * .86,
+      radius,
+      length,
+      6,
+    ),
+    material,
+    `${name}-mesh`,
+  )
+  limb.position.y = -length * .5
+  pivot.add(limb)
+  return pivot
+}
+
+function rememberRigRest(objects: Record<string, THREE.Object3D | undefined>) {
+  const rest: Record<string, any> = {}
+  for (const [key, object] of Object.entries(objects)) {
+    if (!object) continue
+    rest[key] = {
+      position: object.position.clone(),
+      rotation: object.rotation.clone(),
+      scale: object.scale.clone(),
+    }
+  }
+  return rest
+}
+
 function decorateFallbackRole(enemy: any, definition: any, role: string) {
   const placeholder = enemy.group?.getObjectByName?.('__forge_placeholder')
   if (!placeholder || placeholder.userData.forgeCombatRoleDecorated) return
   placeholder.userData.forgeCombatRoleDecorated = true
 
-  const accentColor = new THREE.Color(combatColor(definition))
-  const accent = new THREE.MeshStandardMaterial({
-    color: accentColor,
-    roughness: .68,
-    metalness: role === 'ranged' ? .32 : .08,
-    emissive: accentColor.clone().multiplyScalar(.08),
-    emissiveIntensity: .4,
-  })
-  const dark = new THREE.MeshStandardMaterial({
-    color: 0x241f1d,
-    roughness: .78,
-    metalness: .12,
-  })
-  const add = (mesh: THREE.Mesh) => {
-    mesh.castShadow = true
-    placeholder.add(mesh)
-    return mesh
+  // Replace the original capsule/cylinder placeholder with a small procedural
+  // humanoid rig. The real authored character asset still hides this entire
+  // placeholder when it is available.
+  for (const child of [...placeholder.children]) {
+    child.visible = false
   }
 
+  const accentColor = new THREE.Color(combatColor(definition))
+  const bodyMaterial =
+    enemy.placeholderMaterial instanceof THREE.MeshStandardMaterial
+      ? enemy.placeholderMaterial
+      : roleMaterial(definition.color)
+  bodyMaterial.roughness = role === 'ranged' ? .7 : .78
+  const boneMaterial = roleMaterial(
+    role === 'caster' ? 0x756b78 : 0x81766d,
+    { roughness: .9 },
+  )
+  const darkMaterial = roleMaterial(0x211c1a, {
+    roughness: .84,
+    metalness: .08,
+  })
+  const leatherMaterial = roleMaterial(0x443129, {
+    roughness: .88,
+  })
+  const metalMaterial = roleMaterial(0x77736d, {
+    roughness: .48,
+    metalness: .58,
+  })
+  const accentMaterial = roleMaterial(accentColor, {
+    roughness: .42,
+    metalness: role === 'ranged' || role === 'brute' ? .3 : .08,
+    emissive: accentColor,
+    emissiveIntensity: role === 'caster' ? 1.2 : .16,
+  })
+
+  const root = new THREE.Group()
+  root.name = '__forge_role_rig'
+  placeholder.add(root)
+
+  const brute = role === 'brute'
+  const torsoWidth = brute ? .94 : role === 'caster' ? .68 : .64
+  const torsoHeight = brute ? .78 : .7
+  const torsoDepth = brute ? .56 : .42
+  const shoulderY = brute ? 1.48 : 1.42
+  const hipY = .73
+
+  const pelvis = rolePart(
+    new THREE.BoxGeometry(brute ? .72 : .5, .28, brute ? .48 : .38),
+    darkMaterial,
+    'pelvis',
+  )
+  pelvis.position.y = hipY
+  root.add(pelvis)
+
+  const torso = new THREE.Group()
+  torso.name = 'torso-pivot'
+  torso.position.y = 1.15
+  const torsoMesh = rolePart(
+    new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoDepth),
+    bodyMaterial,
+    'torso',
+  )
+  torsoMesh.position.y = .08
+  torso.add(torsoMesh)
+  root.add(torso)
+
+  const neck = rolePart(
+    new THREE.CylinderGeometry(.1, .12, .18, 6),
+    boneMaterial,
+    'neck',
+  )
+  neck.position.set(0, .52, 0)
+  torso.add(neck)
+
+  const head = new THREE.Group()
+  head.name = 'head-pivot'
+  head.position.set(0, 1.82, 0)
+  const skull = rolePart(
+    new THREE.IcosahedronGeometry(brute ? .31 : .28, 1),
+    boneMaterial,
+    'head',
+  )
+  head.add(skull)
+  root.add(head)
+
+  const leftArm = limbPivot(
+    brute ? .76 : .68,
+    brute ? .135 : .095,
+    bodyMaterial,
+    'left-arm',
+  )
+  const rightArm = limbPivot(
+    brute ? .76 : .68,
+    brute ? .135 : .095,
+    bodyMaterial,
+    'right-arm',
+  )
+  leftArm.position.set(
+    -(torsoWidth * .5 + (brute ? .12 : .08)),
+    shoulderY,
+    0,
+  )
+  rightArm.position.set(
+    torsoWidth * .5 + (brute ? .12 : .08),
+    shoulderY,
+    0,
+  )
+  root.add(leftArm, rightArm)
+
+  const leftLeg = limbPivot(
+    brute ? .68 : .72,
+    brute ? .135 : .11,
+    darkMaterial,
+    'left-leg',
+  )
+  const rightLeg = limbPivot(
+    brute ? .68 : .72,
+    brute ? .135 : .11,
+    darkMaterial,
+    'right-leg',
+  )
+  leftLeg.position.set(brute ? -.24 : -.18, .68, 0)
+  rightLeg.position.set(brute ? .24 : .18, .68, 0)
+  root.add(leftLeg, rightLeg)
+
+  const leftBoot = rolePart(
+    new THREE.BoxGeometry(brute ? .3 : .23, .17, .42),
+    leatherMaterial,
+    'left-boot',
+  )
+  const rightBoot = rolePart(
+    new THREE.BoxGeometry(brute ? .3 : .23, .17, .42),
+    leatherMaterial,
+    'right-boot',
+  )
+  leftBoot.position.set(brute ? -.24 : -.18, .08, .08)
+  rightBoot.position.set(brute ? .24 : .18, .08, .08)
+  root.add(leftBoot, rightBoot)
+
+  const weaponRoot = new THREE.Group()
+  weaponRoot.name = 'weapon-root'
+  root.add(weaponRoot)
+
+  let focusGlow: THREE.Mesh | undefined
+  let secondaryWeapon: THREE.Object3D | undefined
+
   if (role === 'brute') {
-    const left = add(new THREE.Mesh(new THREE.BoxGeometry(.42, .26, .58), dark))
-    const right = add(new THREE.Mesh(new THREE.BoxGeometry(.42, .26, .58), dark))
-    left.position.set(-.48, 1.42, 0)
-    right.position.set(.48, 1.42, 0)
-    const plate = add(new THREE.Mesh(new THREE.BoxGeometry(.72, .48, .14), accent))
-    plate.position.set(0, 1.18, .55)
+    const leftPad = rolePart(
+      new THREE.BoxGeometry(.48, .28, .62),
+      darkMaterial,
+      'left-shoulder',
+    )
+    const rightPad = rolePart(
+      new THREE.BoxGeometry(.48, .28, .62),
+      darkMaterial,
+      'right-shoulder',
+    )
+    leftPad.position.set(-.55, 1.5, 0)
+    rightPad.position.set(.55, 1.5, 0)
+    root.add(leftPad, rightPad)
+
+    const chestPlate = rolePart(
+      new THREE.BoxGeometry(.76, .5, .12),
+      accentMaterial,
+      'brute-chest-plate',
+    )
+    chestPlate.position.set(0, 1.25, .34)
+    root.add(chestPlate)
+
+    const mace = new THREE.Group()
+    mace.name = 'brute-mace'
+    const handle = rolePart(
+      new THREE.CylinderGeometry(.045, .055, .9, 7),
+      leatherMaterial,
+      'mace-handle',
+    )
+    handle.rotation.x = Math.PI / 2
+    handle.position.z = .4
+    const headMesh = rolePart(
+      new THREE.BoxGeometry(.38, .38, .38),
+      metalMaterial,
+      'mace-head',
+    )
+    headMesh.position.z = .92
+    mace.add(handle, headMesh)
+    mace.position.set(.56, .92, .05)
+    weaponRoot.add(mace)
   } else if (role === 'ranged') {
-    const stock = add(new THREE.Mesh(new THREE.BoxGeometry(1.08, .1, .12), dark))
-    stock.position.set(0, 1.16, .55)
-    const bow = add(new THREE.Mesh(new THREE.TorusGeometry(.42, .035, 6, 18, Math.PI), accent))
+    const hood = rolePart(
+      new THREE.ConeGeometry(.38, .48, 8),
+      darkMaterial,
+      'arbalist-hood',
+    )
+    hood.position.set(0, 1.93, 0)
+    hood.rotation.y = Math.PI / 8
+    root.add(hood)
+
+    const crossbow = new THREE.Group()
+    crossbow.name = 'crossbow'
+    const stock = rolePart(
+      new THREE.BoxGeometry(.1, .1, .92),
+      leatherMaterial,
+      'crossbow-stock',
+    )
+    stock.position.z = .18
+    const bow = rolePart(
+      new THREE.TorusGeometry(.42, .035, 6, 18, Math.PI),
+      metalMaterial,
+      'crossbow-bow',
+    )
     bow.rotation.set(Math.PI / 2, 0, Math.PI / 2)
-    bow.position.set(0, 1.16, .62)
+    bow.position.z = .58
+    const bolt = rolePart(
+      new THREE.CylinderGeometry(.018, .018, .74, 5),
+      accentMaterial,
+      'crossbow-bolt',
+    )
+    bolt.rotation.x = Math.PI / 2
+    bolt.position.z = .42
+    crossbow.add(stock, bow, bolt)
+    crossbow.position.set(0, 1.22, .32)
+    weaponRoot.add(crossbow)
+
+    const quiver = rolePart(
+      new THREE.BoxGeometry(.22, .58, .2),
+      leatherMaterial,
+      'quiver',
+    )
+    quiver.position.set(-.3, 1.08, -.28)
+    quiver.rotation.z = -.22
+    root.add(quiver)
   } else if (role === 'caster') {
-    const staff = add(new THREE.Mesh(new THREE.CylinderGeometry(.035, .045, 1.72, 7), dark))
-    staff.position.set(.52, .94, .08)
+    const robe = rolePart(
+      new THREE.ConeGeometry(.48, 1.15, 8),
+      darkMaterial,
+      'channeler-robe',
+    )
+    robe.position.y = .62
+    root.add(robe)
+
+    const hood = rolePart(
+      new THREE.ConeGeometry(.4, .5, 8),
+      darkMaterial,
+      'channeler-hood',
+    )
+    hood.position.set(0, 1.94, 0)
+    root.add(hood)
+
+    const staff = new THREE.Group()
+    staff.name = 'channeler-staff'
+    const shaft = rolePart(
+      new THREE.CylinderGeometry(.035, .045, 1.72, 7),
+      leatherMaterial,
+      'staff-shaft',
+    )
+    shaft.position.y = .74
+    const orbMaterial = roleMaterial(accentColor, {
+      roughness: .18,
+      emissive: accentColor,
+      emissiveIntensity: 2.2,
+    })
+    const orb = rolePart(
+      new THREE.OctahedronGeometry(.16, 1),
+      orbMaterial,
+      'staff-orb',
+    )
+    orb.position.y = 1.67
+    focusGlow = orb
+    staff.add(shaft, orb)
+    staff.position.set(.52, .22, .04)
     staff.rotation.z = -.08
-    const orb = add(new THREE.Mesh(
-      new THREE.SphereGeometry(.13, 10, 8),
-      new THREE.MeshStandardMaterial({
-        color: accentColor,
-        emissive: accentColor,
-        emissiveIntensity: 1.8,
-        roughness: .28,
-      }),
-    ))
-    orb.position.set(.59, 1.82, .08)
+    weaponRoot.add(staff)
   } else {
-    const left = add(new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .62), accent))
-    const right = add(new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .62), accent))
-    left.position.set(-.4, .98, .32)
-    right.position.set(.4, .98, .32)
-    left.rotation.z = -.28
-    right.rotation.z = .28
+    const leftBlade = rolePart(
+      new THREE.BoxGeometry(.07, .055, .62),
+      accentMaterial,
+      'left-blade',
+    )
+    const rightBlade = rolePart(
+      new THREE.BoxGeometry(.07, .055, .62),
+      accentMaterial,
+      'right-blade',
+    )
+    leftBlade.position.set(-.4, .98, .32)
+    rightBlade.position.set(.4, .98, .32)
+    leftBlade.rotation.z = -.28
+    rightBlade.rotation.z = .28
+    weaponRoot.add(leftBlade, rightBlade)
+    secondaryWeapon = leftBlade
+
+    const scarf = rolePart(
+      new THREE.BoxGeometry(.74, .12, .46),
+      darkMaterial,
+      'wretch-scarf',
+    )
+    scarf.position.set(0, 1.57, .02)
+    scarf.rotation.z = .06
+    root.add(scarf)
+  }
+
+  if (enemy.elite && !enemy.boss) {
+    const eliteRing = rolePart(
+      new THREE.TorusGeometry(.32, .025, 6, 20),
+      accentMaterial,
+      'elite-crown',
+    )
+    eliteRing.rotation.x = Math.PI / 2
+    eliteRing.position.set(0, 2.2, 0)
+    root.add(eliteRing)
+  }
+
+  enemy.__forgeRoleRig = {
+    root,
+    torso,
+    head,
+    leftArm,
+    rightArm,
+    leftLeg,
+    rightLeg,
+    weaponRoot,
+    focusGlow,
+    secondaryWeapon,
+    bodyMaterial,
+    accentMaterial,
+    materials: [
+      bodyMaterial,
+      boneMaterial,
+      darkMaterial,
+      leatherMaterial,
+      metalMaterial,
+      accentMaterial,
+    ],
+  }
+  enemy.__forgeRoleRig.rest = rememberRigRest({
+    root,
+    torso,
+    head,
+    leftArm,
+    rightArm,
+    leftLeg,
+    rightLeg,
+    weaponRoot,
+  })
+}
+
+function restoreRigObject(
+  object: THREE.Object3D | undefined,
+  rest: any,
+  alpha: number,
+) {
+  if (!object || !rest) return
+  object.position.lerp(rest.position, alpha)
+  object.rotation.x = THREE.MathUtils.lerp(
+    object.rotation.x,
+    rest.rotation.x,
+    alpha,
+  )
+  object.rotation.y = THREE.MathUtils.lerp(
+    object.rotation.y,
+    rest.rotation.y,
+    alpha,
+  )
+  object.rotation.z = THREE.MathUtils.lerp(
+    object.rotation.z,
+    rest.rotation.z,
+    alpha,
+  )
+  object.scale.lerp(rest.scale, alpha)
+}
+
+function triggerEnemyAttackRelease(enemy: any) {
+  enemy.__forgeAttackRelease = {
+    age: 0,
+    duration:
+      enemy.combatRole === 'brute'
+        ? .28
+        : enemy.combatRole === 'caster'
+          ? .32
+          : .2,
   }
 }
+
+function triggerEnemyHitReaction(
+  enemy: any,
+  direction: THREE.Vector3,
+  poiseBroken: boolean,
+) {
+  enemy.__forgeHitReaction = {
+    age: 0,
+    duration: poiseBroken ? .3 : .16,
+    strength: poiseBroken ? 1 : .55,
+    side:
+      Math.abs(direction.x) > Math.abs(direction.z)
+        ? Math.sign(direction.x || 1)
+        : Math.sign(direction.z || 1),
+  }
+}
+
+function updateEnemyPresentation(enemy: any, delta: number) {
+  ensureEnemyState(enemy)
+  const rig = enemy.__forgeRoleRig
+  if (!rig || !enemy.group?.visible) return
+
+  enemy.__forgePresentationTime =
+    Number(enemy.__forgePresentationTime ?? 0) + delta
+  const time = enemy.__forgePresentationTime
+  const response = 1 - Math.exp(-delta * 18)
+  const rest = rig.rest ?? {}
+
+  for (const key of [
+    'root',
+    'torso',
+    'head',
+    'leftArm',
+    'rightArm',
+    'leftLeg',
+    'rightLeg',
+    'weaponRoot',
+  ]) {
+    restoreRigObject(rig[key], rest[key], response)
+  }
+
+  if (enemy.health <= 0) return
+
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  const walking =
+    Boolean(enemy.moving) &&
+    Number(enemy.staggerRemaining ?? 0) <= 0 &&
+    Number(enemy.windupRemaining ?? 0) <= 0
+  const stride = Math.sin(time * (role === 'brute' ? 7 : 9))
+  const breathe = Math.sin(time * 2.5) * .012
+
+  rig.root.position.y += breathe
+  if (walking) {
+    const amount = role === 'brute' ? .28 : .38
+    rig.leftLeg.rotation.x += stride * amount
+    rig.rightLeg.rotation.x -= stride * amount
+    rig.leftArm.rotation.x -= stride * amount * .55
+    rig.rightArm.rotation.x += stride * amount * .55
+    rig.root.rotation.z += Math.sin(time * 4.5) * .018
+  }
+
+  if (Number(enemy.staggerRemaining ?? 0) > 0) {
+    const staggerRatio = THREE.MathUtils.clamp(
+      Number(enemy.staggerRemaining) /
+        Math.max(.08, enemy.combatRole === 'brute' ? .56 : .36),
+      0,
+      1,
+    )
+    rig.torso.rotation.x += .18 * staggerRatio
+    rig.head.rotation.x -= .15 * staggerRatio
+  }
+
+  if (Number(enemy.windupRemaining ?? 0) > 0) {
+    const progress = THREE.MathUtils.clamp(
+      1 -
+        Number(enemy.windupRemaining) /
+          Math.max(.01, Number(enemy.windupDuration ?? .4)),
+      0,
+      1,
+    )
+    const anticipation = Math.sin(progress * Math.PI * .5)
+    if (role === 'brute') {
+      rig.torso.rotation.x -= .18 * anticipation
+      rig.rightArm.rotation.x -= 2.15 * anticipation
+      rig.leftArm.rotation.x -= 1.55 * anticipation
+      rig.weaponRoot.rotation.x -= .75 * anticipation
+    } else if (role === 'ranged') {
+      rig.torso.rotation.x += .08 * anticipation
+      rig.leftArm.rotation.x -= 1.15 * anticipation
+      rig.rightArm.rotation.x -= 1.15 * anticipation
+      rig.weaponRoot.rotation.x -= .18 * anticipation
+      rig.root.position.z -= .08 * anticipation
+    } else if (role === 'caster') {
+      rig.rightArm.rotation.x -= 1.55 * anticipation
+      rig.leftArm.rotation.x -= .78 * anticipation
+      rig.weaponRoot.rotation.z += .26 * anticipation
+      rig.head.rotation.x -= .1 * anticipation
+      if (rig.focusGlow?.material) {
+        rig.focusGlow.material.emissiveIntensity =
+          2.2 + progress * 4.2
+        rig.focusGlow.scale.setScalar(1 + progress * .55)
+      }
+    } else {
+      rig.torso.rotation.y -= .42 * anticipation
+      rig.rightArm.rotation.x -= 1.35 * anticipation
+      rig.leftArm.rotation.x += .55 * anticipation
+      rig.root.position.z -= .07 * anticipation
+    }
+    rig.accentMaterial.emissiveIntensity =
+      (role === 'caster' ? 1.2 : .16) + progress * .85
+  } else {
+    rig.accentMaterial.emissiveIntensity = THREE.MathUtils.lerp(
+      rig.accentMaterial.emissiveIntensity,
+      role === 'caster' ? 1.2 : .16,
+      response,
+    )
+    if (rig.focusGlow?.material) {
+      rig.focusGlow.material.emissiveIntensity =
+        THREE.MathUtils.lerp(
+          rig.focusGlow.material.emissiveIntensity,
+          2.2,
+          response,
+        )
+      rig.focusGlow.scale.lerp(
+        new THREE.Vector3(1, 1, 1),
+        response,
+      )
+    }
+  }
+
+  const release = enemy.__forgeAttackRelease
+  if (release) {
+    release.age += delta
+    const progress = THREE.MathUtils.clamp(
+      release.age / release.duration,
+      0,
+      1,
+    )
+    const snap = Math.sin(progress * Math.PI)
+    if (role === 'brute') {
+      rig.torso.rotation.x += .52 * snap
+      rig.rightArm.rotation.x += 2.25 * snap
+      rig.leftArm.rotation.x += 1.35 * snap
+      rig.root.position.z += .22 * snap
+    } else if (role === 'ranged') {
+      rig.root.position.z -= .18 * snap
+      rig.torso.rotation.x -= .12 * snap
+      rig.weaponRoot.rotation.x += .16 * snap
+    } else if (role === 'caster') {
+      rig.torso.rotation.x += .18 * snap
+      rig.weaponRoot.rotation.z -= .48 * snap
+      rig.root.position.y += .06 * snap
+    } else {
+      rig.torso.rotation.y += .9 * snap
+      rig.rightArm.rotation.x += 1.75 * snap
+      rig.leftArm.rotation.x -= .72 * snap
+      rig.root.position.z += .18 * snap
+    }
+    if (progress >= 1) enemy.__forgeAttackRelease = undefined
+  }
+
+  const hit = enemy.__forgeHitReaction
+  if (hit) {
+    hit.age += delta
+    const progress = THREE.MathUtils.clamp(hit.age / hit.duration, 0, 1)
+    const kick = Math.sin(progress * Math.PI) * hit.strength
+    rig.root.rotation.z += kick * .16 * hit.side
+    rig.torso.rotation.x += kick * .16
+    rig.head.rotation.z -= kick * .12 * hit.side
+    if (progress >= 1) enemy.__forgeHitReaction = undefined
+  }
+}
+
 
 function ensureEnemyState(enemy: any) {
   if (!enemy) return
