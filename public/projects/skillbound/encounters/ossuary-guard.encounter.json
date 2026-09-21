@@ -8,47 +8,42 @@
   "count": 4,
   "eliteChance": 0.75,
   "difficulty": 2,
-  "introMessage": "The Ossuary Guard closes in.",
+  "introMessage": "The Ossuary Guard takes formation.",
   "rewardLootTableId": "road-wretch-drops",
   "betweenWaveDelay": 1.25,
   "completionMessage": "The Ossuary Guard is broken. The sanctum gate unlocks.",
   "waves": [
     {
-      "id": "ossuary-vanguard",
-      "name": "Bone Vanguard",
+      "id": "ossuary-frontline",
+      "name": "Break the Vanguard",
       "delay": 0.5,
-      "message": "The Ossuary Guard forms a wall in the hall.",
+      "message": "A Brute anchors the line while Wretches probe for an opening.",
       "entries": [
         {
           "enemyId": "crypt-brute",
           "count": 1,
-          "eliteChance": 0.55
+          "eliteChance": 0.35
         },
         {
           "enemyId": "road-wretch",
           "count": 2,
-          "eliteChance": 0.2
+          "eliteChance": 0.16
         }
       ]
     },
     {
-      "id": "ossuary-support",
-      "name": "Sepulchral Support",
-      "delay": 1.2,
-      "message": "Bolts and grave-light cut across the chamber.",
+      "id": "ossuary-killzone",
+      "name": "The Kill Zone",
+      "delay": 1.15,
+      "message": "Arbalists spread out as a Channeler corrupts the floor.",
       "entries": [
         {
           "enemyId": "bone-arbalist",
           "count": 2,
-          "eliteChance": 0.18
+          "eliteChance": 0.16
         },
         {
           "enemyId": "grave-channeler",
-          "count": 1,
-          "eliteChance": 0.2
-        },
-        {
-          "enemyId": "road-wretch",
           "count": 1,
           "eliteChance": 0.22
         }
@@ -56,9 +51,9 @@
     },
     {
       "id": "ossuary-last-stand",
-      "name": "Last Guard",
-      "delay": 1.35,
-      "message": "The final guard charges from the ossuary.",
+      "name": "Ossuary Last Stand",
+      "delay": 1.3,
+      "message": "The last guard commits everything at once.",
       "entries": [
         {
           "enemyId": "crypt-brute",
@@ -66,9 +61,14 @@
           "eliteChance": 1
         },
         {
+          "enemyId": "road-wretch",
+          "count": 1,
+          "eliteChance": 0.32
+        },
+        {
           "enemyId": "grave-channeler",
           "count": 1,
-          "eliteChance": 0.35
+          "eliteChance": 0.38
         }
       ]
     }
