@@ -12,6 +12,7 @@ type EnemyProjectile = {
   age: number
   lifetime: number
   color: string
+  previous: THREE.Vector3
 }
 
 const DEFAULT_ROLE_POISE = {
@@ -817,11 +818,18 @@ function ensureEnemyState(enemy: any) {
     } else {
       const outer = Math.max(.72, Number(definition.attackRange ?? 1.5) * .82)
       const inner = Math.max(.56, outer - .16)
+      const roleAngle =
+        role === 'brute'
+          ? Math.PI * .72
+          : Math.PI * .56
       enemy.telegraph.geometry.dispose?.()
       enemy.telegraph.geometry = new THREE.RingGeometry(
         inner,
         outer,
         28,
+        1,
+        -Math.PI / 2 - roleAngle / 2,
+        roleAngle,
       )
     }
   }
@@ -1271,6 +1279,256 @@ function refineDungeonTelegraphs(runtime: any) {
       material.opacity = .1 + progress * .56
       telegraph.scale.setScalar(.92 + progress * .08)
     }
+  }
+}
+
+function ensureCombatFxState(runtime: any) {
+  runtime.__forgeCombatPresentationFx ??= []
+  return runtime.__forgeCombatPresentationFx as any[]
+}
+
+function spawnSparkBurst(
+  runtime: any,
+  position: THREE.Vector3,
+  color: string,
+  count = 6,
+  power = 1,
+  elevated = .9,
+) {
+  const group = new THREE.Group()
+  group.position.set(position.x, position.y + elevated, position.z)
+  const particles: any[] = []
+  const seed =
+    Math.round(position.x * 31) ^
+    Math.round(position.z * 67) ^
+    count
+  for (let index = 0; index < count; index += 1) {
+    const angle =
+      (index / Math.max(1, count)) * Math.PI * 2 +
+      hashUnit(`${seed}:${index}:spark`) * .52
+    const speed =
+      (.75 + hashUnit(`${seed}:${index}:speed`) * .85) * power
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: .9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    const mesh = new THREE.Mesh(
+      new THREE.TetrahedronGeometry(.055 + power * .012, 0),
+      material,
+    )
+    mesh.position.set(0, 0, 0)
+    group.add(mesh)
+    particles.push({
+      mesh,
+      material,
+      velocity: new THREE.Vector3(
+        Math.cos(angle) * speed,
+        .55 * power +
+          hashUnit(`${seed}:${index}:up`) * .9 * power,
+        Math.sin(angle) * speed,
+      ),
+      spin:
+        (hashUnit(`${seed}:${index}:spin`) - .5) *
+        10,
+    })
+  }
+  ;(runtime.world ?? runtime.scene)?.add(group)
+  ensureCombatFxState(runtime).push({
+    kind: 'sparks',
+    group,
+    particles,
+    age: 0,
+    duration: .34 + power * .12,
+  })
+}
+
+function spawnMeleeReleaseFx(runtime: any, enemy: any) {
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  const color = combatColor(enemy.definition)
+  if (role === 'brute') {
+    const position = enemy.group.position.clone()
+    runtime.spawnPulse?.(position, color, 1.5, .2)
+    spawnSparkBurst(runtime, position, color, 8, 1.15, .35)
+    return
+  }
+
+  const group = new THREE.Group()
+  group.position.copy(enemy.group.position)
+  group.position.y += .12
+  group.rotation.y = enemy.group.rotation.y
+  const angle = role === 'skirmisher' ? Math.PI * .62 : Math.PI * .5
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .58,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const arc = new THREE.Mesh(
+    new THREE.RingGeometry(
+      .68,
+      role === 'skirmisher' ? 1.35 : 1.18,
+      28,
+      1,
+      -Math.PI / 2 - angle / 2,
+      angle,
+    ),
+    material,
+  )
+  arc.rotation.x = -Math.PI / 2
+  group.add(arc)
+  ;(runtime.world ?? runtime.scene)?.add(group)
+  ensureCombatFxState(runtime).push({
+    kind: 'arc',
+    group,
+    materials: [material],
+    age: 0,
+    duration: .18,
+  })
+}
+
+function spawnCasterImpactFx(
+  runtime: any,
+  position: THREE.Vector3,
+  color: string,
+  radius: number,
+) {
+  const group = new THREE.Group()
+  group.position.copy(position)
+  const materials: THREE.Material[] = []
+  const parts: THREE.Object3D[] = []
+
+  const discMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .32,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(radius * .72, 32),
+    discMaterial,
+  )
+  disc.rotation.x = -Math.PI / 2
+  disc.position.y = .05
+  group.add(disc)
+  materials.push(discMaterial)
+
+  for (let index = 0; index < 7; index += 1) {
+    const angle = (index / 7) * Math.PI * 2
+    const distance = radius * (.28 + (index % 2) * .24)
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: .72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    const shard = new THREE.Mesh(
+      new THREE.ConeGeometry(.08, .8 + (index % 3) * .22, 5),
+      material,
+    )
+    shard.position.set(
+      Math.cos(angle) * distance,
+      .12,
+      Math.sin(angle) * distance,
+    )
+    shard.scale.y = .05
+    group.add(shard)
+    materials.push(material)
+    parts.push(shard)
+  }
+
+  ;(runtime.world ?? runtime.scene)?.add(group)
+  ensureCombatFxState(runtime).push({
+    kind: 'caster',
+    group,
+    materials,
+    parts,
+    age: 0,
+    duration: .46,
+    radius,
+  })
+}
+
+function updateCombatFx(runtime: any, delta: number) {
+  const effects = ensureCombatFxState(runtime)
+  for (let index = effects.length - 1; index >= 0; index -= 1) {
+    const effect = effects[index]
+    effect.age += delta
+    const progress = THREE.MathUtils.clamp(
+      effect.age / Math.max(.01, effect.duration),
+      0,
+      1,
+    )
+
+    if (effect.kind === 'sparks') {
+      for (const particle of effect.particles) {
+        particle.mesh.position.addScaledVector(
+          particle.velocity,
+          delta,
+        )
+        particle.velocity.y -= delta * 3.8
+        particle.mesh.rotation.x += particle.spin * delta
+        particle.mesh.rotation.z += particle.spin * .7 * delta
+        particle.material.opacity = (1 - progress) * .9
+        particle.mesh.scale.setScalar(.7 + progress * .5)
+      }
+    } else if (effect.kind === 'arc') {
+      effect.group.scale.setScalar(.88 + progress * .34)
+      for (const material of effect.materials ?? []) {
+        material.opacity = (1 - progress) * .58
+      }
+    } else if (effect.kind === 'caster') {
+      effect.group.rotation.y += delta * 1.7
+      for (let partIndex = 0; partIndex < effect.parts.length; partIndex += 1) {
+        const part = effect.parts[partIndex]
+        const rise = Math.sin(progress * Math.PI)
+        part.position.y = .08 + rise * (.55 + partIndex * .025)
+        part.scale.y = .05 + rise * 1.1
+      }
+      for (const material of effect.materials ?? []) {
+        material.opacity *= Math.max(.82, 1 - delta * 5.5)
+      }
+    }
+
+    if (progress < 1) continue
+    effect.group.parent?.remove(effect.group)
+    effect.group.traverse((child: any) => {
+      child.geometry?.dispose?.()
+      if (Array.isArray(child.material)) {
+        child.material.forEach((material: any) => material.dispose?.())
+      } else {
+        child.material?.dispose?.()
+      }
+    })
+    effects.splice(index, 1)
+  }
+}
+
+function spawnEnemyAttackReleaseFx(runtime: any, enemy: any) {
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  if (role === 'caster') return
+  if (enemy.attackStyle === 'melee') {
+    spawnMeleeReleaseFx(runtime, enemy)
+  } else if (enemy.attackStyle === 'projectile') {
+    spawnSparkBurst(
+      runtime,
+      enemy.group.position,
+      combatColor(enemy.definition),
+      4,
+      .48,
+      1.22,
+    )
   }
 }
 
