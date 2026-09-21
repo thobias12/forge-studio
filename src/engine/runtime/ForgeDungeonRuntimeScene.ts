@@ -162,10 +162,21 @@ export const dungeonSceneMethods = {
     healthFill.visible = false
     const telegraph = new THREE.Mesh(
       new THREE.RingGeometry(Math.max(0.45, definition.attackRange * 0.55), Math.max(0.55, definition.attackRange * 0.72), 32),
-      new THREE.MeshBasicMaterial({ color: 0xe8644d, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }),
+      new THREE.MeshBasicMaterial({
+        color: 0xe8644d,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        toneMapped: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
+      }),
     )
     telegraph.rotation.x = -Math.PI / 2
-    telegraph.position.y = 0.045
+    telegraph.position.y = 0.16
+    telegraph.renderOrder = 22
     telegraph.visible = false
     group.add(placeholder, healthBack, healthFill, telegraph)
     this.world.add(group)

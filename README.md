@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.1`  
+> **Current Forge version:** `v1.92.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,12 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.2 fixes dungeon ground-target and combat VFX height against Dungeon Forge V3 floor geometry. The rendered crypt masonry sits above the navigation floor, while several newer Combat v4 effects were still using small local offsets such as 0.035–0.05. That could place telegraphs, grave zones, dash/charge lines and caster impact discs partially inside the floor.
+
+Combat-ground presentation now resolves the actual runtime `floorHeightAt(x, z)` and applies a shared 0.16m visual clearance. This is used by Combat v4 dash/charge line cues, persistent Grave Zones, melee slash arcs, caster impact discs and enemy-arrival runes. Area/projectile telegraphs now resolve the floor at the captured target position in world space before converting back into the enemy's local transform, so remote target circles also sit correctly on floors with differing height.
+
+Legacy dungeon enemy telegraphs are lifted to the same clearance and receive polygon offset plus a higher render order to avoid z-fighting against detailed floor meshes. The shared pulse system used by dodge, skills, hits, boss transitions and other transient rings is also standardized at the same height. Authored library VFX continue to use their existing floor-aware clamp.
 
 Forge v1.92.1 is the **Combat v4 gameplay-video polish** pass. Review of a full Hollow Vault run showed three presentation problems that were technically working but reading poorly in motion.
 
