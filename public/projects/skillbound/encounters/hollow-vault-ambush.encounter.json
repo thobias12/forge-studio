@@ -8,66 +8,61 @@
   "count": 6,
   "eliteChance": 0.12,
   "difficulty": 1,
-  "introMessage": "Road Wretches surge from the flooded crypt passages.",
+  "introMessage": "Wretches slip out of the flooded passages.",
   "rewardLootTableId": "road-wretch-drops",
   "betweenWaveDelay": 1.15,
   "completionMessage": "The crossroads fall silent. The path deeper into the vault is open.",
   "waves": [
     {
-      "id": "crossroads-rush",
-      "name": "Flooded Rush",
+      "id": "crossroads-pressure",
+      "name": "Hungry Blades",
       "delay": 0.45,
-      "message": "Footsteps echo from both flooded passages.",
+      "message": "Two Road Wretches rush the crossing.",
       "entries": [
         {
           "enemyId": "road-wretch",
-          "count": 3,
-          "eliteChance": 0
-        },
-        {
-          "enemyId": "bone-arbalist",
-          "count": 1,
+          "count": 2,
           "eliteChance": 0
         }
       ]
     },
     {
       "id": "crossroads-crossfire",
-      "name": "Drowned Crossfire",
-      "delay": 1.1,
-      "message": "A second group takes positions around the room.",
+      "name": "Bolts in the Dark",
+      "delay": 1.05,
+      "message": "A Bone Arbalist takes the far side while Wretches close in.",
       "entries": [
         {
           "enemyId": "road-wretch",
           "count": 2,
-          "eliteChance": 0.08
+          "eliteChance": 0.06
         },
         {
           "enemyId": "bone-arbalist",
-          "count": 1,
-          "eliteChance": 0
-        },
-        {
-          "enemyId": "grave-channeler",
           "count": 1,
           "eliteChance": 0
         }
       ]
     },
     {
-      "id": "crossroads-breaker",
-      "name": "The Breaker",
-      "delay": 1.25,
-      "message": "Something heavy drags itself out of the dark.",
+      "id": "crossroads-control",
+      "name": "Break the Line",
+      "delay": 1.2,
+      "message": "A Crypt Brute advances through grave-light.",
       "entries": [
         {
           "enemyId": "crypt-brute",
           "count": 1,
-          "eliteChance": 0.15
+          "eliteChance": 0.12
+        },
+        {
+          "enemyId": "grave-channeler",
+          "count": 1,
+          "eliteChance": 0
         },
         {
           "enemyId": "road-wretch",
-          "count": 2,
+          "count": 1,
           "eliteChance": 0.08
         }
       ]

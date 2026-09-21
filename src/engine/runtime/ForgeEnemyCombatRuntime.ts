@@ -594,6 +594,45 @@ function updateEnemyPresentation(enemy: any, delta: number) {
     rig.root.rotation.z += Math.sin(time * 4.5) * .018
   }
 
+  if (Number(enemy.__forgeEmpowerRemaining ?? 0) > 0) {
+    rig.accentMaterial.emissiveIntensity = Math.max(
+      rig.accentMaterial.emissiveIntensity,
+      .72 + Math.sin(time * 5.5) * .16,
+    )
+    rig.root.position.y += .015 + Math.sin(time * 7) * .008
+  }
+
+  const identityAction = enemy.__forgeIdentityAction
+  if (identityAction?.type === 'wretch-dash') {
+    if (identityAction.phase === 'tell') {
+      rig.root.position.y -= .08
+      rig.torso.rotation.x -= .18
+      rig.leftArm.rotation.x += .65
+      rig.rightArm.rotation.x += .65
+    } else {
+      rig.torso.rotation.x += .38
+      rig.leftArm.rotation.x -= .75
+      rig.rightArm.rotation.x -= 1.15
+      rig.root.position.z += .14
+    }
+  } else if (identityAction?.type === 'brute-charge') {
+    if (identityAction.phase === 'tell') {
+      rig.root.position.y -= .12
+      rig.torso.rotation.x += .14
+      rig.leftArm.rotation.x -= .72
+      rig.rightArm.rotation.x -= 1.05
+    } else if (identityAction.phase === 'charge') {
+      rig.torso.rotation.x += .42
+      rig.head.rotation.x -= .12
+      rig.leftArm.rotation.x += .48
+      rig.rightArm.rotation.x += .22
+    } else if (identityAction.phase === 'slam') {
+      rig.rightArm.rotation.x -= 2.2
+      rig.leftArm.rotation.x -= 1.55
+      rig.torso.rotation.x -= .2
+    }
+  }
+
   if (Number(enemy.staggerRemaining ?? 0) > 0) {
     const staggerRatio = THREE.MathUtils.clamp(
       Number(enemy.staggerRemaining) /
@@ -620,20 +659,28 @@ function updateEnemyPresentation(enemy: any, delta: number) {
       rig.leftArm.rotation.x -= 1.55 * anticipation
       rig.weaponRoot.rotation.x -= .75 * anticipation
     } else if (role === 'ranged') {
+      const volleyScale = enemy.__forgeVolleyShot ? 1.22 : 1
       rig.torso.rotation.x += .08 * anticipation
-      rig.leftArm.rotation.x -= 1.15 * anticipation
-      rig.rightArm.rotation.x -= 1.15 * anticipation
+      rig.leftArm.rotation.x -= 1.15 * anticipation * volleyScale
+      rig.rightArm.rotation.x -= 1.15 * anticipation * volleyScale
       rig.weaponRoot.rotation.x -= .18 * anticipation
-      rig.root.position.z -= .08 * anticipation
+      rig.root.position.z -= .08 * anticipation * volleyScale
+      if (enemy.__forgeVolleyShot) {
+        rig.accentMaterial.emissiveIntensity =
+          .28 + progress * 1.2
+      }
     } else if (role === 'caster') {
       rig.rightArm.rotation.x -= 1.55 * anticipation
       rig.leftArm.rotation.x -= .78 * anticipation
       rig.weaponRoot.rotation.z += .26 * anticipation
       rig.head.rotation.x -= .1 * anticipation
       if (rig.focusGlow?.material) {
+        const graveZoneScale = enemy.__forgeGraveZoneCast ? 1.45 : 1
         rig.focusGlow.material.emissiveIntensity =
-          2.2 + progress * 4.2
-        rig.focusGlow.scale.setScalar(1 + progress * .55)
+          2.2 + progress * 4.2 * graveZoneScale
+        rig.focusGlow.scale.setScalar(
+          1 + progress * .55 * graveZoneScale,
+        )
       }
     } else {
       rig.torso.rotation.y -= .42 * anticipation
@@ -730,6 +777,20 @@ function ensureEnemyState(enemy: any) {
   if (!(enemy.knockback instanceof THREE.Vector3)) {
     enemy.knockback = new THREE.Vector3()
   }
+  enemy.specialCooldownRemaining = Number.isFinite(
+    enemy.specialCooldownRemaining,
+  )
+    ? enemy.specialCooldownRemaining
+    : Math.max(
+        .4,
+        Number(enemy.definition?.specialCooldown ?? 4) *
+          (.45 + hashUnit(`${enemy.id}:special-open`) * .45),
+      )
+  enemy.identityRepositionRemaining = Number.isFinite(
+    enemy.identityRepositionRemaining,
+  )
+    ? enemy.identityRepositionRemaining
+    : 0
 
   if (enemy.__forgeCombatV3) return
   const definition = enemy.definition ?? {}
@@ -1136,6 +1197,629 @@ function addCombatOrbit(runtime: any, enemy: any, delta: number, mode: EnemyMode
   else runtime.moveActor(enemy.group, tangent, .58)
 }
 
+function specialCooldownFor(enemy: any) {
+  const base = Math.max(
+    1.5,
+    Number(enemy.definition?.specialCooldown ?? 4),
+  )
+  if (!enemy.boss) return base
+  const phase = Math.max(0, Number(enemy.bossPhaseIndex ?? 0))
+  return base * (
+    phase >= 3 ? .5 :
+      phase >= 2 ? .62 :
+        phase >= 1 ? .78 :
+          .92
+  )
+}
+
+function moveIdentityEnemy(
+  runtime: any,
+  enemy: any,
+  delta: THREE.Vector3,
+  mode: EnemyMode,
+) {
+  if (mode === 'dungeon') runtime.tryMoveEnemy(enemy, delta)
+  else runtime.moveActor(enemy.group, delta, .58)
+}
+
+function enemyIdentityActive(runtime: any, enemy: any, mode: EnemyMode) {
+  if (
+    !enemy ||
+    enemy.health <= 0 ||
+    enemy.__forgeSpawnArrival ||
+    enemy.windupRemaining > 0 ||
+    enemy.staggerRemaining > 0 ||
+    enemy.recoveryRemaining > 0
+  ) {
+    return false
+  }
+  if (mode === 'dungeon') {
+    const encounter = runtime.encounters?.get(enemy.encounterId)
+    return Boolean(encounter?.active && !encounter.cleared)
+  }
+  const distance = Math.hypot(
+    runtime.player.position.x - enemy.group.position.x,
+    runtime.player.position.z - enemy.group.position.z,
+  )
+  return distance <= Math.max(12, Number(enemy.definition?.aggroRange ?? 10) + 2)
+}
+
+function spawnSpecialLineCue(
+  runtime: any,
+  origin: THREE.Vector3,
+  direction: THREE.Vector3,
+  length: number,
+  color: string,
+  width: number,
+  duration: number,
+) {
+  const group = new THREE.Group()
+  group.position.copy(origin)
+  group.position.y += .045
+  group.rotation.y = Math.atan2(direction.x, direction.z)
+
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .34,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const line = new THREE.Mesh(
+    new THREE.BoxGeometry(width, .018, length),
+    material,
+  )
+  line.position.z = length * .5
+  group.add(line)
+  ;(runtime.world ?? runtime.scene)?.add(group)
+  ensureCombatFxState(runtime).push({
+    kind: 'identity-line',
+    group,
+    materials: [material],
+    age: 0,
+    duration,
+  })
+}
+
+function startWretchDash(runtime: any, enemy: any) {
+  const direction = runtime.player.position
+    .clone()
+    .sub(enemy.group.position)
+    .setY(0)
+  if (direction.lengthSq() < .001) return false
+  direction.normalize()
+
+  const distance = THREE.MathUtils.clamp(
+    Number(enemy.definition?.dashDistance ?? 3.2),
+    2.2,
+    4.6,
+  )
+  enemy.__forgeIdentityAction = {
+    type: 'wretch-dash',
+    label: 'Dash Slash',
+    phase: 'tell',
+    age: 0,
+    direction,
+    distance,
+    travelled: 0,
+    hit: false,
+  }
+  enemy.group.rotation.y = Math.atan2(direction.x, direction.z)
+  enemy.telegraph.visible = false
+  spawnSpecialLineCue(
+    runtime,
+    enemy.group.position,
+    direction,
+    distance,
+    combatColor(enemy.definition),
+    .34,
+    .32,
+  )
+  runtime.spawnPulse?.(
+    enemy.group.position,
+    combatColor(enemy.definition),
+    .58,
+    .1,
+  )
+  return true
+}
+
+function finishIdentityAction(enemy: any, cooldownScale = 1) {
+  enemy.__forgeIdentityAction = undefined
+  enemy.specialCooldownRemaining =
+    specialCooldownFor(enemy) * cooldownScale
+  enemy.recoveryRemaining = Math.max(
+    Number(enemy.recoveryRemaining ?? 0),
+    .2,
+  )
+  enemy.telegraph.visible = false
+}
+
+function updateWretchDash(
+  runtime: any,
+  enemy: any,
+  action: any,
+  delta: number,
+  mode: EnemyMode,
+) {
+  action.age += delta
+  enemy.staggerRemaining = Math.max(enemy.staggerRemaining ?? 0, delta + .025)
+  runtime.setEnemyMoving?.(enemy, false)
+
+  if (action.phase === 'tell') {
+    if (action.age < .24) return true
+    action.phase = 'dash'
+    action.age = 0
+    triggerEnemyAttackRelease(enemy)
+    spawnMeleeReleaseFx(runtime, enemy)
+    return true
+  }
+
+  const dashDuration = .2
+  const remaining = Math.max(0, action.distance - action.travelled)
+  const stepDistance = Math.min(
+    remaining,
+    (action.distance / dashDuration) * delta,
+  )
+  const step = action.direction.clone().multiplyScalar(stepDistance)
+  moveIdentityEnemy(runtime, enemy, step, mode)
+  action.travelled += stepDistance
+
+  if (!action.hit) {
+    const playerDistance = Math.hypot(
+      runtime.player.position.x - enemy.group.position.x,
+      runtime.player.position.z - enemy.group.position.z,
+    )
+    if (playerDistance <= 1.22) {
+      action.hit = true
+      damagePlayer(
+        runtime,
+        (enemy.damage ?? enemy.definition.attackDamage) * 1.08,
+        enemy.group.position,
+        mode,
+        combatColor(enemy.definition),
+      )
+    }
+  }
+
+  if (action.age >= dashDuration || action.travelled >= action.distance - .02) {
+    finishIdentityAction(enemy, .94)
+  }
+  return true
+}
+
+function startBruteCharge(runtime: any, enemy: any) {
+  const direction = runtime.player.position
+    .clone()
+    .sub(enemy.group.position)
+    .setY(0)
+  if (direction.lengthSq() < .001) return false
+  direction.normalize()
+
+  const distance = THREE.MathUtils.clamp(
+    Number(enemy.definition?.chargeDistance ?? 5.5),
+    3.8,
+    enemy.boss ? 7.8 : 6.5,
+  )
+  enemy.__forgeIdentityAction = {
+    type: 'brute-charge',
+    label: enemy.boss ? 'Warden Charge' : 'Grave Charge',
+    phase: 'tell',
+    age: 0,
+    direction,
+    distance,
+    travelled: 0,
+    hit: false,
+  }
+  enemy.group.rotation.y = Math.atan2(direction.x, direction.z)
+  spawnSpecialLineCue(
+    runtime,
+    enemy.group.position,
+    direction,
+    distance,
+    enemy.boss ? '#ff725b' : combatColor(enemy.definition),
+    enemy.boss ? .72 : .58,
+    enemy.boss ? .7 : .56,
+  )
+  runtime.spawnPulse?.(
+    enemy.group.position,
+    enemy.boss ? '#ff725b' : combatColor(enemy.definition),
+    enemy.boss ? 1.35 : .95,
+    .16,
+  )
+  return true
+}
+
+function resolveBruteSlam(runtime: any, enemy: any, mode: EnemyMode) {
+  const phase = Math.max(0, Number(enemy.bossPhaseIndex ?? 0))
+  const baseRadius = THREE.MathUtils.clamp(
+    Number(enemy.definition?.areaRadius ?? 2.2),
+    1.5,
+    3.4,
+  )
+  const radius = baseRadius * (
+    enemy.boss
+      ? phase >= 3 ? 1.58 :
+        phase >= 2 ? 1.42 :
+          phase >= 1 ? 1.22 :
+            1.08
+      : 1
+  )
+  const damageScale =
+    enemy.boss
+      ? phase >= 3 ? 1.34 :
+        phase >= 2 ? 1.24 :
+          phase >= 1 ? 1.12 :
+            1.02
+      : 1.08
+  const color = enemy.boss ? '#ff704f' : combatColor(enemy.definition)
+
+  runtime.spawnPulse?.(
+    enemy.group.position,
+    color,
+    radius * 1.18,
+    enemy.boss ? .38 : .28,
+  )
+  spawnSparkBurst(
+    runtime,
+    enemy.group.position,
+    color,
+    enemy.boss ? 18 : 12,
+    enemy.boss ? 1.45 : 1.15,
+    .25,
+  )
+
+  const playerDistance = Math.hypot(
+    runtime.player.position.x - enemy.group.position.x,
+    runtime.player.position.z - enemy.group.position.z,
+  )
+  if (playerDistance <= radius) {
+    damagePlayer(
+      runtime,
+      (enemy.damage ?? enemy.definition.attackDamage) * damageScale,
+      enemy.group.position,
+      mode,
+      color,
+    )
+  }
+
+  if (enemy.boss && phase >= 2) {
+    // Final phase leaves a short grave shock zone around the slam.
+    spawnHazardZone(
+      runtime,
+      enemy.group.position.clone(),
+      enemy,
+      mode,
+      Math.max(1.1, radius * .72),
+      1.8,
+      Math.max(3, (enemy.damage ?? 20) * .16),
+      '#d75b58',
+    )
+  }
+}
+
+function updateBruteCharge(
+  runtime: any,
+  enemy: any,
+  action: any,
+  delta: number,
+  mode: EnemyMode,
+) {
+  action.age += delta
+  enemy.staggerRemaining = Math.max(enemy.staggerRemaining ?? 0, delta + .025)
+  runtime.setEnemyMoving?.(enemy, false)
+
+  if (action.phase === 'tell') {
+    const tell = enemy.boss ? .58 : .46
+    if (action.age < tell) return true
+    action.phase = 'charge'
+    action.age = 0
+    triggerEnemyAttackRelease(enemy)
+    return true
+  }
+
+  if (action.phase === 'charge') {
+    const chargeDuration = enemy.boss ? .62 : .56
+    const stepDistance = Math.min(
+      Math.max(0, action.distance - action.travelled),
+      (action.distance / chargeDuration) * delta,
+    )
+    moveIdentityEnemy(
+      runtime,
+      enemy,
+      action.direction.clone().multiplyScalar(stepDistance),
+      mode,
+    )
+    action.travelled += stepDistance
+    const playerDistance = Math.hypot(
+      runtime.player.position.x - enemy.group.position.x,
+      runtime.player.position.z - enemy.group.position.z,
+    )
+    if (
+      playerDistance <= 1.65 ||
+      action.age >= chargeDuration ||
+      action.travelled >= action.distance - .02
+    ) {
+      action.phase = 'slam'
+      action.age = 0
+      return true
+    }
+    return true
+  }
+
+  if (action.phase === 'slam') {
+    if (!action.slammed && action.age >= .08) {
+      action.slammed = true
+      resolveBruteSlam(runtime, enemy, mode)
+      triggerEnemyAttackRelease(enemy)
+    }
+    if (action.age >= (enemy.boss ? .42 : .34)) {
+      finishIdentityAction(enemy, enemy.boss ? .82 : 1)
+      enemy.recoveryRemaining = Math.max(
+        enemy.recoveryRemaining ?? 0,
+        enemy.boss ? .48 : .38,
+      )
+    }
+    return true
+  }
+
+  return false
+}
+
+function updateRangedReposition(
+  runtime: any,
+  enemy: any,
+  delta: number,
+  mode: EnemyMode,
+) {
+  if (enemy.identityRepositionRemaining <= 0) return false
+  enemy.identityRepositionRemaining = Math.max(
+    0,
+    enemy.identityRepositionRemaining - delta,
+  )
+  enemy.staggerRemaining = Math.max(enemy.staggerRemaining ?? 0, delta + .025)
+  const away = enemy.group.position
+    .clone()
+    .sub(runtime.player.position)
+    .setY(0)
+  if (away.lengthSq() < .001) away.set(0, 0, 1)
+  away.normalize()
+  const side =
+    hashUnit(`${enemy.id}:reposition-side`) > .5 ? 1 : -1
+  const tangent = new THREE.Vector3(-away.z, 0, away.x)
+    .multiplyScalar(side * .9)
+  const direction = away.multiplyScalar(.58).add(tangent).normalize()
+  const speed = Math.max(2.2, Number(enemy.moveSpeed ?? enemy.definition.moveSpeed ?? 3))
+  moveIdentityEnemy(
+    runtime,
+    enemy,
+    direction.multiplyScalar(speed * delta * .88),
+    mode,
+  )
+  enemy.group.rotation.y = Math.atan2(
+    runtime.player.position.x - enemy.group.position.x,
+    runtime.player.position.z - enemy.group.position.z,
+  )
+  runtime.setEnemyMoving?.(enemy, true)
+  return true
+}
+
+function empowerNearbyAllies(
+  runtime: any,
+  source: any,
+  mode: EnemyMode,
+  duration = 4,
+) {
+  const color = '#9b6ee7'
+  for (const ally of combatEnemies(runtime, mode)) {
+    if (ally === source || ally.health <= 0) continue
+    if (
+      mode === 'dungeon' &&
+      ally.encounterId !== source.encounterId
+    ) {
+      continue
+    }
+    const distance = Math.hypot(
+      ally.group.position.x - source.group.position.x,
+      ally.group.position.z - source.group.position.z,
+    )
+    if (distance > 5.8) continue
+    ally.__forgeEmpowerRemaining = Math.max(
+      Number(ally.__forgeEmpowerRemaining ?? 0),
+      duration,
+    )
+    runtime.spawnPulse?.(
+      ally.group.position,
+      color,
+      .72,
+      .12,
+    )
+  }
+}
+
+function ensureHazardState(runtime: any) {
+  runtime.__forgeEnemyHazards ??= []
+  return runtime.__forgeEnemyHazards as any[]
+}
+
+function spawnHazardZone(
+  runtime: any,
+  position: THREE.Vector3,
+  enemy: any,
+  mode: EnemyMode,
+  radius = Math.max(1.25, Number(enemy.definition?.areaRadius ?? 1.9) * .82),
+  duration = Math.max(1.5, Number(enemy.definition?.hazardDuration ?? 3.2)),
+  tickDamage = Math.max(2, Number(enemy.definition?.hazardTickDamage ?? 4)),
+  color = combatColor(enemy.definition),
+) {
+  const group = new THREE.Group()
+  group.position.copy(position)
+  group.position.y += .035
+
+  const discMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .14,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .52,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 38),
+    discMaterial,
+  )
+  disc.rotation.x = -Math.PI / 2
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(radius * .82, radius, 42),
+    ringMaterial,
+  )
+  ring.rotation.x = -Math.PI / 2
+  ring.position.y = .008
+  group.add(disc, ring)
+  ;(runtime.world ?? runtime.scene)?.add(group)
+
+  ensureHazardState(runtime).push({
+    group,
+    discMaterial,
+    ringMaterial,
+    position: position.clone(),
+    radius,
+    duration,
+    age: 0,
+    tickTimer: .28,
+    tickDamage,
+    source: enemy.group.position.clone(),
+    mode,
+  })
+}
+
+function updateHazardZones(runtime: any, delta: number) {
+  const hazards = ensureHazardState(runtime)
+  for (let index = hazards.length - 1; index >= 0; index -= 1) {
+    const hazard = hazards[index]
+    hazard.age += delta
+    hazard.tickTimer -= delta
+    const progress = THREE.MathUtils.clamp(
+      hazard.age / Math.max(.01, hazard.duration),
+      0,
+      1,
+    )
+    const pulse = .96 + Math.sin(hazard.age * 7.5) * .045
+    hazard.group.scale.setScalar(pulse)
+    hazard.group.rotation.y += delta * .24
+    hazard.discMaterial.opacity =
+      (.08 + Math.sin(hazard.age * 5) * .025) * (1 - progress * .55)
+    hazard.ringMaterial.opacity = .42 * (1 - progress * .72)
+
+    if (hazard.tickTimer <= 0) {
+      hazard.tickTimer += .72
+      const distance = Math.hypot(
+        runtime.player.position.x - hazard.position.x,
+        runtime.player.position.z - hazard.position.z,
+      )
+      if (distance <= hazard.radius) {
+        damagePlayer(
+          runtime,
+          hazard.tickDamage,
+          hazard.source,
+          hazard.mode,
+          '#a976dc',
+        )
+      }
+    }
+
+    if (progress < 1) continue
+    hazard.group.parent?.remove(hazard.group)
+    hazard.group.traverse((child: any) => {
+      child.geometry?.dispose?.()
+      if (Array.isArray(child.material)) {
+        child.material.forEach((material: any) => material.dispose?.())
+      } else {
+        child.material?.dispose?.()
+      }
+    })
+    hazards.splice(index, 1)
+  }
+}
+
+function updateEnemyIdentityKit(
+  runtime: any,
+  enemy: any,
+  delta: number,
+  mode: EnemyMode,
+) {
+  ensureEnemyState(enemy)
+  if (enemy.health <= 0) {
+    enemy.__forgeIdentityAction = undefined
+    enemy.identityRepositionRemaining = 0
+    return false
+  }
+  enemy.specialCooldownRemaining = Math.max(
+    0,
+    Number(enemy.specialCooldownRemaining ?? 0) -
+      delta *
+        (Number(enemy.__forgeEmpowerRemaining ?? 0) > 0 ? 1.22 : 1),
+  )
+  enemy.__forgeEmpowerRemaining = Math.max(
+    0,
+    Number(enemy.__forgeEmpowerRemaining ?? 0) - delta,
+  )
+
+  const action = enemy.__forgeIdentityAction
+  if (action?.type === 'wretch-dash') {
+    return updateWretchDash(runtime, enemy, action, delta, mode)
+  }
+  if (action?.type === 'brute-charge') {
+    return updateBruteCharge(runtime, enemy, action, delta, mode)
+  }
+  if (updateRangedReposition(runtime, enemy, delta, mode)) {
+    return true
+  }
+
+  if (!enemyIdentityActive(runtime, enemy, mode)) return false
+  if (enemy.specialCooldownRemaining > 0) return false
+
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  const distance = Math.hypot(
+    runtime.player.position.x - enemy.group.position.x,
+    runtime.player.position.z - enemy.group.position.z,
+  )
+
+  const specialSlotAvailable =
+    mode !== 'dungeon' ||
+    attackSlotAvailable(runtime, enemy, mode)
+
+  if (
+    specialSlotAvailable &&
+    role === 'skirmisher' &&
+    distance >= 2.25 &&
+    distance <= 5.2
+  ) {
+    return startWretchDash(runtime, enemy)
+  }
+  if (
+    specialSlotAvailable &&
+    role === 'brute' &&
+    distance >= 2.8 &&
+    distance <= (enemy.boss ? 8 : 6.7)
+  ) {
+    return startBruteCharge(runtime, enemy)
+  }
+  return false
+}
+
 function updatePoise(enemy: any, delta: number) {
   ensureEnemyState(enemy)
   enemy.poiseRecoveryDelay = Math.max(
@@ -1224,6 +1908,7 @@ function attackSlotAvailable(
     }
     ensureEnemyState(other)
     return (
+      Boolean(other.__forgeIdentityAction) ||
       Number(other.windupRemaining ?? 0) > 0 ||
       Number(other.recoveryRemaining ?? 0) > .08
     )
@@ -1488,6 +2173,14 @@ function updateCombatFx(runtime: any, delta: number) {
       for (const material of effect.materials ?? []) {
         material.opacity = (1 - progress) * .58
       }
+    } else if (effect.kind === 'identity-line') {
+      effect.group.scale.x =
+        .9 + Math.sin(progress * Math.PI) * .12
+      for (const material of effect.materials ?? []) {
+        material.opacity =
+          (.16 + Math.sin(progress * Math.PI) * .42) *
+          (1 - progress * .32)
+      }
     } else if (effect.kind === 'caster') {
       effect.group.rotation.y += delta * 1.7
       for (let partIndex = 0; partIndex < effect.parts.length; partIndex += 1) {
@@ -1535,6 +2228,13 @@ function spawnEnemyAttackReleaseFx(runtime: any, enemy: any) {
 function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   ensureEnemyState(enemy)
   enemy.__forgeAttackRelease = undefined
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  enemy.__forgeVolleyShot =
+    role === 'ranged' &&
+    enemy.specialCooldownRemaining <= 0
+  enemy.__forgeGraveZoneCast =
+    role === 'caster' &&
+    enemy.specialCooldownRemaining <= 0
   enemy.attackTarget.copy(runtime.player.position)
   enemy.attackTargetValid = true
 
@@ -1548,6 +2248,20 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   }
 
   baseBegin.call(runtime, enemy)
+
+  if (enemy.__forgeVolleyShot) {
+    enemy.windupDuration = Math.min(
+      1.45,
+      Math.max(.2, Number(enemy.windupDuration ?? .6) * 1.18),
+    )
+    enemy.windupRemaining = enemy.windupDuration
+  } else if (enemy.__forgeGraveZoneCast) {
+    enemy.windupDuration = Math.min(
+      1.55,
+      Math.max(.25, Number(enemy.windupDuration ?? .85) * 1.14),
+    )
+    enemy.windupRemaining = enemy.windupDuration
+  }
 
   const style = enemy.attackStyle
   const telegraph = enemy.telegraph
@@ -1570,10 +2284,15 @@ function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
 function finishAttackState(runtime: any, enemy: any, mode: EnemyMode) {
   enemy.telegraph.visible = false
   enemy.telegraph.position.set(0, .045, 0)
+  const empowerScale =
+    Number(enemy.__forgeEmpowerRemaining ?? 0) > 0
+      ? .8
+      : 1
   if (mode === 'dungeon') {
-    enemy.attackTimer = enemy.attackCooldown
+    enemy.attackTimer = enemy.attackCooldown * empowerScale
   } else {
-    enemy.attackCooldown = enemy.definition.attackCooldown
+    enemy.attackCooldown =
+      enemy.definition.attackCooldown * empowerScale
   }
   enemy.recoveryRemaining = Math.max(
     enemy.recoveryRemaining ?? 0,
@@ -1581,7 +2300,13 @@ function finishAttackState(runtime: any, enemy: any, mode: EnemyMode) {
   )
 }
 
-function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
+function spawnProjectile(
+  runtime: any,
+  enemy: any,
+  mode: EnemyMode,
+  spreadAngle = 0,
+  damageScale = 1,
+) {
   const definition = enemy.definition
   const color = combatColor(definition)
   const radius = THREE.MathUtils.clamp(
@@ -1605,6 +2330,12 @@ function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
   direction.y *= .16
   if (direction.lengthSq() < .001) direction.set(0, 0, -1)
   direction.normalize()
+  if (Math.abs(spreadAngle) > .0001) {
+    direction.applyAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      spreadAngle,
+    )
+  }
 
   const group = new THREE.Group()
   const shaftMaterial = new THREE.MeshStandardMaterial({
@@ -1677,7 +2408,9 @@ function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
     mesh: group,
     velocity: direction.clone().multiplyScalar(speed),
     source: enemy.group.position.clone(),
-    damage: enemy.damage ?? definition.attackDamage,
+    damage:
+      (enemy.damage ?? definition.attackDamage) *
+      Math.max(.1, damageScale),
     radius,
     age: 0,
     lifetime: 3.2,
@@ -1712,6 +2445,7 @@ function resolveAreaAttack(runtime: any, enemy: any, mode: EnemyMode) {
   if (Math.hypot(dx, dz) <= radius) {
     damagePlayer(runtime, enemy.damage ?? definition.attackDamage, enemy.group.position, mode, color)
   }
+  return target
 }
 
 function damagePlayer(
@@ -1831,6 +2565,19 @@ function roleTargetSnapshot(runtime: any, snapshot: any, mode: EnemyMode) {
       role: enemy.combatRole,
       elite: Boolean(enemy.elite),
       eliteModifier: enemy.eliteModifier,
+      phaseName:
+        enemy.bossProfile?.phases?.[
+          Math.max(0, Number(enemy.bossPhaseIndex ?? 0))
+        ]?.name,
+      combatIntent:
+        enemy.__forgeIdentityAction?.label ??
+        (enemy.__forgeVolleyShot
+          ? 'Volley'
+          : enemy.__forgeGraveZoneCast
+            ? 'Grave Zone'
+            : undefined),
+      empowered:
+        Number(enemy.__forgeEmpowerRemaining ?? 0) > 0,
       poise: Math.max(0, Math.round(enemy.poise)),
       maxPoise: Math.max(1, Math.round(enemy.maxPoise)),
     },
@@ -2031,14 +2778,23 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     for (const enemy of this.enemies) {
       ensureEnemyState(enemy)
       updatePoise(enemy, delta)
-      moveEnemyAway(this, enemy, delta, 'overworld')
-      addCombatOrbit(this, enemy, delta, 'overworld')
+      const identityActive = updateEnemyIdentityKit(
+        this,
+        enemy,
+        delta,
+        'overworld',
+      )
+      if (!identityActive) {
+        moveEnemyAway(this, enemy, delta, 'overworld')
+        addCombatOrbit(this, enemy, delta, 'overworld')
+      }
     }
     const result = baseUpdateEnemies.call(this, delta)
     for (const enemy of this.enemies) {
       updateEnemyPresentation(enemy, delta)
     }
     updateProjectiles(this, delta, 'overworld')
+    updateHazardZones(this, delta)
     updateCombatFx(this, delta)
     return result
   }
@@ -2057,9 +2813,49 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     }
     finishAttackState(this, enemy, 'overworld')
     if (style === 'projectile') {
-      spawnProjectile(this, enemy, 'overworld')
+      if (enemy.__forgeVolleyShot) {
+        const count = THREE.MathUtils.clamp(
+          Math.round(Number(enemy.definition?.volleyCount ?? 3)),
+          2,
+          5,
+        )
+        const spread = .12
+        for (let index = 0; index < count; index += 1) {
+          const offset =
+            (index - (count - 1) / 2) * spread
+          spawnProjectile(
+            this,
+            enemy,
+            'overworld',
+            offset,
+            .72,
+          )
+        }
+        enemy.__forgeVolleyShot = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+        enemy.identityRepositionRemaining = .72
+      } else {
+        spawnProjectile(this, enemy, 'overworld')
+        enemy.identityRepositionRemaining = .38
+      }
     } else {
-      resolveAreaAttack(this, enemy, 'overworld')
+      const target = resolveAreaAttack(this, enemy, 'overworld')
+      if (enemy.__forgeGraveZoneCast) {
+        spawnHazardZone(
+          this,
+          target,
+          enemy,
+          'overworld',
+        )
+        empowerNearbyAllies(
+          this,
+          enemy,
+          'overworld',
+          4.2,
+        )
+        enemy.__forgeGraveZoneCast = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+      }
     }
   }
 
@@ -2081,6 +2877,15 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       knockbackMultiplier,
     )
     const lethal = Number(enemy.health ?? 0) <= damage
+    if (
+      poise?.broken &&
+      enemy.__forgeIdentityAction &&
+      !enemy.boss
+    ) {
+      enemy.__forgeIdentityAction = undefined
+      enemy.specialCooldownRemaining =
+        specialCooldownFor(enemy) * .55
+    }
     if (!lethal) {
       triggerEnemyHitReaction(
         enemy,
@@ -2193,6 +2998,20 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     for (let index = projectiles.length - 1; index >= 0; index -= 1) {
       removeProjectile(this, projectiles, index)
     }
+    const hazards = ensureHazardState(this)
+    for (let index = hazards.length - 1; index >= 0; index -= 1) {
+      const hazard = hazards[index]
+      hazard.group?.parent?.remove(hazard.group)
+      hazard.group?.traverse?.((child: any) => {
+        child.geometry?.dispose?.()
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material: any) => material.dispose?.())
+        } else {
+          child.material?.dispose?.()
+        }
+      })
+      hazards.splice(index, 1)
+    }
     this.setMessage?.('Combat Lab cleared.', 1.4)
     this.emitState?.()
   }
@@ -2269,7 +3088,13 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     for (const enemy of this.enemies.values()) {
       ensureEnemyState(enemy)
       updatePoise(enemy, delta)
-      if (!enemy.__forgeSpawnArrival) {
+      const identityActive = updateEnemyIdentityKit(
+        this,
+        enemy,
+        delta,
+        'dungeon',
+      )
+      if (!enemy.__forgeSpawnArrival && !identityActive) {
         moveEnemyAway(this, enemy, delta, 'dungeon')
         addCombatOrbit(this, enemy, delta, 'dungeon')
       }
@@ -2280,6 +3105,7 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     }
     refineDungeonTelegraphs(this)
     updateProjectiles(this, delta, 'dungeon')
+    updateHazardZones(this, delta)
     updateDungeonDeaths(this, delta)
     updateCombatFx(this, delta)
     return result
@@ -2308,9 +3134,49 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     }
     finishAttackState(this, enemy, 'dungeon')
     if (style === 'projectile') {
-      spawnProjectile(this, enemy, 'dungeon')
+      if (enemy.__forgeVolleyShot) {
+        const count = THREE.MathUtils.clamp(
+          Math.round(Number(enemy.definition?.volleyCount ?? 3)),
+          2,
+          5,
+        )
+        const spread = .12
+        for (let index = 0; index < count; index += 1) {
+          const offset =
+            (index - (count - 1) / 2) * spread
+          spawnProjectile(
+            this,
+            enemy,
+            'dungeon',
+            offset,
+            .72,
+          )
+        }
+        enemy.__forgeVolleyShot = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+        enemy.identityRepositionRemaining = .72
+      } else {
+        spawnProjectile(this, enemy, 'dungeon')
+        enemy.identityRepositionRemaining = .38
+      }
     } else {
-      resolveAreaAttack(this, enemy, 'dungeon')
+      const target = resolveAreaAttack(this, enemy, 'dungeon')
+      if (enemy.__forgeGraveZoneCast) {
+        spawnHazardZone(
+          this,
+          target,
+          enemy,
+          'dungeon',
+        )
+        empowerNearbyAllies(
+          this,
+          enemy,
+          'dungeon',
+          4.2,
+        )
+        enemy.__forgeGraveZoneCast = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+      }
     }
   }
 
@@ -2331,6 +3197,15 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       knockbackMultiplier,
     )
     const lethal = Number(enemy.health ?? 0) <= damage
+    if (
+      poise?.broken &&
+      enemy.__forgeIdentityAction &&
+      !enemy.boss
+    ) {
+      enemy.__forgeIdentityAction = undefined
+      enemy.specialCooldownRemaining =
+        specialCooldownFor(enemy) * .55
+    }
     if (!lethal) {
       triggerEnemyHitReaction(
         enemy,
@@ -2361,6 +3236,10 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
 
   proto.killEnemy = function (enemy: any) {
     finishDungeonArrival(this, enemy)
+    enemy.__forgeIdentityAction = undefined
+    enemy.identityRepositionRemaining = 0
+    enemy.__forgeVolleyShot = false
+    enemy.__forgeGraveZoneCast = false
     registerDungeonDeath(this, enemy)
     return baseKillEnemy.call(this, enemy)
   }

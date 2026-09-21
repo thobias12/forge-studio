@@ -120,6 +120,12 @@ export type ForgeEnemyDefinition = {
   projectileSpeed?: number
   projectileRadius?: number
   areaRadius?: number
+  specialCooldown?: number
+  dashDistance?: number
+  chargeDistance?: number
+  volleyCount?: number
+  hazardDuration?: number
+  hazardTickDamage?: number
   scale?: number
   telegraphColor?: string
   characterAssetId?: string
