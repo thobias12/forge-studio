@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Box, BoxSelect, ChevronRight, CircleDot, Download, Gem, Grid3X3, Lightbulb,
+  Box, BoxSelect, ChevronRight, CircleDot, Download, Gem, Lightbulb,
   Gamepad2, Map as MapIcon, MousePointer2, Network, Play, RotateCcw, Save, ShieldAlert, Skull, Sparkles, X,
   Spline, Square, Trash2, WandSparkles, Waypoints,
 } from 'lucide-react'
 import DungeonViewport, { type DungeonTool, type ResizeSide } from '../components/DungeonViewport'
-import ArpgDungeonViewport from '../components/ArpgDungeonViewport'
 import DungeonMinimap from '../components/DungeonMinimap'
 import SkillboundDungeonPlayViewport from '../components/SkillboundDungeonPlayViewport'
 import { getAsset, listAssets, saveAsset, type LibraryAsset } from '../lib/library'
@@ -59,7 +58,6 @@ export default function MapStudio() {
   const [selectedPropId, setSelectedPropId] = useState<string>()
   const [selectedWallId, setSelectedWallId] = useState<string>()
   const [corridorStartId, setCorridorStartId] = useState<string>()
-  const [topDown, setTopDown] = useState(false)
   const [playtest, setPlaytest] = useState(false)
   const [flowOpen, setFlowOpen] = useState(true)
   const [status, setStatus] = useState('Select rooms to drag or resize them. Combat rooms can now own encounter logic, gates and rewards.')
@@ -210,7 +208,7 @@ export default function MapStudio() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.closest('input,select,textarea') || playtest || topDown || runtimeDungeon) return
+      if (target?.closest('input,select,textarea') || playtest || runtimeDungeon) return
       if ((event.key === 'Delete' || event.key === 'Backspace') && (selectedRoomId || selectedMarkerId || selectedPropId || selectedWallId)) { event.preventDefault(); deleteSelection(); return }
       if (selectedPropId && (event.key.toLowerCase() === 'q' || event.key.toLowerCase() === 'e')) {
         event.preventDefault(); const delta = event.key.toLowerCase() === 'q' ? -15 : 15
@@ -224,7 +222,7 @@ export default function MapStudio() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedRoomId, selectedMarkerId, selectedPropId, selectedWallId, value, playtest, topDown, runtimeDungeon])
+  }, [selectedRoomId, selectedMarkerId, selectedPropId, selectedWallId, value, playtest, runtimeDungeon])
 
   const placeProp = (x: number, z: number) => {
     const targetRoom = nearestRoom(value.rooms, x, z)
@@ -331,7 +329,7 @@ export default function MapStudio() {
   }
   const exitProjectRuntime = useCallback(() => {
     setRuntimeDungeon(undefined)
-    setStatus('Play Project live test ended. Dungeon changes remain in the editor.')
+    setStatus('Dungeon Forge runtime test ended. Dungeon changes remain in the editor.')
   }, [])
 
   const launchProjectRuntime = async () => {
@@ -354,9 +352,8 @@ export default function MapStudio() {
       setRuntimeWorkspace(workspace)
       setRuntimeProfile(profile)
       setRuntimeDungeon(dungeon)
-      setTopDown(false)
       setPlaytest(false)
-      setStatus(`Live Play Project test started with ${profile.name}. Uses the real character, HUD, skills, equipment runtime and encounter combat.`)
+      setStatus(`Dungeon Forge test started with ${profile.name}. This is the same runtime used by Skillbound dungeon play: Combat v3, Dungeon Runs v2, rewards, boss phases, camera and collision.`)
     } catch (reason) {
       setStatus(reason instanceof Error ? `Could not start Play Project runtime: ${reason.message}` : 'Could not start Play Project runtime.')
     } finally {
@@ -433,8 +430,8 @@ export default function MapStudio() {
     </aside>
 
     <main className="map-workspace">
-      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions">{runtimeDungeon?<><div className="map-live-runtime-badge"><Gamepad2 size={13}/><span>PLAY PROJECT</span><strong>{runtimeProfile?.name??'Skillbound Hero'}</strong></div><button className="active play" onClick={exitProjectRuntime}><X size={14}/> Exit Live Test</button></>:<><button className={topDown?'active play':''} onClick={()=>{setTopDown(!topDown);setPlaytest(false)}}><Grid3X3 size={14}/> {topDown?'Exit ARPG':'Quick ARPG'}</button><button className={playtest?'active play':''} onClick={()=>{setPlaytest(!playtest);setTopDown(false)}}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button className="map-play-project-button" disabled={runtimeLoading||generationJob.active} onClick={()=>void launchProjectRuntime()}><Gamepad2 size={14}/> {runtimeLoading?'Loading…':'Play Project'}</button><button disabled={generationJob.active} onClick={()=>void proceduralGenerate()}><RotateCcw size={14}/> {generationJob.active?'Generating…':'Regenerate'}</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></>}</div></header>
-      <div className="map-viewport-wrap">{generationJob.active&&<div className="map-generation-overlay"><div className="map-generation-card"><WandSparkles size={22}/><strong>Generating Dungeon</strong><span>{generationJob.label}</span><div className="map-generation-track"><i style={{width:`${generationJob.progress}%`}}/></div><output>{generationJob.progress}%</output></div></div>}{runtimeDungeon&&runtimeWorkspace&&runtimeProfile&&runtimeGameplay&&runtimeInitialState?<div className="map-live-runtime-host"><SkillboundDungeonPlayViewport dungeon={runtimeDungeon} gameplay={runtimeGameplay} projectId={`${runtimeWorkspace.manifest.id}:dungeon-forge:${runtimeProfile.id}`} initialState={runtimeInitialState} characterBlueprint={runtimeProfile.blueprint} uiTheme={runtimeWorkspace.ui.theme} hudLayout={runtimeWorkspace.ui.hud} itemIcons={runtimeItemIcons} onExit={exitProjectRuntime}/></div>:topDown?<ArpgDungeonViewport value={value}/>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} selectedWallId={selectedWallId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onWallClick={onWallClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp} onRoomDraw={drawRoom} onWallDraw={drawWall}/>} {!runtimeDungeon&&!playtest&&!topDown&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{value.logic?.encounters.length ?? 0} encounters</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.walls?.length ?? 0} walls</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
+      <header className="map-toolbar"><div className="map-name-block"><span>SKILLBOUND / DUNGEON</span><input value={value.name} onChange={(e)=>setValue({...value,name:e.target.value})}/></div><div className="map-toolbar-actions">{runtimeDungeon?<><div className="map-live-runtime-badge"><Gamepad2 size={13}/><span>SHARED RUNTIME TEST</span><strong>{runtimeProfile?.name??'Skillbound Hero'}</strong></div><button className="active play" onClick={exitProjectRuntime}><X size={14}/> Exit Dungeon Test</button></>:<><button className={playtest?'active play':''} onClick={()=>setPlaytest(!playtest)}><Play size={14}/> {playtest?'Exit Walk':'Walk'}</button><button className="map-play-project-button" disabled={runtimeLoading||generationJob.active} onClick={()=>void launchProjectRuntime()}><Gamepad2 size={14}/> {runtimeLoading?'Loading…':'Test Dungeon'}</button><button disabled={generationJob.active} onClick={()=>void proceduralGenerate()}><RotateCcw size={14}/> {generationJob.active?'Generating…':'Regenerate'}</button><button onClick={()=>void saveToLibrary()}><Save size={14}/> Save</button><button className="primary" onClick={exportSkillbound}><Download size={14}/> Export Skillbound</button></>}</div></header>
+      <div className="map-viewport-wrap">{generationJob.active&&<div className="map-generation-overlay"><div className="map-generation-card"><WandSparkles size={22}/><strong>Generating Dungeon</strong><span>{generationJob.label}</span><div className="map-generation-track"><i style={{width:`${generationJob.progress}%`}}/></div><output>{generationJob.progress}%</output></div></div>}{runtimeDungeon&&runtimeWorkspace&&runtimeProfile&&runtimeGameplay&&runtimeInitialState?<div className="map-live-runtime-host"><SkillboundDungeonPlayViewport dungeon={runtimeDungeon} gameplay={runtimeGameplay} projectId={`${runtimeWorkspace.manifest.id}:dungeon-forge:${runtimeProfile.id}`} initialState={runtimeInitialState} characterBlueprint={runtimeProfile.blueprint} uiTheme={runtimeWorkspace.ui.theme} hudLayout={runtimeWorkspace.ui.hud} itemIcons={runtimeItemIcons} onExit={exitProjectRuntime}/></div>:<DungeonViewport value={value} tool={tool} selectedRoomId={selectedRoomId} selectedMarkerId={selectedMarkerId} selectedPropId={selectedPropId} selectedWallId={selectedWallId} corridorStartId={corridorStartId} topDown={false} playtest={playtest} libraryAssets={libraryProps} onGroundClick={onGroundClick} onRoomClick={onRoomClick} onMarkerClick={onMarkerClick} onPropClick={onPropClick} onWallClick={onWallClick} onRoomMove={moveRoom} onRoomResize={resizeRoom} onPropMove={moveProp} onRoomDraw={drawRoom} onWallDraw={drawWall}/>} {!runtimeDungeon&&!playtest&&<><div className="map-viewport-hud top-left"><strong>{titleCase(tool)}</strong><span>{toolHint(tool,corridorStartId)}</span></div><div className="map-viewport-hud bottom-left"><span>{value.rooms.length} rooms</span><b>·</b><span>{value.corridors.length} corridors</span><b>·</b><span>{value.logic?.encounters.length ?? 0} encounters</span><b>·</b><span>{dungeonProps(value).length} props</span><b>·</b><span>{value.walls?.length ?? 0} walls</span></div><div className={`map-validation-chip ${validation.ok?'ok':'warning'}`}>{validation.ok?<Sparkles size={13}/>:<ShieldAlert size={13}/>} {validation.ok?'Dungeon valid':`${validation.warnings.length} warnings`}</div></>}</div>
       <section className={`map-flow ${flowOpen?'open':''}`}><button className="map-flow-header" onClick={()=>setFlowOpen(!flowOpen)}><Network size={14}/><strong>DUNGEON FLOW</strong><span>{flowOpen?'Hide':'Show'}</span></button>{flowOpen&&<div className="map-flow-body">{value.rooms.map((item,index)=>{const roomEncounter=getRoomEncounter(value,item.id);return <div key={item.id} className={`flow-node ${item.type} ${selectedRoomId===item.id?'selected':''}`} onClick={()=>{setSelectedRoomId(item.id);setSelectedMarkerId(undefined);setSelectedPropId(undefined);setTool('select')}}><span>{item.type}</span><strong>{item.name}</strong>{roomEncounter&&<em className="flow-encounter">{roomEncounter.boss?'BOSS':`${roomEncounter.count}× ${roomEncounter.family}`}</em>}{index<value.rooms.length-1&&<ChevronRight size={14}/>}</div>})}</div>}</section>
       <footer className="map-status"><span>{status}</span><b>{validation.ok?'Ready for Skillbound export':validation.warnings[0]}</b></footer>
     </main>
