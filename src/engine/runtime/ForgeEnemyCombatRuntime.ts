@@ -1595,54 +1595,97 @@ function spawnProjectile(runtime: any, enemy: any, mode: EnemyMode) {
   )
   const origin = enemy.group.position
     .clone()
-    .add(new THREE.Vector3(0, 1.05, 0))
+    .add(new THREE.Vector3(0, 1.18, 0))
   const target = (enemy.attackTargetValid
     ? enemy.attackTarget.clone()
     : runtime.player.position.clone())
-    .add(new THREE.Vector3(0, .75, 0))
+    .add(new THREE.Vector3(0, .76, 0))
   const direction = target.sub(origin)
-  direction.y *= .18
+  direction.y *= .16
   if (direction.lengthSq() < .001) direction.set(0, 0, -1)
   direction.normalize()
 
   const group = new THREE.Group()
-  const core = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 12, 8),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: .95,
-      toneMapped: false,
-    }),
+  const shaftMaterial = new THREE.MeshStandardMaterial({
+    color: 0x5b4635,
+    roughness: .72,
+    metalness: .08,
+  })
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .68,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const tipMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb9b4aa,
+    roughness: .36,
+    metalness: .7,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: .28,
+  })
+
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(.024, .028, .72, 6),
+    shaftMaterial,
   )
-  const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.8, 10, 6),
+  shaft.rotation.x = Math.PI / 2
+  shaft.castShadow = true
+
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(.075, .2, 6),
+    tipMaterial,
+  )
+  tip.rotation.x = Math.PI / 2
+  tip.position.z = .45
+  tip.castShadow = true
+
+  const fletchA = new THREE.Mesh(
+    new THREE.BoxGeometry(.16, .025, .16),
+    glowMaterial,
+  )
+  fletchA.position.z = -.36
+  fletchA.rotation.z = Math.PI / 4
+  const fletchB = fletchA.clone()
+  fletchB.rotation.z = -Math.PI / 4
+
+  const streak = new THREE.Mesh(
+    new THREE.BoxGeometry(.045, .045, .72),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: .18,
+      opacity: .2,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
     }),
   )
-  group.add(core, halo)
+  streak.position.z = -.58
+
+  group.add(shaft, tip, fletchA, fletchB, streak)
   group.position.copy(origin)
+  group.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1),
+    direction,
+  )
   ;(runtime.world ?? runtime.scene).add(group)
 
   ensureProjectileState(runtime).push({
     mesh: group,
-    velocity: direction.multiplyScalar(speed),
+    velocity: direction.clone().multiplyScalar(speed),
     source: enemy.group.position.clone(),
     damage: enemy.damage ?? definition.attackDamage,
     radius,
     age: 0,
     lifetime: 3.2,
     color,
+    previous: origin.clone(),
   })
-  runtime.spawnPulse?.(origin, color, .52, .1)
-}
 
+  spawnSparkBurst(runtime, origin, color, 4, .42, 0)
+}
 function resolveAreaAttack(runtime: any, enemy: any, mode: EnemyMode) {
   const definition = enemy.definition
   const radius = THREE.MathUtils.clamp(
@@ -1658,7 +1701,9 @@ function resolveAreaAttack(runtime: any, enemy: any, mode: EnemyMode) {
     : runtime.player.position.y
   const color = combatColor(definition)
 
-  runtime.spawnPulse?.(target, color, radius * 1.2, .32)
+  runtime.spawnPulse?.(target, color, radius * 1.12, .24)
+  spawnCasterImpactFx(runtime, target, color, radius)
+  spawnSparkBurst(runtime, target, color, 9, .85, .12)
   void runtime.spawnBoundVfx?.(definition.attackVfxAssetId, target)
 
   const dx = runtime.player.position.x - target.x
@@ -1707,13 +1752,31 @@ function updateProjectiles(runtime: any, delta: number, mode: EnemyMode) {
   for (let index = projectiles.length - 1; index >= 0; index -= 1) {
     const projectile = projectiles[index]
     projectile.age += delta
+    projectile.previous.copy(projectile.mesh.position)
     projectile.mesh.position.addScaledVector(projectile.velocity, delta)
-    projectile.mesh.rotation.y += delta * 8
+    projectile.mesh.rotateZ(delta * 7.5)
+
+    const pulse = .88 + Math.sin(projectile.age * 18) * .08
+    projectile.mesh.scale.setScalar(pulse)
 
     const dx = projectile.mesh.position.x - runtime.player.position.x
     const dz = projectile.mesh.position.z - runtime.player.position.z
     const hitRadius = projectile.radius + .52
     if (dx * dx + dz * dz <= hitRadius * hitRadius) {
+      runtime.spawnPulse?.(
+        projectile.mesh.position,
+        projectile.color,
+        .72,
+        .12,
+      )
+      spawnSparkBurst(
+        runtime,
+        projectile.mesh.position,
+        projectile.color,
+        8,
+        .72,
+        0,
+      )
       damagePlayer(
         runtime,
         projectile.damage,
@@ -1726,11 +1789,18 @@ function updateProjectiles(runtime: any, delta: number, mode: EnemyMode) {
     }
 
     if (projectile.age >= projectile.lifetime) {
+      spawnSparkBurst(
+        runtime,
+        projectile.mesh.position,
+        projectile.color,
+        3,
+        .28,
+        0,
+      )
       removeProjectile(runtime, projectiles, index)
     }
   }
 }
-
 function removeProjectile(runtime: any, list: EnemyProjectile[], index: number) {
   const projectile = list[index]
   projectile.mesh.parent?.remove(projectile.mesh)
