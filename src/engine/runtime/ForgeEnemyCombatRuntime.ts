@@ -1534,6 +1534,7 @@ function spawnEnemyAttackReleaseFx(runtime: any, enemy: any) {
 
 function beginRoleAttack(runtime: any, enemy: any, baseBegin: Function) {
   ensureEnemyState(enemy)
+  enemy.__forgeAttackRelease = undefined
   enemy.attackTarget.copy(runtime.player.position)
   enemy.attackTargetValid = true
 
