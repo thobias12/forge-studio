@@ -1695,10 +1695,24 @@ function updateEnemyIdentityKit(
     runtime.player.position.z - enemy.group.position.z,
   )
 
-  if (role === 'skirmisher' && distance >= 2.25 && distance <= 5.2) {
+  const specialSlotAvailable =
+    mode !== 'dungeon' ||
+    attackSlotAvailable(runtime, enemy, mode)
+
+  if (
+    specialSlotAvailable &&
+    role === 'skirmisher' &&
+    distance >= 2.25 &&
+    distance <= 5.2
+  ) {
     return startWretchDash(runtime, enemy)
   }
-  if (role === 'brute' && distance >= 2.8 && distance <= (enemy.boss ? 8 : 6.7)) {
+  if (
+    specialSlotAvailable &&
+    role === 'brute' &&
+    distance >= 2.8 &&
+    distance <= (enemy.boss ? 8 : 6.7)
+  ) {
     return startBruteCharge(runtime, enemy)
   }
   return false
@@ -1792,6 +1806,7 @@ function attackSlotAvailable(
     }
     ensureEnemyState(other)
     return (
+      Boolean(other.__forgeIdentityAction) ||
       Number(other.windupRemaining ?? 0) > 0 ||
       Number(other.recoveryRemaining ?? 0) > .08
     )
@@ -2055,6 +2070,14 @@ function updateCombatFx(runtime: any, delta: number) {
       effect.group.scale.setScalar(.88 + progress * .34)
       for (const material of effect.materials ?? []) {
         material.opacity = (1 - progress) * .58
+      }
+    } else if (effect.kind === 'identity-line') {
+      effect.group.scale.x =
+        .9 + Math.sin(progress * Math.PI) * .12
+      for (const material of effect.materials ?? []) {
+        material.opacity =
+          (.16 + Math.sin(progress * Math.PI) * .42) *
+          (1 - progress * .32)
       }
     } else if (effect.kind === 'caster') {
       effect.group.rotation.y += delta * 1.7
@@ -2728,6 +2751,15 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       knockbackMultiplier,
     )
     const lethal = Number(enemy.health ?? 0) <= damage
+    if (
+      poise?.broken &&
+      enemy.__forgeIdentityAction &&
+      !enemy.boss
+    ) {
+      enemy.__forgeIdentityAction = undefined
+      enemy.specialCooldownRemaining =
+        specialCooldownFor(enemy) * .55
+    }
     if (!lethal) {
       triggerEnemyHitReaction(
         enemy,
@@ -3019,6 +3051,15 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       knockbackMultiplier,
     )
     const lethal = Number(enemy.health ?? 0) <= damage
+    if (
+      poise?.broken &&
+      enemy.__forgeIdentityAction &&
+      !enemy.boss
+    ) {
+      enemy.__forgeIdentityAction = undefined
+      enemy.specialCooldownRemaining =
+        specialCooldownFor(enemy) * .55
+    }
     if (!lethal) {
       triggerEnemyHitReaction(
         enemy,
