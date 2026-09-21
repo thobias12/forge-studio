@@ -368,11 +368,13 @@ export class ForgeDungeonRuntime {
     }
 
     try {
-      this.updateLoot(simulationDelta)
+      // Core temporary visuals age out first so unrelated loot/library-VFX
+      // failures cannot strand attack, dodge, or skill rings in the scene.
       this.updateEffects(delta)
       this.updateTextEffects(delta)
       this.updateLibraryVfx(delta)
       this.updateChainLightningEffects(delta)
+      this.updateLoot(simulationDelta)
       this.updatePortal(delta)
       this.emitElapsed += delta
       if (this.emitElapsed >= 0.1) { this.emitElapsed = 0; this.emitState() }
