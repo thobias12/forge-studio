@@ -1,3 +1,5 @@
+import { ensureSkillboundItemSystem } from './skillboundItems'
+import type { SkillboundItemRecipe, SkillboundItemRoll } from './skillboundItems'
 import { createDefaultSkillboundUiDefinition, type ForgeUiThemeDefinition } from '../lib/uiForge'
 import type { DungeonWithProps } from '../lib/dungeonProps'
 import type { ForgeBossDefinition, ForgeEncounterProfile } from './encounterForge'
@@ -127,12 +129,12 @@ export type ForgeEnemyDefinition = {
   deathVfxAssetId?: string
 }
 export type ForgeItemSlot = 'weapon'
-export type ForgeItemRarity = 'common' | 'magic' | 'rare'
+export type ForgeItemRarity = 'common' | 'magic' | 'rare' | 'epic' | 'legendary' | 'unique'
 export type ForgeItemSocket = 'RightHand' | 'LeftHand' | 'Back' | 'HipLeft' | 'HipRight'
 export type ForgeItemCameraPreset = 'three-quarter' | 'front' | 'side'
 export type ForgeItemTransform = { position: [number, number, number]; rotation: [number, number, number]; scale: number }
 export type ForgeItemVisualDefinition = { masterAssetId?: string; inventory: { autoIcon: boolean; iconAssetId?: string; cameraPreset: ForgeItemCameraPreset; rotation: [number, number, number]; scale: number }; drop: { useMaster: boolean; modelAssetId?: string; transform: ForgeItemTransform; groundOffset: number }; equipped: { useMaster: boolean; modelAssetId?: string; socket: ForgeItemSocket; transform: ForgeItemTransform } }
-export type ForgeItemDefinition = { format: 'forge-item'; version: 1; id: string; name: string; slot: ForgeItemSlot; rarity: ForgeItemRarity; damageBonus: number; color: string; modelAssetId?: string; visual?: ForgeItemVisualDefinition }
+export type ForgeItemDefinition = { format: 'forge-item'; version: 1; id: string; name: string; slot: ForgeItemSlot; rarity: ForgeItemRarity; damageBonus: number; color: string; modelAssetId?: string; visual?: ForgeItemVisualDefinition; procedural?: SkillboundItemRecipe; itemRoll?: SkillboundItemRoll }
 export type ForgeLootRollMode = 'independent' | 'weighted'
 export type ForgeLootEntry = {
   itemId: string
@@ -162,7 +164,7 @@ export type ForgeLootTableDefinition = {
 }
 export type ForgePlayerArchetypeLoadout = { label?: string; basicAbility: string; activeAbilities: string[]; startingItems: string[] }
 export type ForgePlayerDefinition = { format: 'forge-player'; version: 1; id: string; name: string; maxHealth: number; moveSpeed: number; dodgeDistance: number; dodgeCooldown: number; basicAbility: string; activeAbilities: string[]; startingItems: string[]; characterAssetId?: string; animationAssetId?: string; archetypeLoadouts?: Partial<Record<'melee' | 'ranged' | 'caster', ForgePlayerArchetypeLoadout>> }
-export type ForgeGameplayContent = { player: ForgePlayerDefinition; abilities: ForgeAbilityDefinition[]; enemies: ForgeEnemyDefinition[]; items: ForgeItemDefinition[]; lootTables: ForgeLootTableDefinition[] }
+export type ForgeGameplayContent = { itemSystemVersion?: 1; player: ForgePlayerDefinition; abilities: ForgeAbilityDefinition[]; enemies: ForgeEnemyDefinition[]; items: ForgeItemDefinition[]; lootTables: ForgeLootTableDefinition[] }
 export type ForgeProjectDungeonDefinition = DungeonWithProps & { id: string }
 export type ForgeProjectWorkspace = { manifest: ForgeProjectManifest; worlds: ForgeWorldDefinition[]; regions: ForgeRegionDefinition[]; dungeons: ForgeProjectDungeonDefinition[]; encounterProfiles: ForgeEncounterProfile[]; bossProfiles: ForgeBossDefinition[]; gameplay: ForgeGameplayContent; ui: ForgeUiThemeDefinition; editor: { previewSeed: number; selectedWorldId: string; selectedRegionId: string }; updatedAt: string }
 
@@ -173,6 +175,11 @@ const LEGACY_V1_KEY = 'forge-project:skillbound:v1'
 const PROJECT_ROOT = './projects/skillbound/'
 
 export async function loadSkillboundWorkspace(forceBundled = false): Promise<ForgeProjectWorkspace> {
+  const workspace = await loadWorkspaceContent(forceBundled)
+  return { ...workspace, gameplay: ensureSkillboundItemSystem(workspace.gameplay) }
+}
+
+async function loadWorkspaceContent(forceBundled = false): Promise<ForgeProjectWorkspace> {
   const manifest = await fetchJson<ForgeProjectManifest>(`${PROJECT_ROOT}project.forge.json`)
   if (!forceBundled) {
     const current = readCachedWorkspace(WORKSPACE_KEY)

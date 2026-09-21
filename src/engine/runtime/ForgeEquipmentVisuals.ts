@@ -1,3 +1,5 @@
+import { attachGeneratedArmor, isGeneratedArmor } from '../skillboundItemModels'
+import { recipeForItem } from '../skillboundItems'
 import * as THREE from 'three'
 import { itemVisual } from '../itemPresentation'
 import { itemClassification } from '../itemTaxonomy'
@@ -22,6 +24,12 @@ export async function bindEquipmentVisualModel(
   item: ForgeItemDefinition,
   slot: ForgeEquipmentSlot,
 ) {
+  const recipe = recipeForItem(item)
+  if (recipe && isGeneratedArmor(recipe)) {
+    const model = context.characterRoot ? attachGeneratedArmor(context.characterRoot, item) : undefined
+    if (!model) throw new Error('Generated armor needs the existing skinned character body.')
+    return model
+  }
   const target = equipmentVisualTarget(
     context,
     item,
@@ -36,6 +44,7 @@ export async function bindEquipmentVisualModel(
     model = createFallbackEquipmentModel(item, slot)
     target.add(model)
   }
+  if (recipe && (slot === 'Amulet' || slot === 'Charm')) model.position.set(0, -.08, .16)
   return model
 }
 
@@ -128,6 +137,9 @@ function findNamedTarget(
 }
 
 function slotAliases(slot: ForgeEquipmentSlot) {
+  if (slot === 'Amulet' || slot === 'Charm' || slot === 'Cape') return ['spine03', 'chest', 'spine2']
+  if (slot === 'Waist') return ['pelvis', 'hips']
+  if (slot === 'Ring') return ['handl', 'lefthand']
   if (slot === 'Head') {
     return ['head', 'mixamorighead', 'neck']
   }

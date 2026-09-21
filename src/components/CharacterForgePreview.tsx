@@ -99,7 +99,7 @@ export default function CharacterForgePreview({
   const equipmentItemsRef = useRef(equipmentItems)
   equipmentItemsRef.current = equipmentItems
   const equipmentSignature = FORGE_EQUIPMENT_SLOTS
-    .map((slot) => equipmentItems?.[slot]?.id ?? '')
+    .map((slot) => JSON.stringify([equipmentItems?.[slot]?.id, equipmentItems?.[slot]?.procedural, equipmentItems?.[slot]?.visual]))
     .join('|')
 
   useEffect(() => {

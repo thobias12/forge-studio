@@ -191,6 +191,7 @@ export function installForgeEquipmentRuntime(RuntimeClass: { prototype: any }) {
       const stats = equipmentStats(this.gameplay, equipment)
       return {
         ...base,
+        generatedItems: this.gameplay.items.filter(item => item.itemRoll?.sourceId),
         equipment: { ...equipment },
         equippedWeaponId: equipment.MainHand,
         defense: stats.defense,

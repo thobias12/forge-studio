@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Box, Info, Layers3, SlidersHorizontal, Sparkles, X } from 'lucide-react'
-import ProceduralItemGeneratorPanel from '../components/ProceduralItemGeneratorPanel'
+import SkillboundItemGeneratorPanel from '../components/SkillboundItemGeneratorPanel'
 import ItemForgeV2 from './ItemForgeV2'
 import '../item-forge-navigation.css'
 
@@ -43,11 +43,11 @@ export default function ItemForge({ onOpenModelCreator }: Props) {
     }}>
       <aside className="item-generator-drawer">
         <header className="item-generator-drawer-header">
-          <div><span>ITEM FORGE</span><strong>Procedural Generator</strong><small>Edit the recipe, then apply it directly to the selected item.</small></div>
+          <div><span>ITEM FORGE</span><strong>Procedural Generator</strong><small>Generate matching inventory, loot and fitted equipment from one saved design.</small></div>
           <button aria-label="Close generator" onClick={() => setGeneratorOpen(false)}><X size={17}/></button>
         </header>
         <div className="item-generator-drawer-content">
-          <ProceduralItemGeneratorPanel/>
+          <SkillboundItemGeneratorPanel/>
         </div>
       </aside>
     </div>}

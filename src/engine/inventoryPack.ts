@@ -228,6 +228,9 @@ export function sortInventoryPack(
     common: 1,
     magic: 2,
     rare: 3,
+    epic: 4,
+    legendary: 5,
+    unique: 6,
   } as const
 
   entries.sort((a, b) => {

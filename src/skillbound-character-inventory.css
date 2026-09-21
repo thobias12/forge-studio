@@ -685,3 +685,17 @@
   .skillbound-character-footer{grid-template-columns:1fr 1.6fr}
   .skillbound-character-footer>small{display:none}
 }
+
+/* Expanded equipment slots retain clear space around the character preview. */
+.skillbound-paperdoll { height: 515px; min-height: 515px; }
+.skillbound-equipment-slot.slot-legs { bottom: 122px; }
+.skillbound-equipment-slot.slot-feet { bottom: 122px; }
+.skillbound-equipment-slot.slot-cape { left: 0; top: 270px; }
+.skillbound-equipment-slot.slot-waist { right: 0; top: 270px; }
+.skillbound-equipment-slot.slot-amulet { left: 0; bottom: 16px; }
+.skillbound-equipment-slot.slot-ring { left: 50%; bottom: 16px; transform: translateX(-50%); }
+.skillbound-equipment-slot.slot-charm { right: 0; bottom: 16px; }
+.skillbound-paperdoll-model { bottom: 90px; }
+.rarity-epic { --rarity-color: #b496d6; border-color: #b496d6; }
+.rarity-legendary { --rarity-color: #e49a59; border-color: #e49a59; }
+.rarity-unique { --rarity-color: #d87972; border-color: #d87972; }

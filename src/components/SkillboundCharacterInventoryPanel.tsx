@@ -1,3 +1,5 @@
+import { withGeneratedItems } from '../engine/skillboundItems'
+import { resolveItemIcon } from '../engine/itemIcons'
 import {
   useEffect,
   useLayoutEffect,
@@ -146,6 +148,9 @@ const RARITY_FILTERS: Array<{
   { id: 'common', label: 'Common' },
   { id: 'magic', label: 'Magic' },
   { id: 'rare', label: 'Rare' },
+  { id: 'epic', label: 'Epic' },
+  { id: 'legendary', label: 'Legendary' },
+  { id: 'unique', label: 'Unique' },
 ]
 
 export default function SkillboundCharacterInventoryPanel({
@@ -157,10 +162,10 @@ export default function SkillboundCharacterInventoryPanel({
   const gameplay = useMemo(
     () =>
       resolveGameplayForRole(
-        workspace.gameplay,
+        withGeneratedItems(workspace.gameplay, snapshot?.generatedItems),
         profile.blueprint.role,
       ),
-    [workspace.gameplay, profile.blueprint.role],
+    [workspace.gameplay, profile.blueprint.role, snapshot?.generatedItems],
   )
   const equipment = normalizeEquipment(
     snapshot?.equipment,
@@ -1617,19 +1622,12 @@ function RuntimeItemIcon({
   useEffect(() => {
     let cancelled = false
     let url = ''
-    const iconId =
-      itemVisual(item).inventory.iconAssetId
-    if (!iconId) {
-      setSrc(undefined)
-      return
-    }
-    void getAsset(iconId)
-      .then((asset) => {
-        if (!asset || cancelled) return
-        url = URL.createObjectURL(asset.blob)
-        setSrc(url)
-      })
-      .catch(() => setSrc(undefined))
+    setSrc(undefined)
+    void resolveItemIcon(item).then((blob) => {
+      if (!blob || cancelled) return
+      url = URL.createObjectURL(blob)
+      setSrc(url)
+    }).catch(() => { if (!cancelled) setSrc(undefined) })
     return () => {
       cancelled = true
       if (url) URL.revokeObjectURL(url)

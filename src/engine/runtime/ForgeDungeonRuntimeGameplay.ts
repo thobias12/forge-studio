@@ -707,8 +707,8 @@ export const dungeonGameplayMethods = {
   updateLoot(delta: number) {
     for (const drop of [...this.loot]) {
       drop.age += delta
-      drop.group.rotation.y += delta * 0.85
-      drop.group.position.y = this.floorHeightAt(drop.group.position.x, drop.group.position.z) + Math.sin(drop.age * 3.2) * 0.08
+      if (!drop.model) drop.group.rotation.y += delta * 0.85
+      drop.group.position.y = this.floorHeightAt(drop.group.position.x, drop.group.position.z) + (drop.model ? 0 : Math.sin(drop.age * 3.2) * 0.08)
       if (planarDistance(drop.group.position, this.player.position) > 1.0) continue
       const inventoryRuntime = this as unknown as {
         canPickupInventoryItem?: (itemId: string) => boolean
