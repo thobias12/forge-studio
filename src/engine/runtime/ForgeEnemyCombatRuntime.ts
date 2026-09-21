@@ -244,7 +244,11 @@ function startDungeonArrival(runtime: any, enemy: any) {
 
   const role = enemy.combatRole ?? roleOf(enemy.definition)
   const color = new THREE.Color(combatColor(enemy.definition))
-  const duration = enemy.boss ? .92 : .68
+  const cueDelay =
+    (enemy.boss ? .42 : .24) +
+    hashUnit(`${enemy.id}:arrival-delay`) * (enemy.boss ? .08 : .16)
+  const emergeDuration = enemy.boss ? .78 : .56
+  const duration = cueDelay + emergeDuration
   const baseScale = Math.max(.01, Number(enemy.group.scale.x || 1))
   const baseY = enemy.group.position.y
   const ringRadius =
@@ -308,6 +312,8 @@ function startDungeonArrival(runtime: any, enemy: any) {
   enemy.__forgeSpawnArrival = {
     age: 0,
     duration,
+    cueDelay,
+    emergeDuration,
     baseScale,
     baseY,
     effect,
@@ -315,8 +321,8 @@ function startDungeonArrival(runtime: any, enemy: any) {
     glowMaterial,
   }
 
-  enemy.group.scale.setScalar(baseScale * .12)
-  enemy.group.position.y = baseY - (enemy.boss ? .42 : .32)
+  enemy.group.scale.setScalar(baseScale * .001)
+  enemy.group.position.y = baseY - (enemy.boss ? .52 : .38)
   enemy.staggerRemaining = Math.max(
     Number(enemy.staggerRemaining ?? 0),
     duration + .12,
@@ -365,28 +371,49 @@ function updateDungeonArrivals(runtime: any, delta: number) {
     }
 
     arrival.age += delta
-    const progress = THREE.MathUtils.clamp(
+    const totalProgress = THREE.MathUtils.clamp(
       arrival.age / Math.max(.01, arrival.duration),
       0,
       1,
     )
-    const eased = 1 - Math.pow(1 - progress, 3)
-    const anticipation = THREE.MathUtils.clamp(progress / .34, 0, 1)
-
-    enemy.group.scale.setScalar(
-      arrival.baseScale * (.12 + eased * .88),
+    const emergeProgress = THREE.MathUtils.clamp(
+      (arrival.age - arrival.cueDelay) /
+        Math.max(.01, arrival.emergeDuration),
+      0,
+      1,
     )
-    enemy.group.position.y =
-      arrival.baseY -
-      (1 - eased) * (enemy.boss ? .42 : .32)
+    const eased = 1 - Math.pow(1 - emergeProgress, 3)
+    const cueProgress = THREE.MathUtils.clamp(
+      arrival.age / Math.max(.01, arrival.cueDelay),
+      0,
+      1,
+    )
+
+    if (arrival.age < arrival.cueDelay) {
+      enemy.group.scale.setScalar(arrival.baseScale * .001)
+      enemy.group.position.y =
+        arrival.baseY - (enemy.boss ? .52 : .38)
+    } else {
+      enemy.group.scale.setScalar(
+        arrival.baseScale * (.08 + eased * .92),
+      )
+      enemy.group.position.y =
+        arrival.baseY -
+        (1 - eased) * (enemy.boss ? .52 : .38)
+    }
 
     arrival.effect.rotation.y += delta * (enemy.boss ? 1.4 : 2.2)
-    arrival.effect.scale.setScalar(.82 + anticipation * .28)
+    arrival.effect.scale.setScalar(
+      .78 + cueProgress * .2 + emergeProgress * .12,
+    )
     arrival.ringMaterial.opacity =
-      (.18 + (1 - progress) * .56) *
-      (progress < .12 ? progress / .12 : 1)
+      arrival.age < arrival.cueDelay
+        ? .18 + cueProgress * .58
+        : .76 * (1 - emergeProgress * .82)
     arrival.glowMaterial.opacity =
-      .04 + Math.sin(progress * Math.PI) * (enemy.boss ? .24 : .16)
+      arrival.age < arrival.cueDelay
+        ? .04 + cueProgress * (enemy.boss ? .2 : .13)
+        : .08 + Math.sin(emergeProgress * Math.PI) * (enemy.boss ? .26 : .18)
 
     enemy.staggerRemaining = Math.max(
       Number(enemy.staggerRemaining ?? 0),
@@ -399,7 +426,7 @@ function updateDungeonArrivals(runtime: any, delta: number) {
     enemy.telegraph.visible = false
     runtime.setEnemyMoving?.(enemy, false)
 
-    if (progress >= 1) {
+    if (totalProgress >= 1) {
       finishDungeonArrival(runtime, enemy)
       runtime.spawnPulse?.(
         enemy.group.position,
