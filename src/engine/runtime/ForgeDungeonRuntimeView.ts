@@ -128,14 +128,36 @@ export const dungeonViewMethods = {
   },
 
   spawnPulse(position: THREE.Vector3, color: string, radius: number, duration: number) {
-    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false, toneMapped: false })
-    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 32), material)
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      toneMapped: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+    })
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.6, 1, 32),
+      material,
+    )
     mesh.rotation.x = -Math.PI / 2
-    const floorY = this.floorHeightAt?.(position.x, position.z) ?? Number(position.y ?? 0)
-    mesh.position.set(position.x, floorY + 0.125, position.z)
-    mesh.renderOrder = 18
+    const floorY =
+      this.floorHeightAt?.(position.x, position.z) ??
+      Number(position.y ?? 0)
+    // Crypt floor bricks sit above the navigation floor by roughly .09.
+    // Keep all transient ground rings clearly on top of the rendered surface.
+    mesh.position.set(position.x, floorY + 0.16, position.z)
+    mesh.renderOrder = 22
     this.scene.add(mesh)
-    this.effects.push({ mesh, age: 0, duration, maxScale: Math.max(1, radius) })
+    this.effects.push({
+      mesh,
+      age: 0,
+      duration,
+      maxScale: Math.max(1, radius),
+    })
   },
 
   spawnDamageNumber(position: THREE.Vector3, damage: number, color: string) {
