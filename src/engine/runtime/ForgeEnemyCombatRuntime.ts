@@ -594,6 +594,14 @@ function updateEnemyPresentation(enemy: any, delta: number) {
     rig.root.rotation.z += Math.sin(time * 4.5) * .018
   }
 
+  if (Number(enemy.__forgeEmpowerRemaining ?? 0) > 0) {
+    rig.accentMaterial.emissiveIntensity = Math.max(
+      rig.accentMaterial.emissiveIntensity,
+      .72 + Math.sin(time * 5.5) * .16,
+    )
+    rig.root.position.y += .015 + Math.sin(time * 7) * .008
+  }
+
   const identityAction = enemy.__forgeIdentityAction
   if (identityAction?.type === 'wretch-dash') {
     if (identityAction.phase === 'tell') {
@@ -1196,7 +1204,12 @@ function specialCooldownFor(enemy: any) {
   )
   if (!enemy.boss) return base
   const phase = Math.max(0, Number(enemy.bossPhaseIndex ?? 0))
-  return base * (phase >= 2 ? .62 : phase >= 1 ? .78 : .92)
+  return base * (
+    phase >= 3 ? .5 :
+      phase >= 2 ? .62 :
+        phase >= 1 ? .78 :
+          .92
+  )
 }
 
 function moveIdentityEnemy(
@@ -1428,12 +1441,18 @@ function resolveBruteSlam(runtime: any, enemy: any, mode: EnemyMode) {
   )
   const radius = baseRadius * (
     enemy.boss
-      ? phase >= 2 ? 1.42 : phase >= 1 ? 1.22 : 1.08
+      ? phase >= 3 ? 1.58 :
+        phase >= 2 ? 1.42 :
+          phase >= 1 ? 1.22 :
+            1.08
       : 1
   )
   const damageScale =
     enemy.boss
-      ? phase >= 2 ? 1.24 : phase >= 1 ? 1.12 : 1.02
+      ? phase >= 3 ? 1.34 :
+        phase >= 2 ? 1.24 :
+          phase >= 1 ? 1.12 :
+            1.02
       : 1.08
   const color = enemy.boss ? '#ff704f' : combatColor(enemy.definition)
 
@@ -2546,6 +2565,19 @@ function roleTargetSnapshot(runtime: any, snapshot: any, mode: EnemyMode) {
       role: enemy.combatRole,
       elite: Boolean(enemy.elite),
       eliteModifier: enemy.eliteModifier,
+      phaseName:
+        enemy.bossProfile?.phases?.[
+          Math.max(0, Number(enemy.bossPhaseIndex ?? 0))
+        ]?.name,
+      combatIntent:
+        enemy.__forgeIdentityAction?.label ??
+        (enemy.__forgeVolleyShot
+          ? 'Volley'
+          : enemy.__forgeGraveZoneCast
+            ? 'Grave Zone'
+            : undefined),
+      empowered:
+        Number(enemy.__forgeEmpowerRemaining ?? 0) > 0,
       poise: Math.max(0, Math.round(enemy.poise)),
       maxPoise: Math.max(1, Math.round(enemy.maxPoise)),
     },
