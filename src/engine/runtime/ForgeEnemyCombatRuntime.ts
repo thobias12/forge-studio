@@ -1881,14 +1881,59 @@ function registerDungeonDeath(runtime: any, enemy: any) {
     away.normalize()
   }
   const side = hashUnit(`${enemy.id}:death-side`) > .5 ? 1 : -1
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  const duration = enemy.boss ? 1.02 : .96
   runtime.__forgeCombatDeaths.push({
     enemy,
     age: 0,
-    duration: enemy.boss ? 1.05 : .92,
+    duration,
     velocity: away.multiplyScalar(
-      enemy.boss ? .55 : enemy.elite ? 1.05 : 1.35,
+      enemy.boss ? .45 : enemy.elite ? .92 : 1.18,
     ),
-    roll: side * (enemy.boss ? .42 : enemy.elite ? .82 : 1.05),
+    roll: side * (enemy.boss ? .32 : enemy.elite ? .68 : .88),
+    baseScale: enemy.group.scale.clone(),
+    baseY: enemy.group.position.y,
+  })
+
+  const color = combatColor(enemy.definition)
+  spawnSparkBurst(
+    runtime,
+    enemy.group.position,
+    color,
+    enemy.boss ? 18 : enemy.elite ? 12 : 8,
+    enemy.boss ? 1.4 : enemy.elite ? 1.05 : .78,
+    role === 'brute' ? .72 : 1,
+  )
+  if (role === 'caster') {
+    spawnCasterImpactFx(
+      runtime,
+      enemy.group.position.clone(),
+      color,
+      enemy.boss ? 2.25 : 1.25,
+    )
+  } else {
+    runtime.spawnPulse?.(
+      enemy.group.position,
+      color,
+      enemy.boss ? 2.5 : 1.15,
+      .18,
+    )
+  }
+
+  const placeholder =
+    enemy.group?.getObjectByName?.('__forge_placeholder')
+  placeholder?.traverse?.((child: any) => {
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : child.material
+        ? [child.material]
+        : []
+    for (const material of materials) {
+      if (!('opacity' in material)) continue
+      material.transparent = true
+      material.userData.__forgeDeathBaseOpacity =
+        Number.isFinite(material.opacity) ? material.opacity : 1
+    }
   })
 }
 
@@ -1898,18 +1943,52 @@ function updateDungeonDeaths(runtime: any, delta: number) {
     const death = deaths[index]
     death.age += delta
     const enemy = death.enemy
-    if (!enemy?.group?.parent || death.age >= death.duration) {
+    if (!enemy?.group?.parent) {
       deaths.splice(index, 1)
       continue
     }
+
+    const progress = THREE.MathUtils.clamp(
+      death.age / Math.max(.01, death.duration),
+      0,
+      1,
+    )
     const drift = death.velocity.clone().multiplyScalar(delta)
     enemy.group.position.add(drift)
-    death.velocity.multiplyScalar(Math.max(0, 1 - delta * 5.5))
-    enemy.group.rotation.z += death.roll * delta
-    if (death.age > death.duration * .68 && !enemy.boss) {
-      const shrink = 1 - delta * .18
-      enemy.group.scale.multiplyScalar(Math.max(.985, shrink))
-    }
+    death.velocity.multiplyScalar(Math.max(0, 1 - delta * 6.4))
+
+    enemy.group.rotation.z +=
+      death.roll * delta * (1 - progress * .35)
+    enemy.group.position.y =
+      death.baseY -
+      Math.max(0, progress - .52) * (enemy.boss ? .28 : .42)
+    const shrink = THREE.MathUtils.lerp(
+      1,
+      enemy.boss ? .86 : .68,
+      Math.max(0, (progress - .5) / .5),
+    )
+    enemy.group.scale.copy(death.baseScale).multiplyScalar(shrink)
+
+    const placeholder =
+      enemy.group?.getObjectByName?.('__forge_placeholder')
+    placeholder?.traverse?.((child: any) => {
+      const materials = Array.isArray(child.material)
+        ? child.material
+        : child.material
+          ? [child.material]
+          : []
+      for (const material of materials) {
+        const baseOpacity =
+          material.userData?.__forgeDeathBaseOpacity ?? 1
+        material.opacity =
+          baseOpacity *
+          (1 - Math.max(0, (progress - .42) / .58) * .92)
+      }
+    })
+
+    if (progress < 1) continue
+    enemy.group.visible = false
+    deaths.splice(index, 1)
   }
 }
 
@@ -1955,7 +2034,11 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       addCombatOrbit(this, enemy, delta, 'overworld')
     }
     const result = baseUpdateEnemies.call(this, delta)
+    for (const enemy of this.enemies) {
+      updateEnemyPresentation(enemy, delta)
+    }
     updateProjectiles(this, delta, 'overworld')
+    updateCombatFx(this, delta)
     return result
   }
 
@@ -1965,6 +2048,8 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
 
   proto.resolveEnemyAttack = function (enemy: any) {
     ensureEnemyState(enemy)
+    triggerEnemyAttackRelease(enemy)
+    spawnEnemyAttackReleaseFx(this, enemy)
     const style = enemy.attackStyle
     if (style === 'melee') {
       return baseResolveEnemyAttack.call(this, enemy)
@@ -2173,9 +2258,13 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       }
     }
     const result = baseUpdateEnemies.call(this, delta)
+    for (const enemy of this.enemies.values()) {
+      updateEnemyPresentation(enemy, delta)
+    }
     refineDungeonTelegraphs(this)
     updateProjectiles(this, delta, 'dungeon')
     updateDungeonDeaths(this, delta)
+    updateCombatFx(this, delta)
     return result
   }
 
@@ -2194,6 +2283,8 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
 
   proto.resolveEnemyAttack = function (enemy: any) {
     ensureEnemyState(enemy)
+    triggerEnemyAttackRelease(enemy)
+    spawnEnemyAttackReleaseFx(this, enemy)
     const style = enemy.attackStyle
     if (style === 'melee') {
       return baseResolveEnemyAttack.call(this, enemy)
