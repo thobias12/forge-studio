@@ -80,6 +80,67 @@ function roleHealthColor(role: string, elite: boolean, boss: boolean) {
   return 0xc9574f
 }
 
+function decorateFallbackRole(enemy: any, definition: any, role: string) {
+  const placeholder = enemy.group?.getObjectByName?.('__forge_placeholder')
+  if (!placeholder || placeholder.userData.forgeCombatRoleDecorated) return
+  placeholder.userData.forgeCombatRoleDecorated = true
+
+  const accentColor = new THREE.Color(combatColor(definition))
+  const accent = new THREE.MeshStandardMaterial({
+    color: accentColor,
+    roughness: .68,
+    metalness: role === 'ranged' ? .32 : .08,
+    emissive: accentColor.clone().multiplyScalar(.08),
+    emissiveIntensity: .4,
+  })
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x241f1d,
+    roughness: .78,
+    metalness: .12,
+  })
+  const add = (mesh: THREE.Mesh) => {
+    mesh.castShadow = true
+    placeholder.add(mesh)
+    return mesh
+  }
+
+  if (role === 'brute') {
+    const left = add(new THREE.Mesh(new THREE.BoxGeometry(.42, .26, .58), dark))
+    const right = add(new THREE.Mesh(new THREE.BoxGeometry(.42, .26, .58), dark))
+    left.position.set(-.48, 1.42, 0)
+    right.position.set(.48, 1.42, 0)
+    const plate = add(new THREE.Mesh(new THREE.BoxGeometry(.72, .48, .14), accent))
+    plate.position.set(0, 1.18, .55)
+  } else if (role === 'ranged') {
+    const stock = add(new THREE.Mesh(new THREE.BoxGeometry(1.08, .1, .12), dark))
+    stock.position.set(0, 1.16, .55)
+    const bow = add(new THREE.Mesh(new THREE.TorusGeometry(.42, .035, 6, 18, Math.PI), accent))
+    bow.rotation.set(Math.PI / 2, 0, Math.PI / 2)
+    bow.position.set(0, 1.16, .62)
+  } else if (role === 'caster') {
+    const staff = add(new THREE.Mesh(new THREE.CylinderGeometry(.035, .045, 1.72, 7), dark))
+    staff.position.set(.52, .94, .08)
+    staff.rotation.z = -.08
+    const orb = add(new THREE.Mesh(
+      new THREE.SphereGeometry(.13, 10, 8),
+      new THREE.MeshStandardMaterial({
+        color: accentColor,
+        emissive: accentColor,
+        emissiveIntensity: 1.8,
+        roughness: .28,
+      }),
+    ))
+    orb.position.set(.59, 1.82, .08)
+  } else {
+    const left = add(new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .62), accent))
+    const right = add(new THREE.Mesh(new THREE.BoxGeometry(.08, .08, .62), accent))
+    left.position.set(-.4, .98, .32)
+    right.position.set(.4, .98, .32)
+    left.rotation.z = -.28
+    right.rotation.z = .28
+  }
+}
+
 function ensureEnemyState(enemy: any) {
   if (!enemy || enemy.__forgeCombatV3) return
   const definition = enemy.definition ?? {}
@@ -106,6 +167,7 @@ function ensureEnemyState(enemy: any) {
   enemy.poiseRecoveryDelay = 0
   enemy.attackTarget = new THREE.Vector3()
   enemy.attackTargetValid = false
+  decorateFallbackRole(enemy, definition, role)
 
   if (enemy.elite && !enemy.boss) {
     const roll = hashUnit(`${enemy.id}:elite-modifier`)
