@@ -2635,14 +2635,23 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     for (const enemy of this.enemies) {
       ensureEnemyState(enemy)
       updatePoise(enemy, delta)
-      moveEnemyAway(this, enemy, delta, 'overworld')
-      addCombatOrbit(this, enemy, delta, 'overworld')
+      const identityActive = updateEnemyIdentityKit(
+        this,
+        enemy,
+        delta,
+        'overworld',
+      )
+      if (!identityActive) {
+        moveEnemyAway(this, enemy, delta, 'overworld')
+        addCombatOrbit(this, enemy, delta, 'overworld')
+      }
     }
     const result = baseUpdateEnemies.call(this, delta)
     for (const enemy of this.enemies) {
       updateEnemyPresentation(enemy, delta)
     }
     updateProjectiles(this, delta, 'overworld')
+    updateHazardZones(this, delta)
     updateCombatFx(this, delta)
     return result
   }
@@ -2661,9 +2670,43 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     }
     finishAttackState(this, enemy, 'overworld')
     if (style === 'projectile') {
-      spawnProjectile(this, enemy, 'overworld')
+      if (enemy.__forgeVolleyShot) {
+        const count = THREE.MathUtils.clamp(
+          Math.round(Number(enemy.definition?.volleyCount ?? 3)),
+          2,
+          5,
+        )
+        const spread = .12
+        for (let index = 0; index < count; index += 1) {
+          const offset =
+            (index - (count - 1) / 2) * spread
+          spawnProjectile(
+            this,
+            enemy,
+            'overworld',
+            offset,
+            .72,
+          )
+        }
+        enemy.__forgeVolleyShot = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+        enemy.identityRepositionRemaining = .72
+      } else {
+        spawnProjectile(this, enemy, 'overworld')
+        enemy.identityRepositionRemaining = .38
+      }
     } else {
-      resolveAreaAttack(this, enemy, 'overworld')
+      const target = resolveAreaAttack(this, enemy, 'overworld')
+      if (enemy.__forgeGraveZoneCast) {
+        spawnHazardZone(
+          this,
+          target,
+          enemy,
+          'overworld',
+        )
+        enemy.__forgeGraveZoneCast = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+      }
     }
   }
 
@@ -2873,7 +2916,13 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     for (const enemy of this.enemies.values()) {
       ensureEnemyState(enemy)
       updatePoise(enemy, delta)
-      if (!enemy.__forgeSpawnArrival) {
+      const identityActive = updateEnemyIdentityKit(
+        this,
+        enemy,
+        delta,
+        'dungeon',
+      )
+      if (!enemy.__forgeSpawnArrival && !identityActive) {
         moveEnemyAway(this, enemy, delta, 'dungeon')
         addCombatOrbit(this, enemy, delta, 'dungeon')
       }
@@ -2884,6 +2933,7 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     }
     refineDungeonTelegraphs(this)
     updateProjectiles(this, delta, 'dungeon')
+    updateHazardZones(this, delta)
     updateDungeonDeaths(this, delta)
     updateCombatFx(this, delta)
     return result
@@ -2912,9 +2962,43 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     }
     finishAttackState(this, enemy, 'dungeon')
     if (style === 'projectile') {
-      spawnProjectile(this, enemy, 'dungeon')
+      if (enemy.__forgeVolleyShot) {
+        const count = THREE.MathUtils.clamp(
+          Math.round(Number(enemy.definition?.volleyCount ?? 3)),
+          2,
+          5,
+        )
+        const spread = .12
+        for (let index = 0; index < count; index += 1) {
+          const offset =
+            (index - (count - 1) / 2) * spread
+          spawnProjectile(
+            this,
+            enemy,
+            'dungeon',
+            offset,
+            .72,
+          )
+        }
+        enemy.__forgeVolleyShot = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+        enemy.identityRepositionRemaining = .72
+      } else {
+        spawnProjectile(this, enemy, 'dungeon')
+        enemy.identityRepositionRemaining = .38
+      }
     } else {
-      resolveAreaAttack(this, enemy, 'dungeon')
+      const target = resolveAreaAttack(this, enemy, 'dungeon')
+      if (enemy.__forgeGraveZoneCast) {
+        spawnHazardZone(
+          this,
+          target,
+          enemy,
+          'dungeon',
+        )
+        enemy.__forgeGraveZoneCast = false
+        enemy.specialCooldownRemaining = specialCooldownFor(enemy)
+      }
     }
   }
 
