@@ -2853,12 +2853,6 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
           'overworld',
           4.2,
         )
-        empowerNearbyAllies(
-          this,
-          enemy,
-          'dungeon',
-          4.2,
-        )
         enemy.__forgeGraveZoneCast = false
         enemy.specialCooldownRemaining = specialCooldownFor(enemy)
       }
@@ -3173,6 +3167,12 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
           target,
           enemy,
           'dungeon',
+        )
+        empowerNearbyAllies(
+          this,
+          enemy,
+          'dungeon',
+          4.2,
         )
         enemy.__forgeGraveZoneCast = false
         enemy.specialCooldownRemaining = specialCooldownFor(enemy)
