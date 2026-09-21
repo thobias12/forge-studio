@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Box, BoxSelect, ChevronRight, CircleDot, Download, Gem, Lightbulb,
+  Box, BoxSelect, ChevronRight, CircleDot, Download, Gem, Grid3X3, Lightbulb,
   Gamepad2, Map as MapIcon, MousePointer2, Network, Play, RotateCcw, Save, ShieldAlert, Skull, Sparkles, X,
   Spline, Square, Trash2, WandSparkles, Waypoints,
 } from 'lucide-react'
