@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.2`  
+> **Current Forge version:** `v1.92.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,14 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.3 is the **Combat v4 boss-pacing pass** based on the latest Hollow Vault gameplay recording. The floor-height/VFX corrections from v1.92.2 are holding up in motion; the main issue exposed by the clip was that the Vault Warden was burning through Iron Flood, Gravebound and Last Oath within only a few seconds, compressing the intended four-phase fight into one burst window.
+
+Boss phases now advance **sequentially only**. Burst damage can no longer jump directly from Warden Awakens into Gravebound or Last Oath. Each threshold starts a short phase-shift lockout (1.35s for Iron Flood/Gravebound, 1.05s for Last Oath) during which the Warden cannot move into a signature attack or begin a normal attack. Telegraphs are cleared, Combat v4 signature state is cancelled, and the HUD surfaces `PHASE SHIFT` so the transition reads as intentional rather than AI hesitation.
+
+The phase gate is time-based rather than a hidden health heal: damage is not restored when a threshold is crossed. If the player has already pushed below the following threshold, the next phase still waits for the current phase-shift window to finish before advancing, guaranteeing each phase/add package a readable beat.
+
+Vault Warden durability is increased from 5.2× to 8.8× base Crypt Brute health so the phase kits have enough time to matter. Boss damage is slightly reduced from 1.62× to 1.58× and the global cooldown multiplier relaxed from 0.94× to 0.96× so the extra fight duration adds mechanics rather than simply multiplying unavoidable damage. Skillbound content revision is now 15 so cached projects receive the revised boss tuning.
 
 Forge v1.92.2 fixes dungeon ground-target and combat VFX height against Dungeon Forge V3 floor geometry. The rendered crypt masonry sits above the navigation floor, while several newer Combat v4 effects were still using small local offsets such as 0.035–0.05. That could place telegraphs, grave zones, dash/charge lines and caster impact discs partially inside the floor.
 
