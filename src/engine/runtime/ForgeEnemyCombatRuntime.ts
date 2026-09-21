@@ -239,6 +239,205 @@ function ensureEnemyState(enemy: any) {
   }
 }
 
+function startDungeonArrival(runtime: any, enemy: any) {
+  if (!enemy?.group || enemy.__forgeSpawnArrival) return
+
+  const role = enemy.combatRole ?? roleOf(enemy.definition)
+  const color = new THREE.Color(combatColor(enemy.definition))
+  const cueDelay =
+    (enemy.boss ? .42 : .24) +
+    hashUnit(`${enemy.id}:arrival-delay`) * (enemy.boss ? .08 : .16)
+  const emergeDuration = enemy.boss ? .78 : .56
+  const duration = cueDelay + emergeDuration
+  const baseScale = Math.max(.01, Number(enemy.group.scale.x || 1))
+  const baseY = enemy.group.position.y
+  const ringRadius =
+    enemy.boss ? 1.28 :
+      role === 'brute' ? .92 :
+        role === 'caster' ? .8 :
+          .72
+
+  const effect = new THREE.Group()
+  effect.position.set(
+    enemy.group.position.x,
+    baseY + .035,
+    enemy.group.position.z,
+  )
+
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .62,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(
+      ringRadius * .72,
+      ringRadius,
+      enemy.boss ? 40 : 30,
+    ),
+    ringMaterial,
+  )
+  ring.rotation.x = -Math.PI / 2
+  effect.add(ring)
+
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .14,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  })
+  const glow = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      ringRadius * .48,
+      ringRadius * .7,
+      enemy.boss ? 2.8 : 2.15,
+      20,
+      1,
+      true,
+    ),
+    glowMaterial,
+  )
+  glow.position.y = enemy.boss ? 1.3 : 1
+  effect.add(glow)
+
+  ;(runtime.world ?? runtime.scene)?.add(effect)
+
+  enemy.__forgeSpawnArrival = {
+    age: 0,
+    duration,
+    cueDelay,
+    emergeDuration,
+    baseScale,
+    baseY,
+    effect,
+    ringMaterial,
+    glowMaterial,
+  }
+
+  enemy.group.scale.setScalar(baseScale * .001)
+  enemy.group.position.y = baseY - (enemy.boss ? .52 : .38)
+  enemy.staggerRemaining = Math.max(
+    Number(enemy.staggerRemaining ?? 0),
+    duration + .12,
+  )
+  enemy.attackTimer = Math.max(
+    Number(enemy.attackTimer ?? 0),
+    duration + .2,
+  )
+  enemy.telegraph.visible = false
+  runtime.spawnPulse?.(
+    new THREE.Vector3(
+      enemy.group.position.x,
+      baseY,
+      enemy.group.position.z,
+    ),
+    `#${color.getHexString()}`,
+    ringRadius * 1.15,
+    .14,
+  )
+}
+
+function finishDungeonArrival(runtime: any, enemy: any) {
+  const arrival = enemy.__forgeSpawnArrival
+  if (!arrival) return
+  enemy.group.scale.setScalar(arrival.baseScale)
+  enemy.group.position.y = arrival.baseY
+  arrival.effect?.parent?.remove(arrival.effect)
+  arrival.effect?.traverse?.((child: any) => {
+    child.geometry?.dispose?.()
+    if (Array.isArray(child.material)) {
+      child.material.forEach((material: any) => material.dispose?.())
+    } else {
+      child.material?.dispose?.()
+    }
+  })
+  enemy.__forgeSpawnArrival = undefined
+}
+
+function updateDungeonArrivals(runtime: any, delta: number) {
+  for (const enemy of runtime.enemies.values()) {
+    const arrival = enemy.__forgeSpawnArrival
+    if (!arrival) continue
+    if (enemy.health <= 0 || !enemy.group?.parent) {
+      finishDungeonArrival(runtime, enemy)
+      continue
+    }
+
+    arrival.age += delta
+    const totalProgress = THREE.MathUtils.clamp(
+      arrival.age / Math.max(.01, arrival.duration),
+      0,
+      1,
+    )
+    const emergeProgress = THREE.MathUtils.clamp(
+      (arrival.age - arrival.cueDelay) /
+        Math.max(.01, arrival.emergeDuration),
+      0,
+      1,
+    )
+    const eased = 1 - Math.pow(1 - emergeProgress, 3)
+    const cueProgress = THREE.MathUtils.clamp(
+      arrival.age / Math.max(.01, arrival.cueDelay),
+      0,
+      1,
+    )
+
+    if (arrival.age < arrival.cueDelay) {
+      enemy.group.scale.setScalar(arrival.baseScale * .001)
+      enemy.group.position.y =
+        arrival.baseY - (enemy.boss ? .52 : .38)
+    } else {
+      enemy.group.scale.setScalar(
+        arrival.baseScale * (.08 + eased * .92),
+      )
+      enemy.group.position.y =
+        arrival.baseY -
+        (1 - eased) * (enemy.boss ? .52 : .38)
+    }
+
+    arrival.effect.rotation.y += delta * (enemy.boss ? 1.4 : 2.2)
+    arrival.effect.scale.setScalar(
+      .78 + cueProgress * .2 + emergeProgress * .12,
+    )
+    arrival.ringMaterial.opacity =
+      arrival.age < arrival.cueDelay
+        ? .18 + cueProgress * .58
+        : .76 * (1 - emergeProgress * .82)
+    arrival.glowMaterial.opacity =
+      arrival.age < arrival.cueDelay
+        ? .04 + cueProgress * (enemy.boss ? .2 : .13)
+        : .08 + Math.sin(emergeProgress * Math.PI) * (enemy.boss ? .26 : .18)
+
+    enemy.staggerRemaining = Math.max(
+      Number(enemy.staggerRemaining ?? 0),
+      Math.max(0, arrival.duration - arrival.age) + .08,
+    )
+    enemy.attackTimer = Math.max(
+      Number(enemy.attackTimer ?? 0),
+      Math.max(0, arrival.duration - arrival.age) + .22,
+    )
+    enemy.telegraph.visible = false
+    runtime.setEnemyMoving?.(enemy, false)
+
+    if (totalProgress >= 1) {
+      finishDungeonArrival(runtime, enemy)
+      runtime.spawnPulse?.(
+        enemy.group.position,
+        `#${new THREE.Color(combatColor(enemy.definition)).getHexString()}`,
+        enemy.boss ? 1.55 : 1.02,
+        .12,
+      )
+    }
+  }
+}
+
 function initializeNewEnemies(runtime: any, before: Set<any>, mode: EnemyMode) {
   const collection =
     mode === 'dungeon'
@@ -247,6 +446,7 @@ function initializeNewEnemies(runtime: any, before: Set<any>, mode: EnemyMode) {
   for (const enemy of collection) {
     if (before.has(enemy)) continue
     ensureEnemyState(enemy)
+    if (mode === 'dungeon') startDungeonArrival(runtime, enemy)
   }
 }
 
@@ -1047,11 +1247,14 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
   }
 
   proto.updateEnemies = function (delta: number) {
+    updateDungeonArrivals(this, delta)
     for (const enemy of this.enemies.values()) {
       ensureEnemyState(enemy)
       updatePoise(enemy, delta)
-      moveEnemyAway(this, enemy, delta, 'dungeon')
-      addCombatOrbit(this, enemy, delta, 'dungeon')
+      if (!enemy.__forgeSpawnArrival) {
+        moveEnemyAway(this, enemy, delta, 'dungeon')
+        addCombatOrbit(this, enemy, delta, 'dungeon')
+      }
     }
     const result = baseUpdateEnemies.call(this, delta)
     refineDungeonTelegraphs(this)
@@ -1062,6 +1265,10 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
 
   proto.beginEnemyAttack = function (enemy: any) {
     ensureEnemyState(enemy)
+    if (enemy.__forgeSpawnArrival) {
+      deferDungeonAttack(enemy)
+      return
+    }
     if (!attackSlotAvailable(this, enemy, 'dungeon')) {
       deferDungeonAttack(enemy)
       return
@@ -1113,6 +1320,7 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
   }
 
   proto.killEnemy = function (enemy: any) {
+    finishDungeonArrival(this, enemy)
     registerDungeonDeath(this, enemy)
     return baseKillEnemy.call(this, enemy)
   }
