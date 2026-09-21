@@ -594,6 +594,37 @@ function updateEnemyPresentation(enemy: any, delta: number) {
     rig.root.rotation.z += Math.sin(time * 4.5) * .018
   }
 
+  const identityAction = enemy.__forgeIdentityAction
+  if (identityAction?.type === 'wretch-dash') {
+    if (identityAction.phase === 'tell') {
+      rig.root.position.y -= .08
+      rig.torso.rotation.x -= .18
+      rig.leftArm.rotation.x += .65
+      rig.rightArm.rotation.x += .65
+    } else {
+      rig.torso.rotation.x += .38
+      rig.leftArm.rotation.x -= .75
+      rig.rightArm.rotation.x -= 1.15
+      rig.root.position.z += .14
+    }
+  } else if (identityAction?.type === 'brute-charge') {
+    if (identityAction.phase === 'tell') {
+      rig.root.position.y -= .12
+      rig.torso.rotation.x += .14
+      rig.leftArm.rotation.x -= .72
+      rig.rightArm.rotation.x -= 1.05
+    } else if (identityAction.phase === 'charge') {
+      rig.torso.rotation.x += .42
+      rig.head.rotation.x -= .12
+      rig.leftArm.rotation.x += .48
+      rig.rightArm.rotation.x += .22
+    } else if (identityAction.phase === 'slam') {
+      rig.rightArm.rotation.x -= 2.2
+      rig.leftArm.rotation.x -= 1.55
+      rig.torso.rotation.x -= .2
+    }
+  }
+
   if (Number(enemy.staggerRemaining ?? 0) > 0) {
     const staggerRatio = THREE.MathUtils.clamp(
       Number(enemy.staggerRemaining) /
@@ -620,20 +651,28 @@ function updateEnemyPresentation(enemy: any, delta: number) {
       rig.leftArm.rotation.x -= 1.55 * anticipation
       rig.weaponRoot.rotation.x -= .75 * anticipation
     } else if (role === 'ranged') {
+      const volleyScale = enemy.__forgeVolleyShot ? 1.22 : 1
       rig.torso.rotation.x += .08 * anticipation
-      rig.leftArm.rotation.x -= 1.15 * anticipation
-      rig.rightArm.rotation.x -= 1.15 * anticipation
+      rig.leftArm.rotation.x -= 1.15 * anticipation * volleyScale
+      rig.rightArm.rotation.x -= 1.15 * anticipation * volleyScale
       rig.weaponRoot.rotation.x -= .18 * anticipation
-      rig.root.position.z -= .08 * anticipation
+      rig.root.position.z -= .08 * anticipation * volleyScale
+      if (enemy.__forgeVolleyShot) {
+        rig.accentMaterial.emissiveIntensity =
+          .28 + progress * 1.2
+      }
     } else if (role === 'caster') {
       rig.rightArm.rotation.x -= 1.55 * anticipation
       rig.leftArm.rotation.x -= .78 * anticipation
       rig.weaponRoot.rotation.z += .26 * anticipation
       rig.head.rotation.x -= .1 * anticipation
       if (rig.focusGlow?.material) {
+        const graveZoneScale = enemy.__forgeGraveZoneCast ? 1.45 : 1
         rig.focusGlow.material.emissiveIntensity =
-          2.2 + progress * 4.2
-        rig.focusGlow.scale.setScalar(1 + progress * .55)
+          2.2 + progress * 4.2 * graveZoneScale
+        rig.focusGlow.scale.setScalar(
+          1 + progress * .55 * graveZoneScale,
+        )
       }
     } else {
       rig.torso.rotation.y -= .42 * anticipation
@@ -1670,6 +1709,11 @@ function updateEnemyIdentityKit(
   mode: EnemyMode,
 ) {
   ensureEnemyState(enemy)
+  if (enemy.health <= 0) {
+    enemy.__forgeIdentityAction = undefined
+    enemy.identityRepositionRemaining = 0
+    return false
+  }
   enemy.specialCooldownRemaining = Math.max(
     0,
     Number(enemy.specialCooldownRemaining ?? 0) - delta,
@@ -3090,6 +3134,10 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
 
   proto.killEnemy = function (enemy: any) {
     finishDungeonArrival(this, enemy)
+    enemy.__forgeIdentityAction = undefined
+    enemy.identityRepositionRemaining = 0
+    enemy.__forgeVolleyShot = false
+    enemy.__forgeGraveZoneCast = false
     registerDungeonDeath(this, enemy)
     return baseKillEnemy.call(this, enemy)
   }
