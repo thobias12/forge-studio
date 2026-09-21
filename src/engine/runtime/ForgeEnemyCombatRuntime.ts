@@ -2079,6 +2079,22 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       damage,
       knockbackMultiplier,
     )
+    const lethal = Number(enemy.health ?? 0) <= damage
+    if (!lethal) {
+      triggerEnemyHitReaction(
+        enemy,
+        direction,
+        Boolean(poise?.broken),
+      )
+    }
+    spawnSparkBurst(
+      this,
+      enemy.group.position,
+      poise?.broken ? '#e5c37b' : color,
+      poise?.broken ? 10 : 5,
+      poise?.broken ? 1.05 : .5,
+      .9,
+    )
     return baseDamageEnemy.call(
       this,
       enemy,
@@ -2312,6 +2328,22 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       enemy,
       damage,
       knockbackMultiplier,
+    )
+    const lethal = Number(enemy.health ?? 0) <= damage
+    if (!lethal) {
+      triggerEnemyHitReaction(
+        enemy,
+        direction,
+        Boolean(poise?.broken),
+      )
+    }
+    spawnSparkBurst(
+      this,
+      enemy.group.position,
+      poise?.broken ? '#e5c37b' : color,
+      poise?.broken ? 10 : 5,
+      poise?.broken ? 1.05 : .5,
+      .9,
     )
     return baseDamageEnemy.call(
       this,
