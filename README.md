@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.91.0`  
+> **Current Forge version:** `v1.92.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,24 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.0 is the **Combat v4 — Enemy Identity & Encounters** release. It keeps the Combat v3 spacing, poise, telegraph and presentation foundation, but gives each Skillbound enemy role a signature gameplay kit instead of relying on one normal attack loop.
+
+**Road Wretch — pressure / dash-slash.** Wretches still orbit at short range, but now periodically commit to a clearly telegraphed dash line from mid-range. After a short anticipation they burst along the captured direction and can connect with a fast dash-slash before entering recovery. A poise break interrupts the dash for normal Wretches, so aggressive melee play can stop the pressure rather than only dodging it.
+
+**Crypt Brute — charge / slam.** Brutes can now telegraph a long forward charge from outside melee range, commit to that line, then finish with a radial mace slam. The slam has a larger hit zone and heavier presentation than the Brute's normal swing. Poise breaks can interrupt non-boss Brutes during the commitment. The Vault Warden inherits the same kit with boss-specific range, timing and escalation.
+
+**Bone Arbalist — volley / reposition.** Arbalists maintain range as before, but every special cycle converts the next aimed shot into a multi-bolt fan volley. After firing they actively reposition laterally/backward before resuming normal aim-fire behavior. The volley uses the same physical bolt system introduced in v1.91.0 and is visible in the target HUD as `VOLLEY` during the committed windup.
+
+**Grave Channeler — grave zone / support.** A special Channeler cast now leaves a persistent grave zone at the captured target location. The zone remains dangerous for several seconds and deals periodic damage if the player stays inside it. The same cast empowers nearby encounter allies for a short window, accelerating their attack recovery and special-cycle pressure. Empowered enemies are surfaced in the target HUD and receive a stronger violet fallback-rig accent.
+
+Combat v4 special actions respect the dungeon attack-slot director so a mixed pack cannot all commit signature attacks at once. Wretch/Brute special actions are also integrated with poise-break interrupts, death cleanup, arrival lockout and the existing shared runtime fault isolation. The same role kits run in overworld combat, Combat Lab and Dungeon Forge → Test Dungeon.
+
+**Encounter pacing was rebuilt around those identities.** Drowned Crossroads now teaches the Wretch dash first, introduces Arbalist ranged pressure second, then combines Brute + Channeler + Wretch in the final wave. Ossuary Guard uses a frontline wave, a dedicated ranged/control kill-zone wave, and an elite mixed last stand instead of simply escalating enemy count.
+
+**Vault Warden is now a four-phase Combat v4 boss.** Warden Awakens establishes the charge/slam language. Iron Flood starts at 72% health and adds Arbalists while increasing pressure. Gravebound starts at 42% and adds Channelers while Warden slams begin leaving short grave shock zones. Last Oath starts at 16% health, further shortens the Warden's signature cooldown and increases slam radius/damage for the final burn phase. The target HUD displays the current boss phase beside the boss name.
+
+Combat v4 tuning is authored through new optional enemy definition fields: `specialCooldown`, `dashDistance`, `chargeDistance`, `volleyCount`, `hazardDuration`, and `hazardTickDamage`. Skillbound content revision is now 13 so existing cached workspaces advance to the new enemy tuning, encounter pacing and boss profile.
 
 Forge v1.91.0 is the **Combat v3 Presentation Polish** release. It keeps the existing Combat v3 mechanics and focuses on making enemy actions readable and satisfying in both normal Skillbound play and Dungeon Forge → Test Dungeon.
 
