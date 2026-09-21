@@ -1298,6 +1298,7 @@ function enemyIdentityActive(runtime: any, enemy: any, mode: EnemyMode) {
     !enemy ||
     enemy.health <= 0 ||
     enemy.__forgeSpawnArrival ||
+    Number(enemy.bossPhaseTransitionRemaining ?? 0) > 0 ||
     enemy.windupRemaining > 0 ||
     enemy.staggerRemaining > 0 ||
     enemy.recoveryRemaining > 0
@@ -2648,12 +2649,14 @@ function roleTargetSnapshot(runtime: any, snapshot: any, mode: EnemyMode) {
           Math.max(0, Number(enemy.bossPhaseIndex ?? 0))
         ]?.name,
       combatIntent:
-        enemy.__forgeIdentityAction?.label ??
-        (enemy.__forgeVolleyShot
-          ? 'Volley'
-          : enemy.__forgeGraveZoneCast
-            ? 'Grave Zone'
-            : undefined),
+        Number(enemy.bossPhaseTransitionRemaining ?? 0) > 0
+          ? 'Phase Shift'
+          : enemy.__forgeIdentityAction?.label ??
+            (enemy.__forgeVolleyShot
+              ? 'Volley'
+              : enemy.__forgeGraveZoneCast
+                ? 'Grave Zone'
+                : undefined),
       empowered:
         Number(enemy.__forgeEmpowerRemaining ?? 0) > 0,
       poise: Math.max(0, Math.round(enemy.poise)),
