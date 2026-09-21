@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.90.4`  
+> **Current Forge version:** `v1.91.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,18 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.91.0 is the **Combat v3 Presentation Polish** release. It keeps the existing Combat v3 mechanics and focuses on making enemy actions readable and satisfying in both normal Skillbound play and Dungeon Forge → Test Dungeon.
+
+The old featureless cylinder fallback enemies are replaced by articulated low-poly role rigs whenever no authored enemy character asset is attached. Road Wretches use a lean dual-blade silhouette, Crypt Brutes use a broad armored torso and mace, Bone Arbalists use a hood/quiver/crossbow silhouette, and Grave Channelers use a robe, hood and glowing staff orb. Elite fallback enemies also gain a small role-colored crown cue. These rigs are still procedural fallbacks rather than final authored enemy assets, but they now read as actual combatants instead of debug capsules.
+
+Fallback rigs now animate from the real combat state: walking drives a simple stride, melee windups pull weapons back, Brutes raise for a heavy slam, Arbalists aim before firing, Channelers raise the staff and intensify the orb, attack release produces a fast follow-through, and stagger/hit events kick the body off balance. Bound authored enemy assets continue using their animation bindings while the fallback rig stays hidden.
+
+Enemy telegraphs and attacks are also more role-specific. Melee ground warnings are directional arcs instead of full circles. Wretch releases produce a quick slash arc, Brute releases add a heavier shock/spark response, and Arbalists now fire a physical low-poly bolt with shaft, metal tip, fletching and a short luminous streak instead of a glowing sphere. Bolt impacts produce compact sparks. Channeler area attacks now erupt with a brief role-colored ground disc, rising magical shards and an impact burst in addition to any authored VFX binding.
+
+Hit presentation now layers directional body recoil and spark bursts on top of the existing knockback/hit-stop. Poise breaks receive a stronger gold-toned burst so a break is visually distinct from a normal hit. Dungeon deaths now carry their incoming momentum, tip/fall, sink slightly, shrink and fade while shedding role-colored fragments before the runtime hides the corpse. Channelers get a small magical collapse treatment; Brutes and bosses use heavier bursts.
+
+The presentation effects are driven by the shared Combat v3 runtime, so the same enemy pose, projectile, caster-impact, hit and death behavior is used in overworld combat and the shared dungeon runtime wherever the relevant role exists.
 
 Forge v1.90.4 fixes a shared dungeon runtime stall exposed by Combat v3 encounter spawning. Encounter Forge/Boss Forge's enemy spawn path predated the newer combat state and did not initialize `knockback`, `staggerRemaining`, or `recoveryRemaining`. The Combat v3 dungeon update then attempted to call `enemy.knockback.lengthSq()`, throwing every frame. The camera/render loop remained alive by design, which made the failure look like several unrelated bugs: enemies stood still and never attacked, attack/dodge/skill rings stopped expiring, and lethal hits could leave an enemy white and standing because the damage handler threw before `killEnemy()`.
 
