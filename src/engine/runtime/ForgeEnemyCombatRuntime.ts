@@ -142,7 +142,30 @@ function decorateFallbackRole(enemy: any, definition: any, role: string) {
 }
 
 function ensureEnemyState(enemy: any) {
-  if (!enemy || enemy.__forgeCombatV3) return
+  if (!enemy) return
+
+  // Normalize the mechanical fields first, even for already-decorated enemies.
+  // Several spawn paths predate Combat v3 and may omit these values.
+  enemy.attackTimer = Number.isFinite(enemy.attackTimer)
+    ? enemy.attackTimer
+    : 0
+  enemy.windupRemaining = Number.isFinite(enemy.windupRemaining)
+    ? enemy.windupRemaining
+    : 0
+  enemy.windupDuration = Number.isFinite(enemy.windupDuration)
+    ? enemy.windupDuration
+    : Number(enemy.definition?.attackWindup ?? .42)
+  enemy.staggerRemaining = Number.isFinite(enemy.staggerRemaining)
+    ? enemy.staggerRemaining
+    : 0
+  enemy.recoveryRemaining = Number.isFinite(enemy.recoveryRemaining)
+    ? enemy.recoveryRemaining
+    : 0
+  if (!(enemy.knockback instanceof THREE.Vector3)) {
+    enemy.knockback = new THREE.Vector3()
+  }
+
+  if (enemy.__forgeCombatV3) return
   const definition = enemy.definition ?? {}
   const role = roleOf(definition)
   const basePoise = Math.max(
