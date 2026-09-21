@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { equipmentMaterials } from './skillboundItemGeometry'
 import type { SkillboundItemRecipe } from './skillboundItems'
+import { buildConformedTunic } from './equipmentForgeV3/conform'
+import { createEquipmentForgeV3Recipe } from './equipmentForgeV3/types'
 
 export function findEquipmentBody(root: THREE.Object3D) {
   let body: THREE.SkinnedMesh | undefined; let score = -1
@@ -19,6 +21,7 @@ export function findEquipmentBody(root: THREE.Object3D) {
  * No source geometry, skeleton, materials or visibility are modified.
  */
 export function buildSkillboundArmor(source: THREE.SkinnedMesh, recipe: SkillboundItemRecipe) {
+  if (recipe.family === 'chest') return buildTailoredChest(source, recipe)
   const root = new THREE.Group(); root.name = `EQ_${recipe.family}_${recipe.seed}`; root.userData.skillboundEquipment = true
   root.position.copy(source.position); root.quaternion.copy(source.quaternion); root.scale.copy(source.scale)
   const geometry = source.geometry; const p = geometry.getAttribute('position'); const n = geometry.getAttribute('normal')
@@ -36,7 +39,6 @@ export function buildSkillboundArmor(source: THREE.SkinnedMesh, recipe: Skillbou
     const y = cy(p.getY(i)); const name = boneName(i)
     const arm = /arm|hand|finger|thumb/.test(name)
     switch (recipe.family) {
-      case 'chest': return y > .515 && y < .865 && !/hand|finger|thumb|lowerarm|forearm/.test(name)
       case 'gloves': return /hand|lowerarm|forearm/.test(name) && !/finger|thumb/.test(name)
       case 'legs': return y > .16 && y < .535 && !arm
       case 'boots': return y < .255 && !arm
@@ -74,8 +76,7 @@ export function buildSkillboundArmor(source: THREE.SkinnedMesh, recipe: Skillbou
     const put = (i: number) => {
       const old = remap.get(i); if (old !== undefined) return old
       const next = remap.size; remap.set(i,next); const y = cy(p.getY(i))
-      const shoulder = recipe.family === 'chest' && y > .765 && /upperarm|shoulder|clavicle/.test(boneName(i))
-      const clearance = height * (shoulder ? .014 + recipe.variant * .0015 : recipe.construction === 'plate' ? .009 : .006)
+      const clearance = height * (recipe.construction === 'plate' ? .009 : .006)
       const fold = recipe.construction === 'cloth' ? Math.sin(y * 65 + p.getX(i) * 12) * height * .0008 : 0
       positions.push(p.getX(i)+n.getX(i)*(clearance+fold), p.getY(i)+n.getY(i)*clearance, p.getZ(i)+n.getZ(i)*(clearance+fold))
       normals.push(n.getX(i),n.getY(i),n.getZ(i)); const uv = geometry.getAttribute('uv'); uvs.push(uv?.getX(i) ?? 0,uv?.getY(i) ?? y)
@@ -86,17 +87,12 @@ export function buildSkillboundArmor(source: THREE.SkinnedMesh, recipe: Skillbou
       const tri=[indexOf(j),indexOf(j+1),indexOf(j+2)]
       if(tri.filter(included).length < 2) continue
       const y=tri.reduce((s,i)=>s+cy(p.getY(i)),0)/3; const x=tri.reduce((s,i)=>s+p.getX(i)-centerX,0)/3
-      const shoulder=recipe.family==='chest' && y>.76 && Math.abs(x)>height*.12
       const knee=recipe.family==='legs' && y>.255 && y<.315
       const cuff=recipe.family==='boots' && y>.21 || recipe.family==='gloves' && /arm/.test(boneName(tri[0]))
       let material=recipe.construction==='cloth'?0:1
-      if(recipe.family==='chest') material=y<.66?1:0
-      // Broad lapels and cuff bands remain readable at the gameplay camera distance.
-      if(recipe.family==='chest' && y>.665 && y<.79 && Math.abs(x) < height*(.026+(y-.665)*.30)) material=1
       if(recipe.family==='boots' && (y>.21 || y>.105&&y<.118)) material=3
       if(recipe.family==='boots'||recipe.family==='waist'||recipe.family==='gloves') material=1
-      if(recipe.family==='helmet'||knee||shoulder||cuff) material=recipe.construction==='plate'?2:1
-      if(shoulder && recipe.variant%2===1 && x>0) material=1
+      if(recipe.family==='helmet'||knee||cuff) material=recipe.construction==='plate'?2:1
       indices.push(...tri.map(put));materials.push(material)
     }
     if(!indices.length) { Object.values(m).forEach(mat=>mat.dispose()); throw new Error(`No ${recipe.family} fitting surface found on ${source.name}.`) }
@@ -140,11 +136,59 @@ export function buildSkillboundArmor(source: THREE.SkinnedMesh, recipe: Skillbou
       accessory(new THREE.BoxGeometry(height*.012,height*.014,height*.009),x,y-height*.02,z+height*.007,3,'EQ_Waist_PouchClasp')
     }
   }
-  if(recipe.family==='chest')for(const side of [-1,1]) {
-    const y=box.min.y+height*.775
-    accessory(new THREE.SphereGeometry(height*.011,8,5),centerX+side*height*.082,y,frontAt(.775)+height*.012,3,'EQ_Chest_Clasp')
-  }
+
   m.wood.dispose();m.magic.dispose()
+  return root
+}
+
+/** Use a garment's own continuous rings, cuffs and neckline, not a selection of body triangles. */
+function buildTailoredChest(source: THREE.SkinnedMesh, recipe: SkillboundItemRecipe) {
+  const materials = equipmentMaterials(recipe)
+  const fitted = createEquipmentForgeV3Recipe()
+  fitted.length = 1.02 + (recipe.length - 1) * .4
+  fitted.looseness = recipe.construction === 'plate' ? .2 : .14
+  fitted.waistTaper = .16
+  fitted.hemFlare = .12
+  fitted.neckline = recipe.variant % 2 === 0 ? 'round' : 'high'
+  fitted.sleeve = 'short'
+  fitted.layers = { vest: recipe.construction !== 'cloth', belt: false, tabard: false, cape: false }
+  const root = new THREE.Group()
+  root.name = `EQ_Chest_${recipe.seed}`
+  root.userData.skillboundEquipment = true
+  root.position.copy(source.position)
+  root.quaternion.copy(source.quaternion)
+  root.scale.copy(source.scale)
+  // Fit in bind pose even when equipment changes while the live character runs.
+  // Never call pose() on the player's shared skeleton.
+  const restBones = source.skeleton.boneInverses.map(inverse => {
+    const bone = new THREE.Bone()
+    inverse.clone().invert().decompose(bone.position, bone.quaternion, bone.scale)
+    bone.updateMatrixWorld(true)
+    return bone
+  })
+  restBones.forEach((bone, i) => { bone.name = source.skeleton.bones[i].name })
+  const restSkeleton = new THREE.Skeleton(restBones, source.skeleton.boneInverses.map(m => m.clone()))
+  const fitSource = new THREE.SkinnedMesh(source.geometry, source.material)
+  source.bindMatrix.decompose(fitSource.position, fitSource.quaternion, fitSource.scale)
+  fitSource.bind(restSkeleton, source.bindMatrix.clone())
+  fitSource.updateMatrixWorld(true)
+  const { meshes } = buildConformedTunic(fitSource, fitted, materials.cloth, materials.leather,
+    recipe.construction === 'plate' ? materials.metal : materials.leather, materials.edge, materials.metal)
+  for (const mesh of meshes) {
+    // The fitter returns siblings of the body. Move them under the owning slot
+    // without applying the body's local transform twice.
+    root.add(mesh)
+    mesh.position.set(0, 0, 0)
+    mesh.quaternion.identity()
+    mesh.scale.set(1, 1, 1)
+    mesh.bindMode = source.bindMode
+    mesh.bind(source.skeleton, source.bindMatrix.clone())
+    mesh.userData.skillboundEquipment = true
+  }
+  const used = new Set<THREE.Material>()
+  meshes.forEach(mesh => (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach(m => used.add(m)))
+  Object.values(materials).forEach(m => { if (!used.has(m)) m.dispose() })
+  restSkeleton.dispose()
   return root
 }
 
