@@ -259,31 +259,86 @@ export const dungeonSceneMethods = {
   buildPortal(marker: DungeonMarker): PortalRuntime {
     const group = new THREE.Group()
     group.position.set(marker.x, marker.y, marker.z)
+
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0x425048,
+      transparent: true,
+      opacity: 0.12,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    })
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(1.05, 0.13, 10, 34),
-      new THREE.MeshBasicMaterial({ color: 0x6a2f32, transparent: true, opacity: 0.65 }),
+      new THREE.TorusGeometry(1.02, 0.095, 10, 36),
+      ringMaterial,
     )
-    ring.rotation.x = Math.PI / 2
-    ring.position.y = 1.15
-    const floor = new THREE.Mesh(new THREE.RingGeometry(0.65, 1.3, 32), new THREE.MeshBasicMaterial({ color: 0x6a2f32, side: THREE.DoubleSide, transparent: true, opacity: 0.28 }))
+    // TorusGeometry is already vertical in local XY. Keeping it upright makes
+    // the return portal read as a doorway instead of another ground telegraph.
+    ring.position.y = 1.12
+    ring.scale.y = 1.12
+
+    const floorMaterial = new THREE.MeshBasicMaterial({
+      color: 0x2f3833,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.08,
+      depthWrite: false,
+    })
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(0.82, 28),
+      floorMaterial,
+    )
     floor.rotation.x = -Math.PI / 2
-    floor.position.y = 0.04
-    const light = new THREE.PointLight(0x6a2f32, 1.4, 7)
-    light.position.y = 1.3
-    group.add(ring, floor, light)
+    floor.position.y = 0.025
+
+    const coreMaterial = new THREE.MeshBasicMaterial({
+      color: 0x68d78c,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    })
+    const core = new THREE.Mesh(
+      new THREE.CircleGeometry(0.82, 36),
+      coreMaterial,
+    )
+    core.position.y = 1.12
+
+    const light = new THREE.PointLight(0x425048, 0.18, 5)
+    light.position.y = 1.2
+
+    group.add(floor, ring, core, light)
     this.world.add(group)
-    return { marker, group, ring, light }
+    return { marker, group, ring, floor, core, light }
   },
 
   updatePortalVisual() {
     if (!this.portal) return
     const ready = this.portalReady()
-    const color = ready ? 0x68d78c : 0x6a2f32
-    const material = this.portal.ring.material as THREE.MeshBasicMaterial
-    material.color.setHex(color)
-    material.opacity = ready ? 0.95 : 0.48
-    this.portal.light.color.setHex(color)
-    this.portal.light.intensity = ready ? 3.2 : 0.8
+    const ringMaterial = this.portal.ring.material as THREE.MeshBasicMaterial
+    const floorMaterial = this.portal.floor.material as THREE.MeshBasicMaterial
+    const coreMaterial = this.portal.core.material as THREE.MeshBasicMaterial
+
+    if (ready) {
+      ringMaterial.color.setHex(0x68d78c)
+      ringMaterial.opacity = 0.92
+      floorMaterial.color.setHex(0x4a8d68)
+      floorMaterial.opacity = 0.16
+      coreMaterial.color.setHex(0x68d78c)
+      coreMaterial.opacity = 0.18
+      this.portal.light.color.setHex(0x68d78c)
+      this.portal.light.intensity = 2.8
+    } else {
+      ringMaterial.color.setHex(0x425048)
+      ringMaterial.opacity = 0.12
+      floorMaterial.color.setHex(0x2f3833)
+      floorMaterial.opacity = 0.08
+      coreMaterial.opacity = 0
+      this.portal.light.color.setHex(0x425048)
+      this.portal.light.intensity = 0.18
+    }
   },
 
   portalReady() {
