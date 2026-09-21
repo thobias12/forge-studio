@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.90.3`  
+> **Current Forge version:** `v1.90.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,12 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.90.4 fixes a shared dungeon runtime stall exposed by Combat v3 encounter spawning. Encounter Forge/Boss Forge's enemy spawn path predated the newer combat state and did not initialize `knockback`, `staggerRemaining`, or `recoveryRemaining`. The Combat v3 dungeon update then attempted to call `enemy.knockback.lengthSq()`, throwing every frame. The camera/render loop remained alive by design, which made the failure look like several unrelated bugs: enemies stood still and never attacked, attack/dodge/skill rings stopped expiring, and lethal hits could leave an enemy white and standing because the damage handler threw before `killEnemy()`.
+
+All dungeon enemy spawn paths now initialize the complete mechanical combat state, and Combat v3 also normalizes those fields defensively before every decorated enemy enters shared AI. Legacy or future authored spawn paths therefore receive a valid `THREE.Vector3` knockback accumulator plus finite stagger/recovery/windup timers automatically.
+
+The dungeon frame loop is also more fault-isolated. Player/encounter updates, enemy AI, transient VFX/loot/portal updates, and camera/rendering run in separate guarded stages. Temporary attack, dodge and skill effects are aged out before secondary runtime systems, so a future enemy/loot/VFX error cannot strand ground rings in the scene. With the underlying exception removed, hit emissive now decays normally, enemy AI resumes after arrival lockout, lethal hits reach the real death flow, and dead enemies disappear after their death presentation.
 
 Forge v1.90.3 adds a proper **Dungeon Wave Arrival** presentation so encounter enemies no longer pop into existence when a trigger activates.
 
