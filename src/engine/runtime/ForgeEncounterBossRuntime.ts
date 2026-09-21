@@ -162,6 +162,7 @@ export function installEncounterBossRuntime(Runtime: any) {
         moving: false,
         bossProfile,
         bossPhaseIndex: -1,
+        bossPhaseTransitionRemaining: 0,
         baseDamage,
         baseMoveSpeed,
         baseAttackCooldown,
@@ -178,28 +179,92 @@ export function installEncounterBossRuntime(Runtime: any) {
       if (!profile || enemy.health <= 0) return
       const phases = normalizeBossPhases(profile.phases)
       if (!phases.length) return
-      const ratio = enemy.health / Math.max(1, enemy.maxHealth)
-      const phase = activeBossPhase(phases, ratio)
-      const index = phases.findIndex((entry: any) => entry.id === phase?.id)
-      if (!phase || index < 0 || index <= enemy.bossPhaseIndex) return
+
+      let index = 0
+      let phase = phases[0]
+
+      if (!initial) {
+        if (Number(enemy.bossPhaseTransitionRemaining ?? 0) > 0) return
+        index = Math.max(0, Number(enemy.bossPhaseIndex ?? -1) + 1)
+        if (index >= phases.length) return
+        phase = phases[index]
+        const ratio = enemy.health / Math.max(1, enemy.maxHealth)
+        if (ratio > Number(phase.startsAtHealth ?? 0)) return
+      }
+
+      if (!phase || index <= enemy.bossPhaseIndex) return
 
       const previous = enemy.bossPhaseIndex
       enemy.bossPhaseIndex = index
-      enemy.damage = enemy.baseDamage * Math.max(0.1, phase.damageMultiplier)
-      enemy.moveSpeed = enemy.baseMoveSpeed * Math.max(0.1, phase.moveSpeedMultiplier)
-      enemy.attackCooldown = enemy.baseAttackCooldown * Math.max(0.1, phase.attackCooldownMultiplier)
-      enemy.phaseWindup = enemy.baseWindup * Math.max(0.1, phase.windupMultiplier)
-      enemy.attackTimer = Math.min(enemy.attackTimer, enemy.attackCooldown * 0.35)
-      const material = enemy.telegraph.material as THREE.MeshBasicMaterial
-      material.color.set(index >= phases.length - 1 ? 0xff3f3f : index > 0 ? 0xf27845 : 0xe8644d)
+      enemy.damage =
+        enemy.baseDamage *
+        Math.max(0.1, phase.damageMultiplier)
+      enemy.moveSpeed =
+        enemy.baseMoveSpeed *
+        Math.max(0.1, phase.moveSpeedMultiplier)
+      enemy.attackCooldown =
+        enemy.baseAttackCooldown *
+        Math.max(0.1, phase.attackCooldownMultiplier)
+      enemy.phaseWindup =
+        enemy.baseWindup *
+        Math.max(0.1, phase.windupMultiplier)
+      enemy.attackTimer = Math.min(
+        enemy.attackTimer,
+        enemy.attackCooldown * 0.35,
+      )
 
-      if (initial || previous < 0 && index === 0) return
+      const material =
+        enemy.telegraph.material as THREE.MeshBasicMaterial
+      material.color.set(
+        index >= phases.length - 1
+          ? 0xff3f3f
+          : index > 0
+            ? 0xf27845
+            : 0xe8644d,
+      )
+
+      if (initial || (previous < 0 && index === 0)) return
+
+      const transitionDuration =
+        index >= phases.length - 1 ? 1.05 : 1.35
+      enemy.bossPhaseTransitionRemaining = transitionDuration
+      enemy.staggerRemaining = Math.max(
+        Number(enemy.staggerRemaining ?? 0),
+        transitionDuration + .08,
+      )
+      enemy.recoveryRemaining = Math.max(
+        Number(enemy.recoveryRemaining ?? 0),
+        transitionDuration + .12,
+      )
+      enemy.specialCooldownRemaining = Math.max(
+        Number(enemy.specialCooldownRemaining ?? 0),
+        transitionDuration + .75,
+      )
+      enemy.__forgeIdentityAction = undefined
+      enemy.__forgeVolleyShot = false
+      enemy.__forgeGraveZoneCast = false
+      enemy.telegraph.visible = false
+
       this.focusEnemyId = enemy.id
       this.cameraShake = Math.max(this.cameraShake, 0.42)
-      this.spawnPulse(enemy.group.position, index >= phases.length - 1 ? '#ff4b42' : '#e8874d', 4.2, 0.5)
-      if (phase.vfxAssetId) void this.spawnBoundVfx(phase.vfxAssetId, enemy.group.position)
+      this.spawnPulse(
+        enemy.group.position,
+        index >= phases.length - 1
+          ? '#ff4b42'
+          : '#e8874d',
+        4.2,
+        0.5,
+      )
+      if (phase.vfxAssetId) {
+        void this.spawnBoundVfx(
+          phase.vfxAssetId,
+          enemy.group.position,
+        )
+      }
       if (phase.message) this.setMessage(phase.message, 4.2)
-      if (phase.summonEnemyId && phase.summonCount > 0) this.spawnBossSummons(enemy, phase)
+      if (phase.summonEnemyId && phase.summonCount > 0) {
+        this.spawnBossSummons(enemy, phase)
+      }
     },
 
     spawnBossSummons(boss: any, phase: any) {
@@ -240,13 +305,39 @@ export function installEncounterBossRuntime(Runtime: any) {
 
     updateEnemies(delta: number) {
       for (const enemy of this.enemies.values()) {
-        if (enemy.boss && enemy.bossProfile && enemy.health > 0) this.updateBossPhase(enemy)
+        if (!enemy.boss || !enemy.bossProfile || enemy.health <= 0) continue
+
+        enemy.bossPhaseTransitionRemaining = Math.max(
+          0,
+          Number(enemy.bossPhaseTransitionRemaining ?? 0) - delta,
+        )
+        if (enemy.bossPhaseTransitionRemaining > 0) {
+          enemy.staggerRemaining = Math.max(
+            Number(enemy.staggerRemaining ?? 0),
+            enemy.bossPhaseTransitionRemaining + .04,
+          )
+          enemy.recoveryRemaining = Math.max(
+            Number(enemy.recoveryRemaining ?? 0),
+            enemy.bossPhaseTransitionRemaining + .08,
+          )
+          enemy.telegraph.visible = false
+        }
+
+        this.updateBossPhase(enemy)
       }
       return baseUpdateEnemies.call(this, delta)
     },
 
     beginEnemyAttack(enemy: any) {
       if (!enemy.bossProfile) return baseBeginEnemyAttack.call(this, enemy)
+      if (Number(enemy.bossPhaseTransitionRemaining ?? 0) > 0) {
+        enemy.telegraph.visible = false
+        enemy.attackTimer = Math.max(
+          Number(enemy.attackTimer ?? 0),
+          Number(enemy.bossPhaseTransitionRemaining ?? 0) + .2,
+        )
+        return
+      }
       enemy.windupDuration = THREE.MathUtils.clamp(enemy.phaseWindup ?? enemy.baseWindup ?? enemy.definition.attackWindup ?? 0.42, 0.12, 1.5)
       enemy.windupRemaining = enemy.windupDuration
       enemy.telegraph.visible = true
