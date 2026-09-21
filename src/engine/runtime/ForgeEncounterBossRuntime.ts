@@ -108,6 +108,10 @@ export function installEncounterBossRuntime(Runtime: any) {
       healthBack.position.set(0, 2.48, 0)
       const healthFill = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.055, 0.065), new THREE.MeshBasicMaterial({ color: boss ? 0xdc525a : 0xc9574f }))
       healthFill.position.set(0, 2.48, -0.035)
+      // Target health is rendered in the HUD. World-space bars rotate with
+      // enemies in the isometric camera and read as distracting floating rods.
+      healthBack.visible = false
+      healthFill.visible = false
       const telegraph = new THREE.Mesh(
         new THREE.RingGeometry(Math.max(0.45, definition.attackRange * 0.55), Math.max(0.55, definition.attackRange * 0.72), 32),
         new THREE.MeshBasicMaterial({ color: 0xe8644d, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }),
