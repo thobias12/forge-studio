@@ -21,5 +21,8 @@
   "poiseRecovery": 10,
   "areaRadius": 2.15,
   "scale": 1.02,
-  "telegraphColor": "#9b6ee7"
+  "telegraphColor": "#9b6ee7",
+  "specialCooldown": 5.2,
+  "hazardDuration": 3.4,
+  "hazardTickDamage": 5
 }
