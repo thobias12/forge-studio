@@ -65,7 +65,14 @@ type RuntimeEnemy = {
 type RuntimeLoot = { id: string; itemId: string; group: THREE.Group; fallback: THREE.Mesh; model?: THREE.Object3D; age: number }
 type RuntimeEffect = { mesh: THREE.Mesh; age: number; duration: number; maxScale: number }
 type RuntimeTextEffect = { sprite: THREE.Sprite; age: number; duration: number }
-type PortalRuntime = { marker: DungeonMarker; group: THREE.Group; ring: THREE.Mesh; light: THREE.PointLight }
+type PortalRuntime = {
+  marker: DungeonMarker
+  group: THREE.Group
+  ring: THREE.Mesh
+  floor: THREE.Mesh
+  core: THREE.Mesh
+  light: THREE.PointLight
+}
 
 export type ForgeDungeonTargetSnapshot = { id: string; name: string; health: number; maxHealth: number; boss: boolean }
 export type ForgeDungeonRuntimeSnapshot = ForgeAdventurePlayerState & {
