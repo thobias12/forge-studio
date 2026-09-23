@@ -9,6 +9,7 @@ import { dungeonArtCollidesV3, dungeonFloorHeightV3, dungeonNavigationContainsV3
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { ForgeChainLightningEffect, normalizeChainConfig, resolveForgeChainTargets } from './ForgeChainLightningRuntime'
+import { playCombatAudioCue } from './ForgeCombatAudio'
 import {
   FORGE_GAMEPLAY_FEEL,
   forgeAbilityActionCooldown,
@@ -166,6 +167,10 @@ export const dungeonGameplayMethods = {
     this.dodgeRemaining = DODGE_DURATION
     this.dodgeCooldown = this.gameplay.player.dodgeCooldown
     this.playerVisual?.play('dodge', false)
+    void playCombatAudioCue(this, 'player.dodge', {
+      position: this.player.position,
+      intensity: 0.9,
+    })
     this.spawnPulse(this.player.position, '#8ebaa0', 2.2, 0.28)
     this.emitState()
   },
@@ -283,6 +288,20 @@ export const dungeonGameplayMethods = {
       action.remaining = action.activeDuration
       if (!action.impacted) {
         action.impacted = true
+        const meleeRelease = action.ability.kind === 'melee'
+        void playCombatAudioCue(
+          this,
+          meleeRelease
+            ? 'player.attack-release'
+            : 'player.cast-release',
+          {
+            intensity:
+              action.ability.input === 'primary' ? 0.9 : 1.05,
+            playbackRate:
+              action.comboStep === 2 ? 0.94 : 1,
+            position: this.player.position,
+          },
+        )
         if (
           action.ability.input === 'primary' &&
           action.ability.kind === 'melee'
