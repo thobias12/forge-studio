@@ -182,8 +182,11 @@ const PROJECT_ROOT = './projects/skillbound/'
 let skillboundWorkspacePromise: Promise<ForgeProjectWorkspace> | undefined
 
 export async function loadSkillboundWorkspace(forceBundled = false): Promise<ForgeProjectWorkspace> {
-  const workspace = await loadWorkspaceContent(forceBundled)
-  return { ...workspace, gameplay: ensureSkillboundItemSystem(workspace.gameplay) }
+  if (!forceBundled && skillboundWorkspacePromise) return await skillboundWorkspacePromise
+const workspace = await loadWorkspaceContent(forceBundled)
+  const resolved = { ...workspace, gameplay: ensureSkillboundItemSystem(workspace.gameplay) }
+if (!forceBundled) skillboundWorkspacePromise = Promise.resolve(resolved)
+return resolved
 }
 
 async function loadWorkspaceContent(forceBundled = false): Promise<ForgeProjectWorkspace> {
