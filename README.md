@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.94.1`  
+> **Current Forge version:** `v1.95.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,22 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.95.0 is the **Cold Cathedral dungeon art-direction pass**, based on the supplied visual references and implemented through Forge's own procedural geometry/material language.
+
+The crypt palette is rebuilt around a near-black void, cool blue-gray masonry, dark navy seams and a brighter readable stone floor. Global fog is reduced and the ambient/key mix is cooler and more restrained so the room reads through local light sources instead of a flat gray fill.
+
+Warm sconces now provide stronger orange islands around the room perimeter while remaining the same shared fixture system in Edit and Test Dungeon. Torch hardware is shifted into dark blue steel so the fire color is the focal point rather than brown brackets.
+
+Floor masonry uses slightly broader rectangular courses with less muddy damage contrast. Cracks are cool dark-blue instead of brown/black, and sparse long pale-blue etched wear lines break up large floors without turning them into noisy procedural scatter.
+
+Atmosphere v2 is sharpened rather than made foggier. Room bounce colors now stay within a coherent cool-blue family, visible low mist is reduced to one or two restrained pockets, and airborne dust is subtler. Boss/elite/shrine/treasure rooms still vary, but they no longer switch to unrelated red/green/brown floor moods.
+
+A new **cold ward-stone** presentation provides the second lighting family visible in the references: faceted blue-gray monuments with cyan rune cores, soft additive floor pools and a tightly capped set of non-shadowing cyan point lights. They are staged sparsely at room edges in boss/elite/shrine/large spaces and are explicitly decorative rather than collision geometry.
+
+Existing humanoid crypt statues are replaced with abstract faceted cathedral markers so environmental props share one graphic language. The shrine relic is now a bright cyan magical focal with a small local light, and the Warden dais uses a restrained cold-blue seal/ring treatment.
+
+All of this lives in the shared Dungeon V3 renderer introduced in v1.94.0, so Dungeon Forge Edit and the real Skillbound/Test Dungeon runtime receive the same materials, fixtures, ward stones, atmosphere and dressing. This release does not change enemy AI, combat damage, encounter counts, navigation rules or Vault Warden phase tuning.
 
 Forge v1.94.1 refines the **Dungeon Forge authoring overview** after the v1.94.0 renderer unification.
 
