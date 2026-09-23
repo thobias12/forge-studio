@@ -70,6 +70,7 @@ export function addDungeonMasonryV3(
   addCorridorFixtures(root, value, atmosphere, flickerLights, mode)
   addRoomDressing(root, value, atmosphere, mode)
   addColdCathedralAccents(root, value, atmosphere, mode)
+  addAtmosphereV3Staging(root, value, atmosphere, mode)
   addDungeonAtmosphereV2(root, value, atmosphere, mode)
 
   return root
@@ -2203,7 +2204,7 @@ function addRoomDressing(
     if (template === 'warden-hall') {
       addStatue(root, room, -0.31, -0.2, 0, materials, mode)
       addStatue(root, room, 0.31, -0.2, Math.PI, materials, mode)
-      if (random() > 0.55) addRoomBanner(root, room, 0, 0.42, materials, mode, 0x4b3430)
+      if (random() > 0.55) addRoomBanner(root, room, 0, 0.42, materials, mode, 0x27465b)
       continue
     }
 
@@ -2262,6 +2263,250 @@ function addRoomDressing(
       addSarcophagus(root, room, -0.26, 0.2, 0, materials)
     } else if (random() > 0.7) {
       addRubbleCluster(root, room, 0.28, 0.28, materials, random, false)
+    }
+  }
+}
+
+function addAtmosphereV3Staging(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  if (mode === 'walk') return
+
+  const inlayMaterial = new THREE.MeshBasicMaterial({
+    color: 0x86b8d5,
+    transparent: true,
+    opacity: .13,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  })
+  const inlayStrongMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8fdcff,
+    transparent: true,
+    opacity: .19,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  })
+  const plaqueMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(atmosphere.wallDark).lerp(
+      new THREE.Color(atmosphere.wall),
+      .26,
+    ),
+    roughness: .88,
+    metalness: .06,
+  })
+  const plaqueInsetMaterial = new THREE.MeshBasicMaterial({
+    color: 0x75c9ee,
+    transparent: true,
+    opacity: .32,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+
+  const addFloorInlay = (
+    room: DungeonRoom,
+    radius: number,
+    strong = false,
+  ) => {
+    const group = new THREE.Group()
+    group.position.set(
+      room.x,
+      room.floorLevel + .071,
+      room.z,
+    )
+    group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const material = strong
+      ? inlayStrongMaterial
+      : inlayMaterial
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius * .72, radius * .76, 48),
+      material,
+    )
+    ring.rotation.x = -Math.PI / 2
+    ring.renderOrder = 4
+    group.add(ring)
+
+    const diamond = new THREE.Mesh(
+      new THREE.RingGeometry(radius * .18, radius * .205, 4),
+      material,
+    )
+    diamond.rotation.x = -Math.PI / 2
+    diamond.rotation.z = Math.PI / 4
+    diamond.renderOrder = 4
+    group.add(diamond)
+
+    for (let index = 0; index < 4; index += 1) {
+      const ray = new THREE.Mesh(
+        new THREE.BoxGeometry(radius * .42, .006, .026),
+        material,
+      )
+      const angle = index * Math.PI / 2 + Math.PI / 4
+      ray.position.set(
+        Math.cos(angle) * radius * .48,
+        .002,
+        Math.sin(angle) * radius * .48,
+      )
+      ray.rotation.y = -angle
+      ray.renderOrder = 4
+      group.add(ray)
+    }
+  }
+
+  const addWallPlaque = (
+    room: DungeonRoom,
+    side: 'north' | 'south' | 'east' | 'west',
+    along: number,
+    glow = false,
+  ) => {
+    const p = roomWallPoint(room, side, along, .11)
+    const group = new THREE.Group()
+    group.position.set(p.x, room.floorLevel, p.z)
+    group.rotation.y = p.yaw
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(.82, 1.05, .11),
+      plaqueMaterial,
+    )
+    frame.position.y = .74
+    frame.castShadow = true
+    group.add(frame)
+
+    const inset = new THREE.Mesh(
+      new THREE.BoxGeometry(.4, .58, .018),
+      glow ? plaqueInsetMaterial : inlayMaterial,
+    )
+    inset.position.set(0, .77, -.062)
+    inset.renderOrder = 5
+    group.add(inset)
+
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(.96, .12, .16),
+      plaqueMaterial,
+    )
+    cap.position.set(0, 1.32, -.01)
+    group.add(cap)
+  }
+
+  for (const edge of value.corridors) {
+    const path = dungeonCorridorPath(value, edge)
+    const total = pathLength(path)
+    const count = Math.max(0, Math.floor(total / 13))
+    for (let index = 1; index <= count; index += 1) {
+      const sample = samplePathAtDistance(
+        path,
+        index * total / (count + 1),
+      )
+      if (!sample) continue
+      if (
+        value.rooms.some((room) =>
+          dungeonRoomContainsV3(
+            room,
+            sample.x,
+            sample.z,
+            Math.max(1.8, edge.width * .42),
+          )
+        )
+      ) continue
+
+      for (const offset of [-.13, .13]) {
+        const threshold = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            Math.max(1.25, edge.width * .7),
+            .006,
+            .028,
+          ),
+          inlayMaterial,
+        )
+        threshold.position.set(
+          sample.x + Math.sin(sample.yaw) * offset,
+          dungeonFloorHeightV3(
+            value,
+            sample.x,
+            sample.z,
+          ) + .072,
+          sample.z + Math.cos(sample.yaw) * offset,
+        )
+        threshold.rotation.y = sample.yaw
+        threshold.renderOrder = 4
+        threshold.userData.decorativeNoCollision = true
+        root.add(threshold)
+      }
+    }
+  }
+
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const area = room.width * room.depth
+    const radius = THREE.MathUtils.clamp(
+      Math.min(room.width, room.depth) * .24,
+      2.1,
+      4.4,
+    )
+
+    if (template === 'warden-sanctum' || room.type === 'boss') {
+      addFloorInlay(room, radius, true)
+      addWallPlaque(room, 'north', -.22, true)
+      addWallPlaque(room, 'north', .22, true)
+      addWallPlaque(room, 'south', -.22, false)
+      addWallPlaque(room, 'south', .22, false)
+      continue
+    }
+
+    if (template === 'warden-hall' || room.type === 'elite') {
+      addFloorInlay(room, radius * .86, true)
+      addWallPlaque(room, 'north', -.2, true)
+      addWallPlaque(room, 'south', .2, false)
+      continue
+    }
+
+    if (template === 'shrine-hall' || room.type === 'shrine') {
+      addFloorInlay(room, radius * .82, true)
+      addWallPlaque(room, 'north', 0, true)
+      addWallPlaque(room, 'south', 0, true)
+      continue
+    }
+
+    if (template === 'reliquary' || room.type === 'treasure') {
+      addFloorInlay(room, radius * .74, false)
+      addWallPlaque(room, 'north', 0, false)
+      continue
+    }
+
+    if (template === 'crossroads') {
+      addFloorInlay(room, radius * .76, false)
+      addWallPlaque(room, 'east', 0, false)
+      addWallPlaque(room, 'west', 0, false)
+      continue
+    }
+
+    if (
+      template === 'burial-chamber' ||
+      template === 'ossuary-gallery' ||
+      template === 'sealed-ossuary'
+    ) {
+      addWallPlaque(room, 'north', -.24, false)
+      addWallPlaque(room, 'south', .24, false)
+      if (area > 360) {
+        addFloorInlay(room, radius * .66, false)
+      }
+      continue
+    }
+
+    if (area > 360) {
+      addWallPlaque(room, 'north', 0, false)
+      addWallPlaque(room, 'south', 0, false)
     }
   }
 }
