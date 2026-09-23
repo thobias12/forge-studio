@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.93.1`  
+> **Current Forge version:** `v1.94.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,22 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.94.0 is the **Dungeon Forge Unified Preview** release. Dungeon authoring now follows one visual authority: the creator overview, Test Dungeon and actual Skillbound dungeon play all render the same authored world presentation.
+
+The old first-person **Walk** mode has been removed from Dungeon Forge. Test Dungeon remains the only playable preview and continues to launch the real `SkillboundDungeonPlayViewport` / `ForgeDungeonRuntime` used by Skillbound.
+
+For crypts, the creator now calls `addDungeonMasonryV3(..., 'arpg')`, exactly like the Skillbound runtime. Editor mode no longer substitutes the lower `editor` wall treatment or the full-height `walk` treatment. Tall walls, room architecture, fixtures, dressing, Atmosphere v2, mist/dust and torch presentation therefore come from the same renderer in Edit and runtime.
+
+The interaction-only `crypt-interaction` visual LOD has been removed. Dragging or resizing a room no longer swaps the dungeon to a reduced-detail theme, so what is visible while editing remains the actual authored presentation.
+
+Dungeon Forge no longer adds editor-only bloom or a second legacy crypt atmosphere-particle layer. Its Hemisphere/Ambient/Directional lighting positions, intensities, fog and tone-mapping exposure use the same `dungeonLightingProfile` and runtime light rig. The overview camera is intentionally different for authoring, but the world being viewed is the same.
+
+Built-in dungeon props in the creator now use the same runtime prop renderer. Library GLB props share one fitting/loading helper for identical normalization, scale, floor alignment and shadow setup in Edit and Skillbound. Authored manual walls likewise use the shared `addDungeonManualWallV3` geometry in both places.
+
+The only creator-specific visuals are authoring overlays: the grid, room outlines, resize handles, marker/prop labels, selection rings and selection wireframes. These overlays do not replace or simplify the underlying dungeon world.
+
+This release is editor/runtime presentation architecture only. Combat behavior, encounters, Vault Warden tuning, navigation rules and authored dungeon data are unchanged.
 
 Forge v1.93.1 is the **ARPG Wall Cutaway Polish** follow-up based on recorded gameplay of v1.93.0.
 

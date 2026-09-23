@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { getRoomConnection, type DungeonCorridor, type DungeonRoom } from './dungeonPackage'
+import { getRoomConnection, type DungeonCorridor, type DungeonRoom, type DungeonWall } from './dungeonPackage'
 import type { DungeonWithProps } from './dungeonProps'
 import type { DungeonAtmosphere } from './dungeonAtmosphere'
 
@@ -42,10 +42,11 @@ function geometryCache(value: DungeonWithProps): GeometryCache {
  * - staggered masonry only where the shared floor geometry is walkable
  * - perimeter walls only where walkable space borders the void
  * - internal room/corridor overlap walls therefore cannot exist
- * - ARPG/editor use a low perimeter silhouette; Walk uses full-height walls
+ * - the Skillbound ARPG presentation is the authoritative creator/runtime look
  *
  * The same geometry helpers are exported for collision and hit testing so the
- * visible floor, movement and editing all agree.
+ * visible floor, movement and editing all agree. Editor overlays are layered
+ * separately and never substitute different world geometry.
  */
 export function addDungeonMasonryV3(
   parent: THREE.Group,
@@ -118,6 +119,106 @@ export function addDungeonRoomOverlayV3(
       root.add(handle)
     }
   }
+
+  return root
+}
+
+export function addDungeonManualWallV3(
+  parent: THREE.Group,
+  wall: DungeonWall,
+  atmosphere: DungeonAtmosphere,
+) {
+  const dx = wall.x2 - wall.x1
+  const dz = wall.z2 - wall.z1
+  const length = Math.hypot(dx, dz)
+  if (length < .1) return undefined
+
+  const root = new THREE.Group()
+  root.name = `DungeonV3ManualWall:${wall.id}`
+  root.position.set(
+    (wall.x1 + wall.x2) / 2,
+    0,
+    (wall.z1 + wall.z2) / 2,
+  )
+  root.rotation.y = Math.atan2(dx, dz)
+  root.userData.wallId = wall.id
+  parent.add(root)
+
+  const dark = new THREE.MeshStandardMaterial({
+    color: atmosphere.wallDark,
+    roughness: .96,
+  })
+  const brick = new THREE.MeshStandardMaterial({
+    color: atmosphere.wall,
+    roughness: .92,
+    metalness: .01,
+    vertexColors: true,
+  })
+
+  const core = new THREE.Mesh(
+    new THREE.BoxGeometry(wall.thickness, wall.height, length),
+    dark,
+  )
+  core.position.y = wall.height / 2
+  core.castShadow = true
+  core.receiveShadow = true
+  core.userData.wallId = wall.id
+  core.userData.skillboundOccluder = true
+  root.add(core)
+
+  const rows = Math.max(3, Math.floor(wall.height / .52))
+  const rowHeight = wall.height / rows
+  const random = seededRandom(stringHash(`manual-wall:${wall.id}`))
+  const blocks: Array<{
+    z: number
+    y: number
+    length: number
+    shade: number
+  }> = []
+  for (let row = 0; row < rows; row += 1) {
+    let cursor = -length / 2 - (row % 2 ? .55 : .05)
+    while (cursor < length / 2) {
+      const blockLength = .85 + random() * .85
+      const center = cursor + blockLength / 2
+      if (center > -length / 2 && center < length / 2) {
+        blocks.push({
+          z: center,
+          y: row * rowHeight + rowHeight / 2,
+          length: Math.min(blockLength * .94, length),
+          shade: .78 + random() * .2,
+        })
+      }
+      cursor += blockLength + .055
+    }
+  }
+
+  const geometry = new THREE.BoxGeometry(1, 1, 1)
+  const mesh = new THREE.InstancedMesh(
+    geometry,
+    brick,
+    blocks.length,
+  )
+  const dummy = new THREE.Object3D()
+  const tint = new THREE.Color(0xffffff)
+  blocks.forEach((block, index) => {
+    dummy.position.set(0, block.y, block.z)
+    dummy.scale.set(
+      wall.thickness + .08,
+      rowHeight * .82,
+      block.length,
+    )
+    dummy.updateMatrix()
+    mesh.setMatrixAt(index, dummy.matrix)
+    mesh.setColorAt(
+      index,
+      tint.clone().multiplyScalar(block.shade),
+    )
+  })
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.userData.wallId = wall.id
+  mesh.userData.skillboundOccluder = true
+  root.add(mesh)
 
   return root
 }
