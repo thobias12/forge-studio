@@ -73,6 +73,8 @@ function combatColor(definition: any) {
 }
 
 const COMBAT_GROUND_FX_CLEARANCE = .16
+const MAX_COMBAT_PRESENTATION_FX = 48
+const MAX_SPARKS_PER_BURST = 14
 
 function combatGroundY(
   runtime: any,
@@ -577,6 +579,41 @@ function triggerEnemyHitReaction(
       Math.abs(direction.x) > Math.abs(direction.z)
         ? Math.sign(direction.x || 1)
         : Math.sign(direction.z || 1),
+  }
+}
+
+function impactFeedback(
+  enemy: any,
+  damage: number,
+  poiseBroken: boolean,
+  lethal: boolean,
+  hitStop?: number,
+  cameraShake?: number,
+) {
+  const maxHealth = Math.max(
+    1,
+    Number(enemy.maxHealth ?? enemy.definition?.maxHealth ?? 1),
+  )
+  const healthFraction = Math.max(0, damage) / maxHealth
+  const heavy = poiseBroken || lethal || healthFraction >= .1
+  if (!heavy) return { hitStop, cameraShake }
+
+  const hitStopFloor =
+    poiseBroken
+      ? enemy.boss ? .044 : .052
+      : lethal
+        ? enemy.boss ? .046 : .05
+        : .041
+  const shakeFloor =
+    poiseBroken
+      ? enemy.boss ? .32 : .3
+      : lethal
+        ? enemy.boss ? .34 : .3
+        : .26
+
+  return {
+    hitStop: Math.max(hitStop ?? 0, hitStopFloor),
+    cameraShake: Math.max(cameraShake ?? 0, shakeFloor),
   }
 }
 
@@ -1345,7 +1382,7 @@ function spawnSpecialLineCue(
   line.position.z = length * .5
   group.add(line)
   ;(runtime.world ?? runtime.scene)?.add(group)
-  ensureCombatFxState(runtime).push({
+  pushCombatFx(runtime, {
     kind: 'identity-line',
     group,
     materials: [material],
@@ -2042,6 +2079,32 @@ function ensureCombatFxState(runtime: any) {
   return runtime.__forgeCombatPresentationFx as any[]
 }
 
+function disposeCombatFx(effect: any) {
+  if (!effect?.group) return
+  effect.group.parent?.remove(effect.group)
+  const geometries = new Set<any>()
+  const materials = new Set<any>()
+  effect.group.traverse((child: any) => {
+    if (child.geometry) geometries.add(child.geometry)
+    if (Array.isArray(child.material)) {
+      child.material.forEach((material: any) => materials.add(material))
+    } else if (child.material) {
+      materials.add(child.material)
+    }
+  })
+  geometries.forEach((geometry) => geometry.dispose?.())
+  materials.forEach((material) => material.dispose?.())
+}
+
+function pushCombatFx(runtime: any, effect: any) {
+  const effects = ensureCombatFxState(runtime)
+  while (effects.length >= MAX_COMBAT_PRESENTATION_FX) {
+    const oldest = effects.shift()
+    disposeCombatFx(oldest)
+  }
+  effects.push(effect)
+}
+
 function spawnSparkBurst(
   runtime: any,
   position: THREE.Vector3,
@@ -2053,26 +2116,34 @@ function spawnSparkBurst(
   const group = new THREE.Group()
   group.position.set(position.x, position.y + elevated, position.z)
   const particles: any[] = []
+  const particleCount = Math.min(
+    MAX_SPARKS_PER_BURST,
+    Math.max(1, Math.round(count)),
+  )
   const seed =
     Math.round(position.x * 31) ^
     Math.round(position.z * 67) ^
-    count
-  for (let index = 0; index < count; index += 1) {
+    particleCount
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const geometry = new THREE.TetrahedronGeometry(
+    .055 + power * .012,
+    0,
+  )
+  for (let index = 0; index < particleCount; index += 1) {
     const angle =
-      (index / Math.max(1, count)) * Math.PI * 2 +
+      (index / Math.max(1, particleCount)) * Math.PI * 2 +
       hashUnit(`${seed}:${index}:spark`) * .52
     const speed =
       (.75 + hashUnit(`${seed}:${index}:speed`) * .85) * power
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: .9,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false,
-    })
     const mesh = new THREE.Mesh(
-      new THREE.TetrahedronGeometry(.055 + power * .012, 0),
+      geometry,
       material,
     )
     mesh.position.set(0, 0, 0)
@@ -2092,7 +2163,7 @@ function spawnSparkBurst(
     })
   }
   ;(runtime.world ?? runtime.scene)?.add(group)
-  ensureCombatFxState(runtime).push({
+  pushCombatFx(runtime, {
     kind: 'sparks',
     group,
     particles,
@@ -2138,7 +2209,7 @@ function spawnMeleeReleaseFx(runtime: any, enemy: any) {
   arc.rotation.x = -Math.PI / 2
   group.add(arc)
   ;(runtime.world ?? runtime.scene)?.add(group)
-  ensureCombatFxState(runtime).push({
+  pushCombatFx(runtime, {
     kind: 'arc',
     group,
     materials: [material],
@@ -2203,7 +2274,7 @@ function spawnCasterImpactFx(
   }
 
   ;(runtime.world ?? runtime.scene)?.add(group)
-  ensureCombatFxState(runtime).push({
+  pushCombatFx(runtime, {
     kind: 'caster',
     group,
     materials,
@@ -2264,15 +2335,7 @@ function updateCombatFx(runtime: any, delta: number) {
     }
 
     if (progress < 1) continue
-    effect.group.parent?.remove(effect.group)
-    effect.group.traverse((child: any) => {
-      child.geometry?.dispose?.()
-      if (Array.isArray(child.material)) {
-        child.material.forEach((material: any) => material.dispose?.())
-      } else {
-        child.material?.dispose?.()
-      }
-    })
+    disposeCombatFx(effect)
     effects.splice(index, 1)
   }
 }
@@ -2711,16 +2774,32 @@ function registerDungeonDeath(runtime: any, enemy: any) {
   }
   const side = hashUnit(`${enemy.id}:death-side`) > .5 ? 1 : -1
   const role = enemy.combatRole ?? roleOf(enemy.definition)
-  const duration = enemy.boss ? 1.02 : .96
+  const duration =
+    enemy.boss ? 1.22 :
+      enemy.elite ? 1.06 :
+        role === 'brute' ? 1.02 :
+          .9
   runtime.__forgeCombatDeaths.push({
     enemy,
     age: 0,
     duration,
     velocity: away.multiplyScalar(
-      enemy.boss ? .45 : enemy.elite ? .92 : 1.18,
+      enemy.boss ? .4 : enemy.elite ? .82 : 1.04,
     ),
-    roll: side * (enemy.boss ? .32 : enemy.elite ? .68 : .88),
+    roll:
+      side *
+      (enemy.boss ? .28 : enemy.elite ? .58 : role === 'brute' ? .52 : .72),
+    pitch:
+      enemy.boss ? -.42 :
+        role === 'brute' ? -.68 :
+          role === 'caster' ? -.82 :
+            -.76,
+    lift:
+      enemy.boss ? .06 :
+        role === 'caster' ? .12 :
+          .08,
     baseScale: enemy.group.scale.clone(),
+    baseRotation: enemy.group.rotation.clone(),
     baseY: enemy.group.position.y,
   })
 
@@ -2782,19 +2861,27 @@ function updateDungeonDeaths(runtime: any, delta: number) {
       0,
       1,
     )
-    const drift = death.velocity.clone().multiplyScalar(delta)
-    enemy.group.position.add(drift)
+    enemy.group.position.addScaledVector(death.velocity, delta)
     death.velocity.multiplyScalar(Math.max(0, 1 - delta * 6.4))
 
-    enemy.group.rotation.z +=
-      death.roll * delta * (1 - progress * .35)
+    const fall = THREE.MathUtils.smoothstep(progress, .06, .76)
+    const settle = THREE.MathUtils.smoothstep(progress, .48, 1)
+    const lift =
+      Math.sin(
+        Math.min(1, progress / .38) * Math.PI,
+      ) * death.lift
+    enemy.group.rotation.x =
+      death.baseRotation.x + death.pitch * fall
+    enemy.group.rotation.z =
+      death.baseRotation.z + death.roll * fall
     enemy.group.position.y =
-      death.baseY -
-      Math.max(0, progress - .52) * (enemy.boss ? .28 : .42)
+      death.baseY +
+      lift -
+      settle * (enemy.boss ? .24 : .4)
     const shrink = THREE.MathUtils.lerp(
       1,
-      enemy.boss ? .86 : .68,
-      Math.max(0, (progress - .5) / .5),
+      enemy.boss ? .88 : .7,
+      THREE.MathUtils.smoothstep(progress, .56, 1),
     )
     enemy.group.scale.copy(death.baseScale).multiplyScalar(shrink)
 
@@ -2982,6 +3069,14 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       poise?.broken ? 1.05 : .5,
       .9,
     )
+    const feedback = impactFeedback(
+      enemy,
+      damage,
+      Boolean(poise?.broken),
+      lethal,
+      hitStop,
+      cameraShake,
+    )
     return baseDamageEnemy.call(
       this,
       enemy,
@@ -2990,8 +3085,8 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       color,
       presentation,
       knockbackMultiplier,
-      hitStop,
-      cameraShake,
+      feedback.hitStop,
+      feedback.cameraShake,
       poise?.stagger ?? staggerSeconds,
     )
   }
@@ -3302,6 +3397,14 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       poise?.broken ? 1.05 : .5,
       .9,
     )
+    const feedback = impactFeedback(
+      enemy,
+      damage,
+      Boolean(poise?.broken),
+      lethal,
+      hitStop,
+      cameraShake,
+    )
     return baseDamageEnemy.call(
       this,
       enemy,
@@ -3309,8 +3412,8 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
       direction,
       color,
       knockbackMultiplier,
-      hitStop,
-      cameraShake,
+      feedback.hitStop,
+      feedback.cameraShake,
       poise?.stagger ?? staggerSeconds,
     )
   }
