@@ -177,12 +177,12 @@ export default function App() {
     params.get('equipmentQa') === '1' ||
     window.__FORGE_EQUIPMENT_QA_FORCE__ === true
   ) {
-    return <EquipmentQaCapture />
+    return <Suspense fallback={<div className="center-state">Loading equipment QA…</div>}><EquipmentQaCapture /></Suspense>
   }
   if (params.get('dungeonQa') === '1') {
-    return <DungeonQaCapture />
+    return <Suspense fallback={<div className="center-state">Loading dungeon QA…</div>}><DungeonQaCapture /></Suspense>
   }
-  if (params.get('capture') === '1') return <Capture />
+  if (params.get('capture') === '1') return <Suspense fallback={<div className="center-state">Loading capture…</div>}><Capture /></Suspense>
 
   const [page, setPage] = useState<Page>(() => {
     const value = window.location.hash.replace('#/', '') as Page
