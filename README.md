@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.98.0`  
+> **Current Forge version:** `v1.98.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,24 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.98.1 is the second **Cathedral Environment V4 refinement pass**, made after v1.98.0 was deployed, verified on the live Pages SHA, and inspected through the production Dungeon Visual QA captures.
+
+The production images showed four concrete problems: cathedral pilasters read as isolated bright-blue posts instead of integrated architecture; crystal clusters were too white/chunky; random floor damage still produced distracting black scratches/holes; and the underlying perimeter still read as a dark jagged slab.
+
+Floor damage is therefore heavily reduced rather than hidden. Missing-corner events are extremely rare and much smaller, damaged stones are shallower and closer in tone to their neighbors, crack frequency drops again with shorter/lighter blue-gray marks, etched wear becomes sparser/fainter, and the base floor material receives a small readability lift with less emissive flattening.
+
+Wall architecture is integrated more strongly into the perimeter. Pilaster bases/shafts/caps are larger and taller but use a darker wall-derived material instead of bright accent blue. Recess panels are wider/deeper, rune strips remain reserved for focal supports, and a new globally instanced **cornice layer** runs along non-cross room walls at the real ARPG wall-top height. The cornice gives rooms a continuous architectural top line that visually bridges the procedural masonry blocks.
+
+The underlying wall face also receives a modest material/cap readability refinement so stone faces remain visible against the black void without changing global exposure.
+
+V4 crystal clusters are now much slimmer: narrower shafts, shorter secondary shards, smaller cores, lower emissive intensity and less white/cyan clipping. They should read as environmental crystals rather than luminous debug obelisks while preserving the cold focal language.
+
+Warm lighting is refined again from the live screenshots. Torch source intensity remains strong, but floor pools and wall washes are smaller and softer so the visible orange shape hugs the fixture instead of forming broad circular stains.
+
+Renderer-health budgets remain unchanged. The new continuous cornice is globally instanced, so the architectural refinement is expected to cost only a small number of additional draw calls.
+
+No combat, AI, room layout, encounter, navigation, collision or Vault Warden balance values are changed.
 
 Forge v1.98.0 is the first **Cathedral Environment V4** pass. It moves the crypt from a readable procedural blockout toward an authored cold-cathedral environment while staying inside the same authoritative Dungeon V3 renderer.
 
