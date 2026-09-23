@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.97.1`  
+> **Current Forge version:** `v1.97.2`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.97.2 extends **Dungeon Visual QA** into a renderer-health gate so visual upgrades cannot silently make Hollow Vault too expensive.
+
+Each of the six deterministic Hollow Vault QA views now records renderer cost after shader/shadow/post-processing warmup: draw calls, triangles, points, lines, geometries, textures, object/mesh/instancing counts, light counts, unique materials, and eight synchronous render-time samples with average/p95/max timings. `renderer.info.autoReset` is disabled during each measured composer frame so the numbers include the full RenderPass + bloom pipeline rather than only the last post-processing pass.
+
+The first v1.97.2 CI baseline measured a whole-dungeon peak of 703 draw calls, 89,900 triangles, 401 geometries, 15 textures, 24 lights, and one shadow-casting light. Fixed regression budgets are intentionally above that baseline to allow legitimate art growth while still catching accidental renderer explosions: 850 draw calls, 115,000 triangles, 500 geometries, 24 textures, 32 lights, and two shadow lights. Headless render timing has loose emergency ceilings of 45 ms average / 90 ms p95 plus 22 ms / 40 ms warning thresholds; timing is useful for same-environment trends, not a direct player-FPS estimate.
+
+The QA capture also samples the final post-processed canvas and records informational visual-health metrics per view: average luminance, p10/p50/p90 luminance, contrast range, dark-space ratio, highlight ratio, warm-light ratio, and cyan-light ratio. These are deliberately **not** artistic pass/fail gates yet; they become most useful once a dungeon look is explicitly approved as the visual baseline.
+
+`npm run qa:dungeon` now emits `performance.json` and `performance.md` alongside the contact sheet, individual PNGs and `manifest.json`. Structural/timing budget failures fail the QA step, while the PR workflow uploads the Dungeon QA artifact even on failure so the evidence remains available for diagnosis.
 
 Forge v1.97.1 adds a **Dungeon Visual QA** pipeline so dungeon-renderer work has repeatable visual evidence instead of relying only on manual gameplay screenshots.
 
