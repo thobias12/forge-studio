@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.97.3`  
+> **Current Forge version:** `v1.98.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,20 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.98.0 is the first **Cathedral Environment V4** pass. It moves the crypt from a readable procedural blockout toward an authored cold-cathedral environment while staying inside the same authoritative Dungeon V3 renderer.
+
+A new globally batched cathedral architecture layer adds wall pilasters, brighter cap/trim blocks, recessed wall panels, sparse cyan rune insets and room-border floor bands. These are instanced across the whole dungeon rather than emitted as many individual meshes, so the visual structure grows without scaling draw calls linearly with room count.
+
+The first crystal environment family is also batched globally. Boss, elite, shrine, reliquary and crossroads rooms now receive deliberate edge clusters built from faceted shafts, pointed caps, dark stone plinths and bright cyan cores. Placement is deterministic and stays outside the main combat center.
+
+Floor noise is reduced again: random crack frequency and etched wear frequency are lower, and dark crack opacity is reduced so large rooms read as continuous stone rather than a field of black scratches.
+
+Perimeter masonry is slightly more readable under the established lighting hierarchy. Wall face color/emissive and cap lift are increased modestly so walls retain visible blue-gray structure against the black void instead of collapsing into a solid dark silhouette.
+
+Torch fixtures use a more cathedral-like hexagonal backplate/cup profile. Their point lights remain strong, but broad warm floor/wall pools are tighter and more localized so orange light reads as a source near the flame instead of a large airbrushed circle.
+
+All new environment geometry is decorative/no-navigation and does not alter room dimensions, collision, encounters, combat or Vault Warden balance. Dungeon Forge Edit, Dungeon Visual QA and actual Skillbound dungeon play continue to use the same renderer.
 
 Forge v1.97.3 is the **Deployment Integrity** release. It fixes a GitHub Actions race discovered while deploying v1.97.2 and adds live-site verification after every production Pages deploy.
 
