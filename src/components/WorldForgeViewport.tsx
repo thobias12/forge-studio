@@ -1,5 +1,5 @@
 import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
-import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../engine/forestGeometry'
+import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestStylizedSpeciesCrown, forestStylizedTrunk } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -1441,12 +1441,15 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (trees.length) {
-    const trunkGeometry = forestTrunk()
+    const trunkGeometries = [0, 1, 2, 3].map((variant) => forestStylizedTrunk(variant))
     const trunkMaterial = markWorldWindMaterial(
       new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
       .16,
     )
-    const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
+    const trunksByVariant = [0, 1, 2, 3].map((variant) => {
+const items = trees.filter((item) => item.variant === variant)
+return new THREE.InstancedMesh(trunkGeometries[variant], trunkMaterial, items.length)
+})
     const matrix = new THREE.Matrix4()
     const quaternion = new THREE.Quaternion()
     const scale = new THREE.Vector3()
@@ -1470,38 +1473,41 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         quaternion,
         scale,
       )
-      trunks.setMatrixAt(index, matrix)
+      const variantItems = trees.filter((candidate) => candidate.variant === item.variant)
+trunksByVariant[item.variant].setMatrixAt(variantItems.indexOf(item), matrix)
     })
-    trunks.castShadow = true
-    trunks.receiveShadow = true
-    group.add(trunks)
+trunksByVariant.forEach((trunks) => {
+trunks.castShadow = true
+trunks.receiveShadow = true
+group.add(trunks)
+})
 
     const buckets = [0, 1, 2, 3].map((variant) =>
       trees.filter((item) => item.variant === variant)
     )
     const lowerGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(1.52, 2.75, 0, 0),
-      forestSpeciesCrown(1.72, 2.35, 1, 0),
-      forestSpeciesCrown(1.18, 1.77, 2, 0),
-      forestSpeciesCrown(1.34, 2.95, 3, 0),
+forestStylizedSpeciesCrown(1.52, 2.75, 0, 0),
+forestStylizedSpeciesCrown(1.72, 2.35, 1, 0),
+forestStylizedSpeciesCrown(1.18, 1.77, 2, 0),
+forestStylizedSpeciesCrown(1.34, 2.95, 3, 0),
     ]
     const middleGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(1.18, 2.45, 0, 1),
-      forestSpeciesCrown(1.32, 2.15, 1, 1),
-      forestSpeciesCrown(1.04, 1.56, 2, 1),
-      forestSpeciesCrown(1.04, 2.55, 3, 1),
+forestStylizedSpeciesCrown(1.18, 2.45, 0, 1),
+forestStylizedSpeciesCrown(1.32, 2.15, 1, 1),
+forestStylizedSpeciesCrown(1.04, 1.56, 2, 1),
+forestStylizedSpeciesCrown(1.04, 2.55, 3, 1),
     ]
     const upperGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(.82, 2.15, 0, 2),
-      forestSpeciesCrown(.9, 1.92, 1, 2),
-      forestSpeciesCrown(.82, 1.23, 2, 2),
-      forestSpeciesCrown(.7, 2.2, 3, 2),
+forestStylizedSpeciesCrown(.82, 2.15, 0, 2),
+forestStylizedSpeciesCrown(.9, 1.92, 1, 2),
+forestStylizedSpeciesCrown(.82, 1.23, 2, 2),
+forestStylizedSpeciesCrown(.7, 2.2, 3, 2),
     ]
     const accentGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(.78, .88, 0, 3),
-      forestSpeciesCrown(.92, .72, 1, 3),
-      forestSpeciesCrown(.66, 0.99, 2, 3),
-      forestSpeciesCrown(.7, .96, 3, 3),
+forestStylizedSpeciesCrown(.78, .88, 0, 3),
+forestStylizedSpeciesCrown(.92, .72, 1, 3),
+forestStylizedSpeciesCrown(.66, .99, 2, 3),
+forestStylizedSpeciesCrown(.7, .96, 3, 3),
     ]
     buckets.forEach((items, variant) => {
       if (!items.length) return
@@ -1510,22 +1516,22 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       )
       const lowerMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
-          color: variantColor.clone().multiplyScalar(.9),
-          roughness: 1, vertexColors: true,
+color: variantColor.clone().multiplyScalar(.9),
+roughness: .86, metalness: 0, vertexColors: true, flatShading: true,
         }),
         .48,
       )
       const middleMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
-          color: variantColor,
-          roughness: 1, vertexColors: true,
+color: variantColor,
+roughness: .84, metalness: 0, vertexColors: true, flatShading: true,
         }),
         .68,
       )
       const upperMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
-          color: variantColor.clone().multiplyScalar(1.1),
-          roughness: 1, vertexColors: true,
+color: variantColor.clone().multiplyScalar(1.08),
+roughness: .82, metalness: 0, vertexColors: true, flatShading: true,
         }),
         .9,
       )
