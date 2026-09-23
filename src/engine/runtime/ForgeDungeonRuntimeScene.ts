@@ -5,7 +5,7 @@ import { dungeonAtmosphere, dungeonLightingProfile, tintRoomFloor } from '../../
 import { dungeonProps } from '../../lib/dungeonProps'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
-import { addDungeonMasonryV3 } from '../../lib/dungeonForgeV3'
+import { addDungeonManualWallV3, addDungeonMasonryV3 } from '../../lib/dungeonForgeV3'
 import { bindCharacterAsset, disposeBoundObject, loadLibraryAnimationClips, spawnLibraryVfx } from './ForgeAssetRuntime'
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import { addRoomShell, addCorridorFloor, addBuiltinProp, chooseAbilityClip, markOccluderTree, pointInsideRoom, planarDistance, seededRandom, hashSeed, setMeshOpacity } from './ForgeDungeonRuntimeHelpers'
@@ -66,6 +66,10 @@ export const dungeonSceneMethods = {
           this.world.children.slice(start).forEach(markOccluderTree)
         }
       }
+    }
+
+    for (const wall of this.runtimeDungeon.walls ?? []) {
+      addDungeonManualWallV3(this.world, wall, atmosphere)
     }
 
     for (const prop of dungeonProps(this.runtimeDungeon)) {
