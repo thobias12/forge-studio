@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.97.0`  
+> **Current Forge version:** `v1.97.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.97.1 adds a **Dungeon Visual QA** pipeline so dungeon-renderer work has repeatable visual evidence instead of relying only on manual gameplay screenshots.
+
+A dedicated capture route is available at `?dungeonQa=1`. It loads the bundled Hollow Vault package and renders six fixed views through the authoritative Dungeon V3 pipeline: full overview, Drowned Crossroads, the Crossroads→Ossuary connector, Sunken Reliquary, Ossuary Hall, and Warden Sanctum. Room views use the same 44° ARPG camera shape and the same atmosphere, lighting, shadows, tone mapping and bloom profile as the real dungeon presentation.
+
+The capture page publishes `window.__FORGE_DUNGEON_QA_READY__` and `window.__FORGE_DUNGEON_QA__` metadata for automation. `npm run qa:dungeon` launches the production preview with Playwright, waits for all fixed views, captures a full contact sheet, writes each view as an individual PNG, and emits a JSON manifest with Forge build/version and dungeon fixture metadata.
+
+Pull-request CI now captures and uploads `dungeon-visual-qa-fast` after the normal build and Equipment QA. Production Pages QA captures `dungeon-visual-qa` with 14-day retention. A failed renderer, missing canonical room, page error, missing image, or empty view set fails the Dungeon QA capture instead of silently publishing a broken visual build.
+
+This is a workflow/validation release only. It does not alter Dungeon Atmosphere V3 art, combat, navigation, collision, room layout or balance.
 
 Forge v1.97.0 is the **Dungeon Atmosphere V3** presentation pass. It follows the supplied cathedral references and the user's v1.96 gameplay/editor screenshots, with the goal of making the dungeon feel authored and atmospheric rather than simply brighter.
 
