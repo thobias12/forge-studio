@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { createDungeonLibraryPropPlaceholder, disposeDungeonPropVisual, loadDungeonLibraryPropVisual } from '../lib/dungeonPropVisual'
@@ -51,6 +54,10 @@ export default function DungeonViewport(props: Props) {
     if (!host) return
 
     const initialAtmosphere = dungeonAtmosphere(props.value.theme)
+    const initialLighting = dungeonLightingProfile(
+      initialAtmosphere,
+      props.value.settings,
+    )
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(initialAtmosphere.background)
     scene.fog = new THREE.FogExp2(initialAtmosphere.fog, props.value.settings.fogDensity * initialAtmosphere.fogMultiplier)
@@ -68,6 +75,16 @@ export default function DungeonViewport(props: Props) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.domElement.style.touchAction = 'none'
     host.appendChild(renderer.domElement)
+
+    const composer = new EffectComposer(renderer)
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(1, 1),
+      initialLighting.bloomStrength,
+      initialAtmosphere.bloomRadius,
+      initialAtmosphere.bloomThreshold,
+    )
+    composer.addPass(new RenderPass(scene, camera))
+    composer.addPass(bloomPass)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -165,6 +182,9 @@ export default function DungeonViewport(props: Props) {
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
       renderer.toneMappingExposure = lighting.exposure
+      bloomPass.strength = lighting.bloomStrength
+      bloomPass.radius = atmosphere.bloomRadius
+      bloomPass.threshold = atmosphere.bloomThreshold
       return atmosphere
     }
 
@@ -251,6 +271,7 @@ export default function DungeonViewport(props: Props) {
       const rect = host.getBoundingClientRect()
       if (!rect.width || !rect.height) return
       renderer.setSize(rect.width, rect.height, false)
+      composer.setSize(rect.width, rect.height)
       camera.aspect = rect.width / rect.height
       camera.updateProjectionMatrix()
     }
@@ -538,7 +559,7 @@ export default function DungeonViewport(props: Props) {
         cloud.position.y = Math.sin(seconds * 0.22 + index) * 0.025
       })
 
-      renderer.render(scene, camera)
+      composer.render()
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
