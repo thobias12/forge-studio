@@ -59,7 +59,7 @@ const PoiForge = lazy(() => import('./pages/PoiForge'))
 const PropForge = lazy(() => import('./pages/PropForge'))
 const Capture = lazy(() => import('./pages/Capture'))
 const EquipmentQaCapture = lazy(() => import('./pages/EquipmentQaCapture'))
-const DungeonQaCapture = lazy(() => import('./pages/DungeonQaCapture'))
+import DungeonQaCapture from './pages/DungeonQaCapture'
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
 import { loadSkillboundWorkspace } from './engine/forgeProject'
@@ -180,7 +180,7 @@ export default function App() {
     return <Suspense fallback={<div className="center-state">Loading equipment QA…</div>}><EquipmentQaCapture /></Suspense>
   }
   if (params.get('dungeonQa') === '1') {
-    return <Suspense fallback={<div className="center-state">Loading dungeon QA…</div>}><DungeonQaCapture /></Suspense>
+    return <DungeonQaCapture />
   }
   if (params.get('capture') === '1') return <Suspense fallback={<div className="center-state">Loading capture…</div>}><Capture /></Suspense>
 
