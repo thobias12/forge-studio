@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.6`  
+> **Current Forge version:** `v1.92.7`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.7 is the **Tall Crypt Walls & Atmosphere Visibility follow-up** based on live Dungeon Atmosphere v2 gameplay feedback.
+
+The previous ARPG V3 perimeter deliberately used a 0.98 m silhouette wall, which made the crypt read like a flat tabletop. ARPG walls now derive from authored room height and clamp to roughly 2.35–2.9 m, while Dungeon Forge editor mode keeps a lower editing silhouette and Walk mode keeps full architectural height.
+
+Tall ARPG perimeter masonry is split into local ~6.4 m instanced chunks and marked for the existing Skillbound camera occlusion system. When a foreground section falls between the camera and player, only that local wall chunk fades; the rest of the dungeon keeps its full-height silhouette. Collision/navigation geometry is unchanged.
+
+Atmosphere v2 room bounce is intentionally more visible at gameplay camera distance: boss/Warden, elite, shrine, reliquary, crossroads, ossuary and ordinary-room mood opacity has been raised, pools cover more of each room, and low mist pockets are larger/more numerous. Drifting dust is also slightly easier to see while remaining lightweight.
+
+This is still a presentation-only update: no enemy AI, HP, damage, encounter pacing, Vault Warden phase tuning, player movement, art colliders or navigation rules are changed.
 
 Forge v1.92.6 is the **Dungeon Atmosphere v2 pass**. It changes presentation only: Combat v4 behavior, enemy counts, encounter timing, Vault Warden HP/phase thresholds/transition timing and navigation collision remain unchanged.
 
