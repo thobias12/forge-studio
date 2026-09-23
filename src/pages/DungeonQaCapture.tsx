@@ -91,6 +91,7 @@ type QaWindow = Window & {
 
 const VIEW_WIDTH = 960
 const VIEW_HEIGHT = 640
+const RENDER_SAMPLE_COUNT = 24
 
 export default function DungeonQaCapture() {
   const [views, setViews] = useState<QaView[]>([])
@@ -510,7 +511,7 @@ async function renderDungeonView(
   let points = 0
   let lines = 0
 
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < RENDER_SAMPLE_COUNT; index += 1) {
     renderer.info.reset()
     const started = performance.now()
     composer.render()
