@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.97.2`  
+> **Current Forge version:** `v1.97.3`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,18 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.97.3 is the **Deployment Integrity** release. It fixes a GitHub Actions race discovered while deploying v1.97.2 and adds live-site verification after every production Pages deploy.
+
+The production Pages workflow and the legacy Equipment V3 preview workflow previously shared the same generic `pages` concurrency group. GitHub evaluates workflow-level concurrency before job-level `if` conditions, so a non-equipment PR finishing its normal CI could start the preview workflow, cancel an in-progress production Pages run, and only then skip all preview jobs. Production now uses the dedicated `forge-production-pages` concurrency lane and Equipment previews use `equipment-v3-preview-pages`, so skipped preview runs cannot cancel real releases.
+
+Production QA now depends on the actual Pages deploy, not only the build artifact. The deploy job exposes its published `page_url`, and the QA job opens that live URL with Playwright after deployment. `npm run qa:live` waits through normal Pages/CDN propagation, requires the visible Forge sidebar build tag to contain the exact seven-character `github.sha`, then opens the **live** `?dungeonQa=1` route.
+
+Live Dungeon QA must report the same expected build SHA, zero renderer errors, all six canonical Hollow Vault views, and non-empty renderer-health metrics. A stale deployment, wrong artifact, broken live route, client-side exception, missing QA view, or Pages propagation that never reaches the expected build fails production QA.
+
+Successful verification writes `artifacts/deployment-integrity/verification.json` plus a Markdown summary, publishes the result in the GitHub Actions job summary, and uploads a 14-day `deployment-integrity` artifact. Forge automation scripts are also checked with `node --check` during PR CI because these `.mjs` scripts are outside TypeScript compilation.
+
+This release changes deployment/validation infrastructure only. Dungeon Atmosphere V3 visuals, renderer budgets, combat, AI, navigation, collision and balance are unchanged.
 
 Forge v1.97.2 extends **Dungeon Visual QA** into a renderer-health gate so visual upgrades cannot silently make Hollow Vault too expensive.
 

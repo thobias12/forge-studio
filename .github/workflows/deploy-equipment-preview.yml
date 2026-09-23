@@ -13,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: equipment-v3-preview-pages
   cancel-in-progress: true
 
 jobs:
