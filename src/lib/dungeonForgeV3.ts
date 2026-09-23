@@ -643,24 +643,24 @@ function atmosphereRoomMood(
 ) {
   const template = resolveRoomTemplate(room)
   if (room.type === 'boss' || template === 'warden-sanctum') {
-    return { color: atmosphere.boss, opacity: .2, mist: .105, dust: 20 }
+    return { color: 0x365f84, opacity: .19, mist: .045, dust: 12 }
   }
   if (room.type === 'elite' || template === 'warden-hall') {
-    return { color: 0x825449, opacity: .15, mist: .09, dust: 18 }
+    return { color: 0x3a6484, opacity: .17, mist: .04, dust: 11 }
   }
   if (room.type === 'shrine' || template === 'shrine-hall') {
-    return { color: atmosphere.shrine, opacity: .145, mist: .095, dust: 16 }
+    return { color: atmosphere.shrine, opacity: .21, mist: .05, dust: 10 }
   }
   if (room.type === 'treasure' || template === 'reliquary') {
-    return { color: 0x9a7751, opacity: .125, mist: .075, dust: 14 }
+    return { color: 0x58768b, opacity: .14, mist: .035, dust: 9 }
   }
   if (template === 'crossroads') {
-    return { color: 0x62706f, opacity: .1, mist: .085, dust: 18 }
+    return { color: 0x365b78, opacity: .15, mist: .035, dust: 10 }
   }
   if (template === 'ossuary-gallery' || template === 'sealed-ossuary') {
-    return { color: 0x596563, opacity: .09, mist: .1, dust: 17 }
+    return { color: 0x31536f, opacity: .13, mist: .035, dust: 9 }
   }
-  return { color: 0x65706f, opacity: .08, mist: .075, dust: 14 }
+  return { color: 0x355a76, opacity: .12, mist: .03, dust: 8 }
 }
 
 function addDungeonAtmosphereV2(
@@ -725,7 +725,7 @@ function addDungeonAtmosphereV2(
       root.add(pool)
 
       const mistCount =
-        room.type === 'boss' || room.width * room.depth > 430 ? 4 : 3
+        room.type === 'boss' || room.width * room.depth > 430 ? 2 : 1
       for (let index = 0; index < mistCount; index += 1) {
         const localX = (random() - .5) * room.width * .5
         const localZ = (random() - .5) * room.depth * .5
@@ -742,8 +742,8 @@ function addDungeonAtmosphereV2(
         })
         const mist = new THREE.Mesh(
           new THREE.PlaneGeometry(
-            4.6 + random() * 4.4,
-            3.1 + random() * 3.5,
+            4.2 + random() * 3.4,
+            2.8 + random() * 2.6,
           ),
           mistMaterial,
         )
@@ -761,7 +761,7 @@ function addDungeonAtmosphereV2(
         mist.onBeforeRender = () => {
           const t = performance.now() * .001
           mistMaterial.opacity =
-            baseOpacity * (.82 + Math.sin(t * .34 + phase) * .18)
+            baseOpacity * (.9 + Math.sin(t * .28 + phase) * .1)
           mist.rotation.z += .00016
         }
         root.add(mist)
@@ -874,9 +874,9 @@ function addDungeonAtmosphereV2(
     )
     const material = new THREE.PointsMaterial({
       color: atmosphere.dust,
-      size: mode === 'walk' ? .06 : .052,
+      size: mode === 'walk' ? .055 : .044,
       transparent: true,
-      opacity: mode === 'walk' ? .34 : .3,
+      opacity: mode === 'walk' ? .28 : .2,
       depthWrite: false,
       toneMapped: false,
       blending: THREE.AdditiveBlending,
@@ -903,8 +903,8 @@ function addDungeonAtmosphereV2(
       ;(geometry.getAttribute('position') as THREE.BufferAttribute)
         .needsUpdate = true
       material.opacity =
-        (mode === 'walk' ? .32 : .28) +
-        Math.sin(t * .42 + phase) * .045
+        (mode === 'walk' ? .26 : .19) +
+        Math.sin(t * .38 + phase) * .025
     }
     root.add(points)
   }
@@ -1013,8 +1013,8 @@ function addPerimeterWalls(
     roughness: 0.93,
     metalness: 0.005,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.wall),
-    emissiveIntensity: mode === 'arpg' ? 0.145 : topDown ? 0.16 : 0.1,
+    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.74),
+    emissiveIntensity: mode === 'arpg' ? 0.19 : topDown ? 0.17 : 0.1,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -1073,10 +1073,10 @@ function addPerimeterWalls(
       mesh.setMatrixAt(index, dummy.matrix)
       const verticalLift =
         sample.cap
-          ? .16
+          ? .23
           : sample.base
-            ? -.015
-            : sample.level * .055
+            ? -.025
+            : sample.level * .07
       const color = white
         .clone()
         .multiplyScalar(sample.shade + verticalLift)
@@ -1103,18 +1103,18 @@ type V3ArtMaterials = {
 
 function createArtMaterials(atmosphere: DungeonAtmosphere): V3ArtMaterials {
   return {
-    stone: new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.91, metalness: 0.01 }),
-    dark: new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.96, metalness: 0.005 }),
+    stone: new THREE.MeshStandardMaterial({ color: atmosphere.wall, roughness: 0.9, metalness: 0.015 }),
+    dark: new THREE.MeshStandardMaterial({ color: atmosphere.wallDark, roughness: 0.97, metalness: 0.005 }),
     cap: new THREE.MeshStandardMaterial({
-      color: new THREE.Color(atmosphere.wall).offsetHSL(-0.01, -0.14, -0.045),
-      roughness: 0.93,
-      metalness: 0.005,
+      color: new THREE.Color(atmosphere.wall).offsetHSL(-0.01, 0.04, 0.08),
+      roughness: 0.88,
+      metalness: 0.01,
     }),
-    bone: new THREE.MeshStandardMaterial({ color: 0xb8aa8a, roughness: 0.9, metalness: 0 }),
-    metal: new THREE.MeshStandardMaterial({ color: 0x5d5146, roughness: 0.7, metalness: 0.32 }),
-    cloth: new THREE.MeshStandardMaterial({ color: 0x4e2c28, roughness: 0.92, metalness: 0 }),
-    wood: new THREE.MeshStandardMaterial({ color: 0x5f432c, roughness: 0.88, metalness: 0 }),
-    gold: new THREE.MeshStandardMaterial({ color: 0x5b5042, roughness: 0.84, metalness: 0.12 }),
+    bone: new THREE.MeshStandardMaterial({ color: 0xaab7bb, roughness: 0.88, metalness: 0 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0x344453, roughness: 0.66, metalness: 0.38 }),
+    cloth: new THREE.MeshStandardMaterial({ color: 0x293949, roughness: 0.92, metalness: 0 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x38434a, roughness: 0.9, metalness: 0 }),
+    gold: new THREE.MeshStandardMaterial({ color: 0x667a88, roughness: 0.75, metalness: 0.18 }),
   }
 }
 
@@ -1852,7 +1852,7 @@ function addWallSconce(
   mode: DungeonRenderMode,
   seed: number,
 ) {
-  const flameY = mode === 'walk' ? 1.88 : 0.98
+  const flameY = mode === 'walk' ? 1.88 : 1.28
   const group = new THREE.Group()
   group.position.set(x, y, z)
   group.rotation.y = yaw
@@ -1887,7 +1887,7 @@ function addWallSconce(
     })
   }
   addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
-  addWarmLightPool(group, 0, 0.105, 1.38, 6.6, 4.7, 0.17)
+  addWarmLightPool(group, 0, 0.105, 1.38, 6.9, 4.9, 0.2)
   addWarmWallWash(
     group,
     flameY,
@@ -1906,7 +1906,7 @@ function addRoomFixtures(
   flickerLights: DungeonV3FlickerLight[],
   mode: DungeonRenderMode,
 ) {
-  const fixtureY = mode === 'walk' ? 2.0 : 1.05
+  const fixtureY = mode === 'walk' ? 2.0 : 1.34
   for (const room of value.rooms) {
     const allPositions: Array<{ x: number; z: number; yaw: number }> = [
       roomWallPoint(room, 'north', -0.24, 0.28),
@@ -1972,9 +1972,9 @@ function addRoomFixtures(
         0,
         0.105,
         1.42,
-        room.type === 'boss' ? 8.2 : 6.9,
-        room.type === 'boss' ? 6.2 : 5.1,
-        room.type === 'boss' ? 0.21 : 0.175,
+        room.type === 'boss' ? 8.6 : 7.3,
+        room.type === 'boss' ? 6.5 : 5.4,
+        room.type === 'boss' ? 0.24 : 0.205,
       )
       addWarmWallWash(
         fixture,
