@@ -3384,7 +3384,17 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     spawnEnemyAttackReleaseFx(this, enemy)
     const style = enemy.attackStyle
     if (style === 'melee') {
-      return baseResolveEnemyAttack.call(this, enemy)
+      const healthBefore = Number(this.playerHealth ?? 0)
+      const result = baseResolveEnemyAttack.call(this, enemy)
+      if (Number(this.playerHealth ?? 0) < healthBefore) {
+        void playCombatAudioCue(this, 'enemy.impact', {
+          role,
+          boss: Boolean(enemy.boss),
+          position: this.player.position,
+          intensity: enemy.boss ? 1.14 : 0.86,
+        })
+      }
+      return result
     }
     finishAttackState(this, enemy, 'dungeon')
     if (style === 'projectile') {
@@ -3414,7 +3424,16 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
         enemy.identityRepositionRemaining = .38
       }
     } else {
+      const healthBefore = Number(this.playerHealth ?? 0)
       const target = resolveAreaAttack(this, enemy, 'dungeon')
+      if (Number(this.playerHealth ?? 0) < healthBefore) {
+        void playCombatAudioCue(this, 'enemy.impact', {
+          role,
+          boss: Boolean(enemy.boss),
+          position: target,
+          intensity: enemy.boss ? 1.16 : 0.9,
+        })
+      }
       if (enemy.__forgeGraveZoneCast) {
         spawnHazardZone(
           this,
