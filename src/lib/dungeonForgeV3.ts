@@ -1924,7 +1924,7 @@ function addRoomFixtures(
       fixture.rotation.y = position.yaw
       root.add(fixture)
 
-      const bracketMaterial = new THREE.MeshStandardMaterial({ color: 0x242728, roughness: 0.76, metalness: 0.34 })
+      const bracketMaterial = new THREE.MeshStandardMaterial({ color: 0x192733, roughness: 0.72, metalness: 0.38 })
       const backplate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.055), bracketMaterial)
       backplate.position.set(0, fixtureY - 0.21, -0.035)
       backplate.castShadow = true
