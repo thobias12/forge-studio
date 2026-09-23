@@ -33,8 +33,11 @@ jobs:
           VITE_FORGE_BUILD: ${{ github.sha }}
         run: npm run build
 
-      - name: Check Equipment Processor scripts
+      - name: Check Forge automation and Equipment Processor scripts
         run: |
+          node --check scripts/capture-equipment-qa.mjs
+          node --check scripts/capture-dungeon-qa.mjs
+          node --check scripts/verify-live-deployment.mjs
           node --check tools/equipment-processor/server.mjs
           python -m py_compile tools/equipment-processor/processor.py
           python -m py_compile tools/equipment-processor/procedural_equipment.py
