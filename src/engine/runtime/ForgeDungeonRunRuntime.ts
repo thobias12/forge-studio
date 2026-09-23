@@ -2,6 +2,7 @@
 import * as THREE from 'three'
 import type { DungeonEncounter, DungeonMarker } from '../../lib/dungeonPackage'
 import { hashSeed, pointInsideRoom, seededRandom } from './ForgeDungeonRuntimeHelpers'
+import { playCombatAudioCue } from './ForgeCombatAudio'
 
 type DirectorWaveEntry = {
   enemyId: string
@@ -318,16 +319,25 @@ function spawnWave(runtime: any, state: any) {
     (candidate: any) =>
       candidate.id === state.definition.roomId,
   )
+  const waveCenter = new THREE.Vector3(
+    waveRoom?.x ?? runtime.player.position.x,
+    waveRoom?.floorLevel ?? runtime.player.position.y,
+    waveRoom?.z ?? runtime.player.position.z,
+  )
   runtime.spawnPulse?.(
-    new THREE.Vector3(
-      waveRoom?.x ?? runtime.player.position.x,
-      waveRoom?.floorLevel ?? runtime.player.position.y,
-      waveRoom?.z ?? runtime.player.position.z,
-    ),
+    waveCenter,
     state.definition.boss ? '#d75b58' : '#b77952',
     state.definition.boss ? 3.4 : 2.25,
     .26,
   )
+  if (!state.definition.boss) {
+    void playCombatAudioCue(runtime, 'encounter.wave', {
+      position: waveCenter,
+      intensity:
+        index >= state.waves.length - 1 ? 1.05 : 0.9,
+      playbackRate: 0.98 + Math.min(.08, index * .025),
+    })
+  }
 
   runtime.setMessage?.(
     wave.message ||
@@ -416,13 +426,29 @@ function completeEncounter(runtime: any, state: any) {
         : `${state.definition.name} defeated. The return portal is active.`,
       5.2,
     )
+    void playCombatAudioCue(runtime, 'boss.defeat', {
+      boss: true,
+      role: defeatedBoss?.combatRole ?? defeatedBoss?.definition?.role ?? 'brute',
+      position: defeatedBoss?.group?.position,
+      intensity: 1.28,
+    })
     runtime.updatePortalVisual?.()
+    window.setTimeout(() => {
+      if (runtime.disposed) return
+      void playCombatAudioCue(runtime, 'portal.activate', {
+        position: defeatedBoss?.group?.position,
+        intensity: 1.05,
+      })
+    }, 560)
   } else {
     runtime.setMessage?.(
       profile?.completionMessage ||
         `${state.definition.name} cleared.`,
       3.1,
     )
+    void playCombatAudioCue(runtime, 'encounter.clear', {
+      intensity: 0.92,
+    })
   }
   runtime.emitState?.()
 }
@@ -521,6 +547,18 @@ export function installDungeonRunDirector(Runtime: any) {
             ? `${encounter.name} awakens.`
             : `${encounter.name} begins.`),
         2.8,
+      )
+      void playCombatAudioCue(
+        this,
+        encounter.boss ? 'boss.awaken' : 'encounter.start',
+        {
+          boss: Boolean(encounter.boss),
+          position: {
+            x: room.x,
+            z: room.z,
+          },
+          intensity: encounter.boss ? 1.22 : 0.92,
+        },
       )
       scheduleWave(this, state, 0, true)
       this.emitState?.()
