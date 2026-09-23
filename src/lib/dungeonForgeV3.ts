@@ -2534,9 +2534,35 @@ function addBossDais(root: THREE.Group, room: DungeonRoom, materials: V3ArtMater
   const top = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.62, 0.16, 12), materials.cap)
   top.position.y = 0.48
   group.add(top)
-  const seal = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.025, 12), materials.dark)
+  const seal = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.82, 0.82, 0.025, 20),
+    new THREE.MeshBasicMaterial({
+      color: 0x4f9fc7,
+      transparent: true,
+      opacity: .19,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  )
   seal.position.y = 0.575
   group.add(seal)
+
+  const sealCore = new THREE.Mesh(
+    new THREE.RingGeometry(.34, .58, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x8ddcff,
+      transparent: true,
+      opacity: .34,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  )
+  sealCore.rotation.x = -Math.PI / 2
+  sealCore.position.y = .59
+  group.add(sealCore)
   for (let index = 0; index < 6; index += 1) {
     const angle = index * Math.PI / 3
     const stone = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.28, 0.62), materials.stone)
@@ -2563,20 +2589,55 @@ function addStatue(
   root.add(group)
   const topDown = mode !== 'walk'
 
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.78, 0.28, 8), materials.dark)
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.62, 0.78, 0.28, 8),
+    materials.dark,
+  )
   base.position.y = 0.14
   group.add(base)
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, topDown ? 0.68 : 1.12, 4, 8), materials.stone)
-  body.position.y = topDown ? 0.82 : 1.08
+
+  const plinth = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.52, 0.22, 6),
+    materials.cap,
+  )
+  plinth.position.y = .36
+  plinth.castShadow = true
+  group.add(plinth)
+
+  const height = topDown ? 1.42 : 2.05
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(.28, .42, height, 5),
+    materials.stone,
+  )
+  body.position.y = .47 + height / 2
+  body.rotation.y = Math.PI / 5
   body.castShadow = true
   group.add(body)
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 9, 7), materials.cap)
-  head.position.y = topDown ? 1.34 : 1.86
-  group.add(head)
-  const staff = new THREE.Mesh(new THREE.BoxGeometry(0.08, topDown ? 1.0 : 1.65, 0.08), materials.metal)
-  staff.position.set(0.38, topDown ? 0.82 : 1.12, 0.02)
-  staff.rotation.z = -0.08
-  group.add(staff)
+
+  const crown = new THREE.Mesh(
+    new THREE.ConeGeometry(.28, .42, 5),
+    materials.cap,
+  )
+  crown.position.y = .47 + height + .18
+  crown.rotation.y = Math.PI / 5
+  crown.castShadow = true
+  group.add(crown)
+
+  const rune = new THREE.Mesh(
+    new THREE.BoxGeometry(.035, height * .48, .018),
+    new THREE.MeshBasicMaterial({
+      color: 0x8bc9e7,
+      transparent: true,
+      opacity: .38,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  )
+  rune.position.set(0, .47 + height * .55, .27)
+  rune.rotation.z = .1
+  rune.renderOrder = 5
+  group.add(rune)
 }
 
 function addBrokenPlinth(root: THREE.Group, room: DungeonRoom, xFraction: number, zFraction: number, materials: V3ArtMaterials, random: () => number) {
