@@ -9,8 +9,8 @@ export type DungeonV3FlickerLight = { light: THREE.PointLight; base: number; pha
 const MAX_V3_DYNAMIC_POINT_LIGHTS = 10
 export type DungeonPoint = { x: number; z: number }
 
-const FLOOR_BRICK_W = 1.22
-const FLOOR_BRICK_D = 0.62
+const FLOOR_BRICK_W = 1.38
+const FLOOR_BRICK_D = 0.7
 const WALL_SAMPLE = 0.82
 const FLOOR_Y = 0.045
 
@@ -450,6 +450,7 @@ export function buildCorridorPathV3(
 function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: DungeonAtmosphere, bounds: ReturnType<typeof dungeonWorldBoundsV3>) {
   const instances: Array<{ x: number; z: number; y: number; width: number; depth: number; shade: number; yaw: number }> = []
   const cracks: Array<{ x: number; z: number; y: number; yaw: number; length: number }> = []
+  const etches: Array<{ x: number; z: number; y: number; yaw: number; length: number }> = []
   let row = 0
   for (let z = Math.floor(bounds.minZ / FLOOR_BRICK_D) * FLOOR_BRICK_D; z <= bounds.maxZ; z += FLOOR_BRICK_D) {
     const shift = row % 2 ? FLOOR_BRICK_W / 2 : 0
@@ -468,7 +469,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
         y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
         width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
         depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01) * (damaged ? 0.94 : 1),
-        shade: damaged ? 0.7 + (hash % 7) / 100 : 0.88 + (hash % 11) / 100,
+        shade: damaged ? 0.78 + (hash % 7) / 100 : 0.9 + (hash % 10) / 100,
         yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
       if (hash % 21 === 0) {
@@ -477,7 +478,16 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
           z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
           y: floorY + 0.052,
           yaw: ((hash >>> 12) % 628) / 100,
-          length: 0.28 + ((hash >>> 20) % 5) * 0.07,
+          length: 0.34 + ((hash >>> 20) % 6) * 0.08,
+        })
+      }
+      if (hash % 37 === 0) {
+        etches.push({
+          x: cx,
+          z: cz,
+          y: floorY + 0.054,
+          yaw: Math.PI * 0.22 + ((hash >>> 11) % 5 - 2) * 0.055,
+          length: 1.25 + ((hash >>> 18) % 7) * 0.19,
         })
       }
     }
@@ -492,7 +502,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     metalness: 0.01,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.floor),
-    emissiveIntensity: 0.3,
+    emissiveIntensity: 0.2,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -511,7 +521,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   root.add(mesh)
 
   if (cracks.length) {
-    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x17110d, transparent: true, opacity: 0.72, depthWrite: false })
+    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x0d1b27, transparent: true, opacity: 0.58, depthWrite: false })
     const crackMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.008, 0.045), crackMaterial, cracks.length)
     crackMesh.name = 'DungeonV3FloorCracks'
     cracks.forEach((crack, index) => {
@@ -523,6 +533,31 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     })
     crackMesh.renderOrder = 2
     root.add(crackMesh)
+  }
+
+  if (etches.length) {
+    const etchMaterial = new THREE.MeshBasicMaterial({
+      color: 0x87a9c3,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+    const etchMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 0.006, 0.022),
+      etchMaterial,
+      etches.length,
+    )
+    etchMesh.name = 'DungeonV3FloorEtches'
+    etches.forEach((etch, index) => {
+      dummy.position.set(etch.x, etch.y, etch.z)
+      dummy.rotation.set(0, etch.yaw, 0)
+      dummy.scale.set(etch.length, 1, 1)
+      dummy.updateMatrix()
+      etchMesh.setMatrixAt(index, dummy.matrix)
+    })
+    etchMesh.renderOrder = 2
+    root.add(etchMesh)
   }
 }
 
@@ -557,9 +592,9 @@ function addFloorAtmosphere(
   if (!patches.length) return
 
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(atmosphere.wallDark).multiplyScalar(0.8),
+    color: atmosphere.mist,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.075,
     depthWrite: false,
     side: THREE.DoubleSide,
   })
