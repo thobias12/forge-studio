@@ -9,8 +9,8 @@ export type DungeonV3FlickerLight = { light: THREE.PointLight; base: number; pha
 const MAX_V3_DYNAMIC_POINT_LIGHTS = 10
 export type DungeonPoint = { x: number; z: number }
 
-const FLOOR_BRICK_W = 1.58
-const FLOOR_BRICK_D = 0.78
+const FLOOR_BRICK_W = 1.72
+const FLOOR_BRICK_D = 0.84
 const WALL_SAMPLE = 0.82
 const FLOOR_Y = 0.045
 
@@ -462,33 +462,41 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       const hash = numberHash(Math.round(cx * 13), Math.round(cz * 19), value.seed)
       const chip = 0.982 + ((hash >>> 5) % 4) * 0.004
       const floorY = dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y
-      const damaged = hash % 17 === 0
-      const missingCorner = hash % 29 === 0
+      const damaged = hash % 31 === 0
+      const missingCorner = hash % 61 === 0
+      const broadShade =
+        0.985 +
+        Math.sin(cx * .115 + value.seed * .013) * .028 +
+        Math.cos(cz * .083 - value.seed * .009) * .02
       instances.push({
         x: cx,
         z: cz,
         y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
         width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
         depth: FLOOR_BRICK_D * (0.965 + ((hash >>> 9) % 5) * 0.007) * (damaged ? 0.965 : 1),
-        shade: damaged ? 0.78 + (hash % 7) / 100 : 0.9 + (hash % 10) / 100,
+        shade:
+          broadShade *
+          (damaged
+            ? 0.86 + (hash % 6) / 100
+            : 0.96 + (hash % 7) / 100),
         yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
-      if (hash % 21 === 0) {
+      if (hash % 29 === 0) {
         cracks.push({
           x: cx + (((hash >>> 4) % 7) - 3) * 0.035,
           z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
           y: floorY + 0.052,
           yaw: ((hash >>> 12) % 628) / 100,
-          length: 0.34 + ((hash >>> 20) % 6) * 0.08,
+          length: 0.28 + ((hash >>> 20) % 5) * 0.07,
         })
       }
-      if (hash % 37 === 0) {
+      if (hash % 47 === 0) {
         etches.push({
           x: cx,
           z: cz,
           y: floorY + 0.054,
           yaw: Math.PI * 0.22 + ((hash >>> 11) % 5 - 2) * 0.055,
-          length: 1.25 + ((hash >>> 18) % 7) * 0.19,
+          length: 1.05 + ((hash >>> 18) % 6) * 0.16,
         })
       }
     }
@@ -499,11 +507,11 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   const geometry = new THREE.BoxGeometry(1, 0.09, 1)
   const material = new THREE.MeshStandardMaterial({
     color: atmosphere.floor,
-    roughness: 0.9,
-    metalness: 0.01,
+    roughness: 0.84,
+    metalness: 0.015,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.floor),
-    emissiveIntensity: 0.31,
+    emissive: new THREE.Color(atmosphere.floor).multiplyScalar(.72),
+    emissiveIntensity: 0.22,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -568,7 +576,15 @@ function addFloorAtmosphere(
   atmosphere: DungeonAtmosphere,
   bounds: ReturnType<typeof dungeonWorldBoundsV3>,
 ) {
-  const patches: Array<{ x: number; z: number; y: number; sx: number; sz: number; yaw: number; shade: number }> = []
+  const patches: Array<{
+    x: number
+    z: number
+    y: number
+    sx: number
+    sz: number
+    yaw: number
+    lift: boolean
+  }> = []
   const cell = 5.8
   const startX = Math.floor(bounds.minX / cell) * cell
   const startZ = Math.floor(bounds.minZ / cell) * cell
@@ -583,34 +599,74 @@ function addFloorAtmosphere(
         x: px,
         z: pz,
         y: dungeonFloorHeightV3(value, px, pz) + 0.096,
-        sx: 0.7 + ((hash >>> 4) % 11) / 10,
-        sz: 0.32 + ((hash >>> 12) % 8) / 10,
+        sx: 1.9 + ((hash >>> 4) % 13) / 10,
+        sz: 1.25 + ((hash >>> 12) % 11) / 10,
         yaw: ((hash >>> 20) % 628) / 100,
-        shade: 0.55 + (hash % 15) / 100,
+        lift: ((hash >>> 3) & 1) === 0,
       })
     }
   }
   if (!patches.length) return
 
-  const material = new THREE.MeshBasicMaterial({
-    color: atmosphere.mist,
+  const texture = getAtmosphereSoftTexture()
+  if (!texture) return
+  const geometry = new THREE.PlaneGeometry(2, 2)
+  const shadowMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: atmosphere.wallDark,
     transparent: true,
-    opacity: 0.075,
+    opacity: .12,
     depthWrite: false,
+    toneMapped: false,
     side: THREE.DoubleSide,
   })
-  const mesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 18), material, patches.length)
-  mesh.name = 'DungeonV3DampPatches'
-  const dummy = new THREE.Object3D()
-  patches.forEach((patch, index) => {
-    dummy.position.set(patch.x, patch.y, patch.z)
-    dummy.rotation.set(-Math.PI / 2, 0, patch.yaw)
-    dummy.scale.set(patch.sx, patch.sz, 1)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(index, dummy.matrix)
+  const liftMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: atmosphere.sky,
+    transparent: true,
+    opacity: .045,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
   })
-  mesh.renderOrder = 3
-  root.add(mesh)
+  const shadows = patches.filter((patch) => !patch.lift)
+  const lifts = patches.filter((patch) => patch.lift)
+  const dummy = new THREE.Object3D()
+
+  const addPatchMesh = (
+    items: typeof patches,
+    material: THREE.MeshBasicMaterial,
+    name: string,
+  ) => {
+    if (!items.length) return
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      items.length,
+    )
+    mesh.name = name
+    items.forEach((patch, index) => {
+      dummy.position.set(patch.x, patch.y, patch.z)
+      dummy.rotation.set(-Math.PI / 2, 0, patch.yaw)
+      dummy.scale.set(patch.sx, patch.sz, 1)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+    })
+    mesh.renderOrder = 3
+    root.add(mesh)
+  }
+
+  addPatchMesh(
+    shadows,
+    shadowMaterial,
+    'DungeonV3FloorToneShadow',
+  )
+  addPatchMesh(
+    lifts,
+    liftMaterial,
+    'DungeonV3FloorToneLift',
+  )
 }
 
 
@@ -987,19 +1043,19 @@ function addPerimeterWalls(
         for (let row = 0; row < rows; row += 1) {
           const actualHeight = Math.min(rowHeight * 0.9, wallHeight - row * rowHeight)
           if (actualHeight <= 0.04) continue
-          const stagger = row % 2 ? WALL_SAMPLE * 0.08 : 0
+          const stagger = row % 2 ? WALL_SAMPLE * 0.025 : 0
           const cap = row === rows - 1
           const base = row === 0
-          const damaged = ((hash >>> (row % 16)) + row * 7) % 23 === 0
+          const damaged = ((hash >>> (row % 16)) + row * 7) % 41 === 0
           samples.push({
             x: edge.x + (edge.yaw === 0 ? stagger : 0),
             z: edge.z + (edge.yaw === 0 ? 0 : stagger),
             y: floorY + row * rowHeight + actualHeight / 2 - (damaged ? 0.025 : 0),
-            length: WALL_SAMPLE * (damaged ? 0.82 : cap ? 1.08 : 1.03),
+            length: WALL_SAMPLE * (damaged ? 0.94 : cap ? 1.025 : 1.01),
             yaw: edge.yaw,
             shade:
-              (damaged ? 0.74 : 0.87) +
-              ((hash + row * 13) % 11) / 100,
+              (damaged ? 0.84 : 0.91) +
+              ((hash + row * 13) % 8) / 100,
             level: rows > 1 ? row / (rows - 1) : 1,
             cap,
             base,
@@ -1032,11 +1088,11 @@ function addPerimeterWalls(
   const geometry = new THREE.BoxGeometry(1, 1, 1)
   const baseMaterial = new THREE.MeshStandardMaterial({
     color: atmosphere.wall,
-    roughness: 0.93,
-    metalness: 0.005,
+    roughness: 0.86,
+    metalness: 0.012,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.74),
-    emissiveIntensity: mode === 'arpg' ? 0.24 : topDown ? 0.17 : 0.1,
+    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.56),
+    emissiveIntensity: mode === 'arpg' ? 0.13 : topDown ? 0.14 : 0.08,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -1072,14 +1128,14 @@ function addPerimeterWalls(
       const heightScale =
         rowHeight *
         (
-          sample.cap ? 0.7 :
-            sample.base ? 0.92 :
-              sample.damaged ? 0.72 :
-                0.84
+          sample.cap ? 0.82 :
+            sample.base ? 0.94 :
+              sample.damaged ? 0.84 :
+                0.9
         )
       const depthScale =
         mode === 'arpg'
-          ? sample.cap ? 0.5 : sample.base ? 0.45 : 0.36
+          ? sample.cap ? 0.42 : sample.base ? 0.4 : 0.32
           : topDown
             ? sample.cap ? 0.42 : sample.base ? 0.38 : 0.3
             : sample.cap ? 0.58 : sample.base ? 0.52 : 0.42
@@ -1095,10 +1151,10 @@ function addPerimeterWalls(
       mesh.setMatrixAt(index, dummy.matrix)
       const verticalLift =
         sample.cap
-          ? .34
+          ? .22
           : sample.base
-            ? -.02
-            : sample.level * .09
+            ? -.015
+            : sample.level * .055
       const color = white
         .clone()
         .multiplyScalar(sample.shade + verticalLift)
@@ -1107,6 +1163,38 @@ function addPerimeterWalls(
     mesh.castShadow = true
     mesh.receiveShadow = true
     root.add(mesh)
+  }
+
+  if (mode === 'arpg') {
+    const bases = samples.filter((sample) => sample.base)
+    if (bases.length) {
+      const shadowMaterial = new THREE.MeshBasicMaterial({
+        color: atmosphere.wallDark,
+        transparent: true,
+        opacity: .3,
+        depthWrite: false,
+        toneMapped: false,
+      })
+      const shadowMesh = new THREE.InstancedMesh(
+        new THREE.BoxGeometry(1, .008, 1),
+        shadowMaterial,
+        bases.length,
+      )
+      shadowMesh.name = 'DungeonV3WallFootShadow'
+      bases.forEach((sample, index) => {
+        dummy.position.set(
+          sample.x - sample.nx * .11,
+          sample.y - rowHeight * .43,
+          sample.z - sample.nz * .11,
+        )
+        dummy.rotation.set(0, sample.yaw, 0)
+        dummy.scale.set(sample.length * 1.02, 1, .32)
+        dummy.updateMatrix()
+        shadowMesh.setMatrixAt(index, dummy.matrix)
+      })
+      shadowMesh.renderOrder = 2
+      root.add(shadowMesh)
+    }
   }
 
   baseMaterial.dispose()
