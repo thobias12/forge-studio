@@ -293,6 +293,7 @@ export class ForgeDungeonRuntime {
     this.chainLightningEffects.length = 0
     disposeSceneObject(this.world)
     disposeSceneObject(this.player)
+    this.composer.dispose()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
