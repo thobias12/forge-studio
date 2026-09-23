@@ -29,37 +29,37 @@ import {
   Skull,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import Dashboard from './pages/Dashboard'
-import ProjectManager from './pages/ProjectManager'
-import ProjectPlay from './pages/ProjectPlay'
-import ProjectValidation from './pages/ProjectValidation'
-import WorldForge from './pages/WorldForge'
-import GameplayForge from './pages/GameplayForge'
-import SkillForge from './pages/SkillForge'
-import ItemForge from './pages/ItemForge'
-import LootForge from './pages/LootForge'
-import EncounterForge from './pages/EncounterForge'
-import BossForge from './pages/BossForge'
-import AnimationStudioRuntime2 from './pages/AnimationStudioRuntime2'
-import Models from './pages/Models'
-import ConceptForge from './pages/ConceptForge'
-import UIForge from './pages/UIForge'
-import EquipmentForge from './pages/EquipmentForge'
-import EquipmentLab from './pages/EquipmentLab'
-import CharacterForge from './pages/CharacterForge'
-import DestructionLab from './pages/DestructionLab'
-import AnimationBindings from './pages/AnimationBindings'
-import AssetLibrary from './pages/AssetLibrary'
-import TextureLab from './pages/TextureLab'
-import GamePreview from './pages/GamePreview'
-import AudioStudioWorkspace from './pages/AudioStudioWorkspace'
-import VfxStudio from './pages/VfxStudio'
-import MapStudio from './pages/MapStudio'
-import PoiForge from './pages/PoiForge'
-import PropForge from './pages/PropForge'
-import Capture from './pages/Capture'
-import EquipmentQaCapture from './pages/EquipmentQaCapture'
-import DungeonQaCapture from './pages/DungeonQaCapture'
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const ProjectManager = lazy(() => import('./pages/ProjectManager'))
+const ProjectPlay = lazy(() => import('./pages/ProjectPlay'))
+const ProjectValidation = lazy(() => import('./pages/ProjectValidation'))
+const WorldForge = lazy(() => import('./pages/WorldForge'))
+const GameplayForge = lazy(() => import('./pages/GameplayForge'))
+const SkillForge = lazy(() => import('./pages/SkillForge'))
+const ItemForge = lazy(() => import('./pages/ItemForge'))
+const LootForge = lazy(() => import('./pages/LootForge'))
+const EncounterForge = lazy(() => import('./pages/EncounterForge'))
+const BossForge = lazy(() => import('./pages/BossForge'))
+const AnimationStudioRuntime2 = lazy(() => import('./pages/AnimationStudioRuntime2'))
+const Models = lazy(() => import('./pages/Models'))
+const ConceptForge = lazy(() => import('./pages/ConceptForge'))
+const UIForge = lazy(() => import('./pages/UIForge'))
+const EquipmentForge = lazy(() => import('./pages/EquipmentForge'))
+const EquipmentLab = lazy(() => import('./pages/EquipmentLab'))
+const CharacterForge = lazy(() => import('./pages/CharacterForge'))
+const DestructionLab = lazy(() => import('./pages/DestructionLab'))
+const AnimationBindings = lazy(() => import('./pages/AnimationBindings'))
+const AssetLibrary = lazy(() => import('./pages/AssetLibrary'))
+const TextureLab = lazy(() => import('./pages/TextureLab'))
+const GamePreview = lazy(() => import('./pages/GamePreview'))
+const AudioStudioWorkspace = lazy(() => import('./pages/AudioStudioWorkspace'))
+const VfxStudio = lazy(() => import('./pages/VfxStudio'))
+const MapStudio = lazy(() => import('./pages/MapStudio'))
+const PoiForge = lazy(() => import('./pages/PoiForge'))
+const PropForge = lazy(() => import('./pages/PropForge'))
+const Capture = lazy(() => import('./pages/Capture'))
+const EquipmentQaCapture = lazy(() => import('./pages/EquipmentQaCapture'))
+const DungeonQaCapture = lazy(() => import('./pages/DungeonQaCapture'))
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
 import { loadSkillboundWorkspace } from './engine/forgeProject'
