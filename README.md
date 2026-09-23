@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.3`  
+> **Current Forge version:** `v1.92.4`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.4 is the **Combat Feel & Feedback pass**. It deliberately leaves Vault Warden health, thresholds, phase timing and encounter balance from v1.92.3 unchanged so the next gameplay recording can still evaluate that tuning cleanly.
+
+Meaningful hits now receive stronger presentation without making every light hit freeze the game: poise breaks, lethal hits and attacks that remove a large fraction of an enemy's health receive a modest hit-stop/camera floor while ordinary attacks keep their existing values. Existing role hit reactions remain the animation authority rather than adding a competing combat animation layer.
+
+Dungeon death presentation now uses deterministic fall/settle motion with role-sensitive duration, pitch, roll, lift and shrink instead of a mostly flat slide/fade. The update no longer allocates a temporary drift vector every frame.
+
+Transient combat presentation FX are bounded to 48 active effects. Spark bursts cap at 14 particles and share one geometry/material per burst, and disposal de-duplicates shared GPU resources. This specifically reduces allocation/disposal pressure during multi-enemy deaths, caster impacts and burst-damage sequences.
+
+Vault Warden phase shifts now receive a boss-centered 3D transition treatment: an expanding emissive shell with rising orbiting wisps follows the Warden for the existing phase-lock duration. It avoids introducing another floor telegraph/ring and does not alter the v1.92.3 phase thresholds, HP multiplier or phase timing.
 
 Forge v1.92.3 is the **Combat v4 boss-pacing pass** based on the latest Hollow Vault gameplay recording. The floor-height/VFX corrections from v1.92.2 are holding up in motion; the main issue exposed by the clip was that the Vault Warden was burning through Iron Flood, Gravebound and Last Oath within only a few seconds, compressing the intended four-phase fight into one burst window.
 
