@@ -445,6 +445,19 @@ try {
     ].join('\n'),
   )
 
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    budgetEvaluation.warnings.forEach((warning) => {
+      console.log(
+        `::warning title=Dungeon Renderer Health::${escapeWorkflowCommand(warning)}`,
+      )
+    })
+    budgetEvaluation.failures.forEach((failure) => {
+      console.log(
+        `::error title=Dungeon Renderer Health::${escapeWorkflowCommand(failure)}`,
+      )
+    })
+  }
+
   if (budgetEvaluation.failures.length) {
     throw new Error(
       `Dungeon renderer health budget failed: ${budgetEvaluation.failures.join(' | ')}`,
@@ -644,6 +657,17 @@ function formatPercent(
   return Number.isFinite(value)
     ? `${(Number(value) * 100).toFixed(1)}%`
     : '—'
+}
+
+function escapeWorkflowCommand(
+  value,
+) {
+  return String(value)
+    .replaceAll('%', '%25')
+    .replaceAll('\r', '%0D')
+    .replaceAll('\n', '%0A')
+    .replaceAll(':', '%3A')
+    .replaceAll(',', '%2C')
 }
 
 function npmCommand() {
