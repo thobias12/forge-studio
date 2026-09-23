@@ -66,3 +66,20 @@ jobs:
           path: artifacts/equipment-qa-fast
           if-no-files-found: error
           retention-days: 3
+
+      - name: Capture Dungeon Visual QA
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
+          FORGE_DUNGEON_QA_OUTPUT: artifacts/dungeon-qa-fast
+          FORGE_DUNGEON_QA_SKIP_BUILD: '1'
+          FORGE_DUNGEON_QA_HEADLESS: '1'
+          FORGE_DUNGEON_QA_BROWSER_CHANNEL: chrome
+        run: npm run qa:dungeon
+
+      - name: Upload Dungeon Visual QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: dungeon-visual-qa-fast
+          path: artifacts/dungeon-qa-fast
+          if-no-files-found: error
+          retention-days: 3
