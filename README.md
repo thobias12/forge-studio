@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.4`  
+> **Current Forge version:** `v1.92.5`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.5 is the **Combat Audio & Encounter Feedback pass**. It leaves Combat v4 balance, Vault Warden HP/phase thresholds/timing, enemy counts and attack timing unchanged.
+
+Combat audio is now event-driven instead of being tied directly to specific sound assets. The shared dungeon runtime exposes semantic cues for player attack/cast release, dodge, enemy role attack release, projectile launch/impact, melee/area impact, poise break, normal/elite death, Channeler Grave Zone, Vault Warden phase shift, encounter start/wave/clear, boss awakening/defeat and return-portal activation.
+
+A new `ForgeCombatAudio` runtime provides lightweight procedural WebAudio fallbacks so every cue is audible even before final authored assets exist. Role-aware pitch and intensity distinguish Brute, Arbalist, Channeler and skirmisher events; small deterministic pitch variation keeps repeated cues from sounding identical. Spatial stereo panning uses the event's world X position relative to the player.
+
+Combat audio is bounded: per-cue cooldowns suppress accidental duplicates and attack/impact/movement/stinger concurrency limits prevent large encounters from becoming an audio wall. All procedural sounds reuse Forge's shared AudioContext.
+
+`ForgeDungeonRuntimeOptions.combatAudioCues` accepts a semantic cue → Library audio asset id map. When a mapped asset exists it replaces the procedural fallback for that event without changing combat code, providing the handoff point for future Audio Studio authoring.
 
 Forge v1.92.4 is the **Combat Feel & Feedback pass**. It deliberately leaves Vault Warden health, thresholds, phase timing and encounter balance from v1.92.3 unchanged so the next gameplay recording can still evaluate that tuning cleanly.
 

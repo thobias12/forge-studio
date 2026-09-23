@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import type { DungeonEncounter, DungeonRoom } from '../../lib/dungeonPackage'
 import { normalizeBossPhases } from '../encounterForge'
 import { hashSeed, seededRandom } from './ForgeDungeonRuntimeHelpers'
+import { playCombatAudioCue } from './ForgeCombatAudio'
 
 function disposeBossPhaseShiftPresentation(enemy: any) {
   const fx = enemy?.__forgeBossPhaseShiftFx
@@ -374,6 +375,13 @@ export function installEncounterBossRuntime(Runtime: any) {
         index,
         transitionDuration,
       )
+      void playCombatAudioCue(this, 'boss.phase-shift', {
+        role: enemy.combatRole ?? enemy.definition?.role ?? 'brute',
+        boss: true,
+        position: enemy.group.position,
+        intensity: index >= phases.length - 1 ? 1.34 : 1.16,
+        playbackRate: index >= phases.length - 1 ? 0.92 : 1,
+      })
 
       this.focusEnemyId = enemy.id
       this.cameraShake = Math.max(this.cameraShake, 0.42)

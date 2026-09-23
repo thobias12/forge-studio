@@ -28,6 +28,7 @@ import {
 import { bindRuntimeItemModel, fallbackSocketPosition, findRuntimeItemSocket } from './ForgeItemRuntime'
 import type { ForgeAdventurePlayerState } from './ForgeAdventureSession'
 import { ForgeChainLightningEffect } from './ForgeChainLightningRuntime'
+import type { ForgeCombatAudioCue } from './ForgeCombatAudio'
 import {
   FORGE_GAMEPLAY_FEEL,
   forgeWheelDistanceTarget,
@@ -93,6 +94,7 @@ export type ForgeDungeonRuntimeOptions = {
   projectId: string
   onState?: (state: ForgeDungeonRuntimeSnapshot) => void
   onExit: (state: ForgeAdventurePlayerState) => void
+  combatAudioCues?: Partial<Record<ForgeCombatAudioCue, string>>
 }
 
 const PLAYER_RADIUS = 0.58

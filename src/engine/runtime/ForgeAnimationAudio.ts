@@ -11,6 +11,10 @@ function getContext() {
   return context
 }
 
+export function getForgeAudioContext() {
+  return getContext()
+}
+
 export async function unlockForgeAudio() {
   const audio = getContext()
   if (audio?.state === 'suspended') await audio.resume().catch(() => undefined)
