@@ -2307,23 +2307,138 @@ function addColdCathedralAccents(
     }
   }
 
+  const addColdBeacon = (
+    room: DungeonRoom,
+    xFraction: number,
+    zFraction: number,
+    seed: number,
+    scale = 1,
+  ) => {
+    const p = roomPlacement(room, xFraction, zFraction)
+    const group = new THREE.Group()
+    group.position.set(p.x, p.y, p.z)
+    group.rotation.y = p.yaw + ((seed % 7) - 3) * .03
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const pedestalMaterial = new THREE.MeshStandardMaterial({
+      color: 0x203442,
+      roughness: .9,
+      metalness: .04,
+    })
+    const trimMaterial = new THREE.MeshStandardMaterial({
+      color: 0x55788f,
+      roughness: .62,
+      metalness: .12,
+    })
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb7efff,
+      emissive: 0x59c9ff,
+      emissiveIntensity: 1.8,
+      roughness: .18,
+      metalness: .03,
+    })
+
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(.42 * scale, .54 * scale, .18 * scale, 8),
+      pedestalMaterial,
+    )
+    base.position.y = .09 * scale
+    base.receiveShadow = true
+    group.add(base)
+
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(.18 * scale, .28 * scale, .72 * scale, 6),
+      trimMaterial,
+    )
+    stem.position.y = .5 * scale
+    stem.castShadow = true
+    group.add(stem)
+
+    const cradle = new THREE.Mesh(
+      new THREE.CylinderGeometry(.34 * scale, .27 * scale, .16 * scale, 8),
+      pedestalMaterial,
+    )
+    cradle.position.y = .88 * scale
+    group.add(cradle)
+
+    const orb = new THREE.Mesh(
+      new THREE.OctahedronGeometry(.18 * scale, 1),
+      glowMaterial,
+    )
+    orb.position.y = 1.17 * scale
+    orb.rotation.y = Math.PI / 4
+    group.add(orb)
+
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(.42 * scale, 12, 8),
+      new THREE.MeshBasicMaterial({
+        color: 0x68d3ff,
+        transparent: true,
+        opacity: .08,
+        depthWrite: false,
+        toneMapped: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    )
+    halo.position.y = 1.17 * scale
+    group.add(halo)
+
+    if (poolTexture) {
+      const pool = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.6 * scale, 5.6 * scale),
+        new THREE.MeshBasicMaterial({
+          map: poolTexture,
+          color: 0x5cc8ff,
+          transparent: true,
+          opacity: mode === 'arpg' ? .24 : .15,
+          depthWrite: false,
+          toneMapped: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      )
+      pool.rotation.x = -Math.PI / 2
+      pool.position.y = .07
+      pool.renderOrder = 3
+      group.add(pool)
+    }
+
+    if (pointLights < 6) {
+      const light = new THREE.PointLight(
+        0x70d7ff,
+        1.65 * scale,
+        8.8 * scale,
+        1.95,
+      )
+      light.position.y = 1.55 * scale
+      light.castShadow = false
+      group.add(light)
+      pointLights += 1
+    }
+  }
+
   for (const room of value.rooms) {
     const template = resolveRoomTemplate(room)
     const seed = stringHash(`cold-cathedral:${room.id}`) ^ value.seed
     const random = seededRandom(seed)
 
     if (template === 'warden-sanctum' || room.type === 'boss') {
-      addWardStone(room, -.31, -.24, seed + 11, 1.08)
-      addWardStone(room, .31, -.24, seed + 29, 1.08)
+      addWardStone(room, -.31, -.24, seed + 11, 1.02)
+      addWardStone(room, .31, -.24, seed + 29, 1.02)
+      addColdBeacon(room, -.24, .27, seed + 43, .94)
+      addColdBeacon(room, .24, .27, seed + 59, .94)
       continue
     }
     if (template === 'warden-hall' || room.type === 'elite') {
-      addWardStone(room, -.32, .25, seed + 17, .94)
-      addWardStone(room, .32, .25, seed + 31, .94)
+      addWardStone(room, -.32, .25, seed + 17, .9)
+      addWardStone(room, .32, .25, seed + 31, .9)
+      addColdBeacon(room, 0, -.28, seed + 47, .82)
       continue
     }
     if (template === 'shrine-hall' || room.type === 'shrine') {
-      addWardStone(room, -.31, -.22, seed + 41, .88)
+      addWardStone(room, -.31, -.22, seed + 41, .84)
+      addColdBeacon(room, .31, .22, seed + 73, .88)
       continue
     }
     if (template === 'reliquary' || room.type === 'treasure') {
@@ -2336,13 +2451,22 @@ function addColdCathedralAccents(
       template === 'crossroads' ||
       room.width * room.depth > 440
     ) {
-      if (random() > .42) {
+      if (random() > .36) {
         addWardStone(
           room,
           random() > .5 ? .33 : -.33,
           random() > .5 ? .26 : -.26,
           seed + 67,
-          .78,
+          .76,
+        )
+      }
+      if (room.width * room.depth > 360 && random() > .3) {
+        addColdBeacon(
+          room,
+          random() > .5 ? .24 : -.24,
+          random() > .5 ? .3 : -.3,
+          seed + 91,
+          .74,
         )
       }
     }
