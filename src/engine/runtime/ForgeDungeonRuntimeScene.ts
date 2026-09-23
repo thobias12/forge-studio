@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { itemVisual } from '../itemPresentation'
 import { dungeonAtmosphere, dungeonLightingProfile, tintRoomFloor } from '../../lib/dungeonAtmosphere'
 import { dungeonProps } from '../../lib/dungeonProps'
+import { createDungeonLibraryPropPlaceholder, disposeDungeonPropVisual, loadDungeonLibraryPropVisual } from '../../lib/dungeonPropVisual'
+import { getAsset } from '../../lib/library'
 import { getRoomConnection } from '../../lib/dungeonPackage'
 import { addCryptCorridorEnvironment, addCryptRoomEnvironment } from '../../lib/cryptEnvironment'
 import { addDungeonManualWallV3, addDungeonMasonryV3 } from '../../lib/dungeonForgeV3'
@@ -74,7 +76,47 @@ export const dungeonSceneMethods = {
 
     for (const prop of dungeonProps(this.runtimeDungeon)) {
       if (prop.y < -20) continue
-      addBuiltinProp(this.world, prop.assetRef, prop.x, prop.y, prop.z, prop.rotationY, prop.scale, atmosphere)
+      if (prop.source === 'library') {
+        const root = new THREE.Group()
+        root.position.set(prop.x, prop.y, prop.z)
+        root.rotation.y = THREE.MathUtils.degToRad(prop.rotationY)
+        root.userData.propId = prop.id
+        this.world.add(root)
+
+        const placeholder = createDungeonLibraryPropPlaceholder(
+          atmosphere.wall,
+        )
+        placeholder.userData.propId = prop.id
+        root.add(placeholder)
+
+        void getAsset(prop.assetRef)
+          .then((asset) => {
+            if (!asset || asset.kind !== 'glb' || !root.parent) return
+            return loadDungeonLibraryPropVisual(
+              root,
+              asset.blob,
+              prop.scale,
+              prop.id,
+            )
+          })
+          .then((model) => {
+            if (!model || !placeholder.parent) return
+            disposeDungeonPropVisual(placeholder)
+          })
+          .catch(() => undefined)
+        continue
+      }
+
+      addBuiltinProp(
+        this.world,
+        prop.assetRef,
+        prop.x,
+        prop.y,
+        prop.z,
+        prop.rotationY,
+        prop.scale,
+        atmosphere,
+      )
     }
   },
 
