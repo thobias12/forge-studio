@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "qa:equipment": "node scripts/capture-equipment-qa.mjs",
+    "qa:dungeon": "node scripts/capture-dungeon-qa.mjs",
     "qa:world": "node scripts/qa-world.mjs",
     "qa:forest": "node scripts/qa-forest.mjs",
     "equipment:processor": "node tools/equipment-processor/server.mjs"
