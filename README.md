@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.94.0`  
+> **Current Forge version:** `v1.94.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,16 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.94.1 refines the **Dungeon Forge authoring overview** after the v1.94.0 renderer unification.
+
+The actual dungeon world renderer is unchanged. Edit, Test Dungeon and Skillbound still share the same ARPG V3 geometry, materials, props, walls, lighting, fog and exposure.
+
+The editor camera now starts much closer to a true top-down authoring angle so full-height runtime walls no longer hide as much of adjacent rooms. OrbitControls are constrained to useful authoring angles while still allowing rotation and panning.
+
+The overview framing is tighter around authored dungeon bounds, and the editor grid is now less dense, lower contrast and more local to the dungeon instead of visually dominating the surrounding void.
+
+This is an editor-camera/grid usability patch only. No dungeon art, lighting, combat, encounter, navigation or gameplay values changed.
 
 Forge v1.94.0 is the **Dungeon Forge Unified Preview** release. Dungeon authoring now follows one visual authority: the creator overview, Test Dungeon and actual Skillbound dungeon play all render the same authored world presentation.
 
