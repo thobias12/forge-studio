@@ -71,6 +71,7 @@ export function addDungeonMasonryV3(
   addRoomDressing(root, value, atmosphere, mode)
   addColdCathedralAccents(root, value, atmosphere, mode)
   addAtmosphereV3Staging(root, value, atmosphere, mode)
+  addCathedralEnvironmentV4(root, value, atmosphere, mode)
   addDungeonAtmosphereV2(root, value, atmosphere, mode)
 
   return root
@@ -482,7 +483,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
             : 0.96 + (hash % 7) / 100),
         yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
-      if (hash % 29 === 0) {
+      if (hash % 41 === 0) {
         cracks.push({
           x: cx + (((hash >>> 4) % 7) - 3) * 0.035,
           z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
@@ -491,7 +492,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
           length: 0.28 + ((hash >>> 20) % 5) * 0.07,
         })
       }
-      if (hash % 47 === 0) {
+      if (hash % 59 === 0) {
         etches.push({
           x: cx,
           z: cz,
@@ -531,7 +532,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   root.add(mesh)
 
   if (cracks.length) {
-    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x0d1b27, transparent: true, opacity: 0.58, depthWrite: false })
+    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x0d1b27, transparent: true, opacity: 0.34, depthWrite: false })
     const crackMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.008, 0.045), crackMaterial, cracks.length)
     crackMesh.name = 'DungeonV3FloorCracks'
     cracks.forEach((crack, index) => {
@@ -549,7 +550,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     const etchMaterial = new THREE.MeshBasicMaterial({
       color: 0x87a9c3,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.18,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     })
@@ -1088,12 +1089,12 @@ function addPerimeterWalls(
 
   const geometry = new THREE.BoxGeometry(1, 1, 1)
   const baseMaterial = new THREE.MeshStandardMaterial({
-    color: atmosphere.wall,
-    roughness: 0.86,
-    metalness: 0.012,
+    color: new THREE.Color(atmosphere.wall).offsetHSL(0, -0.01, 0.025),
+    roughness: 0.84,
+    metalness: 0.014,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.56),
-    emissiveIntensity: mode === 'arpg' ? 0.13 : topDown ? 0.14 : 0.08,
+    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.62),
+    emissiveIntensity: mode === 'arpg' ? 0.18 : topDown ? 0.16 : 0.09,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -1152,10 +1153,10 @@ function addPerimeterWalls(
       mesh.setMatrixAt(index, dummy.matrix)
       const verticalLift =
         sample.cap
-          ? .22
+          ? .29
           : sample.base
-            ? -.015
-            : sample.level * .055
+            ? -.01
+            : sample.level * .065
       const color = white
         .clone()
         .multiplyScalar(sample.shade + verticalLift)
@@ -2035,18 +2036,29 @@ function addRoomFixtures(
       root.add(fixture)
 
       const bracketMaterial = new THREE.MeshStandardMaterial({ color: 0x192733, roughness: 0.72, metalness: 0.38 })
-      const backplate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.055), bracketMaterial)
-      backplate.position.set(0, fixtureY - 0.21, -0.035)
+      const backplate = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.2, 0.065, 6),
+        bracketMaterial,
+      )
+      backplate.position.set(0, fixtureY - 0.18, -0.035)
+      backplate.rotation.x = Math.PI / 2
+      backplate.rotation.z = Math.PI / 6
       backplate.castShadow = true
       fixture.add(backplate)
 
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.3), bracketMaterial)
-      arm.position.set(0, fixtureY - 0.18, 0.13)
-      arm.rotation.x = -0.2
+      const arm = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, 0.05, 0.31),
+        bracketMaterial,
+      )
+      arm.position.set(0, fixtureY - 0.16, 0.13)
+      arm.rotation.x = -0.22
       fixture.add(arm)
 
-      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.075, 0.09, 9), bracketMaterial)
-      cup.position.set(0, fixtureY - 0.01, 0.27)
+      const cup = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.13, 0.085, 0.1, 8),
+        bracketMaterial,
+      )
+      cup.position.set(0, fixtureY - 0.005, 0.27)
       fixture.add(cup)
 
       const seed = stringHash(room.id) + index * 17
@@ -2054,9 +2066,9 @@ function addRoomFixtures(
       if (flickerLights.length < MAX_V3_DYNAMIC_POINT_LIGHTS) {
         light = new THREE.PointLight(
           atmosphere.torch,
-          atmosphere.torchIntensity * (room.type === 'boss' ? 1.02 : 0.86),
-          room.type === 'boss' ? 14.2 : 12.2,
-          1.8,
+          atmosphere.torchIntensity * (room.type === 'boss' ? 1.06 : 0.9),
+          room.type === 'boss' ? 12.2 : 10.6,
+          1.9,
         )
         light.position.set(0, fixtureY + 0.16, 0.27)
         light.userData.baseIntensity = light.intensity
@@ -2083,17 +2095,17 @@ function addRoomFixtures(
         0,
         0.105,
         1.42,
-        room.type === 'boss' ? 10.2 : 8.7,
-        room.type === 'boss' ? 7.5 : 6.2,
-        room.type === 'boss' ? 0.34 : 0.29,
+        room.type === 'boss' ? 7.8 : 6.6,
+        room.type === 'boss' ? 5.5 : 4.6,
+        room.type === 'boss' ? 0.3 : 0.24,
       )
       addWarmWallWash(
         fixture,
         fixtureY,
         atmosphere,
-        room.type === 'boss' ? 4.0 : 3.5,
-        room.type === 'boss' ? 3.35 : 3.0,
-        room.type === 'boss' ? .3 : .255,
+        room.type === 'boss' ? 3.25 : 2.8,
+        room.type === 'boss' ? 2.8 : 2.35,
+        room.type === 'boss' ? .28 : .23,
       )
       addTorchDust(
         fixture,
@@ -2509,6 +2521,361 @@ function addAtmosphereV3Staging(
       addWallPlaque(room, 'south', 0, false)
     }
   }
+}
+
+function addCathedralEnvironmentV4(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  if (mode === 'walk') return
+
+  type BatchTransform = {
+    x: number
+    y: number
+    z: number
+    yaw: number
+    sx: number
+    sy: number
+    sz: number
+  }
+
+  const trim: BatchTransform[] = []
+  const recesses: BatchTransform[] = []
+  const runes: BatchTransform[] = []
+  const floorBands: BatchTransform[] = []
+  const plinths: BatchTransform[] = []
+  const crystalShafts: BatchTransform[] = []
+  const crystalTips: BatchTransform[] = []
+  const crystalCores: BatchTransform[] = []
+
+  const pushTransform = (
+    target: BatchTransform[],
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    sx: number,
+    sy: number,
+    sz: number,
+  ) => target.push({ x, y, z, yaw, sx, sy, sz })
+
+  const offsetFromYaw = (
+    x: number,
+    z: number,
+    yaw: number,
+    side: number,
+    forward: number,
+  ) => ({
+    x: x + Math.cos(yaw) * side + Math.sin(yaw) * forward,
+    z: z - Math.sin(yaw) * side + Math.cos(yaw) * forward,
+  })
+
+  const addPilaster = (
+    room: DungeonRoom,
+    side: 'north' | 'south' | 'east' | 'west',
+    along: number,
+    glowing: boolean,
+  ) => {
+    const p = roomWallPoint(room, side, along, .22)
+    const base = offsetFromYaw(p.x, p.z, p.yaw, 0, .02)
+
+    pushTransform(trim, base.x, room.floorLevel + .11, base.z, p.yaw, .82, .22, .34)
+    pushTransform(trim, base.x, room.floorLevel + .91, base.z, p.yaw, .48, 1.38, .24)
+    pushTransform(trim, base.x, room.floorLevel + 1.63, base.z, p.yaw, .68, .16, .32)
+
+    const recess = offsetFromYaw(p.x, p.z, p.yaw, 0, -.125)
+    pushTransform(recesses, recess.x, room.floorLevel + .88, recess.z, p.yaw, .28, .72, .045)
+    if (glowing) {
+      const rune = offsetFromYaw(p.x, p.z, p.yaw, 0, -.155)
+      pushTransform(runes, rune.x, room.floorLevel + .9, rune.z, p.yaw, .035, .5, .018)
+    }
+  }
+
+  const addRoomBorder = (
+    room: DungeonRoom,
+    strength = 1,
+  ) => {
+    const inset = THREE.MathUtils.clamp(
+      Math.min(room.width, room.depth) * .09,
+      .72,
+      1.2,
+    )
+    const halfW = Math.max(1.6, room.width / 2 - inset)
+    const halfD = Math.max(1.6, room.depth / 2 - inset)
+    const rotation = THREE.MathUtils.degToRad(room.rotation)
+    const y = room.floorLevel + .074
+    const north = localToWorld(room, 0, -halfD)
+    const south = localToWorld(room, 0, halfD)
+    const west = localToWorld(room, -halfW, 0)
+    const east = localToWorld(room, halfW, 0)
+
+    pushTransform(floorBands, north.x, y, north.z, rotation, halfW * 1.62, 1, .045 * strength)
+    pushTransform(floorBands, south.x, y, south.z, rotation, halfW * 1.62, 1, .045 * strength)
+    pushTransform(floorBands, west.x, y, west.z, rotation + Math.PI / 2, halfD * 1.62, 1, .045 * strength)
+    pushTransform(floorBands, east.x, y, east.z, rotation + Math.PI / 2, halfD * 1.62, 1, .045 * strength)
+  }
+
+  const addCrystalCluster = (
+    room: DungeonRoom,
+    xFraction: number,
+    zFraction: number,
+    seed: number,
+    scale = 1,
+  ) => {
+    const p = roomPlacement(room, xFraction, zFraction)
+    const yaw = p.yaw + ((seed % 11) - 5) * .045
+    pushTransform(plinths, p.x, p.y + .1, p.z, yaw, .82 * scale, .2 * scale, .72 * scale)
+
+    const shards = [
+      { ox: 0, oz: 0, h: 1.45, w: .26, tilt: .02 },
+      { ox: -.26, oz: .08, h: 1.02, w: .2, tilt: -.12 },
+      { ox: .22, oz: .14, h: .78, w: .17, tilt: .14 },
+    ]
+    shards.forEach((shard, index) => {
+      const local = offsetFromYaw(
+        p.x,
+        p.z,
+        yaw,
+        shard.ox * scale,
+        shard.oz * scale,
+      )
+      const h = shard.h * scale
+      const w = shard.w * scale
+      const shardYaw = yaw + shard.tilt + index * .12
+      pushTransform(
+        crystalShafts,
+        local.x,
+        p.y + .22 * scale + h * .5,
+        local.z,
+        shardYaw,
+        w,
+        h,
+        w,
+      )
+      pushTransform(
+        crystalTips,
+        local.x,
+        p.y + .22 * scale + h + .13 * scale,
+        local.z,
+        shardYaw,
+        w * 1.02,
+        .28 * scale,
+        w * 1.02,
+      )
+    })
+    pushTransform(
+      crystalCores,
+      p.x,
+      p.y + .72 * scale,
+      p.z,
+      yaw,
+      .13 * scale,
+      .13 * scale,
+      .13 * scale,
+    )
+  }
+
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const area = room.width * room.depth
+    const special =
+      room.type === 'boss' ||
+      room.type === 'elite' ||
+      room.type === 'shrine' ||
+      room.type === 'treasure' ||
+      template === 'crossroads' ||
+      template === 'warden-sanctum' ||
+      template === 'warden-hall' ||
+      template === 'reliquary' ||
+      template === 'shrine-hall'
+
+    addPilaster(room, 'north', -.28, special)
+    addPilaster(room, 'north', .28, false)
+    addPilaster(room, 'south', -.28, false)
+    addPilaster(room, 'south', .28, special)
+
+    if (special || area > 430) {
+      addPilaster(room, 'east', -.22, false)
+      addPilaster(room, 'east', .22, special)
+      addPilaster(room, 'west', -.22, special)
+      addPilaster(room, 'west', .22, false)
+    }
+
+    if (special || area > 300) {
+      addRoomBorder(room, room.type === 'boss' ? 1.3 : 1)
+    }
+
+    const seed = stringHash(`cathedral-v4:${room.id}`) ^ value.seed
+    if (room.type === 'boss' || template === 'warden-sanctum') {
+      addCrystalCluster(room, -.34, -.28, seed + 11, 1.02)
+      addCrystalCluster(room, .34, -.28, seed + 23, .94)
+      addCrystalCluster(room, -.34, .28, seed + 37, .84)
+      addCrystalCluster(room, .34, .28, seed + 51, .9)
+    } else if (room.type === 'elite' || template === 'warden-hall') {
+      addCrystalCluster(room, -.34, .28, seed + 13, .84)
+      addCrystalCluster(room, .34, .28, seed + 29, .8)
+    } else if (room.type === 'shrine' || template === 'shrine-hall') {
+      addCrystalCluster(room, -.31, -.27, seed + 17, .82)
+      addCrystalCluster(room, .31, -.27, seed + 31, .78)
+    } else if (room.type === 'treasure' || template === 'reliquary') {
+      addCrystalCluster(room, .32, .28, seed + 43, .72)
+    } else if (template === 'crossroads') {
+      addCrystalCluster(room, -.33, .26, seed + 59, .72)
+      addCrystalCluster(room, .33, -.26, seed + 71, .68)
+    }
+  }
+
+  const addBatch = (
+    name: string,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    transforms: BatchTransform[],
+    castShadow: boolean,
+    receiveShadow: boolean,
+    renderOrder?: number,
+  ) => {
+    if (!transforms.length) {
+      geometry.dispose()
+      material.dispose()
+      return
+    }
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      transforms.length,
+    )
+    mesh.name = name
+    mesh.castShadow = castShadow
+    mesh.receiveShadow = receiveShadow
+    if (renderOrder !== undefined) mesh.renderOrder = renderOrder
+    const dummy = new THREE.Object3D()
+    transforms.forEach((transform, index) => {
+      dummy.position.set(transform.x, transform.y, transform.z)
+      dummy.rotation.set(0, transform.yaw, 0)
+      dummy.scale.set(transform.sx, transform.sy, transform.sz)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    root.add(mesh)
+  }
+
+  addBatch(
+    'DungeonV4CathedralTrim',
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(atmosphere.wall).offsetHSL(-.005, -.03, .11),
+      roughness: .8,
+      metalness: .025,
+      emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.22),
+      emissiveIntensity: .16,
+    }),
+    trim,
+    true,
+    true,
+  )
+  addBatch(
+    'DungeonV4WallRecesses',
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(atmosphere.wallDark).multiplyScalar(.72),
+      roughness: .96,
+      metalness: .01,
+    }),
+    recesses,
+    false,
+    true,
+  )
+  addBatch(
+    'DungeonV4WallRunes',
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0x8fdcff,
+      transparent: true,
+      opacity: .4,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+    runes,
+    false,
+    false,
+    5,
+  )
+  addBatch(
+    'DungeonV4FloorBorders',
+    new THREE.BoxGeometry(1, .006, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0x89b8d2,
+      transparent: true,
+      opacity: .13,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+    floorBands,
+    false,
+    false,
+    4,
+  )
+  addBatch(
+    'DungeonV4CrystalPlinths',
+    new THREE.CylinderGeometry(.62, .72, 1, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0x1a2d3b,
+      roughness: .88,
+      metalness: .06,
+    }),
+    plinths,
+    true,
+    true,
+  )
+  addBatch(
+    'DungeonV4CrystalShafts',
+    new THREE.CylinderGeometry(1, 1.18, 1, 5),
+    new THREE.MeshStandardMaterial({
+      color: 0x75b8d4,
+      emissive: 0x276986,
+      emissiveIntensity: .75,
+      roughness: .3,
+      metalness: .025,
+    }),
+    crystalShafts,
+    true,
+    true,
+  )
+  addBatch(
+    'DungeonV4CrystalTips',
+    new THREE.ConeGeometry(1, 1, 5),
+    new THREE.MeshStandardMaterial({
+      color: 0xa5e9ff,
+      emissive: 0x46bce8,
+      emissiveIntensity: 1.15,
+      roughness: .22,
+      metalness: .02,
+    }),
+    crystalTips,
+    false,
+    false,
+  )
+  addBatch(
+    'DungeonV4CrystalCores',
+    new THREE.OctahedronGeometry(1, 0),
+    new THREE.MeshBasicMaterial({
+      color: 0xc8f5ff,
+      transparent: true,
+      opacity: .82,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+    crystalCores,
+    false,
+    false,
+    6,
+  )
 }
 
 function addColdCathedralAccents(
