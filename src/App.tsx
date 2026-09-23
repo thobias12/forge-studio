@@ -59,7 +59,7 @@ const PoiForge = lazy(() => import('./pages/PoiForge'))
 const PropForge = lazy(() => import('./pages/PropForge'))
 const Capture = lazy(() => import('./pages/Capture'))
 const EquipmentQaCapture = lazy(() => import('./pages/EquipmentQaCapture'))
-import DungeonQaCapture from './pages/DungeonQaCapture'
+const DungeonQaCapture = lazy(() => import('./pages/DungeonQaCapture'))
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
 import { loadSkillboundWorkspace } from './engine/forgeProject'
