@@ -26,6 +26,19 @@ const port = Number(
 const baseUrl =
   `http://127.0.0.1:${port}`
 
+const renderBudgets = {
+  maxDrawCalls: 850,
+  maxTriangles: 115_000,
+  maxGeometries: 500,
+  maxTextures: 24,
+  maxLights: 32,
+  maxShadowLights: 2,
+  maxAverageRenderMs: 45,
+  maxP95RenderMs: 90,
+  warningAverageRenderMs: 22,
+  warningP95RenderMs: 40,
+}
+
 let chromium
 try {
   ;({ chromium } =
@@ -350,10 +363,15 @@ try {
     )}\n`,
   )
 
+  const budgetEvaluation =
+    evaluateRenderBudgets(
+      metadata.renderSummary,
+    )
+
   const performanceReport = {
     format:
       'forge-dungeon-render-health',
-    version: 1,
+    version: 2,
     forgeVersion:
       metadata.forgeVersion,
     forgeBuild:
@@ -366,10 +384,15 @@ try {
       metadata.dungeonTheme,
     seed:
       metadata.seed,
+    budgets:
+      renderBudgets,
+    budgetEvaluation,
     summary:
       metadata.renderSummary,
     views:
       metadata.renderMetrics,
+    visual:
+      metadata.visualMetrics ?? {},
   }
 
   await writeFile(
@@ -411,8 +434,22 @@ try {
       renderPerformanceConsole(
         performanceReport,
       ),
+      '',
+      `Budget status: ${budgetEvaluation.status.toUpperCase()}`,
+      ...budgetEvaluation.warnings.map(
+        (warning) => `WARNING: ${warning}`,
+      ),
+      ...budgetEvaluation.failures.map(
+        (failure) => `FAIL: ${failure}`,
+      ),
     ].join('\n'),
   )
+
+  if (budgetEvaluation.failures.length) {
+    throw new Error(
+      `Dungeon renderer health budget failed: ${budgetEvaluation.failures.join(' | ')}`,
+    )
+  }
 } finally {
   await browser?.close()
   if (
@@ -441,20 +478,26 @@ function renderPerformanceMarkdown(
 ) {
   const rows =
     Object.entries(report.views)
-      .map(([id, metrics]) =>
-        [
+      .map(([id, metrics]) => {
+        const visual =
+          report.visual[id] ?? {}
+        return [
           `| ${id}`,
           metrics.drawCalls,
           formatNumber(metrics.triangles),
           metrics.lights,
-          metrics.shadowLights,
           metrics.geometries,
           metrics.textures,
           metrics.renderMs.average.toFixed(1),
           metrics.renderMs.p95.toFixed(1),
+          formatDecimal(visual.averageLuminance),
+          formatDecimal(visual.contrastRange),
+          formatPercent(visual.darkPixelRatio),
+          formatPercent(visual.warmPixelRatio),
+          formatPercent(visual.cyanPixelRatio),
           '|',
-        ].join(' | '),
-      )
+        ].join(' | ')
+      })
       .join('\n')
 
   return [
@@ -462,23 +505,44 @@ function renderPerformanceMarkdown(
     '',
     `Forge v${report.forgeVersion} · ${report.forgeBuild}`,
     `Dungeon: ${report.dungeonName} · ${report.dungeonTheme}`,
+    `Budget status: **${report.budgetEvaluation.status.toUpperCase()}**`,
     '',
-    '| View | Draw calls | Triangles | Lights | Shadow lights | Geometries | Textures | Avg render ms | P95 render ms |',
-    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| View | Calls | Triangles | Lights | Geo | Tex | Avg ms | P95 ms | Luma | Contrast | Dark | Warm | Cyan |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
     rows,
     '',
-    '## Peak summary',
+    '## Peak renderer summary',
     '',
-    `- Max draw calls: **${report.summary.maxDrawCalls}**`,
-    `- Max triangles: **${formatNumber(report.summary.maxTriangles)}**`,
-    `- Max geometries: **${report.summary.maxGeometries}**`,
-    `- Max textures: **${report.summary.maxTextures}**`,
-    `- Max lights: **${report.summary.maxLights}**`,
-    `- Max shadow lights: **${report.summary.maxShadowLights}**`,
-    `- Slowest average render: **${report.summary.slowestAverageRenderMs.toFixed(1)} ms**`,
-    `- Slowest p95 render: **${report.summary.slowestP95RenderMs.toFixed(1)} ms**`,
+    `- Max draw calls: **${report.summary.maxDrawCalls}** / ${report.budgets.maxDrawCalls}`,
+    `- Max triangles: **${formatNumber(report.summary.maxTriangles)}** / ${formatNumber(report.budgets.maxTriangles)}`,
+    `- Max geometries: **${report.summary.maxGeometries}** / ${report.budgets.maxGeometries}`,
+    `- Max textures: **${report.summary.maxTextures}** / ${report.budgets.maxTextures}`,
+    `- Max lights: **${report.summary.maxLights}** / ${report.budgets.maxLights}`,
+    `- Max shadow lights: **${report.summary.maxShadowLights}** / ${report.budgets.maxShadowLights}`,
+    `- Slowest average render: **${report.summary.slowestAverageRenderMs.toFixed(1)} ms** / hard ${report.budgets.maxAverageRenderMs} ms`,
+    `- Slowest p95 render: **${report.summary.slowestP95RenderMs.toFixed(1)} ms** / hard ${report.budgets.maxP95RenderMs} ms`,
     '',
-    '> Render timings come from CI/headless WebGL and are intended for same-run/release regression tracking, not as a direct estimate of player FPS.',
+    ...(report.budgetEvaluation.warnings.length
+      ? [
+          '## Warnings',
+          '',
+          ...report.budgetEvaluation.warnings.map(
+            (warning) => `- ${warning}`,
+          ),
+          '',
+        ]
+      : []),
+    ...(report.budgetEvaluation.failures.length
+      ? [
+          '## Failures',
+          '',
+          ...report.budgetEvaluation.failures.map(
+            (failure) => `- ${failure}`,
+          ),
+          '',
+        ]
+      : []),
+    '> Render timings come from CI/headless WebGL and are intended for same-run/release regression tracking, not as a direct estimate of player FPS. Visual-health metrics are informational until an artistic baseline is explicitly approved.',
     '',
   ].join('\n')
 }
@@ -497,9 +561,65 @@ function renderPerformanceConsole(
         `tex=${String(metrics.textures).padStart(3)}`,
         `avg=${metrics.renderMs.average.toFixed(1).padStart(6)}ms`,
         `p95=${metrics.renderMs.p95.toFixed(1).padStart(6)}ms`,
+        `lum=${formatDecimal(report.visual[id]?.averageLuminance)}`,
+        `ctr=${formatDecimal(report.visual[id]?.contrastRange)}`,
       ].join('  '),
     )
     .join('\n')
+}
+
+function evaluateRenderBudgets(
+  summary,
+) {
+  const failures = []
+  const warnings = []
+
+  const hardChecks = [
+    ['draw calls', summary.maxDrawCalls, renderBudgets.maxDrawCalls],
+    ['triangles', summary.maxTriangles, renderBudgets.maxTriangles],
+    ['geometries', summary.maxGeometries, renderBudgets.maxGeometries],
+    ['textures', summary.maxTextures, renderBudgets.maxTextures],
+    ['lights', summary.maxLights, renderBudgets.maxLights],
+    ['shadow lights', summary.maxShadowLights, renderBudgets.maxShadowLights],
+    ['average render ms', summary.slowestAverageRenderMs, renderBudgets.maxAverageRenderMs],
+    ['p95 render ms', summary.slowestP95RenderMs, renderBudgets.maxP95RenderMs],
+  ]
+
+  for (const [label, actual, limit] of hardChecks) {
+    if (actual > limit) {
+      failures.push(
+        `${label} ${actual} exceeded budget ${limit}`,
+      )
+    }
+  }
+
+  if (
+    summary.slowestAverageRenderMs >
+    renderBudgets.warningAverageRenderMs
+  ) {
+    warnings.push(
+      `slowest average render ${summary.slowestAverageRenderMs} ms is above warning threshold ${renderBudgets.warningAverageRenderMs} ms`,
+    )
+  }
+  if (
+    summary.slowestP95RenderMs >
+    renderBudgets.warningP95RenderMs
+  ) {
+    warnings.push(
+      `slowest p95 render ${summary.slowestP95RenderMs} ms is above warning threshold ${renderBudgets.warningP95RenderMs} ms`,
+    )
+  }
+
+  return {
+    status:
+      failures.length
+        ? 'fail'
+        : warnings.length
+          ? 'warn'
+          : 'pass',
+    failures,
+    warnings,
+  }
 }
 
 function formatNumber(
@@ -508,6 +628,22 @@ function formatNumber(
   return new Intl.NumberFormat(
     'en-US',
   ).format(value)
+}
+
+function formatDecimal(
+  value,
+) {
+  return Number.isFinite(value)
+    ? Number(value).toFixed(3)
+    : '—'
+}
+
+function formatPercent(
+  value,
+) {
+  return Number.isFinite(value)
+    ? `${(Number(value) * 100).toFixed(1)}%`
+    : '—'
 }
 
 function npmCommand() {
