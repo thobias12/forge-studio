@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.93.0`  
+> **Current Forge version:** `v1.93.1`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,14 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.93.1 is the **ARPG Wall Cutaway Polish** follow-up based on recorded gameplay of v1.93.0.
+
+The cutaway footprint is now much tighter. Direct camera-blocking wall chunks target ~5.5% opacity so they read as a clean cutaway instead of a translucent overlay. The immediate neighbor ring is reduced to ~4.6 m and targets ~46% opacity, while a small outer feather reaches only ~6.8 m at ~76% opacity. Wall chunks farther than ~9 m from the player are excluded from neighbor fading.
+
+Fade-out remains quick, with the direct blocker responding fastest, but wall restoration is substantially faster once a chunk is no longer in front of the camera. This reduces the lingering ghost-wall effect visible in the v1.93.0 gameplay clip while preserving readability around corners.
+
+No wall geometry, lighting, combat, collision, navigation, encounter pacing or Vault Warden tuning changes are included in this patch.
 
 Forge v1.93.0 is the **ARPG Wall Readability & Cutaway Occlusion pass**. It keeps the v1.92.7+ architectural wall height while addressing the large dark foreground wall masses exposed by live gameplay.
 

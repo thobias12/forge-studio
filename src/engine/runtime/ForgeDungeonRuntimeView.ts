@@ -75,13 +75,14 @@ export const dungeonViewMethods = {
     for (const hit of this.occlusionRay.intersectObjects(this.world.children, true)) {
       const mesh = hit.object as THREE.Mesh
       if (!mesh.isMesh || !mesh.userData.skillboundOccluder) continue
-      desired.set(mesh, 0.12)
+      desired.set(mesh, 0.055)
       if (mesh.userData.skillboundWallChunk) directWalls.push(mesh)
     }
 
-    // Tall ARPG walls need a cutaway pocket, not a single transparent slice.
-    // Cache the static wall chunks once, then feather neighboring foreground
-    // chunks around any wall hit by the camera-to-player ray.
+    // Tall ARPG walls use a compact cutaway pocket rather than a wide
+    // translucent zone. Direct blockers almost disappear, one immediate
+    // neighbor ring softens the edge, and a small outer feather prevents
+    // popping as the player crosses corners.
     if (!this.__forgeWallOccluders) {
       const walls: THREE.Mesh[] = []
       this.world.traverse((object: THREE.Object3D) => {
@@ -117,15 +118,15 @@ export const dungeonViewMethods = {
             Math.hypot(
               cx - this.player.position.x,
               cz - this.player.position.z,
-            ) > 14
+            ) > 9
           ) continue
 
           const neighborDistance = Math.hypot(cx - px, cz - pz)
           const targetOpacity =
-            neighborDistance <= 7.2
-              ? 0.34
-              : neighborDistance <= 10.5
-                ? 0.58
+            neighborDistance <= 4.6
+              ? 0.46
+              : neighborDistance <= 6.8
+                ? 0.76
                 : undefined
           if (targetOpacity === undefined) continue
 
@@ -142,11 +143,11 @@ export const dungeonViewMethods = {
 
     for (const [mesh, targetOpacity] of desired) {
       const response =
-        targetOpacity <= 0.16
-          ? 16
-          : targetOpacity <= 0.4
-            ? 11
-            : 8
+        targetOpacity <= 0.08
+          ? 19
+          : targetOpacity <= 0.5
+            ? 12
+            : 9
       const fadeOut = 1 - Math.exp(-response * delta)
       const next = THREE.MathUtils.lerp(
         this.fadedOccluders.get(mesh) ?? 1,
@@ -157,7 +158,7 @@ export const dungeonViewMethods = {
       this.fadedOccluders.set(mesh, next)
     }
 
-    const fadeIn = 1 - Math.exp(-7 * delta)
+    const fadeIn = 1 - Math.exp(-11 * delta)
     for (const [mesh, current] of [...this.fadedOccluders]) {
       if (desired.has(mesh)) continue
       const next = THREE.MathUtils.lerp(current, 1, fadeIn)
