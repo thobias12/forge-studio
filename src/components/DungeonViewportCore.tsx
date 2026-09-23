@@ -71,10 +71,13 @@ export default function DungeonViewport(props: Props) {
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
+    controls.dampingFactor = 0.09
     controls.target.set(4, 0, 0)
-    controls.maxPolarAngle = Math.PI * 0.49
-    controls.minDistance = 5
+    controls.minPolarAngle = Math.PI * 0.07
+    controls.maxPolarAngle = Math.PI * 0.32
+    controls.minDistance = 6
     controls.maxDistance = 175
+    controls.screenSpacePanning = true
     controls.update()
 
     const ambient = new THREE.HemisphereLight(initialAtmosphere.sky, initialAtmosphere.ground, initialAtmosphere.ambient)
@@ -94,12 +97,14 @@ export default function DungeonViewport(props: Props) {
     key.shadow.bias = -0.0005
     scene.add(key)
 
-    const grid = new THREE.GridHelper(200, 200, 0x385064, 0x1b2833)
+    const grid = new THREE.GridHelper(200, 40, 0x385064, 0x1b2833)
     const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material]
     for (const material of gridMaterials) {
       material.transparent = true
-      material.opacity = 0.18
+      material.opacity = 0.09
+      material.depthWrite = false
     }
+    grid.renderOrder = -10
     scene.add(grid)
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide }))
     ground.rotation.x = -Math.PI / 2
@@ -125,13 +130,20 @@ export default function DungeonViewport(props: Props) {
       if (!value.rooms.length) return
       const bounds = dungeonWorldBounds(value)
       const span = Math.max(bounds.width, bounds.depth)
-      const distance = THREE.MathUtils.clamp(span * 0.49 + 11, 23, 82)
-      const height = THREE.MathUtils.clamp(distance * 0.7, 19, 58)
-      controls.target.set(bounds.x, 0, bounds.z)
-      camera.position.set(bounds.x + distance * 0.5, height, bounds.z + distance * 0.61)
-      camera.fov = 45
+      const height = THREE.MathUtils.clamp(span * 1.18 + 8, 32, 118)
+      const offsetX = THREE.MathUtils.clamp(span * 0.24, 8, 30)
+      const offsetZ = THREE.MathUtils.clamp(span * 0.30, 10, 38)
+
+      controls.target.set(bounds.x, 0.3, bounds.z)
+      camera.position.set(
+        bounds.x + offsetX,
+        height,
+        bounds.z + offsetZ,
+      )
+      camera.fov = 43
       camera.updateProjectionMatrix()
-      const gridSize = THREE.MathUtils.clamp(span + 24, 46, 150)
+
+      const gridSize = THREE.MathUtils.clamp(span + 12, 34, 126)
       grid.position.set(bounds.x, 0, bounds.z)
       grid.scale.set(gridSize / 200, 1, gridSize / 200)
       controls.update()
