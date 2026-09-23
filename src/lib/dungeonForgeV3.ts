@@ -68,6 +68,7 @@ export function addDungeonMasonryV3(
   addRoomFixtures(root, value, atmosphere, flickerLights, mode)
   addCorridorFixtures(root, value, atmosphere, flickerLights, mode)
   addRoomDressing(root, value, atmosphere, mode)
+  addDungeonAtmosphereV2(root, value, atmosphere, mode)
 
   return root
 }
@@ -473,6 +474,304 @@ function addFloorAtmosphere(
   })
   mesh.renderOrder = 3
   root.add(mesh)
+}
+
+
+let atmosphereSoftTexture: THREE.CanvasTexture | undefined
+
+function getAtmosphereSoftTexture() {
+  if (atmosphereSoftTexture || typeof document === 'undefined') {
+    return atmosphereSoftTexture
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = 96
+  canvas.height = 96
+  const context = canvas.getContext('2d')
+  if (!context) return undefined
+  const gradient = context.createRadialGradient(48, 48, 1, 48, 48, 48)
+  gradient.addColorStop(0, 'rgba(255,255,255,0.72)')
+  gradient.addColorStop(0.28, 'rgba(255,255,255,0.32)')
+  gradient.addColorStop(0.68, 'rgba(255,255,255,0.08)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 96, 96)
+  atmosphereSoftTexture = new THREE.CanvasTexture(canvas)
+  atmosphereSoftTexture.colorSpace = THREE.SRGBColorSpace
+  atmosphereSoftTexture.needsUpdate = true
+  return atmosphereSoftTexture
+}
+
+function atmosphereRoomMood(
+  room: DungeonRoom,
+  atmosphere: DungeonAtmosphere,
+) {
+  const template = resolveRoomTemplate(room)
+  if (room.type === 'boss' || template === 'warden-sanctum') {
+    return { color: atmosphere.boss, opacity: .105, mist: .052, dust: 16 }
+  }
+  if (room.type === 'elite' || template === 'warden-hall') {
+    return { color: 0x825449, opacity: .075, mist: .044, dust: 14 }
+  }
+  if (room.type === 'shrine' || template === 'shrine-hall') {
+    return { color: atmosphere.shrine, opacity: .08, mist: .05, dust: 12 }
+  }
+  if (room.type === 'treasure' || template === 'reliquary') {
+    return { color: 0x9a7751, opacity: .06, mist: .038, dust: 10 }
+  }
+  if (template === 'crossroads') {
+    return { color: 0x62706f, opacity: .045, mist: .045, dust: 14 }
+  }
+  if (template === 'ossuary-gallery' || template === 'sealed-ossuary') {
+    return { color: 0x596563, opacity: .04, mist: .055, dust: 13 }
+  }
+  return { color: 0x65706f, opacity: .035, mist: .04, dust: 10 }
+}
+
+function addDungeonAtmosphereV2(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  const texture = getAtmosphereSoftTexture()
+  const debris: Array<{
+    x: number
+    y: number
+    z: number
+    sx: number
+    sy: number
+    sz: number
+    yaw: number
+    shade: number
+  }> = []
+  const dust: Array<{
+    x: number
+    y: number
+    z: number
+    baseY: number
+    phase: number
+    drift: number
+  }> = []
+
+  for (const room of value.rooms) {
+    const mood = atmosphereRoomMood(room, atmosphere)
+    const random = seededRandom(
+      stringHash(`atmosphere-v2:${room.id}`) ^ value.seed,
+    )
+
+    if (texture) {
+      const poolMaterial = new THREE.MeshBasicMaterial({
+        map: texture,
+        color: mood.color,
+        transparent: true,
+        opacity: mood.opacity,
+        depthWrite: false,
+        depthTest: true,
+        toneMapped: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      })
+      const pool = new THREE.Mesh(
+        new THREE.PlaneGeometry(
+          THREE.MathUtils.clamp(room.width * .7, 6.5, 14),
+          THREE.MathUtils.clamp(room.depth * .7, 6.5, 14),
+        ),
+        poolMaterial,
+      )
+      pool.name = `DungeonV3RoomBounce:${room.id}`
+      pool.rotation.x = -Math.PI / 2
+      pool.position.set(
+        room.x,
+        room.floorLevel + .102,
+        room.z,
+      )
+      pool.renderOrder = 3
+      root.add(pool)
+
+      const mistCount =
+        room.type === 'boss' || room.width * room.depth > 430 ? 3 : 2
+      for (let index = 0; index < mistCount; index += 1) {
+        const localX = (random() - .5) * room.width * .5
+        const localZ = (random() - .5) * room.depth * .5
+        const world = localToWorld(room, localX, localZ)
+        const mistMaterial = new THREE.MeshBasicMaterial({
+          map: texture,
+          color: atmosphere.mist,
+          transparent: true,
+          opacity: mood.mist * (.78 + random() * .35),
+          depthWrite: false,
+          toneMapped: false,
+          blending: THREE.NormalBlending,
+          side: THREE.DoubleSide,
+        })
+        const mist = new THREE.Mesh(
+          new THREE.PlaneGeometry(
+            3.8 + random() * 3.6,
+            2.4 + random() * 2.8,
+          ),
+          mistMaterial,
+        )
+        mist.name = 'DungeonV3MistPocket'
+        mist.rotation.x = -Math.PI / 2
+        mist.rotation.z = random() * Math.PI
+        mist.position.set(
+          world.x,
+          room.floorLevel + .115 + index * .006,
+          world.z,
+        )
+        mist.renderOrder = 4
+        const phase = random() * Math.PI * 2
+        const baseOpacity = mistMaterial.opacity
+        mist.onBeforeRender = () => {
+          const t = performance.now() * .001
+          mistMaterial.opacity =
+            baseOpacity * (.82 + Math.sin(t * .34 + phase) * .18)
+          mist.rotation.z += .00016
+        }
+        root.add(mist)
+      }
+    }
+
+    const dustCount = Math.max(
+      6,
+      Math.min(
+        mood.dust,
+        Math.round(room.width * room.depth / 42),
+      ),
+    )
+    for (let index = 0; index < dustCount; index += 1) {
+      const localX = (random() - .5) * room.width * .72
+      const localZ = (random() - .5) * room.depth * .72
+      const world = localToWorld(room, localX, localZ)
+      dust.push({
+        x: world.x,
+        y: room.floorLevel + .28 + random() * 1.2,
+        z: world.z,
+        baseY: room.floorLevel,
+        phase: random(),
+        drift: random() * Math.PI * 2,
+      })
+    }
+
+    // Small edge chips add age without creating new collision. They are
+    // intentionally omitted from dungeonArtCollidersV3.
+    const chipCount =
+      room.type === 'boss' ? 5 :
+        room.type === 'elite' ? 4 :
+          room.width * room.depth > 360 ? 3 : 2
+    for (let index = 0; index < chipCount; index += 1) {
+      const side = index % 4
+      const along = (random() - .5) * .5
+      let localX = 0
+      let localZ = 0
+      if (side === 0) {
+        localX = room.width * along
+        localZ = -room.depth * (.34 + random() * .07)
+      } else if (side === 1) {
+        localX = room.width * (.34 + random() * .07)
+        localZ = room.depth * along
+      } else if (side === 2) {
+        localX = room.width * along
+        localZ = room.depth * (.34 + random() * .07)
+      } else {
+        localX = -room.width * (.34 + random() * .07)
+        localZ = room.depth * along
+      }
+      const world = localToWorld(room, localX, localZ)
+      const size = .08 + random() * .13
+      debris.push({
+        x: world.x,
+        y: room.floorLevel + .075,
+        z: world.z,
+        sx: size * (1.4 + random() * .7),
+        sy: .06 + random() * .06,
+        sz: size * (.8 + random() * .8),
+        yaw: random() * Math.PI,
+        shade: .58 + random() * .2,
+      })
+    }
+  }
+
+  if (debris.length) {
+    const geometry = new THREE.BoxGeometry(1, 1, 1)
+    const material = new THREE.MeshStandardMaterial({
+      color: atmosphere.wallDark,
+      roughness: .96,
+      metalness: 0,
+      vertexColors: true,
+    })
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      debris.length,
+    )
+    mesh.name = 'DungeonV3AtmosphereDebrisNoCollision'
+    mesh.userData.decorativeNoCollision = true
+    const dummy = new THREE.Object3D()
+    const white = new THREE.Color(0xffffff)
+    debris.forEach((chip, index) => {
+      dummy.position.set(chip.x, chip.y, chip.z)
+      dummy.rotation.set(
+        (index % 3 - 1) * .05,
+        chip.yaw,
+        (index % 2 ? 1 : -1) * .04,
+      )
+      dummy.scale.set(chip.sx, chip.sy, chip.sz)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+      mesh.setColorAt(
+        index,
+        white.clone().multiplyScalar(chip.shade),
+      )
+    })
+    mesh.castShadow = false
+    mesh.receiveShadow = true
+    root.add(mesh)
+  }
+
+  if (dust.length) {
+    const positions = new Float32Array(dust.length * 3)
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(positions, 3),
+    )
+    const material = new THREE.PointsMaterial({
+      color: atmosphere.dust,
+      size: mode === 'walk' ? .055 : .045,
+      transparent: true,
+      opacity: mode === 'walk' ? .3 : .24,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.name = 'DungeonV3DriftingDust'
+    points.frustumCulled = false
+    const phase = (value.seed % 997) / 997 * Math.PI * 2
+    points.onBeforeRender = () => {
+      const t = performance.now() * .001
+      dust.forEach((mote, index) => {
+        const cycle = (mote.phase + t * .055) % 1
+        const offset = index * 3
+        positions[offset] =
+          mote.x +
+          Math.sin(t * .31 + mote.drift) * .045
+        positions[offset + 1] =
+          mote.baseY + .18 + cycle * (mode === 'walk' ? 2.15 : 1.42)
+        positions[offset + 2] =
+          mote.z +
+          Math.cos(t * .27 + mote.drift) * .04
+      })
+      ;(geometry.getAttribute('position') as THREE.BufferAttribute)
+        .needsUpdate = true
+      material.opacity =
+        (mode === 'walk' ? .28 : .22) +
+        Math.sin(t * .42 + phase) * .035
+    }
+    root.add(points)
+  }
 }
 
 type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean; nx: number; nz: number }
