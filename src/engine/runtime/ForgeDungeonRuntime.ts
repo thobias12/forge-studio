@@ -4,6 +4,9 @@ import { dungeonGameplayMethods } from './ForgeDungeonRuntimeGameplay'
 import { dungeonViewMethods } from './ForgeDungeonRuntimeView'
 import { disposeSceneObject, isTextInput } from './ForgeDungeonRuntimeHelpers'
 import * as THREE from 'three'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import type {
   ForgeAbilityDefinition,
   ForgeEnemyDefinition,
@@ -115,6 +118,13 @@ export class ForgeDungeonRuntime {
     0.08,
     260,
   )
+  private readonly composer = new EffectComposer(this.renderer)
+  private readonly bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(1, 1),
+    0,
+    .5,
+    .7,
+  )
   private readonly world = new THREE.Group()
   private readonly player = new THREE.Group()
   private readonly playerPlaceholder = new THREE.Group()
@@ -214,6 +224,14 @@ export class ForgeDungeonRuntime {
     this.renderer.domElement.className = 'skillbound-runtime-canvas'
     this.renderer.domElement.style.touchAction = 'none'
     this.host.appendChild(this.renderer.domElement)
+
+    this.composer.addPass(
+      new RenderPass(this.scene, this.camera),
+    )
+    this.bloomPass.strength = lighting.bloomStrength
+    this.bloomPass.radius = atmosphere.bloomRadius
+    this.bloomPass.threshold = atmosphere.bloomThreshold
+    this.composer.addPass(this.bloomPass)
 
     this.buildLighting()
     this.buildDungeon()
@@ -409,14 +427,17 @@ export class ForgeDungeonRuntime {
       }
     }
 
-    this.renderer.render(this.scene, this.camera)
+    this.composer.render()
     this.frame = requestAnimationFrame(this.animate)
   }
 
   private resize = () => {
     const rect = this.host.getBoundingClientRect()
-    this.renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false)
-    this.camera.aspect = Math.max(1, rect.width) / Math.max(1, rect.height)
+    const width = Math.max(1, rect.width)
+    const height = Math.max(1, rect.height)
+    this.renderer.setSize(width, height, false)
+    this.composer.setSize(width, height)
+    this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
   }
 }
