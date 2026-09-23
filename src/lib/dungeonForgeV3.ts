@@ -464,8 +464,8 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       const hash = numberHash(Math.round(cx * 13), Math.round(cz * 19), value.seed)
       const chip = 0.982 + ((hash >>> 5) % 4) * 0.004
       const floorY = dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y
-      const damaged = hash % 31 === 0
-      const missingCorner = hash % 61 === 0
+      const damaged = hash % 73 === 0
+      const missingCorner = hash % 211 === 0
       const broadShade =
         0.985 +
         Math.sin(cx * .115 + value.seed * .013) * .028 +
@@ -473,32 +473,32 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       instances.push({
         x: cx,
         z: cz,
-        y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
-        width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
-        depth: FLOOR_BRICK_D * (0.965 + ((hash >>> 9) % 5) * 0.007) * (damaged ? 0.965 : 1),
+        y: floorY + (damaged ? -0.008 : ((hash >>> 14) % 3) * 0.003),
+        width: FLOOR_BRICK_W * chip * (missingCorner ? 0.96 : 1),
+        depth: FLOOR_BRICK_D * (0.975 + ((hash >>> 9) % 5) * 0.005) * (damaged ? 0.985 : 1),
         shade:
           broadShade *
           (damaged
-            ? 0.86 + (hash % 6) / 100
-            : 0.96 + (hash % 7) / 100),
+            ? 0.92 + (hash % 5) / 100
+            : 0.965 + (hash % 6) / 100),
         yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
-      if (hash % 41 === 0) {
+      if (hash % 97 === 0) {
         cracks.push({
           x: cx + (((hash >>> 4) % 7) - 3) * 0.035,
           z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
           y: floorY + 0.052,
           yaw: ((hash >>> 12) % 628) / 100,
-          length: 0.28 + ((hash >>> 20) % 5) * 0.07,
+          length: 0.22 + ((hash >>> 20) % 4) * 0.06,
         })
       }
-      if (hash % 59 === 0) {
+      if (hash % 83 === 0) {
         etches.push({
           x: cx,
           z: cz,
           y: floorY + 0.054,
           yaw: Math.PI * 0.22 + ((hash >>> 11) % 5 - 2) * 0.055,
-          length: 1.05 + ((hash >>> 18) % 6) * 0.16,
+          length: 0.82 + ((hash >>> 18) % 5) * 0.14,
         })
       }
     }
@@ -508,12 +508,12 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
 
   const geometry = new THREE.BoxGeometry(1, 0.09, 1)
   const material = new THREE.MeshStandardMaterial({
-    color: atmosphere.floor,
-    roughness: 0.84,
-    metalness: 0.015,
+    color: new THREE.Color(atmosphere.floor).offsetHSL(0, -.012, .028),
+    roughness: 0.8,
+    metalness: 0.018,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.floor).multiplyScalar(.72),
-    emissiveIntensity: 0.22,
+    emissive: new THREE.Color(atmosphere.floor).multiplyScalar(.68),
+    emissiveIntensity: 0.2,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -532,8 +532,8 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   root.add(mesh)
 
   if (cracks.length) {
-    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x0d1b27, transparent: true, opacity: 0.34, depthWrite: false })
-    const crackMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.008, 0.045), crackMaterial, cracks.length)
+    const crackMaterial = new THREE.MeshBasicMaterial({ color: 0x355267, transparent: true, opacity: 0.18, depthWrite: false })
+    const crackMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.006, 0.028), crackMaterial, cracks.length)
     crackMesh.name = 'DungeonV3FloorCracks'
     cracks.forEach((crack, index) => {
       dummy.position.set(crack.x, crack.y, crack.z)
@@ -550,7 +550,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     const etchMaterial = new THREE.MeshBasicMaterial({
       color: 0x87a9c3,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.09,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     })
@@ -1089,12 +1089,12 @@ function addPerimeterWalls(
 
   const geometry = new THREE.BoxGeometry(1, 1, 1)
   const baseMaterial = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(atmosphere.wall).offsetHSL(0, -0.01, 0.025),
-    roughness: 0.84,
-    metalness: 0.014,
+    color: new THREE.Color(atmosphere.wall).offsetHSL(0, -0.012, 0.045),
+    roughness: 0.82,
+    metalness: 0.016,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.62),
-    emissiveIntensity: mode === 'arpg' ? 0.18 : topDown ? 0.16 : 0.09,
+    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.66),
+    emissiveIntensity: mode === 'arpg' ? 0.2 : topDown ? 0.17 : 0.1,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -1153,10 +1153,10 @@ function addPerimeterWalls(
       mesh.setMatrixAt(index, dummy.matrix)
       const verticalLift =
         sample.cap
-          ? .29
+          ? .34
           : sample.base
-            ? -.01
-            : sample.level * .065
+            ? 0
+            : sample.level * .072
       const color = white
         .clone()
         .multiplyScalar(sample.shade + verticalLift)
@@ -2095,17 +2095,17 @@ function addRoomFixtures(
         0,
         0.105,
         1.42,
-        room.type === 'boss' ? 7.8 : 6.6,
-        room.type === 'boss' ? 5.5 : 4.6,
-        room.type === 'boss' ? 0.3 : 0.24,
+        room.type === 'boss' ? 6.4 : 5.35,
+        room.type === 'boss' ? 4.45 : 3.75,
+        room.type === 'boss' ? 0.25 : 0.2,
       )
       addWarmWallWash(
         fixture,
         fixtureY,
         atmosphere,
-        room.type === 'boss' ? 3.25 : 2.8,
-        room.type === 'boss' ? 2.8 : 2.35,
-        room.type === 'boss' ? .28 : .23,
+        room.type === 'boss' ? 2.8 : 2.4,
+        room.type === 'boss' ? 2.35 : 2.0,
+        room.type === 'boss' ? .25 : .2,
       )
       addTorchDust(
         fixture,
@@ -2542,6 +2542,7 @@ function addCathedralEnvironmentV4(
   }
 
   const trim: BatchTransform[] = []
+  const cornices: BatchTransform[] = []
   const recesses: BatchTransform[] = []
   const runes: BatchTransform[] = []
   const floorBands: BatchTransform[] = []
@@ -2578,18 +2579,18 @@ function addCathedralEnvironmentV4(
     along: number,
     glowing: boolean,
   ) => {
-    const p = roomWallPoint(room, side, along, .22)
-    const base = offsetFromYaw(p.x, p.z, p.yaw, 0, .02)
+    const p = roomWallPoint(room, side, along, .2)
+    const base = offsetFromYaw(p.x, p.z, p.yaw, 0, -.015)
 
-    pushTransform(trim, base.x, room.floorLevel + .11, base.z, p.yaw, .82, .22, .34)
-    pushTransform(trim, base.x, room.floorLevel + .91, base.z, p.yaw, .48, 1.38, .24)
-    pushTransform(trim, base.x, room.floorLevel + 1.63, base.z, p.yaw, .68, .16, .32)
+    pushTransform(trim, base.x, room.floorLevel + .12, base.z, p.yaw, .96, .24, .38)
+    pushTransform(trim, base.x, room.floorLevel + 1.0, base.z, p.yaw, .64, 1.54, .29)
+    pushTransform(trim, base.x, room.floorLevel + 1.82, base.z, p.yaw, .84, .18, .38)
 
-    const recess = offsetFromYaw(p.x, p.z, p.yaw, 0, -.125)
-    pushTransform(recesses, recess.x, room.floorLevel + .88, recess.z, p.yaw, .28, .72, .045)
+    const recess = offsetFromYaw(p.x, p.z, p.yaw, 0, -.155)
+    pushTransform(recesses, recess.x, room.floorLevel + .96, recess.z, p.yaw, .4, .86, .05)
     if (glowing) {
-      const rune = offsetFromYaw(p.x, p.z, p.yaw, 0, -.155)
-      pushTransform(runes, rune.x, room.floorLevel + .9, rune.z, p.yaw, .035, .5, .018)
+      const rune = offsetFromYaw(p.x, p.z, p.yaw, 0, -.19)
+      pushTransform(runes, rune.x, room.floorLevel + .98, rune.z, p.yaw, .04, .58, .018)
     }
   }
 
@@ -2617,6 +2618,26 @@ function addCathedralEnvironmentV4(
     pushTransform(floorBands, east.x, y, east.z, rotation + Math.PI / 2, halfD * 1.62, 1, .045 * strength)
   }
 
+  const addRoomCornice = (
+    room: DungeonRoom,
+  ) => {
+    if (room.shape === 'cross') return
+    const inset = .18
+    const halfW = Math.max(1.4, room.width / 2 - inset)
+    const halfD = Math.max(1.4, room.depth / 2 - inset)
+    const rotation = THREE.MathUtils.degToRad(room.rotation)
+    const y = room.floorLevel + 1.83
+    const north = localToWorld(room, 0, -halfD)
+    const south = localToWorld(room, 0, halfD)
+    const west = localToWorld(room, -halfW, 0)
+    const east = localToWorld(room, halfW, 0)
+
+    pushTransform(cornices, north.x, y, north.z, rotation, Math.max(1.5, room.width - 1.1), .14, .34)
+    pushTransform(cornices, south.x, y, south.z, rotation, Math.max(1.5, room.width - 1.1), .14, .34)
+    pushTransform(cornices, west.x, y, west.z, rotation + Math.PI / 2, Math.max(1.5, room.depth - 1.1), .14, .34)
+    pushTransform(cornices, east.x, y, east.z, rotation + Math.PI / 2, Math.max(1.5, room.depth - 1.1), .14, .34)
+  }
+
   const addCrystalCluster = (
     room: DungeonRoom,
     xFraction: number,
@@ -2629,9 +2650,9 @@ function addCathedralEnvironmentV4(
     pushTransform(plinths, p.x, p.y + .1, p.z, yaw, .82 * scale, .2 * scale, .72 * scale)
 
     const shards = [
-      { ox: 0, oz: 0, h: 1.45, w: .26, tilt: .02 },
-      { ox: -.26, oz: .08, h: 1.02, w: .2, tilt: -.12 },
-      { ox: .22, oz: .14, h: .78, w: .17, tilt: .14 },
+      { ox: 0, oz: 0, h: 1.28, w: .19, tilt: .02 },
+      { ox: -.22, oz: .07, h: .88, w: .145, tilt: -.12 },
+      { ox: .19, oz: .11, h: .64, w: .12, tilt: .14 },
     ]
     shards.forEach((shard, index) => {
       const local = offsetFromYaw(
@@ -2671,9 +2692,9 @@ function addCathedralEnvironmentV4(
       p.y + .72 * scale,
       p.z,
       yaw,
-      .13 * scale,
-      .13 * scale,
-      .13 * scale,
+      .095 * scale,
+      .095 * scale,
+      .095 * scale,
     )
   }
 
@@ -2706,6 +2727,7 @@ function addCathedralEnvironmentV4(
     if (special || area > 300) {
       addRoomBorder(room, room.type === 'boss' ? 1.3 : 1)
     }
+    addRoomCornice(room)
 
     const seed = stringHash(`cathedral-v4:${room.id}`) ^ value.seed
     if (room.type === 'boss' || template === 'warden-sanctum') {
@@ -2766,13 +2788,27 @@ function addCathedralEnvironmentV4(
     'DungeonV4CathedralTrim',
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshStandardMaterial({
-      color: new THREE.Color(atmosphere.wall).offsetHSL(-.005, -.03, .11),
-      roughness: .8,
-      metalness: .025,
-      emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.22),
-      emissiveIntensity: .16,
+      color: new THREE.Color(atmosphere.wall).offsetHSL(-.004, -.025, .055),
+      roughness: .82,
+      metalness: .02,
+      emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.2),
+      emissiveIntensity: .11,
     }),
     trim,
+    true,
+    true,
+  )
+  addBatch(
+    'DungeonV4Cornices',
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(atmosphere.wall).offsetHSL(-.006, -.025, .09),
+      roughness: .8,
+      metalness: .02,
+      emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.24),
+      emissiveIntensity: .14,
+    }),
+    cornices,
     true,
     true,
   )
@@ -2810,7 +2846,7 @@ function addCathedralEnvironmentV4(
     new THREE.MeshBasicMaterial({
       color: 0x89b8d2,
       transparent: true,
-      opacity: .13,
+      opacity: .17,
       depthWrite: false,
       toneMapped: false,
       blending: THREE.AdditiveBlending,
@@ -2836,10 +2872,10 @@ function addCathedralEnvironmentV4(
     'DungeonV4CrystalShafts',
     new THREE.CylinderGeometry(1, 1.18, 1, 5),
     new THREE.MeshStandardMaterial({
-      color: 0x75b8d4,
-      emissive: 0x276986,
-      emissiveIntensity: .75,
-      roughness: .3,
+      color: 0x5f9fbd,
+      emissive: 0x245f78,
+      emissiveIntensity: .48,
+      roughness: .34,
       metalness: .025,
     }),
     crystalShafts,
@@ -2850,10 +2886,10 @@ function addCathedralEnvironmentV4(
     'DungeonV4CrystalTips',
     new THREE.ConeGeometry(1, 1, 5),
     new THREE.MeshStandardMaterial({
-      color: 0xa5e9ff,
-      emissive: 0x46bce8,
-      emissiveIntensity: 1.15,
-      roughness: .22,
+      color: 0x89cde7,
+      emissive: 0x318cac,
+      emissiveIntensity: .72,
+      roughness: .28,
       metalness: .02,
     }),
     crystalTips,
@@ -2864,9 +2900,9 @@ function addCathedralEnvironmentV4(
     'DungeonV4CrystalCores',
     new THREE.OctahedronGeometry(1, 0),
     new THREE.MeshBasicMaterial({
-      color: 0xc8f5ff,
+      color: 0xb6ecfa,
       transparent: true,
-      opacity: .82,
+      opacity: .58,
       depthWrite: false,
       toneMapped: false,
       blending: THREE.AdditiveBlending,
