@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
+import { createDungeonLibraryPropPlaceholder, disposeDungeonPropVisual, loadDungeonLibraryPropVisual } from '../lib/dungeonPropVisual'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
 import { addDungeonManualWallV3, addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonRoomAtV3 } from '../lib/dungeonForgeV3'
 import { addBuiltinProp as addRuntimeBuiltinProp } from '../engine/runtime/ForgeDungeonRuntimeHelpers'
@@ -113,7 +113,6 @@ export default function DungeonViewport(props: Props) {
 
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
-    const loader = new GLTFLoader()
     const flickerLights: FlickerLight[] = []
     const atmospherePoints: THREE.Points[] = []
     let drag: DragState | undefined
@@ -226,7 +225,7 @@ export default function DungeonViewport(props: Props) {
 
       const assetMap = new Map(state.libraryAssets.map((item) => [item.id, item]))
       for (const prop of dungeonProps(current)) {
-        addDungeonProp(dungeonGroup, prop, assetMap.get(prop.assetRef), prop.id === state.selectedPropId, loader, atmosphere)
+        addDungeonProp(dungeonGroup, prop, assetMap.get(prop.assetRef), prop.id === state.selectedPropId, atmosphere)
       }
       for (const item of current.markers) {
         if (item.type === 'door') continue
@@ -838,7 +837,7 @@ function addCorridorSegment(parent: THREE.Group, x1: number, z1: number, x2: num
   }
 }
 
-function addDungeonProp(parent: THREE.Group, prop: DungeonProp, asset: PropLibraryAsset | undefined, selected: boolean, loader: GLTFLoader, atmosphere: DungeonAtmosphere) {
+function addDungeonProp(parent: THREE.Group, prop: DungeonProp, asset: PropLibraryAsset | undefined, selected: boolean, atmosphere: DungeonAtmosphere) {
   const group = new THREE.Group()
   group.position.set(prop.x, prop.y, prop.z)
   group.rotation.y = THREE.MathUtils.degToRad(prop.rotationY)
@@ -867,32 +866,19 @@ function addDungeonProp(parent: THREE.Group, prop: DungeonProp, asset: PropLibra
     })
   }
   else {
-    const placeholder = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x637788, wireframe: true, transparent: true, opacity: 0.5 }))
-    placeholder.position.y = 0.4
+    const placeholder = createDungeonLibraryPropPlaceholder()
     placeholder.userData.propId = prop.id
     group.add(placeholder)
     if (asset) {
-      const url = URL.createObjectURL(asset.blob)
-      loader.load(url, (gltf) => {
-        URL.revokeObjectURL(url)
-        if (!group.parent) return
-        group.remove(placeholder)
-        disposeObject(placeholder)
-        const model = gltf.scene.clone(true)
-        const box = new THREE.Box3().setFromObject(model)
-        const size = new THREE.Vector3()
-        box.getSize(size)
-        const max = Math.max(size.x, size.y, size.z, 0.001)
-        model.scale.setScalar((1.6 / max) * prop.scale)
-        const fitted = new THREE.Box3().setFromObject(model)
-        model.position.y -= fitted.min.y
-        model.traverse((child) => {
-          child.userData.propId = prop.id
-          const mesh = child as THREE.Mesh
-          if (mesh.isMesh) { mesh.castShadow = true; mesh.receiveShadow = true }
-        })
-        group.add(model)
-      }, undefined, () => URL.revokeObjectURL(url))
+      void loadDungeonLibraryPropVisual(
+        group,
+        asset.blob,
+        prop.scale,
+        prop.id,
+      ).then((model) => {
+        if (!model || !placeholder.parent) return
+        disposeDungeonPropVisual(placeholder)
+      })
     }
   }
 
