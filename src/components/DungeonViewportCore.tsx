@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { getRoomConnection, type DungeonConnection, type DungeonMarker, type DungeonRoom, type DungeonWall } from '../lib/dungeonPackage'
 import { dungeonProps, type DungeonProp, type DungeonWithProps, type PropLibraryAsset } from '../lib/dungeonProps'
 import { dungeonAtmosphere, dungeonLightingProfile, roomAccent, tintRoomFloor, type DungeonAtmosphere } from '../lib/dungeonAtmosphere'
-import { addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonRoomAtV3 } from '../lib/dungeonForgeV3'
+import { addDungeonManualWallV3, addDungeonMasonryV3, addDungeonRoomOverlayV3, dungeonRoomAtV3 } from '../lib/dungeonForgeV3'
 import { addBuiltinProp as addRuntimeBuiltinProp } from '../engine/runtime/ForgeDungeonRuntimeHelpers'
 
 export type DungeonTool = 'select' | 'room' | 'wall' | 'corridor' | 'door' | 'enemy' | 'loot' | 'checkpoint' | 'portal' | 'trigger' | 'light' | 'prop' | 'erase'
@@ -214,12 +214,14 @@ export default function DungeonViewport(props: Props) {
         )
       }
       for (const wallValue of current.walls ?? []) {
-        addManualWall(
+        const wallRoot = addDungeonManualWallV3(
           dungeonGroup,
           wallValue,
           atmosphere,
-          wallValue.id === state.selectedWallId,
         )
+        if (wallRoot && wallValue.id === state.selectedWallId) {
+          addManualWallSelectionOverlay(wallRoot, wallValue)
+        }
       }
 
       const assetMap = new Map(state.libraryAssets.map((item) => [item.id, item]))
@@ -553,73 +555,36 @@ export default function DungeonViewport(props: Props) {
   </div>
 }
 
-function addManualWall(parent: THREE.Group, wall: DungeonWall, atmosphere: DungeonAtmosphere, selected: boolean) {
+function addManualWallSelectionOverlay(
+  root: THREE.Group,
+  wall: DungeonWall,
+) {
   const dx = wall.x2 - wall.x1
   const dz = wall.z2 - wall.z1
   const length = Math.hypot(dx, dz)
   if (length < .1) return
-  const root = new THREE.Group()
-  root.position.set((wall.x1 + wall.x2) / 2, 0, (wall.z1 + wall.z2) / 2)
-  root.rotation.y = Math.atan2(dx, dz)
-  root.userData.wallId = wall.id
-  parent.add(root)
 
-  const dark = new THREE.MeshStandardMaterial({ color: selected ? 0x426f82 : atmosphere.wallDark, roughness: .96 })
-  const brick = new THREE.MeshStandardMaterial({ color: selected ? 0x78bfd9 : atmosphere.wall, roughness: .92, metalness: .01 })
-  const core = new THREE.Mesh(new THREE.BoxGeometry(wall.thickness, wall.height, length), dark)
-  core.position.y = wall.height / 2
-  core.castShadow = true
-  core.receiveShadow = true
-  core.userData.wallId = wall.id
-  core.userData.arpgOccluder = true
-  root.add(core)
-
-  const rows = Math.max(3, Math.floor(wall.height / .52))
-  const rowHeight = wall.height / rows
-  const blocks: Array<{ z: number; y: number; length: number; shade: number }> = []
-  const random = seededWallRandom(wall.id)
-  for (let row = 0; row < rows; row += 1) {
-    let cursor = -length / 2 - (row % 2 ? .55 : .05)
-    while (cursor < length / 2) {
-      const blockLength = .85 + random() * .85
-      const center = cursor + blockLength / 2
-      if (center > -length / 2 && center < length / 2) blocks.push({
-        z: center,
-        y: row * rowHeight + rowHeight / 2,
-        length: Math.min(blockLength * .94, length),
-        shade: .78 + random() * .2,
-      })
-      cursor += blockLength + .055
-    }
-  }
-  const geometry = new THREE.BoxGeometry(1, 1, 1)
-  const mesh = new THREE.InstancedMesh(geometry, brick, blocks.length)
-  const dummy = new THREE.Object3D()
-  const tint = new THREE.Color(0xffffff)
-  blocks.forEach((block, index) => {
-    dummy.position.set(0, block.y, block.z)
-    dummy.scale.set(wall.thickness + .08, rowHeight * .82, block.length)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(index, dummy.matrix)
-    mesh.setColorAt(index, tint.clone().multiplyScalar(block.shade))
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x78bfd9,
+    transparent: true,
+    opacity: .16,
+    wireframe: true,
+    depthWrite: false,
+    depthTest: false,
   })
-  mesh.castShadow = true
-  mesh.receiveShadow = true
-  mesh.userData.wallId = wall.id
-  mesh.userData.arpgOccluder = true
-  root.add(mesh)
-}
-
-function seededWallRandom(seedText: string) {
-  let seed = 2166136261
-  for (let index = 0; index < seedText.length; index += 1) seed = Math.imul(seed ^ seedText.charCodeAt(index), 16777619)
-  return () => {
-    seed += 0x6D2B79F5
-    let value = seed
-    value = Math.imul(value ^ value >>> 15, value | 1)
-    value ^= value + Math.imul(value ^ value >>> 7, value | 61)
-    return ((value ^ value >>> 14) >>> 0) / 4294967296
-  }
+  const overlay = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      wall.thickness + .22,
+      wall.height + .08,
+      length + .08,
+    ),
+    material,
+  )
+  overlay.position.y = wall.height / 2
+  overlay.userData.wallId = wall.id
+  overlay.userData.selectionProxy = true
+  overlay.renderOrder = 100
+  root.add(overlay)
 }
 
 function addRoom(parent: THREE.Group, room: DungeonRoom, wallThickness: number, openings: RoomOpening[], selected: boolean, corridorStart: boolean, immersive: boolean, atmosphere: DungeonAtmosphere, flickerLights: FlickerLight[], crypt: boolean) {
