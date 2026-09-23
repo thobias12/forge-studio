@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as THREE from 'three'
+import { playCombatAudioCue } from './ForgeCombatAudio'
 
 type EnemyMode = 'overworld' | 'dungeon'
 
@@ -13,6 +14,8 @@ type EnemyProjectile = {
   lifetime: number
   color: string
   previous: THREE.Vector3
+  role?: string
+  boss?: boolean
 }
 
 const DEFAULT_ROLE_POISE = {
@@ -1462,6 +1465,11 @@ function updateWretchDash(
     action.age = 0
     triggerEnemyAttackRelease(enemy)
     spawnMeleeReleaseFx(runtime, enemy)
+    void playCombatAudioCue(runtime, 'enemy.attack-release', {
+      role: enemy.combatRole ?? roleOf(enemy.definition),
+      position: enemy.group.position,
+      intensity: 0.92,
+    })
     return true
   }
 
@@ -1625,6 +1633,13 @@ function updateBruteCharge(
     action.phase = 'charge'
     action.age = 0
     triggerEnemyAttackRelease(enemy)
+    void playCombatAudioCue(runtime, 'enemy.attack-release', {
+      role: 'brute',
+      boss: Boolean(enemy.boss),
+      position: enemy.group.position,
+      intensity: enemy.boss ? 1.18 : 1.02,
+      playbackRate: enemy.boss ? 0.88 : 1,
+    })
     return true
   }
 
@@ -1661,6 +1676,13 @@ function updateBruteCharge(
     if (!action.slammed && action.age >= .08) {
       action.slammed = true
       resolveBruteSlam(runtime, enemy, mode)
+      void playCombatAudioCue(runtime, 'enemy.impact', {
+        role: 'brute',
+        boss: Boolean(enemy.boss),
+        position: enemy.group.position,
+        intensity: enemy.boss ? 1.35 : 1.12,
+        playbackRate: enemy.boss ? 0.82 : 0.94,
+      })
       triggerEnemyAttackRelease(enemy)
     }
     if (action.age >= (enemy.boss ? .42 : .34)) {
@@ -2558,6 +2580,8 @@ function spawnProjectile(
     lifetime: 3.2,
     color,
     previous: origin.clone(),
+    role: enemy.combatRole ?? roleOf(enemy.definition),
+    boss: Boolean(enemy.boss),
   })
 
   spawnSparkBurst(runtime, origin, color, 4, .42, 0)
@@ -2654,6 +2678,12 @@ function updateProjectiles(runtime: any, delta: number, mode: EnemyMode) {
         .72,
         0,
       )
+      void playCombatAudioCue(runtime, 'enemy.impact', {
+        role: projectile.role,
+        boss: projectile.boss,
+        position: projectile.mesh.position,
+        intensity: projectile.boss ? 1.12 : 0.88,
+      })
       damagePlayer(
         runtime,
         projectile.damage,
@@ -2976,6 +3006,29 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
     triggerEnemyAttackRelease(enemy)
     spawnEnemyAttackReleaseFx(this, enemy)
     const style = enemy.attackStyle
+    const role = enemy.combatRole ?? roleOf(enemy.definition)
+    if (style === 'projectile') {
+      void playCombatAudioCue(this, 'enemy.projectile-launch', {
+        role,
+        boss: Boolean(enemy.boss),
+        position: enemy.group.position,
+        intensity: enemy.__forgeVolleyShot ? 1.08 : 0.88,
+      })
+    } else if (style === 'area' && enemy.__forgeGraveZoneCast) {
+      void playCombatAudioCue(this, 'caster.grave-zone', {
+        role,
+        boss: Boolean(enemy.boss),
+        position: enemy.group.position,
+        intensity: enemy.boss ? 1.2 : 1,
+      })
+    } else {
+      void playCombatAudioCue(this, 'enemy.attack-release', {
+        role,
+        boss: Boolean(enemy.boss),
+        position: enemy.group.position,
+        intensity: enemy.boss ? 1.12 : 0.9,
+      })
+    }
     if (style === 'melee') {
       return baseResolveEnemyAttack.call(this, enemy)
     }
@@ -3076,6 +3129,31 @@ export function installOverworldEnemyCombatRuntime(Runtime: any) {
       lethal,
       hitStop,
       cameraShake,
+    )
+    void playCombatAudioCue(
+      this,
+      poise?.broken ? 'enemy.poise-break' : 'enemy.impact',
+      {
+        role: enemy.combatRole ?? roleOf(enemy.definition),
+        boss: Boolean(enemy.boss),
+        elite: Boolean(enemy.elite),
+        position: enemy.group.position,
+        intensity:
+          poise?.broken
+            ? enemy.boss ? 1.28 : 1.12
+            : Math.max(
+                .62,
+                Math.min(
+                  1.18,
+                  damage /
+                    Math.max(
+                      1,
+                      Number(enemy.maxHealth ?? enemy.definition?.maxHealth ?? 1),
+                    ) *
+                    7,
+                ),
+              ),
+      },
     )
     return baseDamageEnemy.call(
       this,
@@ -3425,6 +3503,18 @@ export function installDungeonEnemyCombatRuntime(Runtime: any) {
     enemy.__forgeVolleyShot = false
     enemy.__forgeGraveZoneCast = false
     registerDungeonDeath(this, enemy)
+    if (!enemy.boss) {
+      void playCombatAudioCue(
+        this,
+        enemy.elite ? 'elite.death' : 'enemy.death',
+        {
+          role: enemy.combatRole ?? roleOf(enemy.definition),
+          elite: Boolean(enemy.elite),
+          position: enemy.group.position,
+          intensity: enemy.elite ? 1.15 : 0.9,
+        },
+      )
+    }
     return baseKillEnemy.call(this, enemy)
   }
 
