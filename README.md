@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.96.0`  
+> **Current Forge version:** `v1.97.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,22 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.97.0 is the **Dungeon Atmosphere V3** presentation pass. It follows the supplied cathedral references and the user's v1.96 gameplay/editor screenshots, with the goal of making the dungeon feel authored and atmospheric rather than simply brighter.
+
+The **material/wall pass** reduces procedural noise first. Floor bricks use broader courses, substantially rarer missing/damaged pieces and low-frequency tonal variation so the floor reads as one crafted stone surface instead of repeated black cuts. Sparse cracks/etched marks remain, but their frequency and size are reduced. Large soft deterministic shadow/lift patches add broad material variation without adding clutter. Floor emissive flattening is reduced so local light can shape the surface.
+
+Perimeter masonry is smoother and less voxel-like. Row staggering is much smaller, damage gaps are far rarer, shortened bricks retain most of their length, wall depth is slightly reduced and row heights are more consistent. Wall emissive fill is reduced so torch/cyan light can model the face, and a subtle dark wall-foot strip anchors the perimeter to the floor without changing geometry or collision.
+
+The **lighting hierarchy pass** restores actual bloom to the shared dungeon presentation. Test Dungeon now renders through an EffectComposer + UnrealBloomPass using each dungeon theme's existing bloom profile; Dungeon Forge Edit uses the same pass and settings. This makes warm flames and cyan relics emit the soft luminous halos that were missing from runtime while keeping the HTML HUD unaffected. Composer resources are disposed on exit/rebuild paths.
+
+Crypt global ambient/fill is deliberately reduced from v1.96 so the scene is no longer one evenly illuminated blue surface. Room bounce and local room point lights are smaller/more focused, producing readable centers with darker edges. Torch/cyan fixtures remain the brightest visual anchors. The player-follow readability light is reduced so environment lighting—not a hidden player halo—defines the mood.
+
+The **room staging pass** keeps combat floor space open while adding authored structure. Boss/elite/shrine/treasure/crossroads rooms receive subtle geometric floor inlays, burial/ossuary spaces receive wall-attached plaques, large spaces get deliberate perimeter rhythm, and corridors receive sparse threshold lines. These are all decorative/no-collision overlays. Existing Cold Cathedral ward stones/beacons remain the primary physical focal language.
+
+Dungeon Forge Edit and Test Dungeon continue to use the same authoritative ARPG V3 renderer. The new floor material, wall smoothing, bloom, lighting hierarchy and staging therefore appear in both rather than creating a separate editor look.
+
+This release changes presentation only: no enemy AI, damage, encounter counts, loot, navigation, collision, room layout or Vault Warden balance values were changed.
 
 Forge v1.96.0 is the **Cold Cathedral Presentation v2** pass, driven by direct comparison between the supplied Rime Cathedral references and screenshots of v1.95.0.
 
