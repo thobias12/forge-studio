@@ -37,12 +37,25 @@ type DungeonRenderMetrics = {
   materials: number
 }
 
+type DungeonVisualMetrics = {
+  averageLuminance: number
+  p10Luminance: number
+  p50Luminance: number
+  p90Luminance: number
+  contrastRange: number
+  darkPixelRatio: number
+  highlightPixelRatio: number
+  warmPixelRatio: number
+  cyanPixelRatio: number
+}
+
 type QaView = {
   id: string
   label: string
   detail: string
   image: string
   metrics: DungeonRenderMetrics
+  visual: DungeonVisualMetrics
 }
 
 type DungeonRenderSummary = {
@@ -66,6 +79,7 @@ type QaMetadata = {
   seed: number
   views: string[]
   renderMetrics: Record<string, DungeonRenderMetrics>
+  visualMetrics: Record<string, DungeonVisualMetrics>
   renderSummary: DungeonRenderSummary
   errors: string[]
 }
@@ -122,6 +136,12 @@ export default function DungeonQaCapture() {
               view.metrics,
             ]),
           ),
+          visualMetrics: Object.fromEntries(
+            nextViews.map((view) => [
+              view.id,
+              view.visual,
+            ]),
+          ),
           renderSummary: summarizeRenderMetrics(nextViews),
           errors,
         }
@@ -142,6 +162,7 @@ export default function DungeonQaCapture() {
           seed: 0,
           views: [],
           renderMetrics: {},
+          visualMetrics: {},
           renderSummary: {
             maxDrawCalls: 0,
             maxTriangles: 0,
@@ -227,6 +248,18 @@ export default function DungeonQaCapture() {
               </span>
               <span>
                 <b>{view.metrics.renderMs.p95.toFixed(1)} ms</b> p95
+              </span>
+              <span>
+                <b>{view.visual.averageLuminance.toFixed(3)}</b> luma
+              </span>
+              <span>
+                <b>{view.visual.contrastRange.toFixed(3)}</b> contrast
+              </span>
+              <span>
+                <b>{formatPercent(view.visual.warmPixelRatio)}</b> warm
+              </span>
+              <span>
+                <b>{formatPercent(view.visual.cyanPixelRatio)}</b> cyan
               </span>
             </div>
           </article>
@@ -315,6 +348,7 @@ async function renderDungeonQaViews(
       detail: spec.detail,
       image: result.image,
       metrics: result.metrics,
+      visual: result.visual,
     })
   }
   return rendered
@@ -512,6 +546,7 @@ async function renderDungeonView(
     ...sceneStats,
   }
 
+  const visual = measureVisualHealth(renderer.domElement)
   const image = renderer.domElement.toDataURL('image/png')
 
   composer.dispose()
@@ -530,6 +565,115 @@ async function renderDungeonView(
   return {
     image,
     metrics,
+    visual,
+  }
+}
+
+function measureVisualHealth(
+  source: HTMLCanvasElement,
+): DungeonVisualMetrics {
+  const sampleCanvas = document.createElement('canvas')
+  const width = Math.max(1, Math.floor(source.width / 4))
+  const height = Math.max(1, Math.floor(source.height / 4))
+  sampleCanvas.width = width
+  sampleCanvas.height = height
+
+  const context = sampleCanvas.getContext(
+    '2d',
+    {
+      willReadFrequently: true,
+    },
+  )
+  if (!context) {
+    return {
+      averageLuminance: 0,
+      p10Luminance: 0,
+      p50Luminance: 0,
+      p90Luminance: 0,
+      contrastRange: 0,
+      darkPixelRatio: 0,
+      highlightPixelRatio: 0,
+      warmPixelRatio: 0,
+      cyanPixelRatio: 0,
+    }
+  }
+
+  context.drawImage(
+    source,
+    0,
+    0,
+    width,
+    height,
+  )
+  const pixels = context.getImageData(
+    0,
+    0,
+    width,
+    height,
+  ).data
+
+  const luminance: number[] = []
+  let sum = 0
+  let dark = 0
+  let highlight = 0
+  let warm = 0
+  let cyan = 0
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const r = pixels[index] / 255
+    const g = pixels[index + 1] / 255
+    const b = pixels[index + 2] / 255
+    const luma = r * .2126 + g * .7152 + b * .0722
+
+    luminance.push(luma)
+    sum += luma
+    if (luma < .07) dark += 1
+    if (luma > .7) highlight += 1
+    if (
+      luma > .08 &&
+      r > g * 1.12 &&
+      r > b * 1.28
+    ) {
+      warm += 1
+    }
+    if (
+      luma > .08 &&
+      b > r * 1.14 &&
+      g > r * 1.06
+    ) {
+      cyan += 1
+    }
+  }
+
+  luminance.sort((a, b) => a - b)
+  const count = Math.max(1, luminance.length)
+  const percentile = (value: number) =>
+    luminance[
+      Math.min(
+        luminance.length - 1,
+        Math.max(
+          0,
+          Math.floor(
+            (luminance.length - 1) * value,
+          ),
+        ),
+      )
+    ] ?? 0
+
+  const p10 = percentile(.1)
+  const p50 = percentile(.5)
+  const p90 = percentile(.9)
+
+  return {
+    averageLuminance: roundMetric(sum / count),
+    p10Luminance: roundMetric(p10),
+    p50Luminance: roundMetric(p50),
+    p90Luminance: roundMetric(p90),
+    contrastRange: roundMetric(p90 - p10),
+    darkPixelRatio: roundMetric(dark / count),
+    highlightPixelRatio: roundMetric(highlight / count),
+    warmPixelRatio: roundMetric(warm / count),
+    cyanPixelRatio: roundMetric(cyan / count),
   }
 }
 
@@ -607,6 +751,10 @@ function formatNumber(value: number) {
     notation: value >= 100_000 ? 'compact' : 'standard',
     maximumFractionDigits: 1,
   }).format(value)
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`
 }
 
 const pageStyle = {
