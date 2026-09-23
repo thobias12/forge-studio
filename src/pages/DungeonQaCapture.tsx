@@ -15,22 +15,58 @@ import {
 import type { DungeonWithProps } from '../lib/dungeonProps'
 import { FORGE_BUILD, FORGE_VERSION } from '../version'
 
+type DungeonRenderMetrics = {
+  renderMs: {
+    average: number
+    p95: number
+    max: number
+    samples: number
+  }
+  drawCalls: number
+  triangles: number
+  points: number
+  lines: number
+  geometries: number
+  textures: number
+  objects: number
+  meshes: number
+  instancedMeshes: number
+  instances: number
+  lights: number
+  shadowLights: number
+  materials: number
+}
+
 type QaView = {
   id: string
   label: string
   detail: string
   image: string
+  metrics: DungeonRenderMetrics
+}
+
+type DungeonRenderSummary = {
+  maxDrawCalls: number
+  maxTriangles: number
+  maxGeometries: number
+  maxTextures: number
+  maxLights: number
+  maxShadowLights: number
+  slowestAverageRenderMs: number
+  slowestP95RenderMs: number
 }
 
 type QaMetadata = {
   format: 'forge-dungeon-visual-qa'
-  version: 1
+  version: 2
   forgeVersion: string
   forgeBuild: string
   dungeonName: string
   dungeonTheme: string
   seed: number
   views: string[]
+  renderMetrics: Record<string, DungeonRenderMetrics>
+  renderSummary: DungeonRenderSummary
   errors: string[]
 }
 
@@ -73,13 +109,20 @@ export default function DungeonQaCapture() {
         setViews(nextViews)
         qaWindow.__FORGE_DUNGEON_QA__ = {
           format: 'forge-dungeon-visual-qa',
-          version: 1,
+          version: 2,
           forgeVersion: FORGE_VERSION,
           forgeBuild: FORGE_BUILD,
           dungeonName: dungeon.name,
           dungeonTheme: dungeon.theme,
           seed: dungeon.seed,
           views: nextViews.map((view) => view.id),
+          renderMetrics: Object.fromEntries(
+            nextViews.map((view) => [
+              view.id,
+              view.metrics,
+            ]),
+          ),
+          renderSummary: summarizeRenderMetrics(nextViews),
           errors,
         }
       } catch (reason) {
@@ -91,13 +134,24 @@ export default function DungeonQaCapture() {
         if (!cancelled) setError(message)
         qaWindow.__FORGE_DUNGEON_QA__ = {
           format: 'forge-dungeon-visual-qa',
-          version: 1,
+          version: 2,
           forgeVersion: FORGE_VERSION,
           forgeBuild: FORGE_BUILD,
           dungeonName: 'Hollow Vault',
           dungeonTheme: 'crypt',
           seed: 0,
           views: [],
+          renderMetrics: {},
+          renderSummary: {
+            maxDrawCalls: 0,
+            maxTriangles: 0,
+            maxGeometries: 0,
+            maxTextures: 0,
+            maxLights: 0,
+            maxShadowLights: 0,
+            slowestAverageRenderMs: 0,
+            slowestP95RenderMs: 0,
+          },
           errors,
         }
       } finally {
@@ -162,6 +216,19 @@ export default function DungeonQaCapture() {
               alt={view.label}
               style={imageStyle}
             />
+            <div style={metricsStyle}>
+              <span><b>{view.metrics.drawCalls}</b> calls</span>
+              <span><b>{formatNumber(view.metrics.triangles)}</b> tris</span>
+              <span><b>{view.metrics.lights}</b> lights</span>
+              <span><b>{view.metrics.geometries}</b> geo</span>
+              <span><b>{view.metrics.textures}</b> tex</span>
+              <span>
+                <b>{view.metrics.renderMs.average.toFixed(1)} ms</b> avg
+              </span>
+              <span>
+                <b>{view.metrics.renderMs.p95.toFixed(1)} ms</b> p95
+              </span>
+            </div>
           </article>
         ))}
       </section>
@@ -241,11 +308,13 @@ async function renderDungeonQaViews(
 
   const rendered: QaView[] = []
   for (const spec of specs) {
+    const result = await renderDungeonView(dungeon, spec)
     rendered.push({
       id: spec.id,
       label: spec.label,
       detail: spec.detail,
-      image: await renderDungeonView(dungeon, spec),
+      image: result.image,
+      metrics: result.metrics,
     })
   }
   return rendered
@@ -278,6 +347,7 @@ async function renderDungeonView(
   renderer.toneMappingExposure = lighting.exposure
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.info.autoReset = false
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(atmosphere.background)
@@ -389,12 +459,58 @@ async function renderDungeonView(
   )
   composer.addPass(bloom)
 
-  // Two frames allow shadow maps and post-processing targets to settle.
-  composer.render()
+  // Warm up shadows, shader programs and post-processing targets before
+  // measuring. The benchmark is intentionally synchronous so it reports
+  // renderer cost rather than requestAnimationFrame scheduling latency.
+  for (let index = 0; index < 3; index += 1) {
+    renderer.info.reset()
+    composer.render()
+  }
   await new Promise<void>((resolvePromise) =>
     requestAnimationFrame(() => resolvePromise()),
   )
-  composer.render()
+
+  const durations: number[] = []
+  let drawCalls = 0
+  let triangles = 0
+  let points = 0
+  let lines = 0
+
+  for (let index = 0; index < 8; index += 1) {
+    renderer.info.reset()
+    const started = performance.now()
+    composer.render()
+    durations.push(performance.now() - started)
+    drawCalls = Math.max(drawCalls, renderer.info.render.calls)
+    triangles = Math.max(triangles, renderer.info.render.triangles)
+    points = Math.max(points, renderer.info.render.points)
+    lines = Math.max(lines, renderer.info.render.lines)
+  }
+
+  const sceneStats = collectSceneStats(scene)
+  const sortedDurations = [...durations].sort((a, b) => a - b)
+  const p95Index = Math.min(
+    sortedDurations.length - 1,
+    Math.ceil(sortedDurations.length * .95) - 1,
+  )
+  const metrics: DungeonRenderMetrics = {
+    renderMs: {
+      average: roundMetric(
+        durations.reduce((sum, value) => sum + value, 0) /
+          durations.length,
+      ),
+      p95: roundMetric(sortedDurations[p95Index] ?? 0),
+      max: roundMetric(Math.max(...durations)),
+      samples: durations.length,
+    },
+    drawCalls,
+    triangles,
+    points,
+    lines,
+    geometries: renderer.info.memory.geometries,
+    textures: renderer.info.memory.textures,
+    ...sceneStats,
+  }
 
   const image = renderer.domElement.toDataURL('image/png')
 
@@ -411,7 +527,86 @@ async function renderDungeonView(
   })
   renderer.dispose()
 
-  return image
+  return {
+    image,
+    metrics,
+  }
+}
+
+function collectSceneStats(scene: THREE.Scene) {
+  let objects = 0
+  let meshes = 0
+  let instancedMeshes = 0
+  let instances = 0
+  let lights = 0
+  let shadowLights = 0
+  const materials = new Set<THREE.Material>()
+
+  scene.traverse((object) => {
+    objects += 1
+    if ((object as THREE.Light).isLight) {
+      lights += 1
+      if ((object as THREE.Light).castShadow) {
+        shadowLights += 1
+      }
+    }
+
+    const mesh = object as THREE.Mesh
+    if (!mesh.isMesh) return
+    meshes += 1
+    if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
+      instancedMeshes += 1
+      instances += (mesh as THREE.InstancedMesh).count
+    }
+    const meshMaterials = Array.isArray(mesh.material)
+      ? mesh.material
+      : mesh.material
+        ? [mesh.material]
+        : []
+    meshMaterials.forEach((material) => materials.add(material))
+  })
+
+  return {
+    objects,
+    meshes,
+    instancedMeshes,
+    instances,
+    lights,
+    shadowLights,
+    materials: materials.size,
+  }
+}
+
+function summarizeRenderMetrics(
+  views: QaView[],
+): DungeonRenderSummary {
+  return {
+    maxDrawCalls: Math.max(0, ...views.map((view) => view.metrics.drawCalls)),
+    maxTriangles: Math.max(0, ...views.map((view) => view.metrics.triangles)),
+    maxGeometries: Math.max(0, ...views.map((view) => view.metrics.geometries)),
+    maxTextures: Math.max(0, ...views.map((view) => view.metrics.textures)),
+    maxLights: Math.max(0, ...views.map((view) => view.metrics.lights)),
+    maxShadowLights: Math.max(0, ...views.map((view) => view.metrics.shadowLights)),
+    slowestAverageRenderMs: Math.max(
+      0,
+      ...views.map((view) => view.metrics.renderMs.average),
+    ),
+    slowestP95RenderMs: Math.max(
+      0,
+      ...views.map((view) => view.metrics.renderMs.p95),
+    ),
+  }
+}
+
+function roundMetric(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    notation: value >= 100_000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(value)
 }
 
 const pageStyle = {
@@ -522,4 +717,16 @@ const imageStyle = {
   width: '100%',
   height: 'auto',
   background: '#010307',
+} as const
+
+const metricsStyle = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '7px 12px',
+  padding: '9px 12px 11px',
+  borderTop: '1px solid #142531',
+  color: '#7f9bad',
+  fontSize: '10px',
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 } as const
