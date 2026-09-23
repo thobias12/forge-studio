@@ -154,9 +154,6 @@ export default function DungeonViewport(props: Props) {
       key.color.setHex(atmosphere.key)
       key.intensity = lighting.keyIntensity
       renderer.toneMappingExposure = lighting.exposure
-      bloomPass.strength = lighting.bloomStrength
-      bloomPass.radius = atmosphere.bloomRadius
-      bloomPass.threshold = atmosphere.bloomThreshold
       return atmosphere
     }
 
@@ -164,8 +161,6 @@ export default function DungeonViewport(props: Props) {
       while (dungeonGroup.children.length) disposeObject(dungeonGroup.children.pop()!)
       flickerLights.length = 0
       atmospherePoints.length = 0
-      cutawayNodes.length = 0
-      cutawayFactor.clear()
       const state = propsRef.current
       const current = state.value
       const atmosphere = applyAtmosphere(current)
@@ -531,7 +526,7 @@ export default function DungeonViewport(props: Props) {
       })
 
       renderer.render(scene, camera)
-    raf = requestAnimationFrame(tick)
+      raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
 
