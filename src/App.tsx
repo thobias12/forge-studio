@@ -59,6 +59,7 @@ import PoiForge from './pages/PoiForge'
 import PropForge from './pages/PropForge'
 import Capture from './pages/Capture'
 import EquipmentQaCapture from './pages/EquipmentQaCapture'
+import DungeonQaCapture from './pages/DungeonQaCapture'
 import { installHistoryShortcuts } from './lib/historyShortcuts'
 import { listAssets } from './lib/library'
 import { loadSkillboundWorkspace } from './engine/forgeProject'
@@ -177,6 +178,9 @@ export default function App() {
     window.__FORGE_EQUIPMENT_QA_FORCE__ === true
   ) {
     return <EquipmentQaCapture />
+  }
+  if (params.get('dungeonQa') === '1') {
+    return <DungeonQaCapture />
   }
   if (params.get('capture') === '1') return <Capture />
 

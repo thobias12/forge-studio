@@ -57,7 +57,7 @@ jobs:
   qa:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 7
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -102,6 +102,24 @@ jobs:
           path: artifacts/equipment-qa
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Capture Dungeon Visual QA
+        env:
+          VITE_FORGE_BUILD: ${{ github.sha }}
+          FORGE_DUNGEON_QA_OUTPUT: artifacts/dungeon-qa
+          FORGE_DUNGEON_QA_SKIP_BUILD: '1'
+          FORGE_DUNGEON_QA_HEADLESS: '1'
+          FORGE_DUNGEON_QA_BROWSER_CHANNEL: chrome
+        run: npm run qa:dungeon
+
+      - name: Upload Dungeon Visual QA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dungeon-visual-qa
+          path: artifacts/dungeon-qa
+          if-no-files-found: warn
+          retention-days: 14
 
   deploy:
     environment:
