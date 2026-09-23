@@ -298,6 +298,7 @@ export default function App() {
           {page === 'maps' && <MapStudio />}
           {page === 'preview' && <GamePreview />}
           {page === 'assets' && <AssetLibrary />}
+</Suspense>
         </div>
       </div>
     </div>
