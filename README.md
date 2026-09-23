@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.7`  
+> **Current Forge version:** `v1.92.8`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,18 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.8 is the **Crypt Architectural Depth pass**. It builds on the v1.92.7 tall-wall baseline and remains presentation-only: combat, Vault Warden balance, navigation and collision are unchanged.
+
+ARPG mode now renders the crypt architecture that was previously restricted to Walk mode. Corridor support buttresses, recessed masonry backs and mid-corridor arch lintels are enabled at ARPG-appropriate heights. Room connections now receive visible stone doorway posts, capitals, lintels and wedge stones so passages read as authored openings rather than simple gaps in the perimeter.
+
+Large Warden spaces gain more structural rhythm. The Warden Sanctum uses four wall-integrated buttresses instead of two, the Warden Hall gains opposing supports, and boss/warden/ossuary spaces receive shallow framed wall recesses. Warden recesses use a restrained muted-red interior glow to reinforce room identity without resembling combat telegraphs.
+
+New ARPG architecture is deliberately excluded from `dungeonArtCollidersV3`. Tall doorway/support meshes are marked for the existing Skillbound camera occlusion ray, so foreground architectural pieces fade when they block the player instead of introducing new movement obstacles.
+
+Torch presentation now has a vertical wall-light wash in addition to the existing floor pool and flame VFX. A tiny local drifting-dust system catches the light around each sconce, with boss-room fixtures using a slightly broader wash. No additional dynamic light budget is consumed by these washes or dust motes.
+
+The Warden Sanctum also receives two restrained candle clusters near its far side to strengthen the arena focal composition without changing encounter geometry or spawn positions.
 
 Forge v1.92.7 is the **Tall Crypt Walls & Atmosphere Visibility follow-up** based on live Dungeon Atmosphere v2 gameplay feedback.
 

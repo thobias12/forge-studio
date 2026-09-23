@@ -983,8 +983,9 @@ function addCorridorArchitecture(
   mode: DungeonRenderMode,
 ) {
   const materials = createArtMaterials(atmosphere)
-  const topDown = mode !== 'walk'
-  if (topDown) return
+  const editor = mode === 'editor'
+  const arpg = mode === 'arpg'
+  if (editor) return
   for (const edge of value.corridors) {
     const path = dungeonCorridorPath(value, edge)
     const total = pathLength(path)
@@ -992,22 +993,52 @@ function addCorridorArchitecture(
 
     for (const support of corridorStructuralSupports(value, edge)) {
       const floorY = dungeonFloorHeightV3(value, support.x, support.z)
-      addWallButtress(root, support.x, floorY, support.z, support.yaw, materials, mode, support.damaged)
+      const buttress = addWallButtress(
+        root,
+        support.x,
+        floorY,
+        support.z,
+        support.yaw,
+        materials,
+        mode,
+        support.damaged,
+      )
+      if (arpg) markArchitectureOccluder(buttress)
 
       const recess = new THREE.Group()
       recess.position.set(support.x, floorY, support.z)
       recess.rotation.y = support.yaw
       root.add(recess)
-      const back = new THREE.Mesh(new THREE.BoxGeometry(0.9, topDown ? 0.55 : 1.55, 0.13), materials.dark)
-      back.position.y = topDown ? 0.34 : 0.86
+      const recessHeight = arpg ? 1.7 : 1.55
+      const back = new THREE.Mesh(
+        new THREE.BoxGeometry(0.94, recessHeight, 0.13),
+        materials.dark,
+      )
+      back.position.y = arpg ? 0.92 : 0.86
       back.castShadow = true
       recess.add(back)
+      if (arpg) markArchitectureOccluder(recess)
     }
 
-    if (!topDown && total > 18) {
+    if (total > 18) {
       const midpoint = samplePathAtDistance(path, total * 0.5)
-      if (midpoint && !value.rooms.some((room) => dungeonRoomContainsV3(room, midpoint.x, midpoint.z, 2.4))) {
-        addArchLintel(root, midpoint.x, dungeonFloorHeightV3(value, midpoint.x, midpoint.z), midpoint.z, midpoint.yaw, edge.width, materials, 3.2)
+      if (
+        midpoint &&
+        !value.rooms.some((room) =>
+          dungeonRoomContainsV3(room, midpoint.x, midpoint.z, 2.4)
+        )
+      ) {
+        const arch = addArchLintel(
+          root,
+          midpoint.x,
+          dungeonFloorHeightV3(value, midpoint.x, midpoint.z),
+          midpoint.z,
+          midpoint.yaw,
+          edge.width,
+          materials,
+          arpg ? 2.28 : 3.2,
+        )
+        if (arpg) markArchitectureOccluder(arch)
       }
     }
   }
@@ -1025,9 +1056,14 @@ function roomStructuralSupports(room: DungeonRoom) {
     local.push(
       { x: -room.width * 0.3, z: -room.depth / 2, yaw: 0 },
       { x: room.width * 0.3, z: -room.depth / 2, yaw: 0 },
+      { x: -room.width * 0.3, z: room.depth / 2, yaw: Math.PI },
+      { x: room.width * 0.3, z: room.depth / 2, yaw: Math.PI },
     )
   } else if (template === 'warden-hall' && room.width >= 18) {
-    local.push({ x: 0, z: -room.depth / 2, yaw: 0 })
+    local.push(
+      { x: 0, z: -room.depth / 2, yaw: 0 },
+      { x: 0, z: room.depth / 2, yaw: Math.PI },
+    )
   }
 
   local.forEach((point, index) => {
@@ -1049,14 +1085,26 @@ function addRoomArchitecture(
   mode: DungeonRenderMode,
 ) {
   const materials = createArtMaterials(atmosphere)
-  const topDown = mode !== 'walk'
+  const editor = mode === 'editor'
+  const arpg = mode === 'arpg'
   const roomMap = new Map(value.rooms.map((room) => [room.id, room]))
 
   for (const room of value.rooms) {
-    if (!topDown) {
+    if (!editor) {
       for (const support of roomStructuralSupports(room)) {
-        addWallButtress(root, support.x, room.floorLevel, support.z, support.yaw, materials, mode, support.damaged)
+        const buttress = addWallButtress(
+          root,
+          support.x,
+          room.floorLevel,
+          support.z,
+          support.yaw,
+          materials,
+          mode,
+          support.damaged,
+        )
+        if (arpg) markArchitectureOccluder(buttress)
       }
+      addRoomWallRecesses(root, room, materials, atmosphere, mode)
     }
 
     // Doors are architectural objects, not holes in giant room boxes. Every
@@ -1067,7 +1115,7 @@ function addRoomArchitecture(
       if (!otherId) continue
       const other = roomMap.get(otherId)
       if (!other) continue
-      if (topDown) continue
+      if (editor) continue
       const connection = getRoomConnection(room, other, edge.width)
       const yaw = THREE.MathUtils.degToRad(connection.yaw)
       const doorway = new THREE.Group()
@@ -1075,8 +1123,8 @@ function addRoomArchitecture(
       doorway.rotation.y = yaw
       root.add(doorway)
 
-      const postHeight = topDown ? 0.92 : 2.95
-      const postWidth = 0.24
+      const postHeight = arpg ? 2.2 : 2.95
+      const postWidth = arpg ? 0.28 : 0.24
       const half = Math.max(1.45, edge.width / 2)
       for (const side of [-1, 1]) {
         const post = new THREE.Mesh(new THREE.BoxGeometry(postWidth, postHeight, 0.28), materials.stone)
@@ -1096,19 +1144,36 @@ function addRoomArchitecture(
         doorway.add(capital)
       }
 
-      if (!topDown) {
-        const lintel = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 0.9, 0.42, 0.72), materials.cap)
-        lintel.position.y = postHeight + 0.08
-        lintel.castShadow = true
-        doorway.add(lintel)
-        for (const side of [-1, 1]) {
-          const wedge = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.48, 0.66), materials.stone)
-          wedge.position.set(side * (half * 0.63), postHeight - 0.2, 0)
-          wedge.rotation.z = side * 0.32
-          wedge.castShadow = true
-          doorway.add(wedge)
-        }
+      const lintel = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          half * 2 + (arpg ? 0.72 : 0.9),
+          arpg ? 0.32 : 0.42,
+          arpg ? 0.54 : 0.72,
+        ),
+        materials.cap,
+      )
+      lintel.position.y = postHeight + (arpg ? 0.02 : 0.08)
+      lintel.castShadow = true
+      doorway.add(lintel)
+      for (const side of [-1, 1]) {
+        const wedge = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            arpg ? 0.58 : 0.72,
+            arpg ? 0.38 : 0.48,
+            arpg ? 0.52 : 0.66,
+          ),
+          materials.stone,
+        )
+        wedge.position.set(
+          side * (half * 0.63),
+          postHeight - (arpg ? 0.16 : 0.2),
+          0,
+        )
+        wedge.rotation.z = side * (arpg ? 0.26 : 0.32)
+        wedge.castShadow = true
+        doorway.add(wedge)
       }
+      if (arpg) markArchitectureOccluder(doorway)
     }
   }
 }
@@ -1123,8 +1188,12 @@ function addWallButtress(
   mode: DungeonRenderMode,
   damaged = false,
 ) {
-  const topDown = mode !== 'walk'
-  const height = topDown ? (damaged ? 0.82 : 1.18) : (damaged ? 2.25 : 3.35)
+  const height =
+    mode === 'arpg'
+      ? damaged ? 1.82 : 2.28
+      : mode === 'editor'
+        ? damaged ? 0.82 : 1.18
+        : damaged ? 2.25 : 3.35
   const group = new THREE.Group()
   group.position.set(x, y, z)
   group.rotation.y = yaw
@@ -1157,6 +1226,7 @@ function addWallButtress(
     chip.rotation.set(0.18, 0.22, 0.28)
     group.add(chip)
   }
+  return group
 }
 
 function addArchLintel(
@@ -1182,6 +1252,127 @@ function addArchLintel(
   keystone.rotation.z = 0.06
   keystone.castShadow = true
   group.add(keystone)
+  return group
+}
+
+function markArchitectureOccluder(root: THREE.Object3D) {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh
+    if (!mesh.isMesh || !mesh.geometry) return
+    mesh.geometry.computeBoundingBox()
+    const box = mesh.geometry.boundingBox
+    if (!box) return
+    const size = box.getSize(new THREE.Vector3())
+    if (size.y > .55) mesh.userData.skillboundOccluder = true
+  })
+}
+
+function addRoomWallRecesses(
+  root: THREE.Group,
+  room: DungeonRoom,
+  materials: V3ArtMaterials,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  if (mode === 'editor') return
+  const template = resolveRoomTemplate(room)
+  const accents: Array<{
+    side: 'north' | 'south' | 'east' | 'west'
+    along: number
+    color?: number
+  }> = []
+
+  if (template === 'warden-sanctum') {
+    accents.push(
+      { side: 'north', along: -.16, color: atmosphere.boss },
+      { side: 'north', along: .16, color: atmosphere.boss },
+      { side: 'south', along: -.16, color: atmosphere.boss },
+      { side: 'south', along: .16, color: atmosphere.boss },
+    )
+  } else if (template === 'warden-hall') {
+    accents.push(
+      { side: 'north', along: 0, color: atmosphere.boss },
+      { side: 'south', along: 0, color: atmosphere.boss },
+    )
+  } else if (
+    template === 'ossuary-gallery' ||
+    template === 'sealed-ossuary'
+  ) {
+    accents.push(
+      { side: 'east', along: -.14 },
+      { side: 'west', along: .14 },
+    )
+  } else if (room.type === 'elite') {
+    accents.push({ side: 'north', along: 0 })
+  }
+
+  for (const accent of accents) {
+    const point = roomWallPoint(
+      room,
+      accent.side,
+      accent.along,
+      .22,
+    )
+    const group = new THREE.Group()
+    group.position.set(point.x, room.floorLevel, point.z)
+    group.rotation.y = point.yaw
+    root.add(group)
+
+    const arpg = mode === 'arpg'
+    const height = arpg ? 1.58 : 2.08
+    const width = arpg ? 1.06 : 1.28
+    const back = new THREE.Mesh(
+      new THREE.BoxGeometry(width, height, .08),
+      materials.dark,
+    )
+    back.position.set(0, height * .5 + .12, -.035)
+    back.receiveShadow = true
+    group.add(back)
+
+    const postGeometry = new THREE.BoxGeometry(
+      .12,
+      height + .18,
+      .16,
+    )
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(postGeometry, materials.stone)
+      post.position.set(
+        side * (width * .5 + .08),
+        height * .5 + .11,
+        .015,
+      )
+      post.castShadow = true
+      group.add(post)
+    }
+
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(width + .34, .16, .2),
+      materials.cap,
+    )
+    cap.position.set(0, height + .18, .02)
+    cap.castShadow = true
+    group.add(cap)
+
+    if (accent.color !== undefined) {
+      const glow = new THREE.Mesh(
+        new THREE.PlaneGeometry(width * .62, height * .58),
+        new THREE.MeshBasicMaterial({
+          color: accent.color,
+          transparent: true,
+          opacity: arpg ? .14 : .11,
+          depthWrite: false,
+          toneMapped: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      )
+      glow.position.set(0, height * .58, .025)
+      glow.renderOrder = 5
+      group.add(glow)
+    }
+
+    if (arpg) markArchitectureOccluder(group)
+  }
 }
 
 function pathLength(path: DungeonPoint[]) {
@@ -1260,6 +1451,90 @@ function addWarmLightPool(
   pool.position.set(x, y, z)
   pool.renderOrder = 4
   parent.add(pool)
+}
+
+function addWarmWallWash(
+  parent: THREE.Group,
+  y: number,
+  atmosphere: DungeonAtmosphere,
+  width: number,
+  height: number,
+  opacity: number,
+) {
+  const texture = getWarmPoolTexture()
+  if (!texture) return
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: atmosphere.torch,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  })
+  const wash = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    material,
+  )
+  wash.position.set(0, y, -.07)
+  wash.renderOrder = 4
+  parent.add(wash)
+}
+
+function addTorchDust(
+  parent: THREE.Group,
+  y: number,
+  atmosphere: DungeonAtmosphere,
+  seed: number,
+  scale = 1,
+) {
+  const count = 5
+  const positions = new Float32Array(count * 3)
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(positions, 3),
+  )
+  const material = new THREE.PointsMaterial({
+    color: atmosphere.dust,
+    size: .045 * scale,
+    transparent: true,
+    opacity: .24,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  })
+  const points = new THREE.Points(geometry, material)
+  points.position.z = .06
+  const phase = (seed % 997) / 997 * Math.PI * 2
+  points.onBeforeRender = () => {
+    const t = performance.now() * .001
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * 3
+      const cycle =
+        (
+          t * (.07 + index * .006) +
+          index / count +
+          (seed % 37) * .017
+        ) % 1
+      const local = phase + index * 1.71
+      positions[offset] =
+        Math.sin(t * .37 + local) *
+        (.1 + cycle * .12) *
+        scale
+      positions[offset + 1] =
+        y - .42 * scale + cycle * 1.18 * scale
+      positions[offset + 2] =
+        Math.cos(t * .29 + local) * .035 * scale
+    }
+    ;(geometry.getAttribute('position') as THREE.BufferAttribute)
+      .needsUpdate = true
+    material.opacity =
+      .2 + Math.sin(t * .55 + phase) * .045
+  }
+  parent.add(points)
 }
 
 function addFlameVfx(
@@ -1436,7 +1711,16 @@ function addWallSconce(
     })
   }
   addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
-  addWarmLightPool(group, 0, 0.105, 1.38, 6.6, 4.7, 0.15)
+  addWarmLightPool(group, 0, 0.105, 1.38, 6.6, 4.7, 0.17)
+  addWarmWallWash(
+    group,
+    flameY,
+    atmosphere,
+    mode === 'arpg' ? 2.7 : 2.35,
+    mode === 'arpg' ? 2.45 : 2.25,
+    mode === 'arpg' ? .17 : .13,
+  )
+  addTorchDust(group, flameY, atmosphere, seed, 1)
 }
 
 function addRoomFixtures(
@@ -1497,8 +1781,40 @@ function addRoomFixtures(
           speed: 5.25 + index * 0.3,
         })
       }
-      addFlameVfx(fixture, 0, fixtureY + 0.02, 0.27, atmosphere, seed, light, room.type === 'boss' ? 1.08 : 1)
-      addWarmLightPool(fixture, 0, 0.105, 1.42, room.type === 'boss' ? 8.2 : 6.9, room.type === 'boss' ? 6.2 : 5.1, room.type === 'boss' ? 0.18 : 0.155)
+      addFlameVfx(
+        fixture,
+        0,
+        fixtureY + 0.02,
+        0.27,
+        atmosphere,
+        seed,
+        light,
+        room.type === 'boss' ? 1.08 : 1,
+      )
+      addWarmLightPool(
+        fixture,
+        0,
+        0.105,
+        1.42,
+        room.type === 'boss' ? 8.2 : 6.9,
+        room.type === 'boss' ? 6.2 : 5.1,
+        room.type === 'boss' ? 0.21 : 0.175,
+      )
+      addWarmWallWash(
+        fixture,
+        fixtureY,
+        atmosphere,
+        room.type === 'boss' ? 3.25 : 2.8,
+        room.type === 'boss' ? 2.8 : 2.45,
+        room.type === 'boss' ? .22 : .175,
+      )
+      addTorchDust(
+        fixture,
+        fixtureY,
+        atmosphere,
+        seed,
+        room.type === 'boss' ? 1.12 : 1,
+      )
     })
   }
 }
@@ -1622,6 +1938,22 @@ function addRoomDressing(
       addBossDais(root, room, materials)
       addStatue(root, room, -0.34, 0.18, Math.PI / 2, materials, mode)
       addStatue(root, room, 0.34, 0.18, -Math.PI / 2, materials, mode)
+      addCandleCluster(
+        root,
+        room,
+        -0.28,
+        -0.29,
+        atmosphere,
+        stringHash(room.id) + 137,
+      )
+      addCandleCluster(
+        root,
+        room,
+        0.28,
+        -0.29,
+        atmosphere,
+        stringHash(room.id) + 163,
+      )
       continue
     }
 
