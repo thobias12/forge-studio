@@ -69,6 +69,7 @@ export function addDungeonMasonryV3(
   addRoomFixtures(root, value, atmosphere, flickerLights, mode)
   addCorridorFixtures(root, value, atmosphere, flickerLights, mode)
   addRoomDressing(root, value, atmosphere, mode)
+  addColdCathedralAccents(root, value, atmosphere, mode)
   addDungeonAtmosphereV2(root, value, atmosphere, mode)
 
   return root
@@ -2156,6 +2157,177 @@ function addRoomDressing(
   }
 }
 
+function addColdCathedralAccents(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  const poolTexture = getAtmosphereSoftTexture()
+  let pointLights = 0
+
+  const addWardStone = (
+    room: DungeonRoom,
+    xFraction: number,
+    zFraction: number,
+    seed: number,
+    scale = 1,
+  ) => {
+    const p = roomPlacement(room, xFraction, zFraction)
+    const group = new THREE.Group()
+    group.position.set(p.x, p.y, p.z)
+    group.rotation.y = p.yaw + ((seed % 9) - 4) * .025
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const baseMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1b2b38,
+      roughness: .9,
+      metalness: .04,
+    })
+    const stoneMaterial = new THREE.MeshStandardMaterial({
+      color: 0x7fa9bf,
+      emissive: 0x285a78,
+      emissiveIntensity: .52,
+      roughness: .48,
+      metalness: .04,
+    })
+    const runeMaterial = new THREE.MeshBasicMaterial({
+      color: 0xb9efff,
+      transparent: true,
+      opacity: .72,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    })
+
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(.52 * scale, .64 * scale, .18 * scale, 8),
+      baseMaterial,
+    )
+    base.position.y = .09 * scale
+    base.receiveShadow = true
+    group.add(base)
+
+    const lower = new THREE.Mesh(
+      new THREE.CylinderGeometry(.34 * scale, .46 * scale, 1.38 * scale, 5),
+      stoneMaterial,
+    )
+    lower.position.y = .84 * scale
+    lower.rotation.y = Math.PI / 5
+    lower.castShadow = true
+    group.add(lower)
+
+    const cap = new THREE.Mesh(
+      new THREE.ConeGeometry(.34 * scale, .48 * scale, 5),
+      stoneMaterial,
+    )
+    cap.position.y = 1.77 * scale
+    cap.rotation.y = Math.PI / 5
+    cap.castShadow = true
+    group.add(cap)
+
+    const rune = new THREE.Mesh(
+      new THREE.BoxGeometry(.035 * scale, .66 * scale, .024 * scale),
+      runeMaterial,
+    )
+    rune.position.set(0, 1.0 * scale, .305 * scale)
+    rune.rotation.z = .13
+    rune.renderOrder = 6
+    group.add(rune)
+
+    if (poolTexture) {
+      const poolMaterial = new THREE.MeshBasicMaterial({
+        map: poolTexture,
+        color: 0x5fcaff,
+        transparent: true,
+        opacity: mode === 'arpg' ? .17 : .13,
+        depthWrite: false,
+        toneMapped: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      })
+      const pool = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.8 * scale, 5.2 * scale),
+        poolMaterial,
+      )
+      pool.rotation.x = -Math.PI / 2
+      pool.position.y = .075
+      pool.renderOrder = 3
+      group.add(pool)
+    }
+
+    const core = new THREE.Mesh(
+      new THREE.OctahedronGeometry(.11 * scale, 0),
+      new THREE.MeshBasicMaterial({
+        color: 0xc5f3ff,
+        transparent: true,
+        opacity: .9,
+        depthWrite: false,
+        toneMapped: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    )
+    core.position.set(0, 1.08 * scale, .32 * scale)
+    core.renderOrder = 7
+    group.add(core)
+
+    if (pointLights < 4) {
+      const light = new THREE.PointLight(
+        0x65c9ff,
+        1.45 * scale,
+        8.2 * scale,
+        2.15,
+      )
+      light.position.set(0, 1.35 * scale, 0)
+      light.castShadow = false
+      group.add(light)
+      pointLights += 1
+    }
+  }
+
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const seed = stringHash(`cold-cathedral:${room.id}`) ^ value.seed
+    const random = seededRandom(seed)
+
+    if (template === 'warden-sanctum' || room.type === 'boss') {
+      addWardStone(room, -.31, -.24, seed + 11, 1.08)
+      addWardStone(room, .31, -.24, seed + 29, 1.08)
+      continue
+    }
+    if (template === 'warden-hall' || room.type === 'elite') {
+      addWardStone(room, -.32, .25, seed + 17, .94)
+      addWardStone(room, .32, .25, seed + 31, .94)
+      continue
+    }
+    if (template === 'shrine-hall' || room.type === 'shrine') {
+      addWardStone(room, -.31, -.22, seed + 41, .88)
+      continue
+    }
+    if (template === 'reliquary' || room.type === 'treasure') {
+      if (room.width * room.depth > 250) {
+        addWardStone(room, .31, .25, seed + 53, .82)
+      }
+      continue
+    }
+    if (
+      template === 'crossroads' ||
+      room.width * room.depth > 440
+    ) {
+      if (random() > .42) {
+        addWardStone(
+          room,
+          random() > .5 ? .33 : -.33,
+          random() > .5 ? .26 : -.26,
+          seed + 67,
+          .78,
+        )
+      }
+    }
+  }
+}
+
 function addCandleCluster(
   root: THREE.Group,
   room: DungeonRoom,
@@ -2312,10 +2484,38 @@ function addShrine(root: THREE.Group, room: DungeonRoom, xFraction: number, zFra
   const slab = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.16, 1.05), materials.stone)
   slab.position.y = 1.28
   group.add(slab)
-  const relic = new THREE.Mesh(new THREE.OctahedronGeometry(0.23), materials.gold)
+  const relic = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.26),
+    new THREE.MeshStandardMaterial({
+      color: 0xa9eaff,
+      emissive: 0x48bff2,
+      emissiveIntensity: 1.4,
+      roughness: .25,
+      metalness: .05,
+    }),
+  )
   relic.position.y = 1.65
   relic.rotation.y = Math.PI / 4
   group.add(relic)
+
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(.5, 14, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0x63cfff,
+      transparent: true,
+      opacity: .08,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  )
+  halo.position.y = 1.65
+  group.add(halo)
+
+  const light = new THREE.PointLight(0x64caff, 1.7, 8.5, 2.1)
+  light.position.y = 1.72
+  light.castShadow = false
+  group.add(light)
 }
 
 function addBossDais(root: THREE.Group, room: DungeonRoom, materials: V3ArtMaterials) {
