@@ -110,7 +110,7 @@ export class ForgeDungeonRuntime {
   private readonly renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
   private readonly scene = new THREE.Scene()
   private readonly camera = new THREE.PerspectiveCamera(
-    FORGE_WORLD_SCALE.playCameraFov,
+    44,
     1,
     0.08,
     260,

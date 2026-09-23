@@ -9,8 +9,8 @@ export type DungeonV3FlickerLight = { light: THREE.PointLight; base: number; pha
 const MAX_V3_DYNAMIC_POINT_LIGHTS = 10
 export type DungeonPoint = { x: number; z: number }
 
-const FLOOR_BRICK_W = 1.38
-const FLOOR_BRICK_D = 0.7
+const FLOOR_BRICK_W = 1.58
+const FLOOR_BRICK_D = 0.78
 const WALL_SAMPLE = 0.82
 const FLOOR_Y = 0.045
 
@@ -460,7 +460,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       const cz = z + FLOOR_BRICK_D / 2
       if (!dungeonContainsPointV3(value, cx, cz, 0.12)) continue
       const hash = numberHash(Math.round(cx * 13), Math.round(cz * 19), value.seed)
-      const chip = 0.93 + ((hash >>> 5) % 5) * 0.01
+      const chip = 0.982 + ((hash >>> 5) % 4) * 0.004
       const floorY = dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y
       const damaged = hash % 17 === 0
       const missingCorner = hash % 29 === 0
@@ -469,7 +469,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
         z: cz,
         y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
         width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
-        depth: FLOOR_BRICK_D * (0.9 + ((hash >>> 9) % 6) * 0.01) * (damaged ? 0.94 : 1),
+        depth: FLOOR_BRICK_D * (0.965 + ((hash >>> 9) % 5) * 0.007) * (damaged ? 0.965 : 1),
         shade: damaged ? 0.78 + (hash % 7) / 100 : 0.9 + (hash % 10) / 100,
         yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
@@ -503,7 +503,7 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
     metalness: 0.01,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.floor),
-    emissiveIntensity: 0.2,
+    emissiveIntensity: 0.31,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -644,24 +644,24 @@ function atmosphereRoomMood(
 ) {
   const template = resolveRoomTemplate(room)
   if (room.type === 'boss' || template === 'warden-sanctum') {
-    return { color: 0x365f84, opacity: .19, mist: .045, dust: 12 }
+    return { color: 0x5a8caf, opacity: .3, mist: .032, dust: 10, fill: .82 }
   }
   if (room.type === 'elite' || template === 'warden-hall') {
-    return { color: 0x3a6484, opacity: .17, mist: .04, dust: 11 }
+    return { color: 0x5483a4, opacity: .28, mist: .028, dust: 9, fill: .72 }
   }
   if (room.type === 'shrine' || template === 'shrine-hall') {
-    return { color: atmosphere.shrine, opacity: .21, mist: .05, dust: 10 }
+    return { color: 0x63b9df, opacity: .32, mist: .035, dust: 8, fill: .9 }
   }
   if (room.type === 'treasure' || template === 'reliquary') {
-    return { color: 0x58768b, opacity: .14, mist: .035, dust: 9 }
+    return { color: 0x587f9a, opacity: .24, mist: .024, dust: 8, fill: .62 }
   }
   if (template === 'crossroads') {
-    return { color: 0x365b78, opacity: .15, mist: .035, dust: 10 }
+    return { color: 0x507d9d, opacity: .27, mist: .024, dust: 9, fill: .68 }
   }
   if (template === 'ossuary-gallery' || template === 'sealed-ossuary') {
-    return { color: 0x31536f, opacity: .13, mist: .035, dust: 9 }
+    return { color: 0x4a718e, opacity: .23, mist: .024, dust: 8, fill: .58 }
   }
-  return { color: 0x355a76, opacity: .12, mist: .03, dust: 8 }
+  return { color: 0x4d7593, opacity: .22, mist: .02, dust: 7, fill: .56 }
 }
 
 function addDungeonAtmosphereV2(
@@ -710,8 +710,8 @@ function addDungeonAtmosphereV2(
       })
       const pool = new THREE.Mesh(
         new THREE.PlaneGeometry(
-          THREE.MathUtils.clamp(room.width * .82, 7.5, 18),
-          THREE.MathUtils.clamp(room.depth * .82, 7.5, 18),
+          THREE.MathUtils.clamp(room.width * .94, 8, 26),
+          THREE.MathUtils.clamp(room.depth * .94, 8, 22),
         ),
         poolMaterial,
       )
@@ -724,6 +724,27 @@ function addDungeonAtmosphereV2(
       )
       pool.renderOrder = 3
       root.add(pool)
+
+      if (mode === 'arpg') {
+        const roomFill = new THREE.PointLight(
+          mood.color,
+          mood.fill,
+          THREE.MathUtils.clamp(
+            Math.max(room.width, room.depth) * .82,
+            10,
+            27,
+          ),
+          1.62,
+        )
+        roomFill.position.set(
+          room.x,
+          room.floorLevel + 4.6,
+          room.z,
+        )
+        roomFill.castShadow = false
+        roomFill.name = `DungeonV3RoomFill:${room.id}`
+        root.add(roomFill)
+      }
 
       const mistCount =
         room.type === 'boss' || room.width * room.depth > 430 ? 2 : 1
@@ -938,7 +959,7 @@ function addPerimeterWalls(
     mode === 'walk'
       ? Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
       : mode === 'arpg'
-        ? THREE.MathUtils.clamp(averageRoomHeight(value) * .66, 2.35, 2.9)
+        ? THREE.MathUtils.clamp(averageRoomHeight(value) * .42, 1.75, 2.15)
         : 1.18
   const rowHeight = 0.46
   const rows = Math.max(2, Math.ceil(wallHeight / rowHeight))
@@ -1015,7 +1036,7 @@ function addPerimeterWalls(
     metalness: 0.005,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.74),
-    emissiveIntensity: mode === 'arpg' ? 0.19 : topDown ? 0.17 : 0.1,
+    emissiveIntensity: mode === 'arpg' ? 0.24 : topDown ? 0.17 : 0.1,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -1074,10 +1095,10 @@ function addPerimeterWalls(
       mesh.setMatrixAt(index, dummy.matrix)
       const verticalLift =
         sample.cap
-          ? .23
+          ? .34
           : sample.base
-            ? -.025
-            : sample.level * .07
+            ? -.02
+            : sample.level * .09
       const color = white
         .clone()
         .multiplyScalar(sample.shade + verticalLift)
@@ -1876,7 +1897,7 @@ function addWallSconce(
 
   let light: THREE.PointLight | undefined
   if (flickerLights.length < MAX_V3_DYNAMIC_POINT_LIGHTS) {
-    light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.72, 10.2, 1.92)
+    light = new THREE.PointLight(atmosphere.torch, atmosphere.torchIntensity * 0.82, 11.4, 1.82)
     light.position.set(0, flameY + 0.16, 0.27)
     light.userData.baseIntensity = light.intensity
     group.add(light)
@@ -1887,15 +1908,15 @@ function addWallSconce(
       speed: 5.8 + (seed % 5) * 0.18,
     })
   }
-  addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1)
-  addWarmLightPool(group, 0, 0.105, 1.38, 6.9, 4.9, 0.2)
+  addFlameVfx(group, 0, flameY + 0.02, 0.27, atmosphere, seed, light, 1.16)
+  addWarmLightPool(group, 0, 0.105, 1.38, 8.2, 5.8, 0.3)
   addWarmWallWash(
     group,
     flameY,
     atmosphere,
-    mode === 'arpg' ? 2.7 : 2.35,
-    mode === 'arpg' ? 2.45 : 2.25,
-    mode === 'arpg' ? .17 : .13,
+    mode === 'arpg' ? 3.4 : 2.35,
+    mode === 'arpg' ? 3.0 : 2.25,
+    mode === 'arpg' ? .25 : .13,
   )
   addTorchDust(group, flameY, atmosphere, seed, 1)
 }
@@ -1944,9 +1965,9 @@ function addRoomFixtures(
       if (flickerLights.length < MAX_V3_DYNAMIC_POINT_LIGHTS) {
         light = new THREE.PointLight(
           atmosphere.torch,
-          atmosphere.torchIntensity * (room.type === 'boss' ? 0.92 : 0.76),
-          room.type === 'boss' ? 12.4 : 10.4,
-          1.9,
+          atmosphere.torchIntensity * (room.type === 'boss' ? 1.02 : 0.86),
+          room.type === 'boss' ? 14.2 : 12.2,
+          1.8,
         )
         light.position.set(0, fixtureY + 0.16, 0.27)
         light.userData.baseIntensity = light.intensity
@@ -1966,24 +1987,24 @@ function addRoomFixtures(
         atmosphere,
         seed,
         light,
-        room.type === 'boss' ? 1.08 : 1,
+        room.type === 'boss' ? 1.28 : 1.16,
       )
       addWarmLightPool(
         fixture,
         0,
         0.105,
         1.42,
-        room.type === 'boss' ? 8.6 : 7.3,
-        room.type === 'boss' ? 6.5 : 5.4,
-        room.type === 'boss' ? 0.24 : 0.205,
+        room.type === 'boss' ? 10.2 : 8.7,
+        room.type === 'boss' ? 7.5 : 6.2,
+        room.type === 'boss' ? 0.34 : 0.29,
       )
       addWarmWallWash(
         fixture,
         fixtureY,
         atmosphere,
-        room.type === 'boss' ? 3.25 : 2.8,
-        room.type === 'boss' ? 2.8 : 2.45,
-        room.type === 'boss' ? .22 : .175,
+        room.type === 'boss' ? 4.0 : 3.5,
+        room.type === 'boss' ? 3.35 : 3.0,
+        room.type === 'boss' ? .3 : .255,
       )
       addTorchDust(
         fixture,
@@ -2188,7 +2209,7 @@ function addColdCathedralAccents(
     const stoneMaterial = new THREE.MeshStandardMaterial({
       color: 0x7fa9bf,
       emissive: 0x285a78,
-      emissiveIntensity: .52,
+      emissiveIntensity: .74,
       roughness: .48,
       metalness: .04,
     })
@@ -2241,14 +2262,14 @@ function addColdCathedralAccents(
         map: poolTexture,
         color: 0x5fcaff,
         transparent: true,
-        opacity: mode === 'arpg' ? .17 : .13,
+        opacity: mode === 'arpg' ? .29 : .17,
         depthWrite: false,
         toneMapped: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       })
       const pool = new THREE.Mesh(
-        new THREE.PlaneGeometry(5.8 * scale, 5.2 * scale),
+        new THREE.PlaneGeometry(7.4 * scale, 6.6 * scale),
         poolMaterial,
       )
       pool.rotation.x = -Math.PI / 2
@@ -2275,11 +2296,122 @@ function addColdCathedralAccents(
     if (pointLights < 4) {
       const light = new THREE.PointLight(
         0x65c9ff,
-        1.45 * scale,
-        8.2 * scale,
-        2.15,
+        2.15 * scale,
+        10.4 * scale,
+        1.9,
       )
       light.position.set(0, 1.35 * scale, 0)
+      light.castShadow = false
+      group.add(light)
+      pointLights += 1
+    }
+  }
+
+  const addColdBeacon = (
+    room: DungeonRoom,
+    xFraction: number,
+    zFraction: number,
+    seed: number,
+    scale = 1,
+  ) => {
+    const p = roomPlacement(room, xFraction, zFraction)
+    const group = new THREE.Group()
+    group.position.set(p.x, p.y, p.z)
+    group.rotation.y = p.yaw + ((seed % 7) - 3) * .03
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const pedestalMaterial = new THREE.MeshStandardMaterial({
+      color: 0x203442,
+      roughness: .9,
+      metalness: .04,
+    })
+    const trimMaterial = new THREE.MeshStandardMaterial({
+      color: 0x55788f,
+      roughness: .62,
+      metalness: .12,
+    })
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb7efff,
+      emissive: 0x59c9ff,
+      emissiveIntensity: 1.8,
+      roughness: .18,
+      metalness: .03,
+    })
+
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(.42 * scale, .54 * scale, .18 * scale, 8),
+      pedestalMaterial,
+    )
+    base.position.y = .09 * scale
+    base.receiveShadow = true
+    group.add(base)
+
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(.18 * scale, .28 * scale, .72 * scale, 6),
+      trimMaterial,
+    )
+    stem.position.y = .5 * scale
+    stem.castShadow = true
+    group.add(stem)
+
+    const cradle = new THREE.Mesh(
+      new THREE.CylinderGeometry(.34 * scale, .27 * scale, .16 * scale, 8),
+      pedestalMaterial,
+    )
+    cradle.position.y = .88 * scale
+    group.add(cradle)
+
+    const orb = new THREE.Mesh(
+      new THREE.OctahedronGeometry(.18 * scale, 1),
+      glowMaterial,
+    )
+    orb.position.y = 1.17 * scale
+    orb.rotation.y = Math.PI / 4
+    group.add(orb)
+
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(.42 * scale, 12, 8),
+      new THREE.MeshBasicMaterial({
+        color: 0x68d3ff,
+        transparent: true,
+        opacity: .08,
+        depthWrite: false,
+        toneMapped: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    )
+    halo.position.y = 1.17 * scale
+    group.add(halo)
+
+    if (poolTexture) {
+      const pool = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.6 * scale, 5.6 * scale),
+        new THREE.MeshBasicMaterial({
+          map: poolTexture,
+          color: 0x5cc8ff,
+          transparent: true,
+          opacity: mode === 'arpg' ? .24 : .15,
+          depthWrite: false,
+          toneMapped: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      )
+      pool.rotation.x = -Math.PI / 2
+      pool.position.y = .07
+      pool.renderOrder = 3
+      group.add(pool)
+    }
+
+    if (pointLights < 6) {
+      const light = new THREE.PointLight(
+        0x70d7ff,
+        1.65 * scale,
+        8.8 * scale,
+        1.95,
+      )
+      light.position.y = 1.55 * scale
       light.castShadow = false
       group.add(light)
       pointLights += 1
@@ -2292,17 +2424,21 @@ function addColdCathedralAccents(
     const random = seededRandom(seed)
 
     if (template === 'warden-sanctum' || room.type === 'boss') {
-      addWardStone(room, -.31, -.24, seed + 11, 1.08)
-      addWardStone(room, .31, -.24, seed + 29, 1.08)
+      addWardStone(room, -.31, -.24, seed + 11, 1.02)
+      addWardStone(room, .31, -.24, seed + 29, 1.02)
+      addColdBeacon(room, -.24, .27, seed + 43, .94)
+      addColdBeacon(room, .24, .27, seed + 59, .94)
       continue
     }
     if (template === 'warden-hall' || room.type === 'elite') {
-      addWardStone(room, -.32, .25, seed + 17, .94)
-      addWardStone(room, .32, .25, seed + 31, .94)
+      addWardStone(room, -.32, .25, seed + 17, .9)
+      addWardStone(room, .32, .25, seed + 31, .9)
+      addColdBeacon(room, 0, -.28, seed + 47, .82)
       continue
     }
     if (template === 'shrine-hall' || room.type === 'shrine') {
-      addWardStone(room, -.31, -.22, seed + 41, .88)
+      addWardStone(room, -.31, -.22, seed + 41, .84)
+      addColdBeacon(room, .31, .22, seed + 73, .88)
       continue
     }
     if (template === 'reliquary' || room.type === 'treasure') {
@@ -2315,13 +2451,22 @@ function addColdCathedralAccents(
       template === 'crossroads' ||
       room.width * room.depth > 440
     ) {
-      if (random() > .42) {
+      if (random() > .36) {
         addWardStone(
           room,
           random() > .5 ? .33 : -.33,
           random() > .5 ? .26 : -.26,
           seed + 67,
-          .78,
+          .76,
+        )
+      }
+      if (room.width * room.depth > 360 && random() > .3) {
+        addColdBeacon(
+          room,
+          random() > .5 ? .24 : -.24,
+          random() > .5 ? .3 : -.3,
+          seed + 91,
+          .74,
         )
       }
     }

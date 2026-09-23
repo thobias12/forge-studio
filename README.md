@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.95.0`  
+> **Current Forge version:** `v1.96.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,22 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.96.0 is the **Cold Cathedral Presentation v2** pass, driven by direct comparison between the supplied Rime Cathedral references and screenshots of v1.95.0.
+
+The main correction is luminance hierarchy. The previous build had the right hue family but the playable floor rendered at roughly half the visual brightness of the references. Crypt floor/sky/fill values are therefore lifted while the outside void is pushed even closer to black. The goal is a clearly readable blue-gray floor floating in darkness, not a globally brighter scene.
+
+Floor masonry is also less noisy. Bricks are slightly larger and almost fully close their previous gaps, so the floor reads as broad staggered stone courses instead of dense black vertical striping. The floor carries a stronger restrained blue emissive base while cracks and sparse etched lines remain visible above it.
+
+Atmosphere v2 now adds one soft non-shadowing cool fill light per room in the shared ARPG renderer. These lights are local to the authored room bounds, so props/walls receive the same blue illumination as the floor while corridors and the exterior void can still fall away into darkness. Additive room-bounce planes are larger and stronger, and mist/dust remain deliberately restrained.
+
+ARPG perimeter walls are visually reduced from the very tall v1.95 silhouette to a 1.75–2.15 m presentation range. Collision and dungeon navigation are unchanged. This makes the walls read as a strong dark masonry frame around the room rather than giant boxes hiding the playable floor. Wall caps are brighter so the perimeter remains legible from the steeper camera.
+
+Warm sconces now use stronger point lights, larger floor pools, larger wall washes and slightly larger flames. Cyan ward stones likewise use brighter emissive stone, larger blue floor pools and stronger local lights. A second compact **cold beacon** prop family adds low pedestals with glowing cyan relics to boss/elite/shrine/large rooms, filling oversized rooms with intentional focal rhythm without adding collision.
+
+Test Dungeon uses a dungeon-specific camera shape instead of changing the shared world camera. The dungeon camera is substantially steeper and uses a tighter 44° FOV, creating a flatter isometric composition closer to the references while leaving World Forge/overworld gameplay unchanged.
+
+This release is still visual presentation only: no enemy AI, damage, encounter-count, navigation, collision, loot or Vault Warden balance values were changed.
 
 Forge v1.95.0 is the **Cold Cathedral dungeon art-direction pass**, based on the supplied visual references and implemented through Forge's own procedural geometry/material language.
 

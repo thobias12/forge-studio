@@ -14,6 +14,12 @@ import {
   forgeUpdateGameplayCamera,
 } from './ForgeGameplayCamera'
 
+const DUNGEON_CAMERA_SHAPE = {
+  horizontalScale: .43,
+  verticalScale: .94,
+  lookAtHeight: .8,
+} as const
+
 export const dungeonViewMethods = {
   updatePortal(delta: number) {
     if (!this.portal) return
@@ -46,6 +52,7 @@ export const dungeonViewMethods = {
       tempFocus: this.tempCameraFocus,
       tempAim: this.tempAim,
       tempOffset: this.tempCamera,
+      cameraShape: DUNGEON_CAMERA_SHAPE,
     })
   },
 
@@ -57,6 +64,7 @@ export const dungeonViewMethods = {
       playerPosition: this.player.position,
       distance: this.cameraDistance,
       tempOffset: this.tempCamera,
+      cameraShape: DUNGEON_CAMERA_SHAPE,
     })
   },
 
