@@ -112,6 +112,13 @@ jobs:
           FORGE_DUNGEON_QA_BROWSER_CHANNEL: chrome
         run: npm run qa:dungeon
 
+      - name: Publish Dungeon Renderer Health summary
+        if: always()
+        run: |
+          if [ -f artifacts/dungeon-qa/performance.md ]; then
+            cat artifacts/dungeon-qa/performance.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload Dungeon Visual QA artifact
         if: always()
         uses: actions/upload-artifact@v4
