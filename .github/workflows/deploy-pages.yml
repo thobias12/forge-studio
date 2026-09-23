@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: forge-production-pages
   cancel-in-progress: true
 
 jobs:
@@ -55,9 +55,9 @@ jobs:
           path: ./dist
 
   qa:
-    needs: build
+    needs: [build, deploy]
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -128,10 +128,36 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Verify live GitHub Pages deployment
+        env:
+          FORGE_LIVE_URL: ${{ needs.deploy.outputs.page_url }}
+          FORGE_EXPECTED_BUILD: ${{ github.sha }}
+          FORGE_LIVE_VERIFY_OUTPUT: artifacts/deployment-integrity
+          FORGE_LIVE_BROWSER_CHANNEL: chrome
+        run: npm run qa:live
+
+      - name: Publish live deployment integrity summary
+        if: always()
+        run: |
+          if [ -f artifacts/deployment-integrity/summary.md ]; then
+            cat artifacts/deployment-integrity/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload deployment integrity artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-integrity
+          path: artifacts/deployment-integrity
+          if-no-files-found: warn
+          retention-days: 14
+
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
     steps:
