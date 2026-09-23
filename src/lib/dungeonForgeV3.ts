@@ -9,8 +9,8 @@ export type DungeonV3FlickerLight = { light: THREE.PointLight; base: number; pha
 const MAX_V3_DYNAMIC_POINT_LIGHTS = 10
 export type DungeonPoint = { x: number; z: number }
 
-const FLOOR_BRICK_W = 1.58
-const FLOOR_BRICK_D = 0.78
+const FLOOR_BRICK_W = 1.72
+const FLOOR_BRICK_D = 0.84
 const WALL_SAMPLE = 0.82
 const FLOOR_Y = 0.045
 
@@ -70,6 +70,7 @@ export function addDungeonMasonryV3(
   addCorridorFixtures(root, value, atmosphere, flickerLights, mode)
   addRoomDressing(root, value, atmosphere, mode)
   addColdCathedralAccents(root, value, atmosphere, mode)
+  addAtmosphereV3Staging(root, value, atmosphere, mode)
   addDungeonAtmosphereV2(root, value, atmosphere, mode)
 
   return root
@@ -462,33 +463,41 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
       const hash = numberHash(Math.round(cx * 13), Math.round(cz * 19), value.seed)
       const chip = 0.982 + ((hash >>> 5) % 4) * 0.004
       const floorY = dungeonFloorHeightV3(value, cx, cz) + FLOOR_Y
-      const damaged = hash % 17 === 0
-      const missingCorner = hash % 29 === 0
+      const damaged = hash % 31 === 0
+      const missingCorner = hash % 61 === 0
+      const broadShade =
+        0.985 +
+        Math.sin(cx * .115 + value.seed * .013) * .028 +
+        Math.cos(cz * .083 - value.seed * .009) * .02
       instances.push({
         x: cx,
         z: cz,
         y: floorY + (damaged ? -0.018 : ((hash >>> 14) % 3) * 0.004),
         width: FLOOR_BRICK_W * chip * (missingCorner ? 0.88 : 1),
         depth: FLOOR_BRICK_D * (0.965 + ((hash >>> 9) % 5) * 0.007) * (damaged ? 0.965 : 1),
-        shade: damaged ? 0.78 + (hash % 7) / 100 : 0.9 + (hash % 10) / 100,
+        shade:
+          broadShade *
+          (damaged
+            ? 0.86 + (hash % 6) / 100
+            : 0.96 + (hash % 7) / 100),
         yaw: ((hash >>> 18) % 5 - 2) * 0.004,
       })
-      if (hash % 21 === 0) {
+      if (hash % 29 === 0) {
         cracks.push({
           x: cx + (((hash >>> 4) % 7) - 3) * 0.035,
           z: cz + (((hash >>> 7) % 5) - 2) * 0.03,
           y: floorY + 0.052,
           yaw: ((hash >>> 12) % 628) / 100,
-          length: 0.34 + ((hash >>> 20) % 6) * 0.08,
+          length: 0.28 + ((hash >>> 20) % 5) * 0.07,
         })
       }
-      if (hash % 37 === 0) {
+      if (hash % 47 === 0) {
         etches.push({
           x: cx,
           z: cz,
           y: floorY + 0.054,
           yaw: Math.PI * 0.22 + ((hash >>> 11) % 5 - 2) * 0.055,
-          length: 1.25 + ((hash >>> 18) % 7) * 0.19,
+          length: 1.05 + ((hash >>> 18) % 6) * 0.16,
         })
       }
     }
@@ -499,11 +508,11 @@ function addFloor(root: THREE.Group, value: DungeonWithProps, atmosphere: Dungeo
   const geometry = new THREE.BoxGeometry(1, 0.09, 1)
   const material = new THREE.MeshStandardMaterial({
     color: atmosphere.floor,
-    roughness: 0.9,
-    metalness: 0.01,
+    roughness: 0.84,
+    metalness: 0.015,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.floor),
-    emissiveIntensity: 0.31,
+    emissive: new THREE.Color(atmosphere.floor).multiplyScalar(.72),
+    emissiveIntensity: 0.22,
   })
   const mesh = new THREE.InstancedMesh(geometry, material, instances.length)
   mesh.name = 'DungeonV3Floor'
@@ -568,7 +577,15 @@ function addFloorAtmosphere(
   atmosphere: DungeonAtmosphere,
   bounds: ReturnType<typeof dungeonWorldBoundsV3>,
 ) {
-  const patches: Array<{ x: number; z: number; y: number; sx: number; sz: number; yaw: number; shade: number }> = []
+  const patches: Array<{
+    x: number
+    z: number
+    y: number
+    sx: number
+    sz: number
+    yaw: number
+    lift: boolean
+  }> = []
   const cell = 5.8
   const startX = Math.floor(bounds.minX / cell) * cell
   const startZ = Math.floor(bounds.minZ / cell) * cell
@@ -583,34 +600,74 @@ function addFloorAtmosphere(
         x: px,
         z: pz,
         y: dungeonFloorHeightV3(value, px, pz) + 0.096,
-        sx: 0.7 + ((hash >>> 4) % 11) / 10,
-        sz: 0.32 + ((hash >>> 12) % 8) / 10,
+        sx: 1.9 + ((hash >>> 4) % 13) / 10,
+        sz: 1.25 + ((hash >>> 12) % 11) / 10,
         yaw: ((hash >>> 20) % 628) / 100,
-        shade: 0.55 + (hash % 15) / 100,
+        lift: ((hash >>> 3) & 1) === 0,
       })
     }
   }
   if (!patches.length) return
 
-  const material = new THREE.MeshBasicMaterial({
-    color: atmosphere.mist,
+  const texture = getAtmosphereSoftTexture()
+  if (!texture) return
+  const geometry = new THREE.PlaneGeometry(2, 2)
+  const shadowMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: atmosphere.wallDark,
     transparent: true,
-    opacity: 0.075,
+    opacity: .12,
     depthWrite: false,
+    toneMapped: false,
     side: THREE.DoubleSide,
   })
-  const mesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 18), material, patches.length)
-  mesh.name = 'DungeonV3DampPatches'
-  const dummy = new THREE.Object3D()
-  patches.forEach((patch, index) => {
-    dummy.position.set(patch.x, patch.y, patch.z)
-    dummy.rotation.set(-Math.PI / 2, 0, patch.yaw)
-    dummy.scale.set(patch.sx, patch.sz, 1)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(index, dummy.matrix)
+  const liftMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: atmosphere.sky,
+    transparent: true,
+    opacity: .045,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
   })
-  mesh.renderOrder = 3
-  root.add(mesh)
+  const shadows = patches.filter((patch) => !patch.lift)
+  const lifts = patches.filter((patch) => patch.lift)
+  const dummy = new THREE.Object3D()
+
+  const addPatchMesh = (
+    items: typeof patches,
+    material: THREE.MeshBasicMaterial,
+    name: string,
+  ) => {
+    if (!items.length) return
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      items.length,
+    )
+    mesh.name = name
+    items.forEach((patch, index) => {
+      dummy.position.set(patch.x, patch.y, patch.z)
+      dummy.rotation.set(-Math.PI / 2, 0, patch.yaw)
+      dummy.scale.set(patch.sx, patch.sz, 1)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+    })
+    mesh.renderOrder = 3
+    root.add(mesh)
+  }
+
+  addPatchMesh(
+    shadows,
+    shadowMaterial,
+    'DungeonV3FloorToneShadow',
+  )
+  addPatchMesh(
+    lifts,
+    liftMaterial,
+    'DungeonV3FloorToneLift',
+  )
 }
 
 
@@ -644,24 +701,24 @@ function atmosphereRoomMood(
 ) {
   const template = resolveRoomTemplate(room)
   if (room.type === 'boss' || template === 'warden-sanctum') {
-    return { color: 0x5a8caf, opacity: .3, mist: .032, dust: 10, fill: .82 }
+    return { color: 0x5b8dad, opacity: .24, mist: .024, dust: 8, fill: .68 }
   }
   if (room.type === 'elite' || template === 'warden-hall') {
-    return { color: 0x5483a4, opacity: .28, mist: .028, dust: 9, fill: .72 }
+    return { color: 0x557f9f, opacity: .22, mist: .022, dust: 8, fill: .58 }
   }
   if (room.type === 'shrine' || template === 'shrine-hall') {
-    return { color: 0x63b9df, opacity: .32, mist: .035, dust: 8, fill: .9 }
+    return { color: 0x69bfe5, opacity: .27, mist: .026, dust: 7, fill: .76 }
   }
   if (room.type === 'treasure' || template === 'reliquary') {
-    return { color: 0x587f9a, opacity: .24, mist: .024, dust: 8, fill: .62 }
+    return { color: 0x587b93, opacity: .19, mist: .018, dust: 7, fill: .5 }
   }
   if (template === 'crossroads') {
-    return { color: 0x507d9d, opacity: .27, mist: .024, dust: 9, fill: .68 }
+    return { color: 0x4d7896, opacity: .21, mist: .018, dust: 8, fill: .55 }
   }
   if (template === 'ossuary-gallery' || template === 'sealed-ossuary') {
-    return { color: 0x4a718e, opacity: .23, mist: .024, dust: 8, fill: .58 }
+    return { color: 0x476d88, opacity: .18, mist: .018, dust: 7, fill: .47 }
   }
-  return { color: 0x4d7593, opacity: .22, mist: .02, dust: 7, fill: .56 }
+  return { color: 0x4a708c, opacity: .17, mist: .016, dust: 6, fill: .45 }
 }
 
 function addDungeonAtmosphereV2(
@@ -710,8 +767,8 @@ function addDungeonAtmosphereV2(
       })
       const pool = new THREE.Mesh(
         new THREE.PlaneGeometry(
-          THREE.MathUtils.clamp(room.width * .94, 8, 26),
-          THREE.MathUtils.clamp(room.depth * .94, 8, 22),
+          THREE.MathUtils.clamp(room.width * .78, 7, 20),
+          THREE.MathUtils.clamp(room.depth * .78, 7, 18),
         ),
         poolMaterial,
       )
@@ -730,15 +787,15 @@ function addDungeonAtmosphereV2(
           mood.color,
           mood.fill,
           THREE.MathUtils.clamp(
-            Math.max(room.width, room.depth) * .82,
-            10,
-            27,
+            Math.max(room.width, room.depth) * .66,
+            9,
+            22,
           ),
-          1.62,
+          1.82,
         )
         roomFill.position.set(
           room.x,
-          room.floorLevel + 4.6,
+          room.floorLevel + 3.9,
           room.z,
         )
         roomFill.castShadow = false
@@ -987,19 +1044,19 @@ function addPerimeterWalls(
         for (let row = 0; row < rows; row += 1) {
           const actualHeight = Math.min(rowHeight * 0.9, wallHeight - row * rowHeight)
           if (actualHeight <= 0.04) continue
-          const stagger = row % 2 ? WALL_SAMPLE * 0.08 : 0
+          const stagger = row % 2 ? WALL_SAMPLE * 0.025 : 0
           const cap = row === rows - 1
           const base = row === 0
-          const damaged = ((hash >>> (row % 16)) + row * 7) % 23 === 0
+          const damaged = ((hash >>> (row % 16)) + row * 7) % 41 === 0
           samples.push({
             x: edge.x + (edge.yaw === 0 ? stagger : 0),
             z: edge.z + (edge.yaw === 0 ? 0 : stagger),
             y: floorY + row * rowHeight + actualHeight / 2 - (damaged ? 0.025 : 0),
-            length: WALL_SAMPLE * (damaged ? 0.82 : cap ? 1.08 : 1.03),
+            length: WALL_SAMPLE * (damaged ? 0.94 : cap ? 1.025 : 1.01),
             yaw: edge.yaw,
             shade:
-              (damaged ? 0.74 : 0.87) +
-              ((hash + row * 13) % 11) / 100,
+              (damaged ? 0.84 : 0.91) +
+              ((hash + row * 13) % 8) / 100,
             level: rows > 1 ? row / (rows - 1) : 1,
             cap,
             base,
@@ -1032,11 +1089,11 @@ function addPerimeterWalls(
   const geometry = new THREE.BoxGeometry(1, 1, 1)
   const baseMaterial = new THREE.MeshStandardMaterial({
     color: atmosphere.wall,
-    roughness: 0.93,
-    metalness: 0.005,
+    roughness: 0.86,
+    metalness: 0.012,
     vertexColors: true,
-    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.74),
-    emissiveIntensity: mode === 'arpg' ? 0.24 : topDown ? 0.17 : 0.1,
+    emissive: new THREE.Color(atmosphere.wall).multiplyScalar(.56),
+    emissiveIntensity: mode === 'arpg' ? 0.13 : topDown ? 0.14 : 0.08,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -1072,14 +1129,14 @@ function addPerimeterWalls(
       const heightScale =
         rowHeight *
         (
-          sample.cap ? 0.7 :
-            sample.base ? 0.92 :
-              sample.damaged ? 0.72 :
-                0.84
+          sample.cap ? 0.82 :
+            sample.base ? 0.94 :
+              sample.damaged ? 0.84 :
+                0.9
         )
       const depthScale =
         mode === 'arpg'
-          ? sample.cap ? 0.5 : sample.base ? 0.45 : 0.36
+          ? sample.cap ? 0.42 : sample.base ? 0.4 : 0.32
           : topDown
             ? sample.cap ? 0.42 : sample.base ? 0.38 : 0.3
             : sample.cap ? 0.58 : sample.base ? 0.52 : 0.42
@@ -1095,10 +1152,10 @@ function addPerimeterWalls(
       mesh.setMatrixAt(index, dummy.matrix)
       const verticalLift =
         sample.cap
-          ? .34
+          ? .22
           : sample.base
-            ? -.02
-            : sample.level * .09
+            ? -.015
+            : sample.level * .055
       const color = white
         .clone()
         .multiplyScalar(sample.shade + verticalLift)
@@ -1107,6 +1164,38 @@ function addPerimeterWalls(
     mesh.castShadow = true
     mesh.receiveShadow = true
     root.add(mesh)
+  }
+
+  if (mode === 'arpg') {
+    const bases = samples.filter((sample) => sample.base)
+    if (bases.length) {
+      const shadowMaterial = new THREE.MeshBasicMaterial({
+        color: atmosphere.wallDark,
+        transparent: true,
+        opacity: .3,
+        depthWrite: false,
+        toneMapped: false,
+      })
+      const shadowMesh = new THREE.InstancedMesh(
+        new THREE.BoxGeometry(1, .008, 1),
+        shadowMaterial,
+        bases.length,
+      )
+      shadowMesh.name = 'DungeonV3WallFootShadow'
+      bases.forEach((sample, index) => {
+        dummy.position.set(
+          sample.x - sample.nx * .11,
+          sample.y - rowHeight * .43,
+          sample.z - sample.nz * .11,
+        )
+        dummy.rotation.set(0, sample.yaw, 0)
+        dummy.scale.set(sample.length * 1.02, 1, .32)
+        dummy.updateMatrix()
+        shadowMesh.setMatrixAt(index, dummy.matrix)
+      })
+      shadowMesh.renderOrder = 2
+      root.add(shadowMesh)
+    }
   }
 
   baseMaterial.dispose()
@@ -2115,7 +2204,7 @@ function addRoomDressing(
     if (template === 'warden-hall') {
       addStatue(root, room, -0.31, -0.2, 0, materials, mode)
       addStatue(root, room, 0.31, -0.2, Math.PI, materials, mode)
-      if (random() > 0.55) addRoomBanner(root, room, 0, 0.42, materials, mode, 0x4b3430)
+      if (random() > 0.55) addRoomBanner(root, room, 0, 0.42, materials, mode, 0x27465b)
       continue
     }
 
@@ -2174,6 +2263,250 @@ function addRoomDressing(
       addSarcophagus(root, room, -0.26, 0.2, 0, materials)
     } else if (random() > 0.7) {
       addRubbleCluster(root, room, 0.28, 0.28, materials, random, false)
+    }
+  }
+}
+
+function addAtmosphereV3Staging(
+  root: THREE.Group,
+  value: DungeonWithProps,
+  atmosphere: DungeonAtmosphere,
+  mode: DungeonRenderMode,
+) {
+  if (mode === 'walk') return
+
+  const inlayMaterial = new THREE.MeshBasicMaterial({
+    color: 0x86b8d5,
+    transparent: true,
+    opacity: .13,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  })
+  const inlayStrongMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8fdcff,
+    transparent: true,
+    opacity: .19,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  })
+  const plaqueMaterial = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(atmosphere.wallDark).lerp(
+      new THREE.Color(atmosphere.wall),
+      .26,
+    ),
+    roughness: .88,
+    metalness: .06,
+  })
+  const plaqueInsetMaterial = new THREE.MeshBasicMaterial({
+    color: 0x75c9ee,
+    transparent: true,
+    opacity: .32,
+    depthWrite: false,
+    toneMapped: false,
+    blending: THREE.AdditiveBlending,
+  })
+
+  const addFloorInlay = (
+    room: DungeonRoom,
+    radius: number,
+    strong = false,
+  ) => {
+    const group = new THREE.Group()
+    group.position.set(
+      room.x,
+      room.floorLevel + .071,
+      room.z,
+    )
+    group.rotation.y = THREE.MathUtils.degToRad(room.rotation)
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const material = strong
+      ? inlayStrongMaterial
+      : inlayMaterial
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius * .72, radius * .76, 48),
+      material,
+    )
+    ring.rotation.x = -Math.PI / 2
+    ring.renderOrder = 4
+    group.add(ring)
+
+    const diamond = new THREE.Mesh(
+      new THREE.RingGeometry(radius * .18, radius * .205, 4),
+      material,
+    )
+    diamond.rotation.x = -Math.PI / 2
+    diamond.rotation.z = Math.PI / 4
+    diamond.renderOrder = 4
+    group.add(diamond)
+
+    for (let index = 0; index < 4; index += 1) {
+      const ray = new THREE.Mesh(
+        new THREE.BoxGeometry(radius * .42, .006, .026),
+        material,
+      )
+      const angle = index * Math.PI / 2 + Math.PI / 4
+      ray.position.set(
+        Math.cos(angle) * radius * .48,
+        .002,
+        Math.sin(angle) * radius * .48,
+      )
+      ray.rotation.y = -angle
+      ray.renderOrder = 4
+      group.add(ray)
+    }
+  }
+
+  const addWallPlaque = (
+    room: DungeonRoom,
+    side: 'north' | 'south' | 'east' | 'west',
+    along: number,
+    glow = false,
+  ) => {
+    const p = roomWallPoint(room, side, along, .11)
+    const group = new THREE.Group()
+    group.position.set(p.x, room.floorLevel, p.z)
+    group.rotation.y = p.yaw
+    group.userData.decorativeNoCollision = true
+    root.add(group)
+
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(.82, 1.05, .11),
+      plaqueMaterial,
+    )
+    frame.position.y = .74
+    frame.castShadow = true
+    group.add(frame)
+
+    const inset = new THREE.Mesh(
+      new THREE.BoxGeometry(.4, .58, .018),
+      glow ? plaqueInsetMaterial : inlayMaterial,
+    )
+    inset.position.set(0, .77, -.062)
+    inset.renderOrder = 5
+    group.add(inset)
+
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(.96, .12, .16),
+      plaqueMaterial,
+    )
+    cap.position.set(0, 1.32, -.01)
+    group.add(cap)
+  }
+
+  for (const edge of value.corridors) {
+    const path = dungeonCorridorPath(value, edge)
+    const total = pathLength(path)
+    const count = Math.max(0, Math.floor(total / 13))
+    for (let index = 1; index <= count; index += 1) {
+      const sample = samplePathAtDistance(
+        path,
+        index * total / (count + 1),
+      )
+      if (!sample) continue
+      if (
+        value.rooms.some((room) =>
+          dungeonRoomContainsV3(
+            room,
+            sample.x,
+            sample.z,
+            Math.max(1.8, edge.width * .42),
+          )
+        )
+      ) continue
+
+      for (const offset of [-.13, .13]) {
+        const threshold = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            Math.max(1.25, edge.width * .7),
+            .006,
+            .028,
+          ),
+          inlayMaterial,
+        )
+        threshold.position.set(
+          sample.x + Math.sin(sample.yaw) * offset,
+          dungeonFloorHeightV3(
+            value,
+            sample.x,
+            sample.z,
+          ) + .072,
+          sample.z + Math.cos(sample.yaw) * offset,
+        )
+        threshold.rotation.y = sample.yaw
+        threshold.renderOrder = 4
+        threshold.userData.decorativeNoCollision = true
+        root.add(threshold)
+      }
+    }
+  }
+
+  for (const room of value.rooms) {
+    const template = resolveRoomTemplate(room)
+    const area = room.width * room.depth
+    const radius = THREE.MathUtils.clamp(
+      Math.min(room.width, room.depth) * .24,
+      2.1,
+      4.4,
+    )
+
+    if (template === 'warden-sanctum' || room.type === 'boss') {
+      addFloorInlay(room, radius, true)
+      addWallPlaque(room, 'north', -.22, true)
+      addWallPlaque(room, 'north', .22, true)
+      addWallPlaque(room, 'south', -.22, false)
+      addWallPlaque(room, 'south', .22, false)
+      continue
+    }
+
+    if (template === 'warden-hall' || room.type === 'elite') {
+      addFloorInlay(room, radius * .86, true)
+      addWallPlaque(room, 'north', -.2, true)
+      addWallPlaque(room, 'south', .2, false)
+      continue
+    }
+
+    if (template === 'shrine-hall' || room.type === 'shrine') {
+      addFloorInlay(room, radius * .82, true)
+      addWallPlaque(room, 'north', 0, true)
+      addWallPlaque(room, 'south', 0, true)
+      continue
+    }
+
+    if (template === 'reliquary' || room.type === 'treasure') {
+      addFloorInlay(room, radius * .74, false)
+      addWallPlaque(room, 'north', 0, false)
+      continue
+    }
+
+    if (template === 'crossroads') {
+      addFloorInlay(room, radius * .76, false)
+      addWallPlaque(room, 'east', 0, false)
+      addWallPlaque(room, 'west', 0, false)
+      continue
+    }
+
+    if (
+      template === 'burial-chamber' ||
+      template === 'ossuary-gallery' ||
+      template === 'sealed-ossuary'
+    ) {
+      addWallPlaque(room, 'north', -.24, false)
+      addWallPlaque(room, 'south', .24, false)
+      if (area > 360) {
+        addFloorInlay(room, radius * .66, false)
+      }
+      continue
+    }
+
+    if (area > 360) {
+      addWallPlaque(room, 'north', 0, false)
+      addWallPlaque(room, 'south', 0, false)
     }
   }
 }

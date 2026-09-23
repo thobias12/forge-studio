@@ -142,7 +142,7 @@ export const dungeonSceneMethods = {
       const normalized = THREE.MathUtils.clamp((lighting.brightness - 0.55) / 1.95, 0, 1)
       const visibility = new THREE.PointLight(
         atmosphere.sky,
-        THREE.MathUtils.lerp(0.28, 0.42, normalized),
+        THREE.MathUtils.lerp(0.16, 0.26, normalized),
         5.6,
         2.15,
       )
