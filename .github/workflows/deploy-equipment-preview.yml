@@ -1,4 +1,4 @@
-name: Deploy Equipment V3 Preview to GitHub Pages
+name: Deploy Forge Studio PR Preview to GitHub Pages
 
 on:
   workflow_run:
@@ -9,21 +9,64 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
 concurrency:
-  group: equipment-v3-preview-pages
-  cancel-in-progress: true
+  group: forge-pages
+  cancel-in-progress: false
 
 jobs:
-  build:
+  build-main:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'equipment-v3-')
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.main-meta.outputs.sha }}
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Record main commit
+        id: main-meta
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare production Equipment QA fixture
+        env:
+          FORGE_QA_FIXTURE_OUTPUT: public/qa-foundation/__qa-base.glb
+        run: node scripts/prepare-equipment-qa-fixture.mjs
+
+      - name: Build current main
+        env:
+          VITE_FORGE_BUILD: ${{ steps.main-meta.outputs.sha }}
+        run: npm run build
+
+      - name: Upload main site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-preview-main-${{ github.run_id }}
+          path: ./dist
+          retention-days: 1
+
+  build-preview:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout successful Equipment V3 PR head
+      - name: Checkout successful PR head
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -36,34 +79,99 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Prepare deployed Equipment QA fixture
+      - name: Prepare preview Equipment QA fixture
         env:
           FORGE_QA_FIXTURE_OUTPUT: public/qa-foundation/__qa-base.glb
         run: node scripts/prepare-equipment-qa-fixture.mjs
 
-      - name: Build Forge Studio preview
+      - name: Build exact PR preview
         env:
           VITE_FORGE_BUILD: ${{ github.event.workflow_run.head_sha }}
         run: npm run build
 
+      - name: Upload PR preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-preview-pr-${{ github.run_id }}
+          path: ./dist
+          retention-days: 1
+
+  assemble:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    needs: [build-main, build-preview]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download current main
+        uses: actions/download-artifact@v4
+        with:
+          name: forge-preview-main-${{ github.run_id }}
+          path: site
+
+      - name: Download exact PR build
+        uses: actions/download-artifact@v4
+        with:
+          name: forge-preview-pr-${{ github.run_id }}
+          path: site/preview
+
+      - name: Write preview metadata
+        env:
+          PREVIEW_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PREVIEW_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PREVIEW_SHA: ${{ github.event.workflow_run.head_sha }}
+          PREVIEW_SOURCE_RUN: ${{ github.event.workflow_run.id }}
+          PREVIEW_MAIN_SHA: ${{ needs.build-main.outputs.sha }}
+        run: |
+          node - <<'NODE'
+          const fs = require('fs')
+          const value = {
+            preview: true,
+            pr: Number(process.env.PREVIEW_PR) || null,
+            branch: process.env.PREVIEW_BRANCH || null,
+            commit: process.env.PREVIEW_SHA || null,
+            base: 'main',
+            mainCommit: process.env.PREVIEW_MAIN_SHA || null,
+            sourceWorkflowRun: Number(process.env.PREVIEW_SOURCE_RUN) || null,
+            builtAt: new Date().toISOString(),
+          }
+          fs.writeFileSync('site/preview/preview-meta.json', JSON.stringify(value, null, 2) + '\n')
+          NODE
+
+      - name: Publish preview summary
+        env:
+          PREVIEW_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PREVIEW_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PREVIEW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          {
+            echo "### Forge Studio PR Preview"
+            echo
+            echo "- PR: #$PREVIEW_PR"
+            echo "- Branch: $PREVIEW_BRANCH"
+            echo "- Commit: $PREVIEW_SHA"
+            echo "- Preview: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/preview/"
+            echo "- World Forge: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/preview/#/world"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload combined production + preview Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ./dist
+          path: ./site
 
   deploy:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'equipment-v3-')
+      github.event.workflow_run.event == 'pull_request'
+    needs: assemble
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
     steps:
-      - name: Deploy Equipment V3 preview to GitHub Pages
+      - name: Deploy current main plus PR preview
         id: deployment
         uses: actions/deploy-pages@v4
