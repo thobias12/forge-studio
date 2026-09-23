@@ -700,24 +700,24 @@ function atmosphereRoomMood(
 ) {
   const template = resolveRoomTemplate(room)
   if (room.type === 'boss' || template === 'warden-sanctum') {
-    return { color: 0x5a8caf, opacity: .3, mist: .032, dust: 10, fill: .82 }
+    return { color: 0x5b8dad, opacity: .24, mist: .024, dust: 8, fill: .68 }
   }
   if (room.type === 'elite' || template === 'warden-hall') {
-    return { color: 0x5483a4, opacity: .28, mist: .028, dust: 9, fill: .72 }
+    return { color: 0x557f9f, opacity: .22, mist: .022, dust: 8, fill: .58 }
   }
   if (room.type === 'shrine' || template === 'shrine-hall') {
-    return { color: 0x63b9df, opacity: .32, mist: .035, dust: 8, fill: .9 }
+    return { color: 0x69bfe5, opacity: .27, mist: .026, dust: 7, fill: .76 }
   }
   if (room.type === 'treasure' || template === 'reliquary') {
-    return { color: 0x587f9a, opacity: .24, mist: .024, dust: 8, fill: .62 }
+    return { color: 0x587b93, opacity: .19, mist: .018, dust: 7, fill: .5 }
   }
   if (template === 'crossroads') {
-    return { color: 0x507d9d, opacity: .27, mist: .024, dust: 9, fill: .68 }
+    return { color: 0x4d7896, opacity: .21, mist: .018, dust: 8, fill: .55 }
   }
   if (template === 'ossuary-gallery' || template === 'sealed-ossuary') {
-    return { color: 0x4a718e, opacity: .23, mist: .024, dust: 8, fill: .58 }
+    return { color: 0x476d88, opacity: .18, mist: .018, dust: 7, fill: .47 }
   }
-  return { color: 0x4d7593, opacity: .22, mist: .02, dust: 7, fill: .56 }
+  return { color: 0x4a708c, opacity: .17, mist: .016, dust: 6, fill: .45 }
 }
 
 function addDungeonAtmosphereV2(
@@ -766,8 +766,8 @@ function addDungeonAtmosphereV2(
       })
       const pool = new THREE.Mesh(
         new THREE.PlaneGeometry(
-          THREE.MathUtils.clamp(room.width * .94, 8, 26),
-          THREE.MathUtils.clamp(room.depth * .94, 8, 22),
+          THREE.MathUtils.clamp(room.width * .78, 7, 20),
+          THREE.MathUtils.clamp(room.depth * .78, 7, 18),
         ),
         poolMaterial,
       )
@@ -786,15 +786,15 @@ function addDungeonAtmosphereV2(
           mood.color,
           mood.fill,
           THREE.MathUtils.clamp(
-            Math.max(room.width, room.depth) * .82,
-            10,
-            27,
+            Math.max(room.width, room.depth) * .66,
+            9,
+            22,
           ),
-          1.62,
+          1.82,
         )
         roomFill.position.set(
           room.x,
-          room.floorLevel + 4.6,
+          room.floorLevel + 3.9,
           room.z,
         )
         roomFill.castShadow = false
