@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.5`  
+> **Current Forge version:** `v1.92.6`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,18 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.6 is the **Dungeon Atmosphere v2 pass**. It changes presentation only: Combat v4 behavior, enemy counts, encounter timing, Vault Warden HP/phase thresholds/transition timing and navigation collision remain unchanged.
+
+The shared Dungeon Forge V3 renderer now adds a second atmosphere layer after structural geometry, fixtures and room dressing. Every Skillbound crypt room receives a restrained room-identity bounce pool: Warden spaces lean muted blood-red, shrine spaces cool green, reliquaries warm stone/amber, crossroads cool slate, and ordinary burial spaces stay neutral. These are low-opacity additive light pools rather than new gameplay telegraphs.
+
+Rooms also receive deterministic low mist pockets and a single shared drifting-dust particle system. Mist uses soft radial planes with slow opacity breathing; dust rises gently with tiny lateral drift. Density scales with room size/type and stays deliberately low so combat silhouettes and telegraphs remain readable.
+
+Small edge stone chips now age the floor perimeter without cluttering the playable center. They are rendered as one instanced decorative mesh named `DungeonV3AtmosphereDebrisNoCollision`, explicitly excluded from `dungeonArtCollidersV3`, so atmosphere debris never changes movement or causes wall-sticking.
+
+The crypt lighting palette has been rebalanced around warm torch pools and readable cool fill: slightly brighter stone/sky fill, warmer stronger torches, lower global fog multiplier, and a modest exposure/bloom lift. The intent is atmospheric and cozy without returning to the earlier too-dark dungeon problem.
+
+Because Atmosphere v2 lives inside `addDungeonMasonryV3`, Dungeon Forge's shared V3 renderer and actual Skillbound dungeon play receive the same environment treatment instead of maintaining a separate runtime-only art pass.
 
 Forge v1.92.5 is the **Combat Audio & Encounter Feedback pass**. It leaves Combat v4 balance, Vault Warden HP/phase thresholds/timing, enemy counts and attack timing unchanged.
 
