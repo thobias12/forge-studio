@@ -572,6 +572,7 @@ export default function DungeonViewport(props: Props) {
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointercancel', onPointerUp)
       controls.dispose()
+      composer.dispose()
       disposeObject(dungeonGroup)
       clearDrawPreview()
       drawPreview.removeFromParent()
