@@ -180,7 +180,7 @@ export default function App() {
     return <Suspense fallback={<div className="center-state">Loading equipment QA…</div>}><EquipmentQaCapture /></Suspense>
   }
   if (params.get('dungeonQa') === '1') {
-    return <DungeonQaCapture />
+    return <Suspense fallback={<div className="center-state">Loading dungeon QA…</div>}><DungeonQaCapture /></Suspense>
   }
   if (params.get('capture') === '1') return <Suspense fallback={<div className="center-state">Loading capture…</div>}><Capture /></Suspense>
 
