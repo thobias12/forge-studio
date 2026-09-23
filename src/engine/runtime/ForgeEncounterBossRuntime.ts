@@ -1,8 +1,132 @@
 // @ts-nocheck
 import * as THREE from 'three'
 import type { DungeonEncounter, DungeonRoom } from '../../lib/dungeonPackage'
-import { activeBossPhase, normalizeBossPhases } from '../encounterForge'
+import { normalizeBossPhases } from '../encounterForge'
 import { hashSeed, seededRandom } from './ForgeDungeonRuntimeHelpers'
+
+function disposeBossPhaseShiftPresentation(enemy: any) {
+  const fx = enemy?.__forgeBossPhaseShiftFx
+  if (!fx) return
+  fx.group?.parent?.remove(fx.group)
+  const geometries = new Set<any>()
+  const materials = new Set<any>()
+  fx.group?.traverse?.((child: any) => {
+    if (child.geometry) geometries.add(child.geometry)
+    if (Array.isArray(child.material)) {
+      child.material.forEach((material: any) => materials.add(material))
+    } else if (child.material) {
+      materials.add(child.material)
+    }
+  })
+  geometries.forEach((geometry) => geometry.dispose?.())
+  materials.forEach((material) => material.dispose?.())
+  enemy.__forgeBossPhaseShiftFx = undefined
+}
+
+function beginBossPhaseShiftPresentation(
+  runtime: any,
+  enemy: any,
+  phaseIndex: number,
+  duration: number,
+) {
+  disposeBossPhaseShiftPresentation(enemy)
+
+  const color =
+    phaseIndex >= 3 ? 0xff4b42 :
+      phaseIndex >= 2 ? 0xd7637c :
+        0xe8874d
+  const group = new THREE.Group()
+  group.position.copy(enemy.group.position)
+
+  const shellMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .16,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    wireframe: true,
+  })
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(1.06, 14, 10),
+    shellMaterial,
+  )
+  shell.position.y = 1.04
+  shell.scale.set(.76, .92, .76)
+  group.add(shell)
+
+  const wispMaterial = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: .78,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const wispGeometry = new THREE.OctahedronGeometry(.085, 0)
+  const wisps: THREE.Mesh[] = []
+  for (let index = 0; index < 8; index += 1) {
+    const wisp = new THREE.Mesh(wispGeometry, wispMaterial)
+    group.add(wisp)
+    wisps.push(wisp)
+  }
+
+  ;(runtime.world ?? runtime.scene)?.add(group)
+  enemy.__forgeBossPhaseShiftFx = {
+    group,
+    shell,
+    shellMaterial,
+    wispMaterial,
+    wisps,
+    age: 0,
+    duration: Math.max(.1, duration),
+    phaseIndex,
+  }
+}
+
+function updateBossPhaseShiftPresentation(
+  enemy: any,
+  delta: number,
+) {
+  const fx = enemy?.__forgeBossPhaseShiftFx
+  if (!fx) return
+
+  fx.age += delta
+  const progress = THREE.MathUtils.clamp(
+    fx.age / Math.max(.01, fx.duration),
+    0,
+    1,
+  )
+  const pulse = Math.sin(progress * Math.PI)
+  fx.group.position.copy(enemy.group.position)
+  fx.shell.rotation.y += delta * (1.7 + fx.phaseIndex * .22)
+  fx.shell.rotation.x += delta * .42
+  fx.shell.scale.setScalar(.82 + progress * .52 + pulse * .08)
+  fx.shell.scale.y *= 1.16
+  fx.shellMaterial.opacity = .06 + pulse * .2
+
+  for (let index = 0; index < fx.wisps.length; index += 1) {
+    const wisp = fx.wisps[index]
+    const phase = index / fx.wisps.length * Math.PI * 2
+    const angle =
+      phase +
+      fx.age * (1.8 + (index % 2) * .35) *
+      (index % 2 ? -1 : 1)
+    const radius = .72 + (index % 3) * .13 + pulse * .18
+    wisp.position.set(
+      Math.cos(angle) * radius,
+      .22 + ((progress * 1.9 + index * .17) % 1.75),
+      Math.sin(angle) * radius,
+    )
+    wisp.scale.setScalar(.72 + pulse * .62)
+    wisp.rotation.y += delta * 4.2
+  }
+  fx.wispMaterial.opacity = (1 - progress * .55) * (.5 + pulse * .4)
+
+  if (progress >= 1) {
+    disposeBossPhaseShiftPresentation(enemy)
+  }
+}
 
 export function installEncounterBossRuntime(Runtime: any) {
   if (Runtime.prototype.__encounterBossForgeInstalled) return
@@ -244,6 +368,12 @@ export function installEncounterBossRuntime(Runtime: any) {
       enemy.__forgeVolleyShot = false
       enemy.__forgeGraveZoneCast = false
       enemy.telegraph.visible = false
+      beginBossPhaseShiftPresentation(
+        this,
+        enemy,
+        index,
+        transitionDuration,
+      )
 
       this.focusEnemyId = enemy.id
       this.cameraShake = Math.max(this.cameraShake, 0.42)
@@ -305,8 +435,14 @@ export function installEncounterBossRuntime(Runtime: any) {
 
     updateEnemies(delta: number) {
       for (const enemy of this.enemies.values()) {
-        if (!enemy.boss || !enemy.bossProfile || enemy.health <= 0) continue
+        if (!enemy.boss || !enemy.bossProfile || enemy.health <= 0) {
+          if (enemy?.__forgeBossPhaseShiftFx) {
+            disposeBossPhaseShiftPresentation(enemy)
+          }
+          continue
+        }
 
+        updateBossPhaseShiftPresentation(enemy, delta)
         enemy.bossPhaseTransitionRemaining = Math.max(
           0,
           Number(enemy.bossPhaseTransitionRemaining ?? 0) - delta,
