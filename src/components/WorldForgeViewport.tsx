@@ -1442,19 +1442,27 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
   if (trees.length) {
     const trunkGeometries = [0, 1, 2, 3].map((variant) => forestStylizedTrunk(variant))
-    const trunkMaterial = markWorldWindMaterial(
-      new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
-      .16,
-    )
+const trunkMaterial = markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: 0xffffff,
+roughness: .94,
+metalness: 0,
+vertexColors: true,
+flatShading: true,
+}),
+.12,
+)
     const trunksByVariant = [0, 1, 2, 3].map((variant) => {
 const items = trees.filter((item) => item.variant === variant)
 return new THREE.InstancedMesh(trunkGeometries[variant], trunkMaterial, items.length)
 })
-    const matrix = new THREE.Matrix4()
-    const quaternion = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
+const matrix = new THREE.Matrix4()
+const quaternion = new THREE.Quaternion()
+const scale = new THREE.Vector3()
+const trunkCursors = [0, 0, 0, 0]
 
-    trees.forEach((item, index) => {
+trees.forEach((item) => {
+
       const displayScale = forgeTreePresentationScale(item.scale)
       quaternion.setFromEuler(
         new THREE.Euler(
@@ -1473,8 +1481,7 @@ return new THREE.InstancedMesh(trunkGeometries[variant], trunkMaterial, items.le
         quaternion,
         scale,
       )
-      const variantItems = trees.filter((candidate) => candidate.variant === item.variant)
-trunksByVariant[item.variant].setMatrixAt(variantItems.indexOf(item), matrix)
+      trunksByVariant[item.variant].setMatrixAt(trunkCursors[item.variant]++, matrix)
     })
 trunksByVariant.forEach((trunks) => {
 trunks.castShadow = true

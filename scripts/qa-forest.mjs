@@ -13,8 +13,24 @@ for (const geometry of [f.forestTrunk(), f.forestBranch(), f.forestCrown(1.5,2.7
 }
 assert.deepEqual(f.forestCrown(1.5,2.7).attributes.position.array, f.forestCrown(1.5,2.7).attributes.position.array)
 const silhouettes = new Set()
+const stylizedTrunkSilhouettes = new Set()
 for (let variant=0;variant<4;variant++) {
-  const g=f.forestDeadTree(variant)
+const trunk=f.forestStylizedTrunk(variant)
+assert.ok([...trunk.attributes.position.array].every(Number.isFinite))
+assert.ok([...trunk.attributes.normal.array].every(Number.isFinite))
+assert.ok(trunk.attributes.position.count < 3200, 'Stylized trunk exceeds geometry budget')
+assert.ok(trunk.attributes.color, 'Stylized trunk is missing bark shading')
+assert.deepEqual(trunk.attributes.position.array,f.forestStylizedTrunk(variant).attributes.position.array)
+stylizedTrunkSilhouettes.add(JSON.stringify(Array.from(trunk.attributes.position.array)))
+trunk.dispose()
+const crown=f.forestStylizedSpeciesCrown(1.5,2.7,variant,0)
+assert.ok([...crown.attributes.position.array].every(Number.isFinite))
+assert.ok([...crown.attributes.normal.array].every(Number.isFinite))
+assert.ok(crown.attributes.position.count < 1800, 'Stylized crown exceeds geometry budget')
+assert.ok(crown.attributes.color, 'Stylized crown is missing foliage shading')
+assert.deepEqual(crown.attributes.position.array,f.forestStylizedSpeciesCrown(1.5,2.7,variant,0).attributes.position.array)
+crown.dispose()
+const g=f.forestDeadTree(variant)
   assert.ok([...g.attributes.position.array].every(Number.isFinite))
   assert.ok([...g.attributes.normal.array].every(Number.isFinite))
   assert.ok(g.attributes.position.count < 3200)
@@ -25,6 +41,7 @@ for (let variant=0;variant<4;variant++) {
   g.dispose()
 }
 assert.equal(silhouettes.size,4,'Tree species share identical silhouettes')
+assert.equal(stylizedTrunkSilhouettes.size,4,'Stylized tree species share identical trunk silhouettes')
 const preset = JSON.parse(fs.readFileSync('public/projects/skillbound/regions/deadwood.region.json','utf8'))
 for (const seed of [8472152,7319]) {
   const region = f.generateGuidedRegion(preset,seed,1)
