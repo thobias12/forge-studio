@@ -69,24 +69,105 @@ export const dungeonViewMethods = {
     this.occlusionRay.set(this.camera.position, direction)
     this.occlusionRay.near = 0.08
     this.occlusionRay.far = Math.max(0.1, distance - 0.35)
-    const blocked = new Set<THREE.Mesh>()
+
+    const desired = new Map<THREE.Mesh, number>()
+    const directWalls: THREE.Mesh[] = []
     for (const hit of this.occlusionRay.intersectObjects(this.world.children, true)) {
       const mesh = hit.object as THREE.Mesh
       if (!mesh.isMesh || !mesh.userData.skillboundOccluder) continue
-      blocked.add(mesh)
+      desired.set(mesh, 0.12)
+      if (mesh.userData.skillboundWallChunk) directWalls.push(mesh)
     }
-    const fadeOut = 1 - Math.exp(-13 * delta)
-    const fadeIn = 1 - Math.exp(-8 * delta)
-    for (const mesh of blocked) {
-      const next = THREE.MathUtils.lerp(this.fadedOccluders.get(mesh) ?? 1, 0.14, fadeOut)
+
+    // Tall ARPG walls need a cutaway pocket, not a single transparent slice.
+    // Cache the static wall chunks once, then feather neighboring foreground
+    // chunks around any wall hit by the camera-to-player ray.
+    if (!this.__forgeWallOccluders) {
+      const walls: THREE.Mesh[] = []
+      this.world.traverse((object: THREE.Object3D) => {
+        const mesh = object as THREE.Mesh
+        if (mesh.isMesh && mesh.userData.skillboundWallChunk) walls.push(mesh)
+      })
+      this.__forgeWallOccluders = walls
+    }
+
+    if (directWalls.length && this.__forgeWallOccluders?.length) {
+      const playerPlanarDistance = Math.hypot(
+        this.player.position.x - this.camera.position.x,
+        this.player.position.z - this.camera.position.z,
+      )
+
+      for (const primary of directWalls) {
+        const px = Number(primary.userData.skillboundOcclusionCenterX)
+        const pz = Number(primary.userData.skillboundOcclusionCenterZ)
+        if (!Number.isFinite(px) || !Number.isFinite(pz)) continue
+
+        for (const candidate of this.__forgeWallOccluders as THREE.Mesh[]) {
+          if (candidate === primary) continue
+          const cx = Number(candidate.userData.skillboundOcclusionCenterX)
+          const cz = Number(candidate.userData.skillboundOcclusionCenterZ)
+          if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue
+
+          const cameraDistance = Math.hypot(
+            cx - this.camera.position.x,
+            cz - this.camera.position.z,
+          )
+          if (cameraDistance > playerPlanarDistance + 1.5) continue
+          if (
+            Math.hypot(
+              cx - this.player.position.x,
+              cz - this.player.position.z,
+            ) > 14
+          ) continue
+
+          const neighborDistance = Math.hypot(cx - px, cz - pz)
+          const targetOpacity =
+            neighborDistance <= 7.2
+              ? 0.34
+              : neighborDistance <= 10.5
+                ? 0.58
+                : undefined
+          if (targetOpacity === undefined) continue
+
+          const currentTarget = desired.get(candidate)
+          if (
+            currentTarget === undefined ||
+            targetOpacity < currentTarget
+          ) {
+            desired.set(candidate, targetOpacity)
+          }
+        }
+      }
+    }
+
+    for (const [mesh, targetOpacity] of desired) {
+      const response =
+        targetOpacity <= 0.16
+          ? 16
+          : targetOpacity <= 0.4
+            ? 11
+            : 8
+      const fadeOut = 1 - Math.exp(-response * delta)
+      const next = THREE.MathUtils.lerp(
+        this.fadedOccluders.get(mesh) ?? 1,
+        targetOpacity,
+        fadeOut,
+      )
       setMeshOpacity(mesh, next)
       this.fadedOccluders.set(mesh, next)
     }
+
+    const fadeIn = 1 - Math.exp(-7 * delta)
     for (const [mesh, current] of [...this.fadedOccluders]) {
-      if (blocked.has(mesh)) continue
+      if (desired.has(mesh)) continue
       const next = THREE.MathUtils.lerp(current, 1, fadeIn)
-      if (next >= 0.995) { setMeshOpacity(mesh, 1); this.fadedOccluders.delete(mesh) }
-      else { setMeshOpacity(mesh, next); this.fadedOccluders.set(mesh, next) }
+      if (next >= 0.995) {
+        setMeshOpacity(mesh, 1)
+        this.fadedOccluders.delete(mesh)
+      } else {
+        setMeshOpacity(mesh, next)
+        this.fadedOccluders.set(mesh, next)
+      }
     }
   },
 

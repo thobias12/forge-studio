@@ -774,7 +774,20 @@ function addDungeonAtmosphereV2(
   }
 }
 
-type BoundaryBrick = { x: number; y: number; z: number; length: number; yaw: number; shade: number; cap: boolean; base: boolean; damaged: boolean; nx: number; nz: number }
+type BoundaryBrick = {
+  x: number
+  y: number
+  z: number
+  length: number
+  yaw: number
+  shade: number
+  level: number
+  cap: boolean
+  base: boolean
+  damaged: boolean
+  nx: number
+  nz: number
+}
 
 function addPerimeterWalls(
   root: THREE.Group,
@@ -826,7 +839,10 @@ function addPerimeterWalls(
             y: floorY + row * rowHeight + actualHeight / 2 - (damaged ? 0.025 : 0),
             length: WALL_SAMPLE * (damaged ? 0.82 : cap ? 1.08 : 1.03),
             yaw: edge.yaw,
-            shade: (damaged ? 0.74 : 0.88) + (hash % 9) / 100,
+            shade:
+              (damaged ? 0.74 : 0.87) +
+              ((hash + row * 13) % 11) / 100,
+            level: rows > 1 ? row / (rows - 1) : 1,
             cap,
             base,
             damaged,
@@ -862,7 +878,7 @@ function addPerimeterWalls(
     metalness: 0.005,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.wall),
-    emissiveIntensity: mode === 'arpg' ? 0.12 : topDown ? 0.16 : 0.1,
+    emissiveIntensity: mode === 'arpg' ? 0.145 : topDown ? 0.16 : 0.1,
   })
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
@@ -879,6 +895,20 @@ function addPerimeterWalls(
         : 'DungeonV3Perimeter'
     mesh.userData.dungeonWall = true
     mesh.userData.skillboundOccluder = mode === 'arpg'
+    mesh.userData.skillboundWallChunk = mode === 'arpg'
+    if (mode === 'arpg') {
+      const center = chunkSamples.reduce(
+        (sum, sample) => {
+          sum.x += sample.x
+          sum.z += sample.z
+          return sum
+        },
+        { x: 0, z: 0 },
+      )
+      const divisor = Math.max(1, chunkSamples.length)
+      mesh.userData.skillboundOcclusionCenterX = center.x / divisor
+      mesh.userData.skillboundOcclusionCenterZ = center.z / divisor
+    }
 
     chunkSamples.forEach((sample, index) => {
       const heightScale =
@@ -905,12 +935,15 @@ function addPerimeterWalls(
       dummy.scale.set(sample.length, heightScale, depthScale)
       dummy.updateMatrix()
       mesh.setMatrixAt(index, dummy.matrix)
+      const verticalLift =
+        sample.cap
+          ? .16
+          : sample.base
+            ? -.015
+            : sample.level * .055
       const color = white
         .clone()
-        .multiplyScalar(
-          sample.shade +
-            (sample.cap ? 0.1 : sample.base ? -0.03 : 0),
-        )
+        .multiplyScalar(sample.shade + verticalLift)
       mesh.setColorAt(index, color)
     })
     mesh.castShadow = true

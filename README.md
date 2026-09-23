@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.9`  
+> **Current Forge version:** `v1.93.0`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,18 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.93.0 is the **ARPG Wall Readability & Cutaway Occlusion pass**. It keeps the v1.92.7+ architectural wall height while addressing the large dark foreground wall masses exposed by live gameplay.
+
+ARPG perimeter chunks now publish stable chunk centers for camera presentation. The dungeon camera still raycasts directly to the player, but a directly blocking wall chunk now creates a feathered local cutaway pocket instead of fading as an isolated slice: the direct blocker targets ~12% opacity, nearby foreground chunks within ~7.2 m target ~34%, and a second feather ring out to ~10.5 m targets ~58%. Candidate chunks behind the player or far from the player are excluded, so the rest of the dungeon keeps its full wall silhouette.
+
+Cutaway transitions use tier-specific response speeds for a smoother opening around the player and a slightly slower restore, reducing hard popping as the camera/player move past corners. Existing non-wall occluders still use the direct-block fade behavior.
+
+Tall masonry readability has also been improved without changing wall geometry. Brick shade variation now changes by vertical row instead of repeating the same value up the full wall, upper rows receive a small lift, and cap stones are more visibly separated. ARPG perimeter emissive fill is modestly increased so wall faces do not collapse into black slabs.
+
+The crypt palette receives a restrained visibility lift: slightly brighter cool ambient/key fill, lighter wall and dark-stone values, lower fog multiplier, and a very small exposure increase. Warm torch color/intensity is unchanged so torch pools remain the primary atmospheric contrast.
+
+This remains presentation-only: wall height, collision/navigation, enemy behavior, encounter pacing and Vault Warden balance are unchanged.
 
 Forge v1.92.9 is the **ARPG Crypt Pillar Cleanup** hotfix based on live gameplay feedback.
 
