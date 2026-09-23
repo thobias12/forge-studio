@@ -985,7 +985,11 @@ function addCorridorArchitecture(
   const materials = createArtMaterials(atmosphere)
   const editor = mode === 'editor'
   const arpg = mode === 'arpg'
-  if (editor) return
+  // Full-width support arches are appropriate in Walk mode, where they read
+  // as part of the corridor shell. From the ARPG camera they read as
+  // freestanding goalposts inside the playable floor, so ARPG deliberately
+  // keeps corridor architecture wall-attached only.
+  if (editor || arpg) return
   for (const edge of value.corridors) {
     const path = dungeonCorridorPath(value, edge)
     const total = pathLength(path)
@@ -1115,7 +1119,10 @@ function addRoomArchitecture(
       if (!otherId) continue
       const other = roomMap.get(otherId)
       if (!other) continue
-      if (editor) continue
+      // ARPG uses the perimeter opening itself as the doorway. Freestanding
+      // posts/lintels can land slightly inside procedural rooms and look like
+      // furniture, so full doorway frames remain Walk-mode architecture only.
+      if (editor || arpg) continue
       const connection = getRoomConnection(room, other, edge.width)
       const yaw = THREE.MathUtils.degToRad(connection.yaw)
       const doorway = new THREE.Group()

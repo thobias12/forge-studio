@@ -1,6 +1,6 @@
 # Forge Studio
 
-> **Current Forge version:** `v1.92.8`  
+> **Current Forge version:** `v1.92.9`  
 > **Active game project:** Skillbound  
 > **Runtime:** Three.js / browser  
 > **Repository:** `thobias12/forge-studio`  
@@ -193,6 +193,14 @@ Important source:
 - `src/engine/guidedWorld.ts`
 
 ### Play Project
+
+Forge v1.92.9 is the **ARPG Crypt Pillar Cleanup** hotfix based on live gameplay feedback.
+
+The freestanding ARPG corridor supports and doorway goalpost frames introduced in v1.92.8 have been removed. Procedural connection points can sit slightly inside a room, which made those pieces read as loose pillars/furniture rather than wall architecture from the isometric camera.
+
+ARPG now keeps only architecture that is visually anchored to the dungeon perimeter: tall masonry walls, wall-integrated Warden buttresses, framed wall recesses, torch wall washes, candle accents and environmental atmosphere. Full corridor arches and doorway post/lintel assemblies remain available in Walk mode, where the lower camera can read them as part of the architectural shell.
+
+This is a presentation-only cleanup: collision/navigation, enemy behavior, encounter pacing and Vault Warden balance are unchanged.
 
 Forge v1.92.8 is the **Crypt Architectural Depth pass**. It builds on the v1.92.7 tall-wall baseline and remains presentation-only: combat, Vault Warden balance, navigation and collision are unchanged.
 
