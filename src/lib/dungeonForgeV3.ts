@@ -507,24 +507,24 @@ function atmosphereRoomMood(
 ) {
   const template = resolveRoomTemplate(room)
   if (room.type === 'boss' || template === 'warden-sanctum') {
-    return { color: atmosphere.boss, opacity: .105, mist: .052, dust: 16 }
+    return { color: atmosphere.boss, opacity: .2, mist: .105, dust: 20 }
   }
   if (room.type === 'elite' || template === 'warden-hall') {
-    return { color: 0x825449, opacity: .075, mist: .044, dust: 14 }
+    return { color: 0x825449, opacity: .15, mist: .09, dust: 18 }
   }
   if (room.type === 'shrine' || template === 'shrine-hall') {
-    return { color: atmosphere.shrine, opacity: .08, mist: .05, dust: 12 }
+    return { color: atmosphere.shrine, opacity: .145, mist: .095, dust: 16 }
   }
   if (room.type === 'treasure' || template === 'reliquary') {
-    return { color: 0x9a7751, opacity: .06, mist: .038, dust: 10 }
+    return { color: 0x9a7751, opacity: .125, mist: .075, dust: 14 }
   }
   if (template === 'crossroads') {
-    return { color: 0x62706f, opacity: .045, mist: .045, dust: 14 }
+    return { color: 0x62706f, opacity: .1, mist: .085, dust: 18 }
   }
   if (template === 'ossuary-gallery' || template === 'sealed-ossuary') {
-    return { color: 0x596563, opacity: .04, mist: .055, dust: 13 }
+    return { color: 0x596563, opacity: .09, mist: .1, dust: 17 }
   }
-  return { color: 0x65706f, opacity: .035, mist: .04, dust: 10 }
+  return { color: 0x65706f, opacity: .08, mist: .075, dust: 14 }
 }
 
 function addDungeonAtmosphereV2(
@@ -573,8 +573,8 @@ function addDungeonAtmosphereV2(
       })
       const pool = new THREE.Mesh(
         new THREE.PlaneGeometry(
-          THREE.MathUtils.clamp(room.width * .7, 6.5, 14),
-          THREE.MathUtils.clamp(room.depth * .7, 6.5, 14),
+          THREE.MathUtils.clamp(room.width * .82, 7.5, 18),
+          THREE.MathUtils.clamp(room.depth * .82, 7.5, 18),
         ),
         poolMaterial,
       )
@@ -589,7 +589,7 @@ function addDungeonAtmosphereV2(
       root.add(pool)
 
       const mistCount =
-        room.type === 'boss' || room.width * room.depth > 430 ? 3 : 2
+        room.type === 'boss' || room.width * room.depth > 430 ? 4 : 3
       for (let index = 0; index < mistCount; index += 1) {
         const localX = (random() - .5) * room.width * .5
         const localZ = (random() - .5) * room.depth * .5
@@ -606,8 +606,8 @@ function addDungeonAtmosphereV2(
         })
         const mist = new THREE.Mesh(
           new THREE.PlaneGeometry(
-            3.8 + random() * 3.6,
-            2.4 + random() * 2.8,
+            4.6 + random() * 4.4,
+            3.1 + random() * 3.5,
           ),
           mistMaterial,
         )
@@ -738,9 +738,9 @@ function addDungeonAtmosphereV2(
     )
     const material = new THREE.PointsMaterial({
       color: atmosphere.dust,
-      size: mode === 'walk' ? .055 : .045,
+      size: mode === 'walk' ? .06 : .052,
       transparent: true,
-      opacity: mode === 'walk' ? .3 : .24,
+      opacity: mode === 'walk' ? .34 : .3,
       depthWrite: false,
       toneMapped: false,
       blending: THREE.AdditiveBlending,
@@ -767,8 +767,8 @@ function addDungeonAtmosphereV2(
       ;(geometry.getAttribute('position') as THREE.BufferAttribute)
         .needsUpdate = true
       material.opacity =
-        (mode === 'walk' ? .28 : .22) +
-        Math.sin(t * .42 + phase) * .035
+        (mode === 'walk' ? .32 : .28) +
+        Math.sin(t * .42 + phase) * .045
     }
     root.add(points)
   }
@@ -784,7 +784,12 @@ function addPerimeterWalls(
   mode: DungeonRenderMode,
 ) {
   const topDown = mode !== 'walk'
-  const wallHeight = topDown ? 0.98 : Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
+  const wallHeight =
+    mode === 'walk'
+      ? Math.max(3.8, Math.min(5.2, averageRoomHeight(value)))
+      : mode === 'arpg'
+        ? THREE.MathUtils.clamp(averageRoomHeight(value) * .66, 2.35, 2.9)
+        : 1.18
   const rowHeight = 0.46
   const rows = Math.max(2, Math.ceil(wallHeight / rowHeight))
   const samples: BoundaryBrick[] = []
@@ -834,37 +839,86 @@ function addPerimeterWalls(
   }
 
   if (!samples.length) return
+
+  // ARPG walls now have real crypt height. Keep them in small local chunks so
+  // the existing camera ray can fade only the foreground section between the
+  // camera and player instead of forcing the entire dungeon perimeter low.
+  const chunkSize = mode === 'arpg' ? 6.4 : 99999
+  const chunks = new Map<string, BoundaryBrick[]>()
+  for (const sample of samples) {
+    const key =
+      mode === 'arpg'
+        ? `${Math.floor(sample.x / chunkSize)}:${Math.floor(sample.z / chunkSize)}`
+        : 'all'
+    const chunk = chunks.get(key)
+    if (chunk) chunk.push(sample)
+    else chunks.set(key, [sample])
+  }
+
   const geometry = new THREE.BoxGeometry(1, 1, 1)
-  const material = new THREE.MeshStandardMaterial({
+  const baseMaterial = new THREE.MeshStandardMaterial({
     color: atmosphere.wall,
     roughness: 0.93,
     metalness: 0.005,
     vertexColors: true,
     emissive: new THREE.Color(atmosphere.wall),
-    emissiveIntensity: topDown ? 0.16 : 0.1,
+    emissiveIntensity: mode === 'arpg' ? 0.12 : topDown ? 0.16 : 0.1,
   })
-  const mesh = new THREE.InstancedMesh(geometry, material, samples.length)
-  mesh.name = 'DungeonV3Perimeter'
-  mesh.userData.dungeonWall = true
   const dummy = new THREE.Object3D()
   const white = new THREE.Color(0xffffff)
-  samples.forEach((sample, index) => {
-    const heightScale = rowHeight * (sample.cap ? 0.64 : sample.base ? 0.88 : sample.damaged ? 0.68 : 0.8)
-    const depthScale = topDown
-      ? sample.cap ? 0.42 : sample.base ? 0.38 : 0.3
-      : sample.cap ? 0.58 : sample.base ? 0.52 : 0.42
-    const outward = depthScale * 0.52
-    dummy.position.set(sample.x + sample.nx * outward, sample.y, sample.z + sample.nz * outward)
-    dummy.rotation.set(0, sample.yaw, 0)
-    dummy.scale.set(sample.length, heightScale, depthScale)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(index, dummy.matrix)
-    const color = white.clone().multiplyScalar(sample.shade + (sample.cap ? 0.1 : sample.base ? -0.03 : 0))
-    mesh.setColorAt(index, color)
-  })
-  mesh.castShadow = true
-  mesh.receiveShadow = true
-  root.add(mesh)
+
+  for (const [chunkKey, chunkSamples] of chunks) {
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      baseMaterial.clone(),
+      chunkSamples.length,
+    )
+    mesh.name =
+      mode === 'arpg'
+        ? `DungeonV3Perimeter:${chunkKey}`
+        : 'DungeonV3Perimeter'
+    mesh.userData.dungeonWall = true
+    mesh.userData.skillboundOccluder = mode === 'arpg'
+
+    chunkSamples.forEach((sample, index) => {
+      const heightScale =
+        rowHeight *
+        (
+          sample.cap ? 0.7 :
+            sample.base ? 0.92 :
+              sample.damaged ? 0.72 :
+                0.84
+        )
+      const depthScale =
+        mode === 'arpg'
+          ? sample.cap ? 0.5 : sample.base ? 0.45 : 0.36
+          : topDown
+            ? sample.cap ? 0.42 : sample.base ? 0.38 : 0.3
+            : sample.cap ? 0.58 : sample.base ? 0.52 : 0.42
+      const outward = depthScale * 0.52
+      dummy.position.set(
+        sample.x + sample.nx * outward,
+        sample.y,
+        sample.z + sample.nz * outward,
+      )
+      dummy.rotation.set(0, sample.yaw, 0)
+      dummy.scale.set(sample.length, heightScale, depthScale)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+      const color = white
+        .clone()
+        .multiplyScalar(
+          sample.shade +
+            (sample.cap ? 0.1 : sample.base ? -0.03 : 0),
+        )
+      mesh.setColorAt(index, color)
+    })
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    root.add(mesh)
+  }
+
+  baseMaterial.dispose()
 }
 
 type V3ArtMaterials = {
