@@ -350,11 +350,67 @@ try {
     )}\n`,
   )
 
+  const performanceReport = {
+    format:
+      'forge-dungeon-render-health',
+    version: 1,
+    forgeVersion:
+      metadata.forgeVersion,
+    forgeBuild:
+      metadata.forgeBuild,
+    capturedAt:
+      manifest.capturedAt,
+    dungeonName:
+      metadata.dungeonName,
+    dungeonTheme:
+      metadata.dungeonTheme,
+    seed:
+      metadata.seed,
+    summary:
+      metadata.renderSummary,
+    views:
+      metadata.renderMetrics,
+  }
+
+  await writeFile(
+    resolve(
+      outputDir,
+      'performance.json',
+    ),
+    `${JSON.stringify(
+      performanceReport,
+      null,
+      2,
+    )}\n`,
+  )
+
+  const performanceMarkdown =
+    renderPerformanceMarkdown(
+      performanceReport,
+    )
+
+  await writeFile(
+    resolve(
+      outputDir,
+      'performance.md',
+    ),
+    performanceMarkdown,
+  )
+
   console.log(
     [
       'Dungeon Visual QA capture complete.',
       `Contact sheet: ${contactSheet}`,
       `Views: ${viewIds.join(', ')}`,
+      '',
+      'Dungeon renderer health:',
+      JSON.stringify(
+        performanceReport.summary,
+      ),
+      '',
+      renderPerformanceConsole(
+        performanceReport,
+      ),
     ].join('\n'),
   )
 } finally {
@@ -378,6 +434,80 @@ try {
       }
     }
   }
+}
+
+function renderPerformanceMarkdown(
+  report,
+) {
+  const rows =
+    Object.entries(report.views)
+      .map(([id, metrics]) =>
+        [
+          `| ${id}`,
+          metrics.drawCalls,
+          formatNumber(metrics.triangles),
+          metrics.lights,
+          metrics.shadowLights,
+          metrics.geometries,
+          metrics.textures,
+          metrics.renderMs.average.toFixed(1),
+          metrics.renderMs.p95.toFixed(1),
+          '|',
+        ].join(' | '),
+      )
+      .join('\n')
+
+  return [
+    '# Dungeon Renderer Health',
+    '',
+    `Forge v${report.forgeVersion} · ${report.forgeBuild}`,
+    `Dungeon: ${report.dungeonName} · ${report.dungeonTheme}`,
+    '',
+    '| View | Draw calls | Triangles | Lights | Shadow lights | Geometries | Textures | Avg render ms | P95 render ms |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    rows,
+    '',
+    '## Peak summary',
+    '',
+    `- Max draw calls: **${report.summary.maxDrawCalls}**`,
+    `- Max triangles: **${formatNumber(report.summary.maxTriangles)}**`,
+    `- Max geometries: **${report.summary.maxGeometries}**`,
+    `- Max textures: **${report.summary.maxTextures}**`,
+    `- Max lights: **${report.summary.maxLights}**`,
+    `- Max shadow lights: **${report.summary.maxShadowLights}**`,
+    `- Slowest average render: **${report.summary.slowestAverageRenderMs.toFixed(1)} ms**`,
+    `- Slowest p95 render: **${report.summary.slowestP95RenderMs.toFixed(1)} ms**`,
+    '',
+    '> Render timings come from CI/headless WebGL and are intended for same-run/release regression tracking, not as a direct estimate of player FPS.',
+    '',
+  ].join('\n')
+}
+
+function renderPerformanceConsole(
+  report,
+) {
+  return Object.entries(report.views)
+    .map(([id, metrics]) =>
+      [
+        id.padEnd(11),
+        `calls=${String(metrics.drawCalls).padStart(4)}`,
+        `tris=${String(metrics.triangles).padStart(8)}`,
+        `lights=${String(metrics.lights).padStart(3)}`,
+        `geo=${String(metrics.geometries).padStart(3)}`,
+        `tex=${String(metrics.textures).padStart(3)}`,
+        `avg=${metrics.renderMs.average.toFixed(1).padStart(6)}ms`,
+        `p95=${metrics.renderMs.p95.toFixed(1).padStart(6)}ms`,
+      ].join('  '),
+    )
+    .join('\n')
+}
+
+function formatNumber(
+  value,
+) {
+  return new Intl.NumberFormat(
+    'en-US',
+  ).format(value)
 }
 
 function npmCommand() {
