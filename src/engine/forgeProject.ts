@@ -179,6 +179,7 @@ const LEGACY_V3_KEY = 'forge-project:skillbound:v3'
 const LEGACY_V2_KEY = 'forge-project:skillbound:v2'
 const LEGACY_V1_KEY = 'forge-project:skillbound:v1'
 const PROJECT_ROOT = './projects/skillbound/'
+let skillboundWorkspacePromise: Promise<ForgeProjectWorkspace> | undefined
 
 export async function loadSkillboundWorkspace(forceBundled = false): Promise<ForgeProjectWorkspace> {
   const workspace = await loadWorkspaceContent(forceBundled)
