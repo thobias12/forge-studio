@@ -33,6 +33,7 @@ const DB_NAME = 'forge-studio-library'
 const DB_VERSION = 1
 const ASSETS = 'assets'
 const PROJECTS = 'projects'
+let assetListPromise: Promise<LibraryAsset[]> | undefined
 
 const DEFAULT_PROJECTS: ProjectProfile[] = [
   { id: 'ashford', name: 'Ashford', repo: 'thobias12/ashford', assetPath: 'public/assets/forge' },
