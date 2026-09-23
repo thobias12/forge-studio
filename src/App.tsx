@@ -268,7 +268,7 @@ export default function App() {
           </div>
           <div className="topbar-right"><span className="engine-pill">{projectContext ? 'SKILLBOUND · PROJECT CONTEXT' : 'FORGE RUNTIME · THREE.JS'}</span><span className="session-dot" /> Skillbound project</div>
         </header>
-        <div className="content-area">
+        <div className="content-area"><Suspense fallback={<div className="center-state">Loading Forge tool…</div>}>
           {page === 'home' && <Dashboard registry={registry} onNavigate={(target) => navigate(target)} />}
           {page === 'projects' && <ProjectManager onOpenWorld={() => navigate('world')} onOpenGameplay={() => navigate('gameplay')} />}
           {page === 'world' && <WorldForge />}
