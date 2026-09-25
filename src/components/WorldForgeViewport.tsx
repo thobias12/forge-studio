@@ -1060,8 +1060,9 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   const reeds = visibleDressing.filter((item) => item.type === 'reeds')
   const bankPatches = visibleDressing.filter((item) => item.type === 'bank-patch')
   const leafPatches = visibleDressing.filter((item) => item.type === 'leaf-patch')
-  const flowerPatches = visibleDressing.filter((item) => item.type === 'flower-patch')
-  const mudPatches = visibleDressing.filter((item) => item.type === 'mud-patch')
+const flowerPatches = visibleDressing.filter((item) => item.type === 'flower-patch')
+const mushroomPatches = visibleDressing.filter((item) => item.type === 'mushroom-patch')
+const mudPatches = visibleDressing.filter((item) => item.type === 'mud-patch')
   const corruptScars = visibleDressing.filter((item) => item.type === 'corrupt-scar')
   const rockOutcrops = visibleDressing.filter((item) => item.type === 'rock-outcrop')
   const hedges = visibleDressing.filter((item) => item.type === 'hedge')
@@ -1274,10 +1275,112 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
         else cool.setMatrixAt(coolCursor++, matrix)
       }
     })
-    group.add(warm, cool)
-  }
+group.add(warm, cool)
+}
 
-  if (rockOutcrops.length) {
+if (mushroomPatches.length) {
+const mushroomsPerPatch = 5
+const stemGeometry = new THREE.CylinderGeometry(.035, .052, .2, 5)
+const capGeometry = new THREE.SphereGeometry(
+.13,
+7,
+4,
+0,
+Math.PI * 2,
+0,
+Math.PI * .55,
+)
+const stemMaterial = new THREE.MeshStandardMaterial({
+color: 0xc9b894,
+roughness: 1,
+})
+const capMaterial = new THREE.MeshStandardMaterial({
+color: new THREE.Color(palette.fern)
+.lerp(new THREE.Color(0x9b6b52), .72)
+.multiplyScalar(.95),
+roughness: .95,
+flatShading: true,
+})
+const stemMesh = new THREE.InstancedMesh(
+stemGeometry,
+stemMaterial,
+mushroomPatches.length * mushroomsPerPatch,
+)
+const capMesh = new THREE.InstancedMesh(
+capGeometry,
+capMaterial,
+mushroomPatches.length * mushroomsPerPatch,
+)
+const matrix = new THREE.Matrix4()
+const quaternion = new THREE.Quaternion()
+const scale = new THREE.Vector3()
+let cursor = 0
+
+mushroomPatches.forEach((item) => {
+  for (let mushroom = 0; mushroom < mushroomsPerPatch; mushroom += 1) {
+    const angle =
+      item.rotation +
+      mushroom * 2.399963 +
+      item.variant * .37
+    const radius =
+      mushroom === 0
+        ? 0
+        : (.12 + (mushroom % 3) * .095) * item.scale
+    const individualScale =
+      item.scale * (.58 + (mushroom % 3) * .14)
+    const x = item.x + Math.cos(angle) * radius
+    const z = item.z + Math.sin(angle) * radius
+    const height = .16 * individualScale
+
+    quaternion.setFromEuler(
+      new THREE.Euler(
+        (mushroom % 2 ? -.05 : .04),
+        angle,
+        (mushroom % 3 - 1) * .045,
+      ),
+    )
+    scale.set(
+      individualScale,
+      individualScale * (.82 + (mushroom % 2) * .12),
+      individualScale,
+    )
+    matrix.compose(
+      new THREE.Vector3(
+        x,
+        item.y + height * .5 + .015,
+        z,
+      ),
+      quaternion,
+      scale,
+    )
+    stemMesh.setMatrixAt(cursor, matrix)
+
+    scale.set(
+      individualScale * (1.05 + (mushroom % 2) * .12),
+      individualScale * (.72 + (mushroom % 3) * .07),
+      individualScale * (1 + ((mushroom + 1) % 2) * .1),
+    )
+    matrix.compose(
+      new THREE.Vector3(
+        x,
+        item.y + height + .07 * individualScale,
+        z,
+      ),
+      quaternion,
+      scale,
+    )
+    capMesh.setMatrixAt(cursor, matrix)
+    cursor += 1
+  }
+})
+stemMesh.instanceMatrix.needsUpdate = true
+capMesh.instanceMatrix.needsUpdate = true
+capMesh.castShadow = true
+group.add(stemMesh, capMesh)
+
+}
+
+if (rockOutcrops.length) {
     const geometry = new THREE.DodecahedronGeometry(.72, 0)
     const material = new THREE.MeshStandardMaterial({
       color: new THREE.Color(palette.rock).multiplyScalar(.9),

@@ -3,7 +3,7 @@ import { FORGE_WORLD_SCALE } from './worldScale'
 
 export type GeneratedRegionNodeKind = 'entry' | 'route' | 'exit' | 'branch' | 'landmark' | 'encounter'
 export type WorldPoiType = 'ruins' | 'camp' | 'shrine' | 'standing-stones' | 'beast-den' | 'graveyard' | 'watchtower' | 'settlement' | 'dungeon'
-export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch' | 'leaf-patch' | 'flower-patch' | 'mud-patch' | 'corrupt-scar' | 'rock-outcrop' | 'hedge' | 'root-cluster'
+export type WorldDressingType = 'tree' | 'dead-tree' | 'rock' | 'fern' | 'fallen-log' | 'stump' | 'grass' | 'shrub' | 'reeds' | 'bank-patch' | 'leaf-patch' | 'flower-patch' | 'mushroom-patch' | 'mud-patch' | 'corrupt-scar' | 'rock-outcrop' | 'hedge' | 'root-cluster'
 export type WorldMicroBiomeType = 'forest-floor' | 'moss' | 'meadow' | 'scrub' | 'rocky'
 export type WorldMood = 'normal' | 'dark' | 'deadwood' | 'bleak'
 
@@ -4080,7 +4080,14 @@ function buildDressing(
     if (nearRiver && random() < clamp(.58 * profile.reedBias, .22, .92)) type = 'reeds'
     else if (micro.rocky * profile.rockBias > .38 && roll < clamp(.5 + profile.rockBias * .16, .58, .9)) type = 'rock'
     else if (micro.meadow * profile.meadowBias > .36 && roll < clamp(.54 + profile.meadowBias * .16, .64, .94)) type = roll < .62 ? 'grass' : 'shrub'
-    else if (micro.moss * profile.mossBias > .42 && roll < clamp(.45 + profile.mossBias * .13, .54, .88)) type = roll < .22 ? 'rock' : 'fern'
+    else if (micro.moss * profile.mossBias > .42 && roll < clamp(.45 + profile.mossBias * .13, .54, .88)) {
+type =
+roll < .13
+? 'mushroom-patch'
+: roll < .25
+? 'rock'
+: 'fern'
+}
     else if (micro.scrub * profile.scrubBias > .38 && roll < clamp(.5 + profile.scrubBias * .14, .6, .9)) type = roll < .5 ? 'shrub' : 'fern'
     else if (roll < treeThreshold) {
       type = random() < clamp(profile.deadTreeBias + moodProfile.deadTreeAdd, 0, .86) ? 'dead-tree' : 'tree'
@@ -4153,11 +4160,13 @@ function buildDressing(
       ? (.62 + random() * 1.08) * profile.treeScale * FORGE_WORLD_SCALE.treeScale
       : type === 'rock'
         ? (.55 + random() * .82) * profile.rockScale
-        : type === 'grass' || type === 'reeds'
-          ? .45 + random() * .55
-          : type === 'shrub'
-            ? .55 + random() * .65
-            : .55 + random() * .82
+: type === 'grass' || type === 'reeds'
+? .45 + random() * .55
+: type === 'mushroom-patch'
+? .62 + random() * .52
+: type === 'shrub'
+? .55 + random() * .65
+: .55 + random() * .82
 
     dressing.push({
       id: `dress-${dressing.length}`,
@@ -4407,18 +4416,41 @@ function appendBiomeSignatureDressing(
     return
   }
 
-  // Ancient Forest / default woodland gets a small amount of exposed roots
-  // rather than a new bright surface treatment.
-  pushSignature('root-cluster', 11, {
-    minPath: 3.7,
-    minRiver: 1.2,
-    scaleMin: .78,
-    scaleMax: 1.3,
-    accept: (_x, _z, micro) =>
-      micro['forest-floor'] > .12 ||
-      micro.moss > .12 ||
-      random() < .22,
-  })
+// Ancient Forest / default woodland gets layered pockets of roots, fungi and
+// restrained flowers. Each dressing item expands into a compact visual cluster
+// in the renderer, so the forest gains readable ecological rhythm without
+// turning the whole map into uniformly dense procedural noise.
+pushSignature('mushroom-patch', 18, {
+minPath: 3.25,
+minRiver: 1.15,
+minPoi: 2.8,
+scaleMin: .72,
+scaleMax: 1.22,
+accept: (_x, _z, micro) =>
+micro.moss > .11 ||
+micro['forest-floor'] > .16 ||
+random() < .18,
+})
+pushSignature('flower-patch', 12, {
+minPath: 3.1,
+minRiver: 1.2,
+minPoi: 2.8,
+scaleMin: .72,
+scaleMax: 1.18,
+accept: (_x, _z, micro) =>
+micro.meadow > .1 ||
+(micro['forest-floor'] > .12 && random() < .28),
+})
+pushSignature('root-cluster', 11, {
+minPath: 3.7,
+minRiver: 1.2,
+scaleMin: .78,
+scaleMax: 1.3,
+accept: (_x, _z, micro) =>
+micro['forest-floor'] > .12 ||
+micro.moss > .12 ||
+random() < .22,
+})
 }
 
 function appendPoiTransitionDressing(
