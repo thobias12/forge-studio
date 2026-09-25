@@ -1,5 +1,11 @@
 import { forestGlow } from './forestAtmosphere'
-import { forestGrass } from './forestGeometry'
+import {
+forestFern,
+forestGrass,
+forestLog,
+forestSapling,
+forestShrub,
+} from './forestGeometry'
 import * as THREE from 'three'
 import {
   buildRiverOccupancyMask,
@@ -104,8 +110,9 @@ export function buildWorldAmbientVisuals(
 
   addGrass(group, region, anchors.filter((item) => item.kind === 'grass'))
   addFlowers(group, region, anchors.filter((item) => item.kind === 'flower'))
-  addMushrooms(group, region, anchors.filter((item) => item.kind === 'mushroom'))
-  addLanterns(group, actors, region, anchors.filter((item) => item.kind === 'lantern'))
+addMushrooms(group, region, anchors.filter((item) => item.kind === 'mushroom'))
+addUnderstoryCommunities(group, region)
+addLanterns(group, actors, region, anchors.filter((item) => item.kind === 'lantern'))
   addFireflies(group, actors, region, anchors.filter((item) => item.kind === 'firefly'))
   addBirds(group, actors, region, anchors.filter((item) => item.kind === 'bird'))
 
@@ -619,6 +626,242 @@ function pointSegmentDistance(
     1,
   )
   return Math.hypot(px - (ax + dx * t), pz - (az + dz * t))
+}
+
+function addUnderstoryCommunities(
+group: THREE.Group,
+region: GeneratedRegion,
+) {
+const naturalAnchors = region.dressing.filter((item) =>
+item.type === 'tree' ||
+item.type === 'dead-tree' ||
+item.type === 'stump' ||
+item.type === 'root-cluster'
+)
+if (!naturalAnchors.length) return
+
+const random = seededAmbientRandom(region.seed ^ 0x72d391)
+const biome = region.biome.toLowerCase()
+const forestLike = /forest|wood|autumn/i.test(biome)
+const wet = /marsh|swamp|drowned/i.test(biome)
+const dead = region.mood === 'deadwood' || biome.includes('corrupt')
+const targetPatches = THREE.MathUtils.clamp(
+Math.round(naturalAnchors.length / 7),
+8,
+26,
+)
+
+type PlantInstance = {
+x: number
+z: number
+scale: number
+rotation: number
+variant: number
+}
+
+const shrubs: PlantInstance[] = []
+const ferns: PlantInstance[] = []
+const saplings: PlantInstance[] = []
+const logs: PlantInstance[] = []
+
+for (let patch = 0; patch < targetPatches; patch += 1) {
+const source = naturalAnchors[Math.floor(random() * naturalAnchors.length)]
+const patchAngle = random() * Math.PI * 2
+const patchRadius = 1.5 + random() * 2.4
+const community = Math.floor(random() * 4)
+
+const pushPlant = (
+  target: PlantInstance[],
+  radiusMin: number,
+  radiusMax: number,
+  scaleMin: number,
+  scaleMax: number,
+  minPath: number,
+  minRiver: number,
+  variant: number,
+) => {
+  const angle = patchAngle + (random() - .5) * Math.PI * 1.5
+  const distance = radiusMin + random() * (radiusMax - radiusMin)
+  const x = source.x + Math.cos(angle) * distance
+  const z = source.z + Math.sin(angle) * distance
+  if (!ambientGroundAllowed(region, x, z, minPath, minRiver)) return
+  target.push({
+    x,
+    z,
+    scale: scaleMin + random() * (scaleMax - scaleMin),
+    rotation: random() * Math.PI * 2,
+    variant,
+  })
+}
+
+const fernCount =
+  community === 0 ? 5 :
+    community === 1 ? 3 :
+      wet ? 4 : 2
+const shrubCount =
+  community === 1 ? 3 :
+    community === 2 ? 2 :
+      1
+
+for (let i = 0; i < fernCount; i += 1) {
+  pushPlant(
+    ferns,
+    .55,
+    patchRadius,
+    .72,
+    1.32,
+    1.45,
+    .62,
+    (patch + i) % 4,
+  )
+}
+for (let i = 0; i < shrubCount; i += 1) {
+  pushPlant(
+    shrubs,
+    .8,
+    patchRadius,
+    .82,
+    1.28,
+    1.75,
+    .72,
+    (patch * 3 + i) % 4,
+  )
+}
+
+if (forestLike && !dead && community !== 3 && random() < .72) {
+  pushPlant(
+    saplings,
+    1.2,
+    patchRadius + .45,
+    .78,
+    1.2,
+    2.15,
+    .85,
+    patch % 4,
+  )
+}
+if ((dead || community === 3) && random() < .68) {
+  pushPlant(
+    logs,
+    1,
+    patchRadius + .6,
+    .68,
+    1.18,
+    2.3,
+    1.05,
+    patch % 4,
+  )
+}
+
+}
+
+const root = new THREE.Group()
+root.name = 'Forest understory communities'
+const matrix = new THREE.Matrix4()
+const quaternion = new THREE.Quaternion()
+const scale = new THREE.Vector3()
+
+const addInstances = (
+items: PlantInstance[],
+geometry: THREE.BufferGeometry,
+material: THREE.Material,
+yOffset: number,
+scaleY = 1,
+castShadow = false,
+) => {
+if (!items.length) {
+geometry.dispose()
+material.dispose()
+return
+}
+const mesh = new THREE.InstancedMesh(geometry, material, items.length)
+items.forEach((item, index) => {
+const y = sampleTerrainHeight(region, item.x, item.z)
+quaternion.setFromEuler(
+new THREE.Euler(
+Math.sin(item.rotation * 1.7) * .035,
+item.rotation,
+Math.cos(item.rotation * 1.3) * .035,
+),
+)
+scale.set(item.scale, item.scale * scaleY, item.scale)
+matrix.compose(
+new THREE.Vector3(item.x, y + yOffset * item.scale, item.z),
+quaternion,
+scale,
+)
+mesh.setMatrixAt(index, matrix)
+})
+mesh.castShadow = castShadow
+mesh.receiveShadow = true
+root.add(mesh)
+}
+
+const underGreen =
+dead ? 0x485342 :
+wet ? 0x496a4d :
+biome.includes('autumn') ? 0x667044 :
+0x4b744a
+
+addInstances(
+shrubs,
+forestShrub(region.seed % 4),
+markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: underGreen,
+vertexColors: true,
+roughness: .92,
+flatShading: true,
+}),
+.64,
+),
+.02,
+1,
+true,
+)
+addInstances(
+ferns,
+forestFern(),
+markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: new THREE.Color(underGreen).multiplyScalar(.92),
+side: THREE.DoubleSide,
+roughness: .95,
+}),
+.88,
+),
+.02,
+1,
+)
+addInstances(
+saplings,
+forestSapling((region.seed >>> 3) % 4),
+markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: 0xffffff,
+vertexColors: true,
+roughness: .9,
+flatShading: true,
+}),
+.72,
+),
+.01,
+1,
+true,
+)
+addInstances(
+logs,
+forestLog(2.1),
+new THREE.MeshStandardMaterial({
+color: 0xffffff,
+vertexColors: true,
+roughness: 1,
+}),
+.18,
+.82,
+)
+
+group.add(root)
 }
 
 function addGrass(
