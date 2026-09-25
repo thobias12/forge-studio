@@ -1,6 +1,15 @@
 import { rollSkillboundLoot } from '../skillboundItems'
 import { forestPathMaterial, forestWaterMaterial } from '../forestAtmosphere'
-import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../forestGeometry'
+import {
+forestRock,
+forestLog,
+forestGrass,
+forestFern,
+forestFloorMaterial,
+forestDeadTree,
+forestArtDirectedSpeciesCrown as forestSpeciesCrown,
+forestArtDirectedTrunk as forestTrunk,
+} from '../forestGeometry'
 import * as THREE from 'three'
 import type {
   ForgeAbilityDefinition,
