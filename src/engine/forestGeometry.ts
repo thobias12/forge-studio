@@ -250,55 +250,79 @@ texture.needsUpdate=true
 return texture
 }
 
-export function forestShrub(variant=0) {
-const pieces:THREE.BufferGeometry[]=[]
-const base=new THREE.Color([0x456742,0x365b3c,0x596846,0x46553f][variant%4])
-for(let clump=0;clump<4;clump++) {
-const angle=clump2.18+variant.57
-const g=new THREE.IcosahedronGeometry(1,0).toNonIndexed()
-const s=.34+(clump%2).1
-g.scale(s1.18,s*.72,s)
-g.translate(Math.cos(angle)(.18+clump.035),.25+(clump%3).07,Math.sin(angle)(.18+clump*.035))
-const colors:number=[]
-for(let i=0;i<g.attributes.position.count;i++) {
-const c=base.clone().multiplyScalar(.72+(clump%3).09+g.attributes.position.getY(i).14)
-colors.push(c.r,c.g,c.b)
+export function forestShrub(variant = 0) {
+const pieces: THREE.BufferGeometry[] = []
+const base = new THREE.Color([0x456742, 0x365b3c, 0x596846, 0x46553f][variant % 4])
+
+for (let clump = 0; clump < 4; clump++) {
+const angle = clump * 2.18 + variant * .57
+const geometry = new THREE.IcosahedronGeometry(1, 0).toNonIndexed()
+const scale = .34 + (clump % 2) * .1
+geometry.scale(scale * 1.18, scale * .72, scale)
+geometry.translate(
+Math.cos(angle) * (.18 + clump * .035),
+.25 + (clump % 3) * .07,
+Math.sin(angle) * (.18 + clump * .035),
+)
+
+const colors: number[] = []
+for (let vertex = 0; vertex < geometry.attributes.position.count; vertex++) {
+  const color = base.clone().multiplyScalar(
+    .72 + (clump % 3) * .09 + geometry.attributes.position.getY(vertex) * .14,
+  )
+  colors.push(color.r, color.g, color.b)
 }
-g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
-pieces.push(g)
+geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+pieces.push(geometry)
+
 }
-const result=mergeGeometries(pieces)!
-pieces.forEach(g=>g.dispose())
+
+const result = mergeGeometries(pieces)!
+pieces.forEach((geometry) => geometry.dispose())
 result.computeVertexNormals()
 return result
 }
 
-export function forestSapling(variant=0) {
-const pieces:THREE.BufferGeometry[]=[]
-const trunk=new THREE.CylinderGeometry(.035,.07,1.42,6).toNonIndexed()
-trunk.translate(0,.71,0)
-const trunkColors:number=[],bark=new THREE.Color(0x58412f)
-for(let i=0;i<trunk.attributes.position.count;i++) {
-const c=bark.clone().multiplyScalar(.72+trunk.attributes.position.getY(i).09)
-trunkColors.push(c.r,c.g,c.b)
+export function forestSapling(variant = 0) {
+const pieces: THREE.BufferGeometry[] = []
+const trunk = new THREE.CylinderGeometry(.035, .07, 1.42, 6).toNonIndexed()
+trunk.translate(0, .71, 0)
+
+const trunkColors: number[] = []
+const bark = new THREE.Color(0x58412f)
+for (let vertex = 0; vertex < trunk.attributes.position.count; vertex++) {
+const color = bark.clone().multiplyScalar(
+.72 + trunk.attributes.position.getY(vertex) * .09,
+)
+trunkColors.push(color.r, color.g, color.b)
 }
-trunk.setAttribute('color',new THREE.Float32BufferAttribute(trunkColors,3))
+trunk.setAttribute('color', new THREE.Float32BufferAttribute(trunkColors, 3))
 pieces.push(trunk)
-const leafColor=new THREE.Color([0x50794b,0x3f7047,0x668153,0x4f6846][variant%4])
-for(let clump=0;clump<3;clump++) {
-const g=new THREE.IcosahedronGeometry(.34-clump.045,0).toNonIndexed()
-g.scale(1.12,.72,.94)
-g.translate((clump-1).16,1.05+clump.24,Math.sin(clump2.2+variant).12)
-const colors:number=[]
-for(let i=0;i<g.attributes.position.count;i++) {
-const c=leafColor.clone().multiplyScalar(.78+g.attributes.position.getY(i)*.1)
-colors.push(c.r,c.g,c.b)
+
+const leafColor = new THREE.Color([0x50794b, 0x3f7047, 0x668153, 0x4f6846][variant % 4])
+for (let clump = 0; clump < 3; clump++) {
+const geometry = new THREE.IcosahedronGeometry(.34 - clump * .045, 0).toNonIndexed()
+geometry.scale(1.12, .72, .94)
+geometry.translate(
+(clump - 1) * .16,
+1.05 + clump * .24,
+Math.sin(clump * 2.2 + variant) * .12,
+)
+
+const colors: number[] = []
+for (let vertex = 0; vertex < geometry.attributes.position.count; vertex++) {
+  const color = leafColor.clone().multiplyScalar(
+    .78 + geometry.attributes.position.getY(vertex) * .1,
+  )
+  colors.push(color.r, color.g, color.b)
 }
-g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
-pieces.push(g)
+geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+pieces.push(geometry)
+
 }
-const result=mergeGeometries(pieces)!
-pieces.forEach(g=>g.dispose())
+
+const result = mergeGeometries(pieces)!
+pieces.forEach((geometry) => geometry.dispose())
 result.computeVertexNormals()
 return result
 }
