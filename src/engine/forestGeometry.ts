@@ -336,7 +336,10 @@ segment(rootBase, rootMid, baseRadius * .28, baseRadius * .12, 6)
 segment(rootMid, rootTip, baseRadius * .12, .02, 5)
 }
 
-const branchPatterns = [
+const branchPatterns: ReadonlyArray<
+ReadonlyArray<readonly [number, number, number, number]>
+
+= [
 [
 [.43, .15, .98, .08], [.52, 2.34, 1.08, .09], [.61, 4.56, .95, .14],
 [.69, 1.28, .84, .18], [.77, 3.63, .72, .22],
@@ -353,7 +356,7 @@ const branchPatterns = [
 [.42, -.18, 1.26, .08], [.5, .38, 1.34, .12], [.58, -.45, 1.18, .16],
 [.66, .2, 1.05, .2], [.74, -.28, .9, .24],
 ],
-] as const
+]
 
 branchPatterns[species].forEach(([t, angle, reach, rise], branch) => {
 const start = centerAt(t)
