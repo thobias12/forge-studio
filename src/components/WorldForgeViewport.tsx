@@ -1,5 +1,5 @@
 import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
-import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestArtDirectedCrown as forestSpeciesCrown, forestArtDirectedTrunk as forestTrunk, forestFoliageTexture } from '../engine/forestGeometry'
+import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestArtDirectedCrown as forestSpeciesCrown, forestArtDirectedTrunk as forestTrunk, forestBarkTexture, forestFoliageTexture } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -1441,44 +1441,63 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (trees.length) {
-    const trunkGeometry = forestTrunk()
-    const trunkMaterial = markWorldWindMaterial(
-      new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
-      .16,
-    )
-    const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
-    const matrix = new THREE.Matrix4()
-    const quaternion = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
+const matrix = new THREE.Matrix4()
+const quaternion = new THREE.Quaternion()
+const scale = new THREE.Vector3()
+const buckets = [0, 1, 2, 3].map((variant) =>
+trees.filter((item) => item.variant === variant)
+)
 
-    trees.forEach((item, index) => {
-      const displayScale = forgeTreePresentationScale(item.scale)
-      quaternion.setFromEuler(
-        new THREE.Euler(
-          corruptTrees ? (item.variant - 1.5) * .035 : 0,
-          item.rotation,
-          corruptTrees ? (item.variant % 2 ? -.045 : .045) : 0,
-        ),
-      )
-      scale.set(
-        displayScale * (.9 + item.variant * .02),
-        displayScale * (1 + item.variant * .025),
-        displayScale * (.9 + item.variant * .02),
-      )
-      matrix.compose(
-        new THREE.Vector3(item.x, item.y + 1.66 * displayScale, item.z),
-        quaternion,
-        scale,
-      )
-      trunks.setMatrixAt(index, matrix)
-    })
-    trunks.castShadow = true
-    trunks.receiveShadow = true
-    group.add(trunks)
-
-    const buckets = [0, 1, 2, 3].map((variant) =>
-      trees.filter((item) => item.variant === variant)
+buckets.forEach((items, variant) => {
+  if (!items.length) return
+  const barkTexture = forestBarkTexture(variant)
+  const trunkMaterial = markWorldWindMaterial(
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: barkTexture,
+      roughness: .94,
+      metalness: 0,
+      vertexColors: true,
+      flatShading: true,
+    }),
+    .13,
+  )
+  const trunks = new THREE.InstancedMesh(
+    forestTrunk(variant),
+    trunkMaterial,
+    items.length,
+  )
+  items.forEach((item, index) => {
+    const displayScale = forgeTreePresentationScale(item.scale)
+    const shape = Math.sin(
+      item.x * .173 + item.z * .119 + variant * 1.91,
+    ) * .5
+    quaternion.setFromEuler(
+      new THREE.Euler(
+        corruptTrees ? (variant - 1.5) * .035 : shape * .018,
+        item.rotation,
+        corruptTrees ? (variant % 2 ? -.045 : .045) : shape * .012,
+      ),
     )
+    const trunkWidth = [1, 1.12, .9, .96][variant]
+    const trunkHeight = [1.04, .97, 1.06, 1.05][variant]
+    scale.set(
+      displayScale * trunkWidth * (1 + shape * .045),
+      displayScale * trunkHeight * (1 - shape * .025),
+      displayScale * trunkWidth * (1 - shape * .035),
+    )
+    matrix.compose(
+      new THREE.Vector3(item.x, item.y + 1.66 * displayScale, item.z),
+      quaternion,
+      scale,
+    )
+    trunks.setMatrixAt(index, matrix)
+  })
+  trunks.castShadow = true
+  trunks.receiveShadow = true
+  group.add(trunks)
+})
+
     const lowerGeometries: THREE.BufferGeometry[] = [
       forestSpeciesCrown(1.52, 2.75, 0, 0),
       forestSpeciesCrown(1.72, 2.35, 1, 0),
