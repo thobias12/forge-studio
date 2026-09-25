@@ -1,5 +1,5 @@
 import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
-import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../engine/forestGeometry'
+import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestArtDirectedCrown as forestSpeciesCrown, forestArtDirectedTrunk as forestTrunk, forestFoliageTexture } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -1508,27 +1508,31 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       const variantColor = new THREE.Color(
         treeVariantColors[variant] ?? palette.tree,
       )
-      const lowerMaterial = markWorldWindMaterial(
-        new THREE.MeshStandardMaterial({
-          color: variantColor.clone().multiplyScalar(.9),
-          roughness: 1, vertexColors: true,
-        }),
-        .48,
-      )
-      const middleMaterial = markWorldWindMaterial(
-        new THREE.MeshStandardMaterial({
-          color: variantColor,
-          roughness: 1, vertexColors: true,
-        }),
-        .68,
-      )
-      const upperMaterial = markWorldWindMaterial(
-        new THREE.MeshStandardMaterial({
-          color: variantColor.clone().multiplyScalar(1.1),
-          roughness: 1, vertexColors: true,
-        }),
-        .9,
-      )
+const foliageTexture = forestFoliageTexture(variant)
+const lowerMaterial = markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: variantColor.clone().multiplyScalar(.88),
+map: foliageTexture,
+roughness: .88, metalness: 0, vertexColors: true, flatShading: true,
+}),
+.46,
+)
+const middleMaterial = markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: variantColor,
+map: foliageTexture,
+roughness: .84, metalness: 0, vertexColors: true, flatShading: true,
+}),
+.66,
+)
+const upperMaterial = markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: variantColor.clone().multiplyScalar(1.08),
+map: foliageTexture,
+roughness: .8, metalness: 0, vertexColors: true, flatShading: true,
+}),
+.88,
+)
       const lower = new THREE.InstancedMesh(
         lowerGeometries[variant],
         lowerMaterial,
@@ -1552,7 +1556,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
       items.forEach((item, index) => {
         const displayScale = forgeTreePresentationScale(item.scale)
-        const broadleaf = variant === 2
+        const broadleaf = variant === 1 || variant === 2
         const cos = Math.cos(item.rotation)
         const sin = Math.sin(item.rotation)
         const worldOffset = (localX: number, localZ: number) => ({
