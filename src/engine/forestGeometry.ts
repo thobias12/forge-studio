@@ -246,20 +246,32 @@ texture.needsUpdate = true
 return texture
 }
 
-export function forestFoliageTexture(variant=0) {
-const size=32,data=new Uint8Array(sizesize4)
-for(let y=0;y<size;y++) for(let x=0;x<size;x++) {
-const i=(ysize+x)4
-const broad=Math.sin(x.39+y.23+variant1.9).5+.5
-const clusters=Math.sin(x*.83-y*.61+variant*.73).5+.5
-const value=THREE.MathUtils.clamp(Math.round(158+broad52+clusters*30),118,240)
-data[i]=value;data[i+1]=value;data[i+2]=value;data[i+3]=255
+export function forestFoliageTexture(variant = 0) {
+const size = 32
+const data = new Uint8Array(size * size * 4)
+
+for (let y = 0; y < size; y++) {
+for (let x = 0; x < size; x++) {
+const i = (y * size + x) * 4
+const broad = Math.sin(x * .39 + y * .23 + variant * 1.9) * .5 + .5
+const clusters = Math.sin(x * .83 - y * .61 + variant * .73) * .5 + .5
+const value = THREE.MathUtils.clamp(
+Math.round(158 + broad * 52 + clusters * 30),
+118,
+240,
+)
+data[i] = value
+data[i + 1] = value
+data[i + 2] = value
+data[i + 3] = 255
 }
-const texture=new THREE.DataTexture(data,size,size,THREE.RGBAFormat)
-texture.colorSpace=THREE.SRGBColorSpace
-texture.wrapS=texture.wrapT=THREE.RepeatWrapping
-texture.repeat.set(2.2,2.2)
-texture.needsUpdate=true
+}
+
+const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat)
+texture.colorSpace = THREE.SRGBColorSpace
+texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+texture.repeat.set(2.2, 2.2)
+texture.needsUpdate = true
 return texture
 }
 
