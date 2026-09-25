@@ -79,64 +79,99 @@ export function forestSpeciesCrown(radius:number,height:number,variant:number,ti
   return g
 }
 
-export function forestArtDirectedCrown(radius:number,height:number,variant:number,tier:number) {
-const species=((variant%4)+4)%4
-const pieces:THREE.BufferGeometry[]=[]
-const profiles=[
-{count:12,spread:.88,vertical:1.08,depth:.82,drift:.02},
-{count:13,spread:1.24,vertical:.66,depth:1.12,drift:-.04},
-{count:11,spread:.96,vertical:.92,depth:1.02,drift:.05},
-{count:10,spread:1.08,vertical:.78,depth:.74,drift:.34},
+export function forestArtDirectedCrown(radius: number, height: number, variant: number, tier: number) {
+const species = ((variant % 4) + 4) % 4
+const pieces: THREE.BufferGeometry[] = []
+const profiles = [
+{ count: 12, spread: .88, vertical: 1.08, depth: .82, drift: .02 },
+{ count: 13, spread: 1.24, vertical: .66, depth: 1.12, drift: -.04 },
+{ count: 11, spread: .96, vertical: .92, depth: 1.02, drift: .05 },
+{ count: 10, spread: 1.08, vertical: .78, depth: .74, drift: .34 },
 ] as const
-const profile=profiles[species]
-for(let clump=0;clump<profile.count;clump++) {
-const layer=clump/Math.max(1,profile.count-1)
-const angle=clump2.399963+species1.17+tier*.61
-const wave=.5+.5Math.sin(clump1.71+species2.13+tier.77)
-const signed=layer2-1
-let reach=radius(.18+(clump%4).105)
-let y=signedheight*.42
-let sx=radius*(.31+wave*.13)
-let sy=height*(.13+(clump%3).012)
-let sz=radius(.31+(1-wave).12)
-if(species===0) {
-const taper=THREE.MathUtils.lerp(1.08,.24,layer)
-reach=taper1.55;sx=taper;sz*=taper;sy*=.84;y=(layer-.47)height
-} else if(species===1) {
-const dome=Math.sqrt(Math.max(.18,1-Math.pow(signed1.08,2)))
-reach*=dome1.48;sx=.9+dome*.36;sz*=.88+dome*.34;sy*=.78
-y=signedheight.31+Math.sin(angle1.4)height.045
-} else if(species===2) {
-const dome=Math.sqrt(Math.max(.2,1-Math.pow(signed.86,2)))
-reach*=dome1.2;sx=.82+dome*.24;sz*=.82+dome*.24;sy*=1.04;y=signedheight.43
+const profile = profiles[species]
+
+for (let clump = 0; clump < profile.count; clump++) {
+const layer = clump / Math.max(1, profile.count - 1)
+const angle = clump * 2.399963 + species * 1.17 + tier * .61
+const wave = .5 + .5 * Math.sin(clump * 1.71 + species * 2.13 + tier * .77)
+const signed = layer * 2 - 1
+let reach = radius * (.18 + (clump % 4) * .105)
+let y = signed * height * .42
+let sx = radius * (.31 + wave * .13)
+let sy = height * (.13 + (clump % 3) * .012)
+let sz = radius * (.31 + (1 - wave) * .12)
+
+if (species === 0) {
+  const taper = THREE.MathUtils.lerp(1.08, .24, layer)
+  reach *= taper * 1.55
+  sx *= taper
+  sz *= taper
+  sy *= .84
+  y = (layer - .47) * height
+} else if (species === 1) {
+  const dome = Math.sqrt(Math.max(.18, 1 - Math.pow(signed * 1.08, 2)))
+  reach *= dome * 1.48
+  sx *= .9 + dome * .36
+  sz *= .88 + dome * .34
+  sy *= .78
+  y = signed * height * .31 + Math.sin(angle * 1.4) * height * .045
+} else if (species === 2) {
+  const dome = Math.sqrt(Math.max(.2, 1 - Math.pow(signed * .86, 2)))
+  reach *= dome * 1.2
+  sx *= .82 + dome * .24
+  sz *= .82 + dome * .24
+  sy *= 1.04
+  y = signed * height * .43
 } else {
-const taper=THREE.MathUtils.lerp(1.02,.3,layer)
-reach*=taper1.36;sx=taper1.16;sz=taper*.86;sy*=.78;y=(layer-.46)height
+  const taper = THREE.MathUtils.lerp(1.02, .3, layer)
+  reach *= taper * 1.36
+  sx *= taper * 1.16
+  sz *= taper * .86
+  sy *= .78
+  y = (layer - .46) * height
 }
-const g=new THREE.IcosahedronGeometry(1,0).toNonIndexed()
-g.scale(sxprofile.spread,syprofile.vertical,szprofile.depth)
-g.rotateY(angle*.31+wave*.22)
-g.rotateZ((wave-.5)(species===1?.2:.1))
-g.translate(
-Math.cos(angle)reach+(species===3?THREE.MathUtils.lerp(-radius.12,radius.48,layer):profile.driftradiussigned),
-y+Math.sin(angle1.31)height.025,
-Math.sin(angle)reach,
+
+const geometry = new THREE.IcosahedronGeometry(1, 0).toNonIndexed()
+geometry.scale(
+  sx * profile.spread,
+  sy * profile.vertical,
+  sz * profile.depth,
 )
-const p=g.attributes.position,colors:number=[]
-for(let i=0;i<p.count;i++) {
-const nx=p.getX(i)/Math.max(.001,radius)
-const ny=p.getY(i)/Math.max(.001,height)
-const nz=p.getZ(i)/Math.max(.001,radius)
-const directional=THREE.MathUtils.clamp(nx-.07+ny.17+nz*.045,-.11,.13)
-const shade=.78+directional+tier*.018+(clump%3).026
-colors.push(shade.76,shade,shade*.69)
+geometry.rotateY(angle * .31 + wave * .22)
+geometry.rotateZ((wave - .5) * (species === 1 ? .2 : .1))
+geometry.translate(
+  Math.cos(angle) * reach + (
+    species === 3
+      ? THREE.MathUtils.lerp(-radius * .12, radius * .48, layer)
+      : profile.drift * radius * signed
+  ),
+  y + Math.sin(angle * 1.31) * height * .025,
+  Math.sin(angle) * reach,
+)
+
+const position = geometry.attributes.position
+const colors: number[] = []
+for (let index = 0; index < position.count; index++) {
+  const nx = position.getX(index) / Math.max(.001, radius)
+  const ny = position.getY(index) / Math.max(.001, height)
+  const nz = position.getZ(index) / Math.max(.001, radius)
+  const directional = THREE.MathUtils.clamp(
+    nx * -.07 + ny * .17 + nz * .045,
+    -.11,
+    .13,
+  )
+  const shade = .78 + directional + tier * .018 + (clump % 3) * .026
+  colors.push(shade * .76, shade, shade * .69)
 }
-g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
-g.computeVertexNormals()
-pieces.push(g)
+
+geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+geometry.computeVertexNormals()
+pieces.push(geometry)
+
 }
-const result=mergeGeometries(pieces)!
-pieces.forEach(g=>g.dispose())
+
+const result = mergeGeometries(pieces)!
+pieces.forEach((geometry) => geometry.dispose())
 return result
 }
 
