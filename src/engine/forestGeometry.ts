@@ -140,77 +140,181 @@ pieces.forEach(g=>g.dispose())
 return result
 }
 
-export function forestArtDirectedTrunk(variant=0) {
-const species=((variant%4)+4)%4
-const pieces:THREE.BufferGeometry[]=[]
-const height=[3.8,3.55,3.95,3.9][species]
-const baseRadius=[.32,.46,.285,.33][species]
-const lean=[
-new THREE.Vector2(.12,-.04),
-new THREE.Vector2(-.1,.08),
-new THREE.Vector2(.04,.025),
-new THREE.Vector2(.34,-.09),
+export function forestArtDirectedTrunk(variant = 0) {
+const species = ((variant % 4) + 4) % 4
+const pieces: THREE.BufferGeometry[] = []
+const rootY = -1.7
+const height = [3.78, 3.55, 3.92, 3.95][species]
+const baseRadius = [.32, .46, .29, .33][species]
+const lean = [
+new THREE.Vector2(.12, -.04),
+new THREE.Vector2(-.1, .08),
+new THREE.Vector2(.04, .025),
+new THREE.Vector2(.34, -.09),
 ][species]
-const segment=(a:THREE.Vector3,b:THREE.Vector3,br:number,tr:number,sides=7)=>{
-const d=b.clone().sub(a)
-const g=new THREE.CylinderGeometry(tr,br,d.length(),sides,1,false)
-g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize()))
-g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2)
-pieces.push(g.toNonIndexed())
-g.dispose()
+
+const segment = (
+a: THREE.Vector3,
+b: THREE.Vector3,
+bottomRadius: number,
+topRadius: number,
+sides = 7,
+) => {
+const direction = b.clone().sub(a)
+const geometry = new THREE.CylinderGeometry(
+topRadius,
+bottomRadius,
+direction.length(),
+sides,
+1,
+false,
+)
+geometry.applyQuaternion(
+new THREE.Quaternion().setFromUnitVectors(
+new THREE.Vector3(0, 1, 0),
+direction.clone().normalize(),
+),
+)
+geometry.translate(
+(a.x + b.x) / 2,
+(a.y + b.y) / 2,
+(a.z + b.z) / 2,
+)
+pieces.push(geometry.toNonIndexed())
+geometry.dispose()
 }
-const joints=[
-new THREE.Vector3(0,-1.7,0),
-new THREE.Vector3(lean.x*.1,-1.7+height*.24,lean.y*.08),
-new THREE.Vector3(lean.x*.31,-1.7+height*.5,lean.y*.34),
-new THREE.Vector3(lean.x*.62,-1.7+height*.74,lean.y*.63),
-new THREE.Vector3(lean.x,-1.7+height,lean.y),
+
+const joints = [
+new THREE.Vector3(0, rootY, 0),
+new THREE.Vector3(lean.x * .1, rootY + height * .24, lean.y * .08),
+new THREE.Vector3(lean.x * .31, rootY + height * .5, lean.y * .34),
+new THREE.Vector3(lean.x * .62, rootY + height * .74, lean.y * .63),
+new THREE.Vector3(lean.x, rootY + height, lean.y),
 ]
-const radii=[baseRadius,baseRadius*.76,baseRadius*.52,baseRadius*.3,baseRadius*.16]
-for(let i=0;i<joints.length-1;i++) segment(joints[i],joints[i+1],radii[i],radii[i+1],8)
-const rootCount=species===1?7:5
-for(let root=0;root<rootCount;root++) {
-const angle=root*(Math.PI2/rootCount)+species.41
-const length=(.48+(root%3).115)(species===1?1.24:species===3?1.08:1)
-const a=new THREE.Vector3(Math.cos(angle)baseRadius.38,-1.48,Math.sin(angle)baseRadius.38)
-const b=new THREE.Vector3(Math.cos(angle)length.58,-1.65,Math.sin(angle)length.58)
-const c=new THREE.Vector3(Math.cos(angle)length,-1.725+(root%2).018,Math.sin(angle)length)
-segment(a,b,baseRadius.28,baseRadius*.12,6)
-segment(b,c,baseRadius*.12,.02,5)
-}
-const patterns:Array<Array<[number,number,number,number]>>=[
-[[.43,.15,.98,.08],[.52,2.34,1.08,.09],[.61,4.56,.95,.14],[.69,1.28,.84,.18],[.77,3.63,.72,.22]],
-[[.4,.18,1.32,.22],[.46,2.12,1.48,.18],[.54,4.18,1.4,.26],[.62,1.1,1.26,.32],[.69,3.08,1.12,.38],[.76,5.18,.94,.44]],
-[[.46,.3,.88,.24],[.55,2.55,.92,.3],[.64,4.76,.84,.34],[.72,1.54,.75,.4],[.8,3.8,.64,.46]],
-[[.42,-.18,1.26,.08],[.5,.38,1.34,.12],[.58,-.45,1.18,.16],[.66,.2,1.05,.2],[.74,-.28,.9,.24]],
+const radii = [
+baseRadius,
+baseRadius * .76,
+baseRadius * .52,
+baseRadius * .3,
+baseRadius * .16,
 ]
-patterns[species].forEach(([t,angle,reach,rise],branch)=>{
-const start=new THREE.Vector3(lean.xt,-1.7+heightt,lean.yt)
-const a=species===3?angle.42:angle
-const sweep=species===3?reach*.55:0
-const mid=start.clone().add(new THREE.Vector3(Math.cos(a)reach.58+sweep,rise,Math.sin(a)reach.58))
-const tip=mid.clone().add(new THREE.Vector3(Math.cos(a+.18)reach.5+sweep*.3,rise*.82+.1,Math.sin(a+.18)reach.5))
-const r=baseRadius*(species===1?.28:.23)(1-t.28)
-segment(start,mid,r,r*.48,6)
-segment(mid,tip,r*.5,.018,5)
-if(species===1&&branch%2===1) {
-const fork=mid.clone().add(new THREE.Vector3(Math.cos(a-.8)reach.4,.34,Math.sin(a-.8)reach.4))
-segment(mid,fork,r*.34,.014,5)
+for (let index = 0; index < joints.length - 1; index++) {
+segment(joints[index], joints[index + 1], radii[index], radii[index + 1], 8)
 }
+
+const centerAt = (t: number) => {
+const scaled = THREE.MathUtils.clamp(t, 0, .999) * (joints.length - 1)
+const index = Math.min(joints.length - 2, Math.floor(scaled))
+return joints[index].clone().lerp(joints[index + 1], scaled - index)
+}
+
+const rootCount = species === 1 ? 7 : 5
+for (let root = 0; root < rootCount; root++) {
+const angle = root * (Math.PI * 2 / rootCount) + species * .41
+const length =
+(.48 + (root % 3) * .115) *
+(species === 1 ? 1.24 : species === 3 ? 1.08 : 1)
+const rootBase = new THREE.Vector3(
+Math.cos(angle) * baseRadius * .38,
+rootY + .22,
+Math.sin(angle) * baseRadius * .38,
+)
+const rootMid = new THREE.Vector3(
+Math.cos(angle) * length * .58,
+rootY + .05,
+Math.sin(angle) * length * .58,
+)
+const rootTip = new THREE.Vector3(
+Math.cos(angle) * length,
+rootY - .025 + (root % 2) * .018,
+Math.sin(angle) * length,
+)
+segment(rootBase, rootMid, baseRadius * .28, baseRadius * .12, 6)
+segment(rootMid, rootTip, baseRadius * .12, .02, 5)
+}
+
+const branchPatterns: Array<Array<[number, number, number, number]>> = [
+[
+[.43, .15, .98, .08], [.52, 2.34, 1.08, .09], [.61, 4.56, .95, .14],
+[.69, 1.28, .84, .18], [.77, 3.63, .72, .22],
+],
+[
+[.4, .18, 1.32, .22], [.46, 2.12, 1.48, .18], [.54, 4.18, 1.4, .26],
+[.62, 1.1, 1.26, .32], [.69, 3.08, 1.12, .38], [.76, 5.18, .94, .44],
+],
+[
+[.46, .3, .88, .24], [.55, 2.55, .92, .3], [.64, 4.76, .84, .34],
+[.72, 1.54, .75, .4], [.8, 3.8, .64, .46],
+],
+[
+[.42, -.18, 1.26, .08], [.5, .38, 1.34, .12], [.58, -.45, 1.18, .16],
+[.66, .2, 1.05, .2], [.74, -.28, .9, .24],
+],
+]
+
+branchPatterns[species].forEach(([t, angle, reach, rise], branch) => {
+const start = centerAt(t)
+const sweptAngle = species === 3 ? angle * .42 : angle
+const sweepX = species === 3 ? reach * .55 : 0
+const mid = start.clone().add(
+new THREE.Vector3(
+Math.cos(sweptAngle) * reach * .58 + sweepX,
+rise,
+Math.sin(sweptAngle) * reach * .58,
+),
+)
+const tip = mid.clone().add(
+new THREE.Vector3(
+Math.cos(sweptAngle + .18) * reach * .5 + sweepX * .3,
+rise * .82 + .1,
+Math.sin(sweptAngle + .18) * reach * .5,
+),
+)
+const branchRadius = baseRadius * (species === 1 ? .28 : .23) * (1 - t * .28)
+segment(start, mid, branchRadius, branchRadius * .48, 6)
+segment(mid, tip, branchRadius * .5, .018, 5)
+
+if (species === 1 && branch % 2 === 1) {
+  const fork = mid.clone().add(
+    new THREE.Vector3(
+      Math.cos(sweptAngle - .8) * reach * .4,
+      .34,
+      Math.sin(sweptAngle - .8) * reach * .4,
+    ),
+  )
+  segment(mid, fork, branchRadius * .34, .014, 5)
+}
+
 })
-const result=mergeGeometries(pieces)!
-pieces.forEach(g=>g.dispose())
-const p=result.attributes.position,colors:number=[]
-const bark=new THREE.Color([0x493326,0x5b3d27,0x574333,0x3d2d25][species])
-for(let i=0;i<p.count;i++) {
-const y=p.getY(i)
-const angle=Math.atan2(p.getZ(i),p.getX(i))
-const ny=THREE.MathUtils.clamp((y+1.7)/height,0,1)
-const grain=Math.sin(angle4+ny7+species).045+Math.sin(ny27+angle1.7).025
-const c=bark.clone().multiplyScalar(.69+ny*.16+grain)
-colors.push(c.r,c.g,c.b)
+
+if (species === 1) {
+const forkBase = centerAt(.56)
+const forkTip = forkBase.clone().add(new THREE.Vector3(-.48, 1.28, .32))
+segment(forkBase, forkTip, baseRadius * .24, baseRadius * .08, 6)
 }
-result.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+
+const result = mergeGeometries(pieces)!
+pieces.forEach((geometry) => geometry.dispose())
+
+const position = result.attributes.position
+const colors: number[] = []
+const bark = new THREE.Color(
+[0x493326, 0x5b3d27, 0x574333, 0x3d2d25][species],
+)
+for (let index = 0; index < position.count; index++) {
+const y = position.getY(index)
+const angle = Math.atan2(position.getZ(index), position.getX(index))
+const normalizedY = THREE.MathUtils.clamp(
+(y - rootY) / Math.max(.001, height),
+0,
+1,
+)
+const groove = Math.sin(angle * 4 + normalizedY * 7 + species) * .045
+const shade = .69 + normalizedY * .16 + groove
+const color = bark.clone().multiplyScalar(shade)
+colors.push(color.r, color.g, color.b)
+}
+result.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
 result.computeVertexNormals()
 return result
 }
