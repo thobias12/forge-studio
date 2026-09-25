@@ -79,6 +79,230 @@ export function forestSpeciesCrown(radius:number,height:number,variant:number,ti
   return g
 }
 
+export function forestArtDirectedCrown(radius:number,height:number,variant:number,tier:number) {
+const species=((variant%4)+4)%4
+const pieces:THREE.BufferGeometry[]=[]
+const profiles=[
+{count:12,spread:.88,vertical:1.08,depth:.82,drift:.02},
+{count:13,spread:1.24,vertical:.66,depth:1.12,drift:-.04},
+{count:11,spread:.96,vertical:.92,depth:1.02,drift:.05},
+{count:10,spread:1.08,vertical:.78,depth:.74,drift:.34},
+] as const
+const profile=profiles[species]
+for(let clump=0;clump<profile.count;clump++) {
+const layer=clump/Math.max(1,profile.count-1)
+const angle=clump2.399963+species1.17+tier*.61
+const wave=.5+.5Math.sin(clump1.71+species2.13+tier.77)
+const signed=layer2-1
+let reach=radius(.18+(clump%4).105)
+let y=signedheight*.42
+let sx=radius*(.31+wave*.13)
+let sy=height*(.13+(clump%3).012)
+let sz=radius(.31+(1-wave).12)
+if(species===0) {
+const taper=THREE.MathUtils.lerp(1.08,.24,layer)
+reach=taper1.55;sx=taper;sz*=taper;sy*=.84;y=(layer-.47)height
+} else if(species===1) {
+const dome=Math.sqrt(Math.max(.18,1-Math.pow(signed1.08,2)))
+reach*=dome1.48;sx=.9+dome*.36;sz*=.88+dome*.34;sy*=.78
+y=signedheight.31+Math.sin(angle1.4)height.045
+} else if(species===2) {
+const dome=Math.sqrt(Math.max(.2,1-Math.pow(signed.86,2)))
+reach*=dome1.2;sx=.82+dome*.24;sz*=.82+dome*.24;sy*=1.04;y=signedheight.43
+} else {
+const taper=THREE.MathUtils.lerp(1.02,.3,layer)
+reach*=taper1.36;sx=taper1.16;sz=taper*.86;sy*=.78;y=(layer-.46)height
+}
+const g=new THREE.IcosahedronGeometry(1,0).toNonIndexed()
+g.scale(sxprofile.spread,syprofile.vertical,szprofile.depth)
+g.rotateY(angle*.31+wave*.22)
+g.rotateZ((wave-.5)(species===1?.2:.1))
+g.translate(
+Math.cos(angle)reach+(species===3?THREE.MathUtils.lerp(-radius.12,radius.48,layer):profile.driftradiussigned),
+y+Math.sin(angle1.31)height.025,
+Math.sin(angle)reach,
+)
+const p=g.attributes.position,colors:number=[]
+for(let i=0;i<p.count;i++) {
+const nx=p.getX(i)/Math.max(.001,radius)
+const ny=p.getY(i)/Math.max(.001,height)
+const nz=p.getZ(i)/Math.max(.001,radius)
+const directional=THREE.MathUtils.clamp(nx-.07+ny.17+nz*.045,-.11,.13)
+const shade=.78+directional+tier*.018+(clump%3).026
+colors.push(shade.76,shade,shade*.69)
+}
+g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+g.computeVertexNormals()
+pieces.push(g)
+}
+const result=mergeGeometries(pieces)!
+pieces.forEach(g=>g.dispose())
+return result
+}
+
+export function forestArtDirectedTrunk(variant=0) {
+const species=((variant%4)+4)%4
+const pieces:THREE.BufferGeometry[]=[]
+const height=[3.8,3.55,3.95,3.9][species]
+const baseRadius=[.32,.46,.285,.33][species]
+const lean=[
+new THREE.Vector2(.12,-.04),
+new THREE.Vector2(-.1,.08),
+new THREE.Vector2(.04,.025),
+new THREE.Vector2(.34,-.09),
+][species]
+const segment=(a:THREE.Vector3,b:THREE.Vector3,br:number,tr:number,sides=7)=>{
+const d=b.clone().sub(a)
+const g=new THREE.CylinderGeometry(tr,br,d.length(),sides,1,false)
+g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize()))
+g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2)
+pieces.push(g.toNonIndexed())
+g.dispose()
+}
+const joints=[
+new THREE.Vector3(0,-1.7,0),
+new THREE.Vector3(lean.x*.1,-1.7+height*.24,lean.y*.08),
+new THREE.Vector3(lean.x*.31,-1.7+height*.5,lean.y*.34),
+new THREE.Vector3(lean.x*.62,-1.7+height*.74,lean.y*.63),
+new THREE.Vector3(lean.x,-1.7+height,lean.y),
+]
+const radii=[baseRadius,baseRadius*.76,baseRadius*.52,baseRadius*.3,baseRadius*.16]
+for(let i=0;i<joints.length-1;i++) segment(joints[i],joints[i+1],radii[i],radii[i+1],8)
+const rootCount=species===1?7:5
+for(let root=0;root<rootCount;root++) {
+const angle=root*(Math.PI2/rootCount)+species.41
+const length=(.48+(root%3).115)(species===1?1.24:species===3?1.08:1)
+const a=new THREE.Vector3(Math.cos(angle)baseRadius.38,-1.48,Math.sin(angle)baseRadius.38)
+const b=new THREE.Vector3(Math.cos(angle)length.58,-1.65,Math.sin(angle)length.58)
+const c=new THREE.Vector3(Math.cos(angle)length,-1.725+(root%2).018,Math.sin(angle)length)
+segment(a,b,baseRadius.28,baseRadius*.12,6)
+segment(b,c,baseRadius*.12,.02,5)
+}
+const patterns:Array<Array<[number,number,number,number]>>=[
+[[.43,.15,.98,.08],[.52,2.34,1.08,.09],[.61,4.56,.95,.14],[.69,1.28,.84,.18],[.77,3.63,.72,.22]],
+[[.4,.18,1.32,.22],[.46,2.12,1.48,.18],[.54,4.18,1.4,.26],[.62,1.1,1.26,.32],[.69,3.08,1.12,.38],[.76,5.18,.94,.44]],
+[[.46,.3,.88,.24],[.55,2.55,.92,.3],[.64,4.76,.84,.34],[.72,1.54,.75,.4],[.8,3.8,.64,.46]],
+[[.42,-.18,1.26,.08],[.5,.38,1.34,.12],[.58,-.45,1.18,.16],[.66,.2,1.05,.2],[.74,-.28,.9,.24]],
+]
+patterns[species].forEach(([t,angle,reach,rise],branch)=>{
+const start=new THREE.Vector3(lean.xt,-1.7+heightt,lean.yt)
+const a=species===3?angle.42:angle
+const sweep=species===3?reach*.55:0
+const mid=start.clone().add(new THREE.Vector3(Math.cos(a)reach.58+sweep,rise,Math.sin(a)reach.58))
+const tip=mid.clone().add(new THREE.Vector3(Math.cos(a+.18)reach.5+sweep*.3,rise*.82+.1,Math.sin(a+.18)reach.5))
+const r=baseRadius*(species===1?.28:.23)(1-t.28)
+segment(start,mid,r,r*.48,6)
+segment(mid,tip,r*.5,.018,5)
+if(species===1&&branch%2===1) {
+const fork=mid.clone().add(new THREE.Vector3(Math.cos(a-.8)reach.4,.34,Math.sin(a-.8)reach.4))
+segment(mid,fork,r*.34,.014,5)
+}
+})
+const result=mergeGeometries(pieces)!
+pieces.forEach(g=>g.dispose())
+const p=result.attributes.position,colors:number=[]
+const bark=new THREE.Color([0x493326,0x5b3d27,0x574333,0x3d2d25][species])
+for(let i=0;i<p.count;i++) {
+const y=p.getY(i)
+const angle=Math.atan2(p.getZ(i),p.getX(i))
+const ny=THREE.MathUtils.clamp((y+1.7)/height,0,1)
+const grain=Math.sin(angle4+ny7+species).045+Math.sin(ny27+angle1.7).025
+const c=bark.clone().multiplyScalar(.69+ny*.16+grain)
+colors.push(c.r,c.g,c.b)
+}
+result.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+result.computeVertexNormals()
+return result
+}
+
+export function forestBarkTexture(variant=0) {
+const width=32,height=64,data=new Uint8Array(widthheight4)
+for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+const i=(ywidth+x)4
+const ridge=Math.sin(x.78+variant1.7).5+.5
+const grain=Math.sin(y.31+x*.17+variant2.1).5+.5
+const knot=Math.sin(Math.hypot(x-9-variant3,y-29).72).5+.5
+const value=THREE.MathUtils.clamp(Math.round(150+ridge54+grain26+knot16),105,246)
+data[i]=value;data[i+1]=value;data[i+2]=value;data[i+3]=255
+}
+const texture=new THREE.DataTexture(data,width,height,THREE.RGBAFormat)
+texture.colorSpace=THREE.SRGBColorSpace
+texture.wrapS=texture.wrapT=THREE.RepeatWrapping
+texture.repeat.set(2.4,3.8)
+texture.needsUpdate=true
+return texture
+}
+
+export function forestFoliageTexture(variant=0) {
+const size=32,data=new Uint8Array(sizesize4)
+for(let y=0;y<size;y++) for(let x=0;x<size;x++) {
+const i=(ysize+x)4
+const broad=Math.sin(x.39+y.23+variant1.9).5+.5
+const clusters=Math.sin(x*.83-y*.61+variant*.73).5+.5
+const value=THREE.MathUtils.clamp(Math.round(158+broad52+clusters*30),118,240)
+data[i]=value;data[i+1]=value;data[i+2]=value;data[i+3]=255
+}
+const texture=new THREE.DataTexture(data,size,size,THREE.RGBAFormat)
+texture.colorSpace=THREE.SRGBColorSpace
+texture.wrapS=texture.wrapT=THREE.RepeatWrapping
+texture.repeat.set(2.2,2.2)
+texture.needsUpdate=true
+return texture
+}
+
+export function forestShrub(variant=0) {
+const pieces:THREE.BufferGeometry[]=[]
+const base=new THREE.Color([0x456742,0x365b3c,0x596846,0x46553f][variant%4])
+for(let clump=0;clump<4;clump++) {
+const angle=clump2.18+variant.57
+const g=new THREE.IcosahedronGeometry(1,0).toNonIndexed()
+const s=.34+(clump%2).1
+g.scale(s1.18,s*.72,s)
+g.translate(Math.cos(angle)(.18+clump.035),.25+(clump%3).07,Math.sin(angle)(.18+clump*.035))
+const colors:number=[]
+for(let i=0;i<g.attributes.position.count;i++) {
+const c=base.clone().multiplyScalar(.72+(clump%3).09+g.attributes.position.getY(i).14)
+colors.push(c.r,c.g,c.b)
+}
+g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+pieces.push(g)
+}
+const result=mergeGeometries(pieces)!
+pieces.forEach(g=>g.dispose())
+result.computeVertexNormals()
+return result
+}
+
+export function forestSapling(variant=0) {
+const pieces:THREE.BufferGeometry[]=[]
+const trunk=new THREE.CylinderGeometry(.035,.07,1.42,6).toNonIndexed()
+trunk.translate(0,.71,0)
+const trunkColors:number=[],bark=new THREE.Color(0x58412f)
+for(let i=0;i<trunk.attributes.position.count;i++) {
+const c=bark.clone().multiplyScalar(.72+trunk.attributes.position.getY(i).09)
+trunkColors.push(c.r,c.g,c.b)
+}
+trunk.setAttribute('color',new THREE.Float32BufferAttribute(trunkColors,3))
+pieces.push(trunk)
+const leafColor=new THREE.Color([0x50794b,0x3f7047,0x668153,0x4f6846][variant%4])
+for(let clump=0;clump<3;clump++) {
+const g=new THREE.IcosahedronGeometry(.34-clump.045,0).toNonIndexed()
+g.scale(1.12,.72,.94)
+g.translate((clump-1).16,1.05+clump.24,Math.sin(clump2.2+variant).12)
+const colors:number=[]
+for(let i=0;i<g.attributes.position.count;i++) {
+const c=leafColor.clone().multiplyScalar(.78+g.attributes.position.getY(i)*.1)
+colors.push(c.r,c.g,c.b)
+}
+g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
+pieces.push(g)
+}
+const result=mergeGeometries(pieces)!
+pieces.forEach(g=>g.dispose())
+result.computeVertexNormals()
+return result
+}
+
 // One connected trunk and attached limbs, all expressed in the same local frame.
 // Four deterministic silhouettes avoid repeating identical smooth gray poles.
 export function forestDeadTree(variant:number) {
