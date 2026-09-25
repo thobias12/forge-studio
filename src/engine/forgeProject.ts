@@ -179,10 +179,14 @@ const LEGACY_V3_KEY = 'forge-project:skillbound:v3'
 const LEGACY_V2_KEY = 'forge-project:skillbound:v2'
 const LEGACY_V1_KEY = 'forge-project:skillbound:v1'
 const PROJECT_ROOT = './projects/skillbound/'
+let skillboundWorkspacePromise: Promise<ForgeProjectWorkspace> | undefined
 
 export async function loadSkillboundWorkspace(forceBundled = false): Promise<ForgeProjectWorkspace> {
-  const workspace = await loadWorkspaceContent(forceBundled)
-  return { ...workspace, gameplay: ensureSkillboundItemSystem(workspace.gameplay) }
+  if (!forceBundled && skillboundWorkspacePromise) return await skillboundWorkspacePromise
+const workspace = await loadWorkspaceContent(forceBundled)
+  const resolved = { ...workspace, gameplay: ensureSkillboundItemSystem(workspace.gameplay) }
+if (!forceBundled) skillboundWorkspacePromise = Promise.resolve(resolved)
+return resolved
 }
 
 async function loadWorkspaceContent(forceBundled = false): Promise<ForgeProjectWorkspace> {
@@ -215,8 +219,8 @@ async function loadWorkspaceContent(forceBundled = false): Promise<ForgeProjectW
   return { manifest, worlds, regions, dungeons, encounterProfiles, bossProfiles, gameplay, ui, editor: { previewSeed: 8472152, selectedWorldId: worlds[0]?.id ?? '', selectedRegionId: regions[0]?.id ?? '' }, updatedAt: new Date().toISOString() }
 }
 
-export function saveSkillboundWorkspace(workspace: ForgeProjectWorkspace) { const next = { ...workspace, updatedAt: new Date().toISOString() }; localStorage.setItem(WORKSPACE_KEY, JSON.stringify(next)); window.dispatchEvent(new CustomEvent('forge-project-saved', { detail: { projectId: next.manifest.id } })); return next }
-export function clearSkillboundWorkspace() { localStorage.removeItem(WORKSPACE_KEY); localStorage.removeItem(LEGACY_V3_KEY); localStorage.removeItem(LEGACY_V2_KEY); localStorage.removeItem(LEGACY_V1_KEY) }
+export function saveSkillboundWorkspace(workspace: ForgeProjectWorkspace) { const next = { ...workspace, updatedAt: new Date().toISOString() }; localStorage.setItem(WORKSPACE_KEY, JSON.stringify(next)); skillboundWorkspacePromise = Promise.resolve(next); window.dispatchEvent(new CustomEvent('forge-project-saved', { detail: { projectId: next.manifest.id } })); return next }
+export function clearSkillboundWorkspace() { localStorage.removeItem(WORKSPACE_KEY); localStorage.removeItem(LEGACY_V3_KEY); localStorage.removeItem(LEGACY_V2_KEY); localStorage.removeItem(LEGACY_V1_KEY); skillboundWorkspacePromise = undefined }
 export function patchRegion(workspace: ForgeProjectWorkspace, region: ForgeRegionDefinition): ForgeProjectWorkspace { return { ...workspace, regions: workspace.regions.map((item) => item.id === region.id ? region : item), updatedAt: new Date().toISOString() } }
 export function patchGameplay(workspace: ForgeProjectWorkspace, gameplay: ForgeGameplayContent): ForgeProjectWorkspace { return { ...workspace, gameplay, updatedAt: new Date().toISOString() } }
 export function patchUi(workspace: ForgeProjectWorkspace, ui: ForgeUiThemeDefinition): ForgeProjectWorkspace { return { ...workspace, ui, updatedAt: new Date().toISOString() } }

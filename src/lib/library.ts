@@ -33,6 +33,7 @@ const DB_NAME = 'forge-studio-library'
 const DB_VERSION = 1
 const ASSETS = 'assets'
 const PROJECTS = 'projects'
+let assetListPromise: Promise<LibraryAsset[]> | undefined
 
 const DEFAULT_PROJECTS: ProjectProfile[] = [
   { id: 'ashford', name: 'Ashford', repo: 'thobias12/ashford', assetPath: 'public/assets/forge' },
@@ -68,8 +69,11 @@ function withStore<T>(storeName: string, mode: IDBTransactionMode, work: (store:
 }
 
 export async function listAssets() {
+if (assetListPromise) return await assetListPromise
   const items = await withStore(ASSETS, 'readonly', (store) => store.getAll()) as LibraryAsset[]
-  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const sorted = items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+assetListPromise = Promise.resolve(sorted)
+return sorted
 }
 
 export async function getAsset(id: string) {
@@ -93,17 +97,20 @@ export async function saveAsset(input: Omit<LibraryAsset, 'id' | 'size' | 'creat
     blob: input.blob,
   }
   await withStore(ASSETS, 'readwrite', (store) => store.put(asset))
+assetListPromise = undefined
   return asset
 }
 
 export async function updateAsset(asset: LibraryAsset) {
   const next = { ...asset, updatedAt: new Date().toISOString(), size: asset.blob.size }
   await withStore(ASSETS, 'readwrite', (store) => store.put(next))
+assetListPromise = undefined
   return next
 }
 
 export async function deleteAsset(id: string) {
   await withStore(ASSETS, 'readwrite', (store) => store.delete(id))
+assetListPromise = undefined
 }
 
 export async function listProjects() {
