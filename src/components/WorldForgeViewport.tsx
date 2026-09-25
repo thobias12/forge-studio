@@ -1,5 +1,5 @@
 import { forestPathMaterial, forestWaterMaterial } from '../engine/forestAtmosphere'
-import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestSpeciesCrown, forestTrunk } from '../engine/forestGeometry'
+import { forestRock, forestLog, forestGrass, forestFern, forestFloorMaterial, forestDeadTree, forestArtDirectedSpeciesCrown, forestArtDirectedTrunk } from '../engine/forestGeometry'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -1441,17 +1441,28 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
   }
 
   if (trees.length) {
-    const trunkGeometry = forestTrunk()
-    const trunkMaterial = markWorldWindMaterial(
-      new THREE.MeshStandardMaterial({ color: 0x382c22, roughness: 1 }),
-      .16,
-    )
-    const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, trees.length)
-    const matrix = new THREE.Matrix4()
-    const quaternion = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
+    const trunkGeometries = [0, 1, 2, 3].map((variant) => forestArtDirectedTrunk(variant))
+const trunkMaterial = markWorldWindMaterial(
+new THREE.MeshStandardMaterial({
+color: 0xffffff,
+roughness: .94,
+metalness: 0,
+vertexColors: true,
+flatShading: true,
+}),
+.12,
+)
+    const trunksByVariant = [0, 1, 2, 3].map((variant) => {
+const items = trees.filter((item) => item.variant === variant)
+return new THREE.InstancedMesh(trunkGeometries[variant], trunkMaterial, items.length)
+})
+const matrix = new THREE.Matrix4()
+const quaternion = new THREE.Quaternion()
+const scale = new THREE.Vector3()
+const trunkCursors = [0, 0, 0, 0]
 
-    trees.forEach((item, index) => {
+trees.forEach((item) => {
+
       const displayScale = forgeTreePresentationScale(item.scale)
       quaternion.setFromEuler(
         new THREE.Euler(
@@ -1460,48 +1471,52 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
           corruptTrees ? (item.variant % 2 ? -.045 : .045) : 0,
         ),
       )
-      scale.set(
-        displayScale * (.9 + item.variant * .02),
-        displayScale * (1 + item.variant * .025),
-        displayScale * (.9 + item.variant * .02),
-      )
+const trunkWidth = [1, 1.12, .9, .96][item.variant] ?? 1
+const trunkHeight = [1.04, .97, 1.06, 1.05][item.variant] ?? 1
+scale.set(
+displayScale * trunkWidth,
+displayScale * trunkHeight,
+displayScale * trunkWidth,
+)
       matrix.compose(
         new THREE.Vector3(item.x, item.y + 1.66 * displayScale, item.z),
         quaternion,
         scale,
       )
-      trunks.setMatrixAt(index, matrix)
+      trunksByVariant[item.variant].setMatrixAt(trunkCursors[item.variant]++, matrix)
     })
-    trunks.castShadow = true
-    trunks.receiveShadow = true
-    group.add(trunks)
+trunksByVariant.forEach((trunks) => {
+trunks.castShadow = true
+trunks.receiveShadow = true
+group.add(trunks)
+})
 
     const buckets = [0, 1, 2, 3].map((variant) =>
       trees.filter((item) => item.variant === variant)
     )
     const lowerGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(1.52, 2.75, 0, 0),
-      forestSpeciesCrown(1.72, 2.35, 1, 0),
-      forestSpeciesCrown(1.18, 1.77, 2, 0),
-      forestSpeciesCrown(1.34, 2.95, 3, 0),
+forestArtDirectedSpeciesCrown(1.52, 2.75, 0, 0),
+forestArtDirectedSpeciesCrown(1.72, 2.35, 1, 0),
+forestArtDirectedSpeciesCrown(1.18, 1.77, 2, 0),
+forestArtDirectedSpeciesCrown(1.34, 2.95, 3, 0),
     ]
     const middleGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(1.18, 2.45, 0, 1),
-      forestSpeciesCrown(1.32, 2.15, 1, 1),
-      forestSpeciesCrown(1.04, 1.56, 2, 1),
-      forestSpeciesCrown(1.04, 2.55, 3, 1),
+forestArtDirectedSpeciesCrown(1.18, 2.45, 0, 1),
+forestArtDirectedSpeciesCrown(1.32, 2.15, 1, 1),
+forestArtDirectedSpeciesCrown(1.04, 1.56, 2, 1),
+forestArtDirectedSpeciesCrown(1.04, 2.55, 3, 1),
     ]
     const upperGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(.82, 2.15, 0, 2),
-      forestSpeciesCrown(.9, 1.92, 1, 2),
-      forestSpeciesCrown(.82, 1.23, 2, 2),
-      forestSpeciesCrown(.7, 2.2, 3, 2),
+forestArtDirectedSpeciesCrown(.82, 2.15, 0, 2),
+forestArtDirectedSpeciesCrown(.9, 1.92, 1, 2),
+forestArtDirectedSpeciesCrown(.82, 1.23, 2, 2),
+forestArtDirectedSpeciesCrown(.7, 2.2, 3, 2),
     ]
     const accentGeometries: THREE.BufferGeometry[] = [
-      forestSpeciesCrown(.78, .88, 0, 3),
-      forestSpeciesCrown(.92, .72, 1, 3),
-      forestSpeciesCrown(.66, 0.99, 2, 3),
-      forestSpeciesCrown(.7, .96, 3, 3),
+forestArtDirectedSpeciesCrown(.78, .88, 0, 3),
+forestArtDirectedSpeciesCrown(.92, .72, 1, 3),
+forestArtDirectedSpeciesCrown(.66, .99, 2, 3),
+forestArtDirectedSpeciesCrown(.7, .96, 3, 3),
     ]
     buckets.forEach((items, variant) => {
       if (!items.length) return
@@ -1510,22 +1525,22 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
       )
       const lowerMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
-          color: variantColor.clone().multiplyScalar(.9),
-          roughness: 1, vertexColors: true,
+color: variantColor.clone().multiplyScalar(.9),
+roughness: .86, metalness: 0, vertexColors: true, flatShading: true,
         }),
         .48,
       )
       const middleMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
-          color: variantColor,
-          roughness: 1, vertexColors: true,
+color: variantColor,
+roughness: .84, metalness: 0, vertexColors: true, flatShading: true,
         }),
         .68,
       )
       const upperMaterial = markWorldWindMaterial(
         new THREE.MeshStandardMaterial({
-          color: variantColor.clone().multiplyScalar(1.1),
-          roughness: 1, vertexColors: true,
+color: variantColor.clone().multiplyScalar(1.08),
+roughness: .82, metalness: 0, vertexColors: true, flatShading: true,
         }),
         .9,
       )
@@ -1552,7 +1567,7 @@ function addDressing(region: GeneratedRegion, group: THREE.Group) {
 
       items.forEach((item, index) => {
         const displayScale = forgeTreePresentationScale(item.scale)
-        const broadleaf = variant === 2
+        const broadleaf = variant === 1 || variant === 2
         const cos = Math.cos(item.rotation)
         const sin = Math.sin(item.rotation)
         const worldOffset = (localX: number, localZ: number) => ({
