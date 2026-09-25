@@ -336,10 +336,7 @@ segment(rootBase, rootMid, baseRadius * .28, baseRadius * .12, 6)
 segment(rootMid, rootTip, baseRadius * .12, .02, 5)
 }
 
-const branchPatterns: ReadonlyArray<
-ReadonlyArray<readonly [number, number, number, number]>
-
-= [
+const branchPatterns: Array<Array<[number, number, number, number]>> = [
 [
 [.43, .15, .98, .08], [.52, 2.34, 1.08, .09], [.61, 4.56, .95, .14],
 [.69, 1.28, .84, .18], [.77, 3.63, .72, .22],
