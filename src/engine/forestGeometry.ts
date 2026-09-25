@@ -215,21 +215,34 @@ result.computeVertexNormals()
 return result
 }
 
-export function forestBarkTexture(variant=0) {
-const width=32,height=64,data=new Uint8Array(widthheight4)
-for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
-const i=(ywidth+x)4
-const ridge=Math.sin(x.78+variant1.7).5+.5
-const grain=Math.sin(y.31+x*.17+variant2.1).5+.5
-const knot=Math.sin(Math.hypot(x-9-variant3,y-29).72).5+.5
-const value=THREE.MathUtils.clamp(Math.round(150+ridge54+grain26+knot16),105,246)
-data[i]=value;data[i+1]=value;data[i+2]=value;data[i+3]=255
+export function forestBarkTexture(variant = 0) {
+const width = 32
+const height = 64
+const data = new Uint8Array(width * height * 4)
+
+for (let y = 0; y < height; y++) {
+for (let x = 0; x < width; x++) {
+const i = (y * width + x) * 4
+const ridge = Math.sin(x * .78 + variant * 1.7) * .5 + .5
+const grain = Math.sin(y * .31 + x * .17 + variant * 2.1) * .5 + .5
+const knot = Math.sin(Math.hypot(x - 9 - variant * 3, y - 29) * .72) * .5 + .5
+const value = THREE.MathUtils.clamp(
+Math.round(150 + ridge * 54 + grain * 26 + knot * 16),
+105,
+246,
+)
+data[i] = value
+data[i + 1] = value
+data[i + 2] = value
+data[i + 3] = 255
 }
-const texture=new THREE.DataTexture(data,width,height,THREE.RGBAFormat)
-texture.colorSpace=THREE.SRGBColorSpace
-texture.wrapS=texture.wrapT=THREE.RepeatWrapping
-texture.repeat.set(2.4,3.8)
-texture.needsUpdate=true
+}
+
+const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat)
+texture.colorSpace = THREE.SRGBColorSpace
+texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+texture.repeat.set(2.4, 3.8)
+texture.needsUpdate = true
 return texture
 }
 
